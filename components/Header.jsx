@@ -6,7 +6,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Poppins } from "next/font/google";
 import { MdPolicy } from "react-icons/md";
 import { FaSquarePollVertical } from "react-icons/fa6";
-
+import { usePermissions } from "@/context/PermissionContext";
+import { PERMISSIONS } from "@/lib/permission";
 const poppins = Poppins({
   subsets: ["latin"],
   weight: ["400", "600", "700"],
@@ -17,7 +18,7 @@ export default function Header({ onLogout }) {
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
   const [username, setUsername] = useState(null);
-
+  const { permissions, user } = usePermissions();
   useEffect(() => {
     const updateUser = () => {
       const storedUser = localStorage.getItem("username");
@@ -140,6 +141,7 @@ export default function Header({ onLogout }) {
                           icon={<FaHome className="text-gray-200" />}
                           label="الرئيسية"
                         />
+                         {permissions?.includes(PERMISSIONS.MANAGE_PERMISSIONS) && (
                         <MenuItem
                           onClick={() => {
                             setMenuOpen(false);
@@ -147,15 +149,19 @@ export default function Header({ onLogout }) {
                           }}
                           icon={<FaUserPlus className="text-gray-200" />}
                           label="إنشاء يوزر جديد"
-                        />
-                        <MenuItem
-                          onClick={() => {
-                            setMenuOpen(false);
-                            router.push("/permissions");
-                          }}
-                          icon={<MdPolicy className="text-gray-200" />}
-                          label="إدارة الصلاحيات"
-                        />
+                        />)}
+
+
+                      {permissions?.includes(PERMISSIONS.MANAGE_PERMISSIONS) && (
+  <MenuItem
+    onClick={() => {
+      setMenuOpen(false);
+      router.push("/permissions");
+    }}
+    icon={<MdPolicy className="text-gray-200" />}
+    label="إدارة الصلاحيات"
+  />
+)}
                         <MenuItem
                           onClick={() => {
                             setMenuOpen(false);

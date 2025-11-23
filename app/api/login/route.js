@@ -1,5 +1,7 @@
 import dbConnect from "@/lib/mongodb";
 import User from "@/models/User";
+import Permissions from "@/models/Permissions";
+import { NextResponse } from "next/server";
 
 export async function POST(req) {
   try {
@@ -7,37 +9,28 @@ export async function POST(req) {
 
     const { username, password } = await req.json();
 
-    // جلب المستخدم من الـ collection users
-    const user = await User.findOne({ username });
-    if (!user) {
-      return new Response(JSON.stringify({ error: "❌ المستخدم غير موجود" }), {
-        status: 401,
-      });
-    }
+    const user = await User.findOne({ username, password }).lean();
 
-    // مقارنة الباسورد (هنا plain text لأن عندك الباسوردات مخزنة كـ نص عادي)
-    if (user.password !== password) {
-      return new Response(
-        JSON.stringify({ error: "❌ كلمة المرور غير صحيحة" }),
-        { status: 401 }
-      );
-    }
+    if (!user)
+      return NextResponse.json({ success: false, error: "Invalid login" });
 
-    // نجاح
-    return new Response(
-      JSON.stringify({
-        message: "✅ تسجيل الدخول ناجح",
-        user: {
-          id: user._id,
-          username: user.username,
-        },
-      }),
-      { status: 200 }
-    );
-  } catch (err) {
-    console.error("Login error:", err);
-    return new Response(JSON.stringify({ error: "⚠️ خطأ بالسيرفر" }), {
-      status: 500,
+    // extract id
+    const userId = user._id.toString();
+
+    const groups = await Permissions.find({ users: userId }).lean();
+
+    const permissions = [...new Set(groups.flatMap(g => g.permissions))];
+
+    return NextResponse.json({
+      success: true,
+      user: {
+        id: userId,
+        username: user.username
+      },
+      permissions
     });
+
+  } catch (e) {
+    return NextResponse.json({ success: false, error: e.message });
   }
 }

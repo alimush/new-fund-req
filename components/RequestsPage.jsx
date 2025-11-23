@@ -11,7 +11,8 @@ import {
   FiPaperclip
 } from "react-icons/fi";
 import { useRouter } from "next/navigation";
-
+import { usePermissions } from "@/context/PermissionContext";
+import { PERMISSIONS } from "@/lib/permission";
 // تبويبات نموذج الإنشاء + الأيقونات
 const steps = [
   { key: "Basic Info", label: "Basic Info", icon: FiInfo },
@@ -27,12 +28,14 @@ const steps = [
 // فورماتر الأرقام (فواصل آلاف)
 const fmt = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
 
+
 export default function RequestsPage({ companyKey }) {
   const router = useRouter();
   const [isCreating, setIsCreating] = useState(false);
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
-
+  const { permissions } = usePermissions();
+  const canCreate = Array.isArray(permissions) && permissions.includes("CREATE_REQUEST");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [activeTab, setActiveTab] = useState(steps[0].key);
 
@@ -169,14 +172,17 @@ const handleCreate = async () => {
   Requests Dashboard — {companyKey}
 </h1>
 
-        <motion.button
-          onClick={() => setIsCreateOpen(true)}
-          whileHover={{ scale: 1.03 }}
-          whileTap={{ scale: 0.97 }}
-          className="px-5 py-2.5 rounded-xl border border-gray-300 bg-white/80 text-gray-700 shadow-sm hover:bg-white"
-        >
-          + Create Request
-        </motion.button>
+{permissions?.includes(PERMISSIONS.CREATE_REQUEST) && (
+  <motion.button
+    onClick={() => setIsCreateOpen(true)}
+    whileHover={{ scale: 1.03 }}
+    whileTap={{ scale: 0.97 }}
+    className="px-5 py-2.5 rounded-xl border border-gray-300 bg-white/80 text-gray-700 shadow-sm hover:bg-white"
+  >
+    + Create Request
+  </motion.button>
+)}
+
       </div>
 
       {/* لودر قبل عرض الريكويستات */}
@@ -218,6 +224,7 @@ const handleCreate = async () => {
               </div>
 
               {/* زر حذف سريع (من الكارد) */}
+              {permissions.includes(PERMISSIONS.DELETE_REQUEST) && (
               <button
                 onClick={(e) => {
                   e.stopPropagation();
@@ -228,7 +235,7 @@ const handleCreate = async () => {
               >
                 <FiTrash2 className="text-[14px]" />
                 Delete
-              </button>
+              </button>)}
             </motion.div>
           ))}
         </motion.div>

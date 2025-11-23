@@ -8,7 +8,11 @@ const cards = [
   { key: "Al-Rida", name: "طلبات الرضا", logo: "/الرضا.png" },
   { key: "Al-Mezan", name: "طلبات الميزان", logo: "/الميزان.png" },
   { key: "Badur-Baghdad", name: "طلبات بدور بغداد", logo: "/بدور_بغداد.png" },
-  { key: "Ghadeer-Karbala", name: "طلبات غدير كربلاء", logo: "/غدير_كربلاء.png" },
+  {
+    key: "Ghadeer-Karbala",
+    name: "طلبات غدير كربلاء",
+    logo: "/غدير_كربلاء.png",
+  },
   { key: "Tiba-Al-najaf", name: "طلبات طيبة النجف", logo: "/طيبة_النجف.png" },
   { key: "badur-Al-najaf", name: "طلبات بدور النجف", logo: "/بدور_النجف.png" },
 ];
@@ -25,8 +29,10 @@ const item = {
 
 export default function HomePage() {
   return (
-    <div className="min-h-screen relative p-6 md:p-10 overflow-hidden 
-                    bg-gradient-to-br from-gray-50 via-gray-100 to-gray-200">
+    <div
+      className="min-h-screen relative p-6 md:p-10 overflow-hidden 
+                    bg-gradient-to-br from-gray-50 via-gray-100 to-gray-200"
+    >
       {/* الهيدر */}
       <div className="max-w-6xl mx-auto mb-10 text-center relative">
         <motion.h1
@@ -75,8 +81,10 @@ export default function HomePage() {
               <div className="pointer-events-none absolute -bottom-10 -right-10 w-28 h-28 rounded-full blur-2xl bg-gray-300/30" />
 
               {/* اللوغو */}
-              <div className="relative w-20 h-20 rounded-2xl bg-white/90 
-                              border border-gray-200 shadow-sm overflow-hidden">
+              <div
+                className="relative w-20 h-20 rounded-2xl bg-white/90 
+                              border border-gray-200 shadow-sm overflow-hidden"
+              >
                 <Image
                   src={c.logo}
                   alt={`${c.name} logo`}

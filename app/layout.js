@@ -1,13 +1,8 @@
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import HeaderWrapper from "../components/Header"; // نضيف wrapper
-import { Poppins } from "next/font/google";
-
-const poppins = Poppins({
-  subsets: ["latin"],
-  weight: ["400", "600", "700"],
-});
-
+import HeaderWrapper from "../components/Header";
+import { PermissionProvider } from "@/context/PermissionContext";
+import { UserProvider } from "@/context/UserContext";  // 🟢 تمت الإضافة
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -30,8 +25,14 @@ export default function RootLayout({ children }) {
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-white`}
       >
-        <HeaderWrapper />
-        <main className="p-6">{children}</main>
+        {/* 🟢 لفّ التطبيق كله بداخل UserProvider */}
+        <UserProvider>
+          {/* 🟢 يبقى PermissionProvider كما هو */}
+          <PermissionProvider>
+            <HeaderWrapper />
+            <main className="p-6">{children}</main>
+          </PermissionProvider>
+        </UserProvider>
       </body>
     </html>
   );

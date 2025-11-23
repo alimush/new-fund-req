@@ -5,14 +5,23 @@ import { motion, AnimatePresence } from "framer-motion";
 export default function RegisterPage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [group, setGroup] = useState("");
   const [users, setUsers] = useState([]);
+  const [groups, setGroups] = useState([]);
   const [search, setSearch] = useState("");
 
   const [selectedUser, setSelectedUser] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [successMsg, setSuccessMsg] = useState("");
 
-  // 🟢 جلب المستخدمين
+  // ⬅️ جلب الكروبات
+  const fetchGroups = async () => {
+    const res = await fetch("/api/permissions");
+    const data = await res.json();
+    if (data.success) setGroups(data.data);
+  };
+
+  // ⬅️ جلب المستخدمين
   const fetchUsers = async (query = "") => {
     try {
       const res = await fetch(`/api/users?q=${query}`);
@@ -25,20 +34,23 @@ export default function RegisterPage() {
 
   useEffect(() => {
     fetchUsers();
+    fetchGroups();
   }, []);
 
-  // ➕ إنشاء مستخدم
+  // ➕ إضافة مستخدم
   const handleRegister = async (e) => {
     e.preventDefault();
+
     const res = await fetch("/api/users", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, password }),
+      body: JSON.stringify({ username, password, group }),
     });
 
     if (res.ok) {
       setUsername("");
       setPassword("");
+      setGroup("");
       fetchUsers(search);
       setSuccessMsg("✅ User created successfully!");
       setTimeout(() => setSuccessMsg(""), 2000);
@@ -48,15 +60,7 @@ export default function RegisterPage() {
     }
   };
 
-  // 🗑 حذف
-  const handleDelete = async (id) => {
-    if (!confirm("هل تريد حذف هذا المستخدم؟")) return;
-    await fetch(`/api/users?id=${id}`, { method: "DELETE" });
-    fetchUsers(search);
-    setIsModalOpen(false);
-  };
-
-  // ✏️ تعديل
+  // ✏️ تعديل مستخدم
   const handleEdit = async () => {
     if (!selectedUser) return;
 
@@ -67,6 +71,7 @@ export default function RegisterPage() {
         id: selectedUser._id,
         username: selectedUser.username,
         password: selectedUser.password,
+        group: selectedUser.group,
       }),
     });
 
@@ -75,10 +80,15 @@ export default function RegisterPage() {
       setSuccessMsg("✅ User updated successfully!");
       setTimeout(() => setSuccessMsg(""), 2000);
       setIsModalOpen(false);
-    } else {
-      const data = await res.json();
-      alert(data.error || "❌ Failed to update user");
     }
+  };
+
+  // 🗑 حذف
+  const handleDelete = async (id) => {
+    if (!confirm("هل تريد حذف هذا المستخدم؟")) return;
+    await fetch(`/api/users?id=${id}`, { method: "DELETE" });
+    fetchUsers(search);
+    setIsModalOpen(false);
   };
 
   return (
@@ -115,6 +125,7 @@ export default function RegisterPage() {
             className="w-full border rounded-lg p-3 outline-none focus:ring-2 focus:ring-indigo-400"
             required
           />
+
           <input
             type="password"
             placeholder="Password"
@@ -123,6 +134,22 @@ export default function RegisterPage() {
             className="w-full border rounded-lg p-3 outline-none focus:ring-2 focus:ring-indigo-400"
             required
           />
+
+          {/* 🆕 اختيار كروب */}
+          <select
+            value={group}
+            onChange={(e) => setGroup(e.target.value)}
+            className="w-full border rounded-lg p-3 outline-none bg-white"
+            required
+          >
+            <option value="">اختر الكروب</option>
+            {groups.map((g) => (
+              <option key={g._id} value={g._id}>
+                {g.name}
+              </option>
+            ))}
+          </select>
+
           <motion.button
             type="submit"
             className="w-full bg-indigo-600 text-white font-bold p-3 rounded-lg shadow-md"
@@ -133,53 +160,35 @@ export default function RegisterPage() {
           </motion.button>
         </form>
 
-        {/* ✅ رسالة نجاح */}
-        <AnimatePresence>
-          {successMsg && (
-            <motion.div
-              className="mb-4 text-green-600 font-medium text-center"
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.3 }}
-            >
-              {successMsg}
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* 📋 قائمة المستخدمين */}
+        {/* قائمة المستخدمين */}
         <h2 className="text-lg font-semibold text-gray-700 mb-2">
           Registered Users
         </h2>
+
         <ul className="space-y-2 max-h-64 overflow-y-auto">
-          {users.length > 0 ? (
-            users.map((u) => (
-              <li
-                key={u._id}
-                className="flex justify-between items-center p-3 bg-sky-50 rounded-md border text-sm text-gray-700"
+          {users.map((u) => (
+            <li
+              key={u._id}
+              className="flex justify-between items-center p-3 bg-sky-50 rounded-md border text-sm text-gray-700"
+            >
+              <span>{u.username}</span>
+              <motion.button
+                onClick={() => {
+                  setSelectedUser(u);
+                  setIsModalOpen(true);
+                }}
+                className="px-3 py-1 bg-indigo-500 text-white rounded text-xs"
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
               >
-                <span className="font-medium">{u.username}</span>
-                <motion.button
-                  onClick={() => {
-                    setSelectedUser(u);
-                    setIsModalOpen(true);
-                  }}
-                  className="px-3 py-1 bg-indigo-500 text-white rounded text-xs"
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                >
-                  Details
-                </motion.button>
-              </li>
-            ))
-          ) : (
-            <p className="text-gray-500 text-sm">No users found.</p>
-          )}
+                Details
+              </motion.button>
+            </li>
+          ))}
         </ul>
       </motion.div>
 
-      {/* 🟢 مودال التفاصيل والتعديل */}
+      {/* مودال التفاصيل */}
       <AnimatePresence>
         {isModalOpen && selectedUser && (
           <motion.div
@@ -193,89 +202,75 @@ export default function RegisterPage() {
               initial={{ scale: 0.8, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.8, opacity: 0 }}
-              transition={{ duration: 0.3 }}
             >
               <h2 className="text-xl font-bold text-indigo-600 mb-4">
                 User Details
               </h2>
 
-              {/* فورم التعديل */}
-              <div className="space-y-3 mb-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-600">
-                    Username
-                  </label>
-                  <input
-                    type="text"
-                    value={selectedUser.username}
-                    onChange={(e) =>
-                      setSelectedUser({
-                        ...selectedUser,
-                        username: e.target.value,
-                      })
-                    }
-                    className="w-full border rounded-lg p-2 mt-1 outline-none focus:ring-2 focus:ring-indigo-400"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-600">
-                    Password
-                  </label>
-                  <input
-                    type="text"
-                    value={selectedUser.password}
-                    onChange={(e) =>
-                      setSelectedUser({
-                        ...selectedUser,
-                        password: e.target.value,
-                      })
-                    }
-                    className="w-full border rounded-lg p-2 mt-1 outline-none focus:ring-2 focus:ring-indigo-400"
-                  />
-                </div>
-              </div>
+              {/* Username */}
+              <input
+                type="text"
+                value={selectedUser.username}
+                onChange={(e) =>
+                  setSelectedUser({
+                    ...selectedUser,
+                    username: e.target.value,
+                  })
+                }
+                className="w-full border rounded-lg p-2 mb-3"
+              />
 
-              {/* ✅ رسالة نجاح داخل المودال */}
-              <AnimatePresence>
-                {successMsg && (
-                  <motion.div
-                    className="mb-3 text-green-600 font-medium text-center"
-                    initial={{ opacity: 0, y: -10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -10 }}
-                    transition={{ duration: 0.3 }}
-                  >
-                    {successMsg}
-                  </motion.div>
-                )}
-              </AnimatePresence>
+              {/* Password */}
+              <input
+                type="text"
+                value={selectedUser.password}
+                onChange={(e) =>
+                  setSelectedUser({
+                    ...selectedUser,
+                    password: e.target.value,
+                  })
+                }
+                className="w-full border rounded-lg p-2 mb-3"
+              />
 
-              {/* الأزرار */}
+              {/* تعديل الكروب */}
+              <select
+                value={selectedUser.group || ""}
+                onChange={(e) =>
+                  setSelectedUser({
+                    ...selectedUser,
+                    group: e.target.value,
+                  })
+                }
+                className="w-full border rounded-lg p-2 mb-3"
+              >
+                <option value="">اختر الكروب</option>
+                {groups.map((g) => (
+                  <option key={g._id} value={g._id}>
+                    {g.name}
+                  </option>
+                ))}
+              </select>
+
               <div className="flex justify-end gap-2">
-                <motion.button
+                <button
                   onClick={handleEdit}
                   className="px-4 py-2 bg-yellow-500 text-white rounded"
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
                 >
                   Save
-                </motion.button>
-                <motion.button
+                </button>
+                <button
                   onClick={() => handleDelete(selectedUser._id)}
                   className="px-4 py-2 bg-red-600 text-white rounded"
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
                 >
                   Delete
-                </motion.button>
-                <motion.button
+                </button>
+                <button
                   onClick={() => setIsModalOpen(false)}
                   className="px-4 py-2 bg-gray-400 text-white rounded"
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
                 >
                   Close
-                </motion.button>
+                </button>
               </div>
             </motion.div>
           </motion.div>
