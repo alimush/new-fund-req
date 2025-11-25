@@ -96,8 +96,7 @@ export async function GET(req, context) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }
 }
-
-// 🟢 PUT → تحديث ريكويست (يشمل تحديث الحالة)
+// 🟢 PUT → تحديث ريكويست (منع تعديل workflow)
 export async function PUT(req, context) {
   try {
     await dbConnect();
@@ -108,6 +107,11 @@ export async function PUT(req, context) {
     if (!company) {
       return NextResponse.json({ success: false, error: "Company is required" }, { status: 400 });
     }
+
+    // 🔥 منع التعديلات على workflow
+    delete body.workflowSteps;
+    delete body.currentStep;
+    delete body.status;
 
     const Model = getModelForCompany(company);
     const updated = await Model.findByIdAndUpdate(id, body, { new: true });

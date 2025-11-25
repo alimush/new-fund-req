@@ -39,6 +39,23 @@ const RequestSchema = new mongoose.Schema({
       note: String,
     },
   ],
+
+  workflowSteps: [
+    {
+      user: String, // userId
+      status: {
+        type: String,
+        enum: ["Pending", "Approved", "Rejected"],
+        default: "Pending",
+      },
+    },
+  ],
+
+  // 🚦 هنا مؤشر بأي خطوة وصلنا
+  currentStep: {
+    type: Number,
+    default: 0,
+  },
 }, { timestamps: true });
 
 // ✅ إنشاء موديل رئيسي افتراضي

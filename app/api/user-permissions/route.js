@@ -17,17 +17,15 @@ export async function GET(req) {
       );
     }
 
-    const objectId = new mongoose.Types.ObjectId(userId);
-
-    const groups = await Permissions.find({ users: objectId }).lean();
+    const groups = await Permissions.find({ users: userId }).lean();
 
     const permissions = [...new Set(groups.flatMap(g => g.permissions))];
 
-    return NextResponse.json({ success: true, permissions });
+    const companies = [...new Set(groups.flatMap(g => g.companies))];
+
+    return NextResponse.json({ success: true, permissions, companies });
+
   } catch (error) {
-    return NextResponse.json(
-      { success: false, error: error.message },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }

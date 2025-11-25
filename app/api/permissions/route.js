@@ -99,7 +99,7 @@ export async function PUT(req) {
         name,
         users: cleanUsers,
         permissions: cleanPerms,
-        companies: cleanCompanies, // ← 🔥🔥 أهم سطر
+        companies: cleanCompanies, // ← أهم سطر
       },
       { new: true }
     )

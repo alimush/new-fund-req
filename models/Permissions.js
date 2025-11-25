@@ -13,7 +13,7 @@ const PermissionsSchema = new mongoose.Schema(
     // اليوزرات المرتبطة بالكروب
     users: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
 
-    // 🔥 الشركات التابعة للكروب
+    // الشركات التابعة للكروب
     companies: {
       type: [String],
       default: []

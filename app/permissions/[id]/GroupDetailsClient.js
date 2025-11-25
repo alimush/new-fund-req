@@ -16,15 +16,15 @@ import { motion, AnimatePresence } from "framer-motion";
 import Select from "react-select";
 import { PERMISSIONS } from "@/lib/permission";
 
-// const COMPANY_OPTIONS = [
-//   "Al-Ghadeer",
-//   "Al-Rida",
-//   "Al-Mezan",
-//   "Badur-Baghdad",
-//   "Ghadeer-Karbala",
-//   "Tiba-Al-najaf",
-//   "badur-Al-najaf"
-// ];
+const COMPANY_OPTIONS = [
+  "Al-Ghadeer",
+  "Al-Rida",
+  "Al-Mezan",
+  "Badur-Baghdad",
+  "Ghadeer-Karbala",
+  "Tiba-Al-najaf",
+  "badur-Al-najaf"
+];
 // 🧩 Icon لكل صلاحية (الخيار A)
 const PERMISSION_ICONS = {
   create_request: FiFileText,
@@ -200,6 +200,7 @@ export default function GroupDetailsClient({ groupId }) {
         setGroupUsers(data.data.users || []);
         setGroupPermissions(data.data.permissions || []);
         setGroupCompanies(data.data.companies || []);
+        window.location.reload();
       } else {
         alert(data.error || "Failed to update");
       }
@@ -383,44 +384,49 @@ export default function GroupDetailsClient({ groupId }) {
             </div>
           )}
         </motion.div>
-        {/* Companies Section
+       {/* Companies Section */}
 <motion.div
   className="bg-white/90 border border-gray-200 rounded-2xl shadow-sm p-6 mt-8"
   initial={{ opacity: 0, y: 25 }}
   animate={{ opacity: 1, y: 0 }}
 >
   <div className="flex items-center justify-between mb-4">
-    <h2 className="text-lg font-semibold text-gray-800">
-      Companies
+    <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
+      <FiUsers className="text-blue-600" /> Companies
     </h2>
+
     <Select
-      options={COMPANY_OPTIONS.map(c => ({ value: c, label: c }))}
+      options={COMPANY_OPTIONS
+        .filter((c) => !groupCompanies.includes(c))
+        .map((c) => ({ value: c, label: c }))
+      }
       onChange={(val) => {
         if (!val) return;
-        if (!groupCompanies.includes(val.value)) {
-          setGroupCompanies([...groupCompanies, val.value]);
-        }
+        setGroupCompanies((prev) => [...prev, val.value]);
       }}
-      className="w-48"
-      placeholder="Add company"
+      className="w-56"
+      placeholder="Add company..."
+      noOptionsMessage={() => "No more companies"}
     />
   </div>
 
+  {/* List of Companies */}
   {groupCompanies.length === 0 ? (
     <p className="text-sm text-gray-500 italic">No companies assigned.</p>
   ) : (
-    <div className="space-y-2">
+    <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
       {groupCompanies.map((c, idx) => (
         <div
           key={idx}
-          className="flex items-center justify-between border px-3 py-2 rounded-xl bg-gray-50"
+          className="flex items-center justify-between border border-gray-200 rounded-xl bg-gray-50 px-4 py-2 hover:bg-gray-100 transition"
         >
-          <span className="text-sm font-medium">{c}</span>
+          <span className="text-sm font-medium text-gray-800">{c}</span>
+
           <button
             onClick={() =>
-              setGroupCompanies(groupCompanies.filter(x => x !== c))
+              setGroupCompanies((prev) => prev.filter((x) => x !== c))
             }
-            className="p-1.5 rounded-full text-red-500 hover:bg-red-50"
+            className="p-1.5 rounded-full text-red-500 hover:bg-red-100 transition"
           >
             <FiX />
           </button>
@@ -428,7 +434,7 @@ export default function GroupDetailsClient({ groupId }) {
       ))}
     </div>
   )}
-</motion.div> */}
+</motion.div>
       </div>
 
       {/* SAVE BUTTON */}

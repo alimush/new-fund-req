@@ -7,6 +7,7 @@ const PermissionContext = createContext();
 export function PermissionProvider({ children }) {
   const [user, setUser] = useState(null);
   const [permissions, setPermissions] = useState([]);
+  const [companies, setCompanies] = useState([]); // 🟦 الشركات
 
   const load = async () => {
     const userId = localStorage.getItem("userId");
@@ -16,12 +17,17 @@ export function PermissionProvider({ children }) {
 
     setUser({ id: userId, username });
 
+    // جلب صلاحيات + شركات اليوزر
     const res = await fetch(`/api/user-permissions?id=${userId}`);
     const data = await res.json();
 
     if (data.success) {
-      setPermissions(data.permissions);
+      setPermissions(data.permissions || []);
+      setCompanies(data.companies || []);   // 🟦 خزن الشركات
+
+      // خزن محلياً
       localStorage.setItem("permissions", JSON.stringify(data.permissions));
+      localStorage.setItem("companies", JSON.stringify(data.companies));
     }
   };
 
@@ -32,7 +38,7 @@ export function PermissionProvider({ children }) {
   }, []);
 
   return (
-    <PermissionContext.Provider value={{ user, permissions }}>
+    <PermissionContext.Provider value={{ user, permissions, companies }}>
       {children}
     </PermissionContext.Provider>
   );

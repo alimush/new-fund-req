@@ -2,7 +2,7 @@
 import { motion } from "framer-motion";
 import Image from "next/image";
 import Link from "next/link";
-
+import { usePermissions } from "@/context/PermissionContext";
 const cards = [
   { key: "Al-Ghadeer", name: "طلبات الغدير", logo: "/الغدير.png" },
   { key: "Al-Rida", name: "طلبات الرضا", logo: "/الرضا.png" },
@@ -28,6 +28,8 @@ const item = {
 };
 
 export default function HomePage() {
+  const { companies } = usePermissions(); 
+  const allowedCards = cards.filter(c => companies.includes(c.key));
   return (
     <div
       className="min-h-screen relative p-6 md:p-10 overflow-hidden 
@@ -64,7 +66,7 @@ export default function HomePage() {
         initial="hidden"
         animate="show"
       >
-        {cards.map((c, idx) => (
+       {allowedCards.map((c, idx) => (
           <Link key={idx} href={`/requests/${c.key}`} passHref>
             <motion.div
               variants={item}

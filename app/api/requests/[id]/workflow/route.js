@@ -1,83 +1,97 @@
 import { NextResponse } from "next/server";
 import dbConnect from "@/lib/mongodb";
-import { getModelForCompany } from "@/models/Request.js"; // ✅ تم تصحيح المسار
+import mongoose from "mongoose";
+import { getModelForCompany } from "../route"; // مهم جداً
 
-export async function POST(req, context) {
+export async function POST(req, { params }) {
   try {
     await dbConnect();
-    const { id } = await context.params;
-    const { company, user, action, note } = await req.json();
+
+    const { id } = params;
+    const body = await req.json();
+
+    const { company, user, action, note } = body;
 
     if (!company || !user || !action)
-      return NextResponse.json(
-        { success: false, error: "Missing company, user, or action" },
-        { status: 400 }
-      );
+      return NextResponse.json({ success: false, error: "Missing fields" });
 
     const Model = getModelForCompany(company);
     const request = await Model.findById(id);
+
     if (!request)
-      return NextResponse.json(
-        { success: false, error: "Request not found" },
-        { status: 404 }
-      );
+      return NextResponse.json({ success: false, error: "Request not found" });
 
-    // 🧩 تسلسل الخطوات
-    const steps = request.workflowSteps || [];
-    let currentStep = request.currentStep || 0;
+    // -------- GET WORKFLOW FOR COMPANY --------
+    const Workflow = mongoose.models.Workflow;
+    const wf = await Workflow.findOne({ company }).populate("steps.user");
 
-    // 🔹 رفض (يرجع خطوة)
+    if (!wf)
+      return NextResponse.json({ success: false, error: "No workflow found" });
+
+    const steps = wf.steps;
+
+    // ------ ensure request has workflow states ------
+    if (!request.workflowSteps || request.workflowSteps.length === 0) {
+      request.workflowSteps = steps.map((s) => ({
+        user: s.user._id,
+        status: "Pending",
+      }));
+      request.currentStep = 0;
+    }
+
+    const current = request.currentStep;
+
+    // 🛑 check if this user is allowed
+    if (String(request.workflowSteps[current].user) !== String(steps[current].user._id)) {
+      return NextResponse.json({
+        success: false,
+        error: "You are not allowed to act on this step",
+      });
+    }
+
+    // -------- HANDLE APPROVE --------
+    if (action === "approve") {
+      request.workflowSteps[current].status = "Approved";
+
+      if (current + 1 < request.workflowSteps.length) {
+        request.currentStep = current + 1;
+        request.status = "Pending";
+      } else {
+        request.status = "Approved"; // Final approve
+      }
+    }
+
+    // -------- HANDLE REJECT --------
     if (action === "reject") {
-      if (currentStep > 0) {
-        request.currentStep -= 1;
-        request.currentApprover = steps[request.currentStep];
+      request.workflowSteps[current].status = "Rejected";
+
+      if (current - 1 >= 0) {
+        request.currentStep = current - 1; // يرجع خطوة
         request.status = "Pending";
       } else {
-        request.status = "Rejected"; // أول خطوة تم رفضها
-        request.currentApprover = null;
+        request.status = "Rejected"; // أول خطوة رفض
       }
     }
 
-    // 🔹 موافقة (يتقدم خطوة)
-    else if (action === "approve") {
-      if (currentStep < steps.length - 1) {
-        request.currentStep += 1;
-        request.currentApprover = steps[request.currentStep];
-        request.status = "Pending";
-      } else {
-        request.status = "Approved"; // آخر خطوة تمت الموافقة عليها
-        request.currentApprover = null;
-      }
-    }
+    // -------- HANDLE CANCEL --------
+    if (action === "cancel") {
+      if (request.createdBy !== user)
+        return NextResponse.json({ success: false, error: "Only creator can cancel" });
 
-    // 🔹 إلغاء
-    else if (action === "cancel") {
       request.status = "Cancelled";
-      request.currentApprover = null;
     }
 
-    // 🔹 حفظ الحركة في التاريخ
+    // -------- push history --------
     request.approvalHistory.push({
       user,
       action,
-      note: note || "",
-      date: new Date(),
+      note,
     });
 
     await request.save();
 
-    // ✅ تحديد الخطوة القادمة أو السابقة
-    const nextApprover =
-      request.currentApprover || (action === "reject" ? "Previous Step" : "Completed");
-
-    return NextResponse.json({
-      success: true,
-      message: `Action '${action}' processed successfully`,
-      nextApprover,
-      data: request,
-    });
+    return NextResponse.json({ success: true, data: request });
   } catch (err) {
-    console.error("❌ Workflow error:", err);
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    return NextResponse.json({ success: false, error: err.message });
   }
 }

@@ -22,10 +22,35 @@ export default function RequestDetails({ id, companyKey }) {
   const router = useRouter();
   const [request, setRequest] = useState(null);
   const [loading, setLoading] = useState(true);
-
+  const [wfLoading, setWfLoading] = useState(true);
+  const [workflowLoading, setWorkflowLoading] = useState(true);
+  useEffect(() => {
+    if (!request?.company) return;
+  
+    const loadWorkflow = async () => {
+      setWorkflowLoading(true);
+  
+      try {
+        const wfRes = await fetch(`/api/workflow?company=${request.company}`);
+        const wfData = await wfRes.json();
+  
+        setRequest(prev => ({
+          ...prev,
+          workflowSteps: wfData?.workflow?.steps || []
+        }));
+      } catch (err) {
+        console.log("Workflow load error:", err);
+      } finally {
+        setWorkflowLoading(false);
+      }
+    };
+  
+    loadWorkflow();
+  }, [request?.company]);
   // 🟦 Fetch request details
   useEffect(() => {
     if (!id || !companyKey) return;
+
     const fetchData = async () => {
       try {
         const res = await fetch(`/api/requests/${id}?company=${companyKey}`);
@@ -79,6 +104,7 @@ export default function RequestDetails({ id, companyKey }) {
   }
 
   if (!request) {
+    
     return (
       <div className="flex flex-col items-center justify-center min-h-screen text-gray-600">
         <p className="text-lg">Request not found</p>
@@ -288,8 +314,7 @@ export default function RequestDetails({ id, companyKey }) {
       ))}
     </div>
   </Section>
-)}
-{/* 🧭 Workflow Actions */}
+)}{/* 🧭 Workflow Actions */}
 {request && (
   <motion.div
     className="flex flex-wrap justify-center gap-4 mt-10"
@@ -297,112 +322,150 @@ export default function RequestDetails({ id, companyKey }) {
     animate={{ opacity: 1, y: 0 }}
     transition={{ duration: 0.4 }}
   >
-    {/* ✅ Approve */}
-    <motion.button
-      whileHover={{ scale: 1.05, boxShadow: "0 4px 10px rgba(34,197,94,0.4)" }}
-      whileTap={{ scale: 0.97 }}
-      onClick={() => handleWorkflow("approve")}
-      className="flex items-center gap-2 px-6 py-2.5 bg-green-600 hover:bg-green-700 text-white font-medium rounded-xl shadow-md transition-all"
-    >
-      <FiCheckCircle className="text-lg" /> Approve
-    </motion.button>
 
-    {/* ❌ Reject */}
-    <motion.button
-      whileHover={{ scale: 1.05, boxShadow: "0 4px 10px rgba(239,68,68,0.4)" }}
-      whileTap={{ scale: 0.97 }}
-      onClick={() => handleWorkflow("reject")}
-      className="flex items-center gap-2 px-6 py-2.5 bg-red-600 hover:bg-red-700 text-white font-medium rounded-xl shadow-md transition-all"
-    >
-      <FiXCircle className="text-lg" /> Reject
-    </motion.button>
+    {/* 🔵 APPROVE BUTTON — يظهر فقط إذا كان دور اليوزر */}
+    {request.workflowSteps?.length > 0 &&
+ request.workflowSteps[request.currentStep]?.user?.username === "Ali Mushtaq" && (
+      <motion.button
+        whileHover={{ scale: 1.05, boxShadow: "0 4px 10px rgba(34,197,94,0.4)" }}
+        whileTap={{ scale: 0.97 }}
+        onClick={() => handleWorkflow("approve")}
+        className="flex items-center gap-2 px-6 py-2.5 bg-green-600 hover:bg-green-700 text-white font-medium rounded-xl shadow-md transition-all"
+      >
+        <FiCheckCircle className="text-lg" /> Approve
+      </motion.button>
+    )}
 
-    {/* 🚫 Cancel */}
-    <motion.button
-      whileHover={{ scale: 1.05, boxShadow: "0 4px 10px rgba(234,179,8,0.4)" }}
-      whileTap={{ scale: 0.97 }}
-      onClick={() => handleWorkflow("cancel")}
-      className="flex items-center gap-2 px-6 py-2.5 bg-yellow-500 hover:bg-yellow-600 text-white font-medium rounded-xl shadow-md transition-all"
-    >
-      <FiMinusCircle className="text-lg" /> Cancel
-    </motion.button>
+    {/* 🔴 REJECT BUTTON — فقط إذا كان دوره */}
+    {request.workflowSteps &&
+ request.workflowSteps.length > 0 &&
+ request.workflowSteps[request.currentStep]?.user?.username === "Ali Mushtaq" && (      <motion.button
+        whileHover={{ scale: 1.05, boxShadow: "0 4px 10px rgba(239,68,68,0.4)" }}
+        whileTap={{ scale: 0.97 }}
+        onClick={() => handleWorkflow("reject")}
+        className="flex items-center gap-2 px-6 py-2.5 bg-red-600 hover:bg-red-700 text-white font-medium rounded-xl shadow-md transition-all"
+      >
+        <FiXCircle className="text-lg" /> Reject
+      </motion.button>
+    )}
 
-    {/* ⏳ Pending */}
-    <motion.button
-      whileHover={{ scale: 1.05, boxShadow: "0 4px 10px rgba(107,114,128,0.4)" }}
-      whileTap={{ scale: 0.97 }}
-      onClick={() => handleWorkflow("pending")}
-      className="flex items-center gap-2 px-6 py-2.5 bg-gray-600 hover:bg-gray-700 text-white font-medium rounded-xl shadow-md transition-all"
-    >
-      <FiClock className="text-lg" /> Pending
-    </motion.button>
-    
+    {/* 🟡 CANCEL BUTTON — فقط الشخص اللي سوا Create */}
+    {request.createdBy === "Ali Mushtaq" && (
+      <motion.button
+        whileHover={{ scale: 1.05, boxShadow: "0 4px 10px rgba(247,197,34,0.4)" }}
+        whileTap={{ scale: 0.97 }}
+        onClick={() => handleWorkflow("cancel")}
+        className="flex items-center gap-2 px-6 py-2.5 bg-yellow-500 hover:bg-yellow-600 text-white font-medium rounded-xl shadow-md transition-all"
+      >
+        <FiMinusCircle className="text-lg" /> Cancel
+      </motion.button>
+    )}
+
   </motion.div>
-  
 )}
-{/* 🧾 Workflow History */}
-{Array.isArray(request.approvalHistory) && request.approvalHistory.length > 0 && (
+{/* 🔵 Workflow (According to Company) */}
+{request.company && (
   <motion.div
-    className="mt-14 bg-white rounded-2xl border border-gray-200 shadow-sm p-6"
+    className="mt-14 bg-white rounded-2xl border border-gray-200 shadow-lg p-10"
     initial={{ opacity: 0, y: 20 }}
     animate={{ opacity: 1, y: 0 }}
-    transition={{ duration: 0.5 }}
+    transition={{ duration: 0.4 }}
   >
-    <h2 className="text-lg font-semibold mb-4 flex items-center gap-2 text-gray-700">
-      <FiClock className="text-blue-600" /> Workflow History
+    <h2 className="text-2xl font-bold mb-10 flex items-center gap-3 text-gray-900">
+      <FiUsers className="text-blue-600" /> Workflow Steps
     </h2>
 
-    <div className="space-y-4">
-      {request.approvalHistory
-        .slice()
-        .reverse()
-        .map((step, idx) => {
-          // 🎨 نحدد اللون والأيقونة حسب الحالة
-          let color = "text-gray-600";
-          let icon = <FiClock className="text-gray-500" />;
-          if (step.action === "Approved") {
-            color = "text-green-600";
-            icon = <FiCheckCircle className="text-green-500" />;
-          } else if (step.action === "Rejected") {
-            color = "text-red-600";
-            icon = <FiXCircle className="text-red-500" />;
-          } else if (step.action === "Pending") {
-            color = "text-gray-600";
-            icon = <FiClock className="text-gray-400" />;
-          } else if (step.action === "Cancelled") {
-            color = "text-yellow-600";
-            icon = <FiMinusCircle className="text-yellow-500" />;
-          }
+    {/* لودر كامل للورك فلو */}
+    {workflowLoading && (
+      <div className="flex justify-center py-20">
+        <div className="w-12 h-12 border-4 border-gray-300 border-t-blue-500 rounded-full animate-spin"></div>
+      </div>
+    )}
 
+    {/* إذا لا يوجد ورك فلو */}
+    {!workflowLoading &&
+      (!request.workflowSteps || request.workflowSteps.length === 0) && (
+        <p className="text-gray-500 italic text-center py-10 text-lg">
+          No workflow found for this company.
+        </p>
+      )}
+
+    {/* عرض الخطوات */}
+    {!workflowLoading && request.workflowSteps?.length > 0 && (
+      <div className="flex items-start gap-12 overflow-x-auto pb-8 pt-4">
+
+        {request.workflowSteps.map((step, idx) => {
+          // ---------------------
+          // ألوان الحالة
+          // ---------------------
+          let statusColor = "text-gray-600";
+          let badgeColor = "bg-gray-100 border-gray-300";
+
+          if (step.status === "Approved") {
+            statusColor = "text-green-600";
+            badgeColor = "bg-green-100 border-green-300";
+          } else if (step.status === "Rejected") {
+            statusColor = "text-red-600";
+            badgeColor = "bg-red-100 border-red-300";
+          } else {
+            statusColor = "text-yellow-600";
+            badgeColor = "bg-yellow-100 border-yellow-300"; // Pending ONLY
+          }
           return (
-            <motion.div
-              key={idx}
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: idx * 0.1 }}
-              className={`flex items-start gap-4 border border-gray-100 rounded-xl p-4 bg-gray-50/70 hover:bg-gray-100/90 transition`}
-            >
-              <div className="flex-shrink-0">{icon}</div>
-              <div className="flex-1">
-                <div className="flex justify-between items-center">
-                  <p className={`font-semibold ${color}`}>{step.action}</p>
-                  <span className="text-sm text-gray-500">
-                    {new Date(step.date).toLocaleString()}
-                  </span>
+            <div key={idx} className="flex items-center gap-12">
+
+              {/* الكارد */}
+              <motion.div
+                whileHover={{ scale: 1.04 }}
+                transition={{ type: "spring", stiffness: 180 }}
+                className="min-w-[290px] max-w-[290px] bg-white border border-gray-300 rounded-3xl shadow-xl p-7 hover:shadow-2xl transition-all"
+              >
+                {/* رقم الخطوة */}
+                <div className="flex items-center gap-4 mb-5">
+                  <div className="w-14 h-14 bg-blue-600 text-white rounded-full flex items-center justify-center text-2xl font-bold shadow-lg">
+                    {idx + 1}
+                  </div>
+
+                  <div>
+                    <p className="font-bold text-gray-900 text-xl">
+                      {step.user?.username || "Unknown User"}
+                    </p>
+                    <p className="text-xs text-gray-500 tracking-wide">
+                      Workflow Step
+                    </p>
+                  </div>
                 </div>
-                <p className="text-sm text-gray-700 mt-1">
-                  By: <span className="font-medium">{step.user}</span>
-                </p>
-                {step.note && (
-                  <p className="text-sm text-gray-500 italic mt-1">
-                    “{step.note}”
-                  </p>
-                )}
-              </div>
-            </motion.div>
+
+                {/* الحالة */}
+                <div
+                  className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-full border text-sm font-semibold shadow-sm ${badgeColor}`}
+                >
+                  <FiClock className={statusColor} />
+                  <span className={statusColor}>{step.status || "Pending"}</span>
+                </div>
+              </motion.div>
+
+              {/* السهم */}
+              {idx !== request.workflowSteps.length - 1 && (
+                <motion.div
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{
+                    repeat: Infinity,
+                    duration: 1,
+                    ease: "easeInOut",
+                  }}
+                  className="text-5xl text-blue-600 select-none"
+                >
+                  ➜
+                </motion.div>
+              )}
+
+            </div>
           );
         })}
-    </div>
+      </div>
+    )}
   </motion.div>
 )}
     </motion.div>

@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import { FaUserCircle, FaBars, FaHome, FaUserPlus, FaSignOutAlt } from "react-icons/fa";
+import { GoWorkflow } from "react-icons/go";
 import { useRouter, usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Poppins } from "next/font/google";
@@ -149,6 +150,15 @@ export default function Header({ onLogout }) {
                           }}
                           icon={<FaUserPlus className="text-gray-200" />}
                           label="إنشاء يوزر جديد"
+                        />)}
+                         {permissions?.includes(PERMISSIONS.MANAGE_PERMISSIONS) && (
+                        <MenuItem
+                          onClick={() => {
+                            setMenuOpen(false);
+                            router.push("/workflow");
+                          }}
+                          icon={<GoWorkflow className="text-gray-200" />}
+                          label="الموافقات "
                         />)}
 
 

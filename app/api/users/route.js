@@ -23,7 +23,10 @@ export async function GET(req) {
     })
   );
 
-  return new Response(JSON.stringify(usersWithGroups), { status: 200 });
+  return Response.json({
+    success: true,
+    users: usersWithGroups,
+  });
 }
 
 // 🟢 POST — create user
@@ -33,9 +36,7 @@ export async function POST(req) {
 
   const exists = await User.findOne({ username });
   if (exists) {
-    return new Response(JSON.stringify({ error: "User already exists" }), {
-      status: 400,
-    });
+    return Response.json({ success: false, error: "User already exists" }, { status: 400 });
   }
 
   const newUser = await User.create({
@@ -45,7 +46,7 @@ export async function POST(req) {
     companies: companies || [],
   });
 
-  return new Response(JSON.stringify(newUser), { status: 201 });
+  return Response.json({ success: true, user: newUser }, { status: 201 });
 }
 
 // 🟡 PUT — update user
@@ -63,12 +64,10 @@ export async function PUT(req) {
   const user = await User.findByIdAndUpdate(id, updateData, { new: true });
 
   if (!user) {
-    return new Response(JSON.stringify({ error: "User not found" }), {
-      status: 404,
-    });
+    return Response.json({ success: false, error: "User not found" }, { status: 404 });
   }
 
-  return new Response(JSON.stringify(user), { status: 200 });
+  return Response.json({ success: true, user }, { status: 200 });
 }
 
 // 🔴 DELETE — remove
@@ -80,12 +79,8 @@ export async function DELETE(req) {
   const deleted = await User.findByIdAndDelete(id);
 
   if (!deleted) {
-    return new Response(JSON.stringify({ error: "User not found" }), {
-      status: 404,
-    });
+    return Response.json({ success: false, error: "User not found" }, { status: 404 });
   }
 
-  return new Response(JSON.stringify({ message: "User deleted" }), {
-    status: 200,
-  });
+  return Response.json({ success: true, message: "User deleted" }, { status: 200 });
 }
