@@ -1,13 +1,17 @@
 import dbConnect from "@/lib/mongodb";
-import Workflow from "@/models/workflow";
+import Workflow from "@/models/Workflow";
+import { NextResponse } from "next/server";
+import mongoose from "mongoose";
+
+const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
 
 // ======================= GET =======================
 export async function GET(req) {
   await dbConnect();
-
   const { searchParams } = new URL(req.url);
-  const company = searchParams.get("company");
+
   const id = searchParams.get("id");
+  const company = searchParams.get("company");
 
   const populateUser = {
     path: "steps.user",
@@ -15,68 +19,100 @@ export async function GET(req) {
     strictPopulate: false,
   };
 
-  // 🟦 Get workflow by ID
+  // 🔹 get by ID
   if (id) {
+    if (!isValidObjectId(id)) {
+      return NextResponse.json(
+        { success: false, error: "Invalid workflow id" },
+        { status: 400 }
+      );
+    }
+
     const wf = await Workflow.findById(id).populate(populateUser);
-    return Response.json({ success: true, workflow: wf });
+    return NextResponse.json({ success: true, workflow: wf });
   }
 
-  // 🟦 Get workflow by company
+  // 🔹 get by company
   if (company) {
     const wf = await Workflow.findOne({ company }).populate(populateUser);
-    return Response.json({ success: true, workflow: wf });
+    return NextResponse.json({ success: true, workflow: wf });
   }
 
-  // 🟦 Get all workflows
+  // 🔹 list all
   const all = await Workflow.find().populate(populateUser);
-  return Response.json({ success: true, workflows: all });
+  return NextResponse.json({ success: true, workflows: all });
 }
 
 // ======================= POST =======================
+// Create OR Update by company (UPSERT)
 export async function POST(req) {
   await dbConnect();
-
   const body = await req.json();
 
-  const exists = await Workflow.findOne({
-    company: body.company,
-    name: body.name,
-  });
+  const { name, company, steps } = body;
 
-  if (exists) {
-    return Response.json({
-      success: false,
-      error: "Workflow already exists for this company",
-    });
+  if (!name?.trim()) {
+    return NextResponse.json(
+      { success: false, error: "name required" },
+      { status: 400 }
+    );
   }
 
-  const created = await Workflow.create({
-    name: body.name,
-    company: body.company,
-    steps: body.steps || [],
-  });
+  if (!company?.trim()) {
+    return NextResponse.json(
+      { success: false, error: "company required" },
+      { status: 400 }
+    );
+  }
 
-  return Response.json({ success: true, workflow: created });
+  const update = { name };
+  if (Array.isArray(steps)) update.steps = steps;
+
+  const wf = await Workflow.findOneAndUpdate(
+    { company },
+    update,
+    { new: true, upsert: true }
+  );
+
+  return NextResponse.json({ success: true, workflow: wf });
 }
 
 // ======================= PUT =======================
+// Update by ID فقط
 export async function PUT(req) {
   await dbConnect();
   const body = await req.json();
 
-  const populateUser = {
-    path: "steps.user",
-    model: "User",
-    strictPopulate: false,
-  };
+  const { id, name, steps = [] } = body;
+
+  if (!id || !isValidObjectId(id)) {
+    return NextResponse.json(
+      { success: false, error: "Valid workflow id required" },
+      { status: 400 }
+    );
+  }
+
+  if (!name?.trim()) {
+    return NextResponse.json(
+      { success: false, error: "name required" },
+      { status: 400 }
+    );
+  }
 
   const updated = await Workflow.findByIdAndUpdate(
-    body.id,
-    { steps: body.steps },
+    id,
+    { name, steps },
     { new: true }
-  ).populate(populateUser);
+  );
 
-  return Response.json({ success: true, workflow: updated });
+  if (!updated) {
+    return NextResponse.json(
+      { success: false, error: "Workflow not found" },
+      { status: 404 }
+    );
+  }
+
+  return NextResponse.json({ success: true, workflow: updated });
 }
 
 // ======================= DELETE =======================
@@ -85,10 +121,21 @@ export async function DELETE(req) {
   const { searchParams } = new URL(req.url);
   const id = searchParams.get("id");
 
-  if (!id)
-    return Response.json({ success: false, error: "ID is required" });
+  if (!id || !isValidObjectId(id)) {
+    return NextResponse.json(
+      { success: false, error: "Valid id is required" },
+      { status: 400 }
+    );
+  }
 
-  await Workflow.findByIdAndDelete(id);
+  const wf = await Workflow.findByIdAndDelete(id);
 
-  return Response.json({ success: true, message: "Workflow deleted" });
+  if (!wf) {
+    return NextResponse.json(
+      { success: false, error: "Not found" },
+      { status: 404 }
+    );
+  }
+
+  return NextResponse.json({ success: true });
 }

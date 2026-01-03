@@ -25,7 +25,8 @@ export default function LoginPage() {
       localStorage.setItem("userId", data.user.id);
       localStorage.setItem("username", data.user.username);
       localStorage.setItem("companies", JSON.stringify(data.user.companies));
-    
+      localStorage.setItem("user", JSON.stringify(data.user));
+
       window.dispatchEvent(new Event("userChanged"));
       router.push("/home");
     

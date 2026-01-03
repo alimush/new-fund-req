@@ -6,20 +6,27 @@ import {
   GetObjectCommand,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import Workflow from "@/models/Workflow";
 
-// 📌 MongoDB Connection
+/* =========================
+   MongoDB Connection
+========================= */
 let isConnected = false;
 const connectDB = async () => {
   if (isConnected) return;
-  await mongoose.connect(process.env.MONGODB_URI, { dbName: "FundRrq" });
+  await mongoose.connect(process.env.MONGODB_URI, {
+    dbName: "FundRrq",
+  });
   isConnected = true;
   console.log("✅ MongoDB Connected");
 };
 
-// 📦 Schema
+/* =========================
+   Request Schema (WITH WORKFLOW SNAPSHOT)
+========================= */
 const RequestSchema = new mongoose.Schema(
   {
-    company: String,
+    company: { type: String, index: true },
     requestType: String,
     description: String,
     currency: String,
@@ -29,23 +36,28 @@ const RequestSchema = new mongoose.Schema(
     createdAt: { type: Date, default: Date.now },
     attachments: [{ key: String, name: String, url: String }],
 
-    // 🔹 الحالة العامة
-    status: {
+    // 🟢 Workflow Snapshot (Immutable)
+    workflow: {
+      name: String,
+      steps: [
+        {
+          user: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+          status: {
+            type: String,
+            enum: ["Pending", "Approved", "Rejected"],
+            default: "Pending",
+          },
+          actedAt: Date,
+        },
+      ],
+    },
+
+    currentStep: { type: Number, default: 0 },
+ status: {
       type: String,
       enum: ["Pending", "Approved", "Rejected", "Cancelled"],
       default: "Pending",
     },
-
-    // 🔹 الشخص الحالي اللي بيده الخطوة
-    currentApprover: String,
-
-    // 🔹 ترتيب الخطوة الحالية
-    currentStep: { type: Number, default: 0 },
-
-    // 🔹 مصفوفة الخطوات (لكل شركة نقدر نضبطها عند الإنشاء)
-    workflowSteps: [String], // ["Ali", "Hassan", "Omar"]
-
-    // 🔹 سجل الموافقات الكامل
     approvalHistory: [
       {
         user: String,
@@ -58,44 +70,74 @@ const RequestSchema = new mongoose.Schema(
   { strict: false }
 );
 
-// ✅ الدالة المفقودة — هنا الحل الحقيقي
+/* =========================
+   Model per Company
+========================= */
 function getModelForCompany(company) {
-  const name = `requests_${company.toLowerCase()}`;
+  const collectionName = `requests_${company.toLowerCase()}`;
   return (
-    mongoose.models[name] ||
-    mongoose.model(name, RequestSchema, name)
+    mongoose.models[collectionName] ||
+    mongoose.model(collectionName, RequestSchema, collectionName)
   );
 }
 
-// 🟢 POST → Create request with attachments
+/* =========================
+   POST → Create Request (WITH WORKFLOW SNAPSHOT)
+========================= */
 export async function POST(req) {
   try {
     await connectDB();
     const formData = await req.formData();
 
     const company = formData.get("company");
-    if (!company)
+    if (!company) {
       return NextResponse.json(
         { success: false, error: "Company is required" },
         { status: 400 }
       );
+    }
+
+    // 🔹 Get workflow of company
+    const workflow = await Workflow.findOne({ company }).populate("steps.user");
+
+    if (!workflow) {
+      return NextResponse.json(
+        { success: false, error: "No workflow defined for this company" },
+        { status: 400 }
+      );
+    }
+
+    // 🔹 Snapshot
+    const workflowSnapshot = {
+      name: workflow.name,
+      steps: workflow.steps.map((s) => ({
+        user: s.user._id,
+        status: "Pending",
+        actedAt: null,
+      })),
+    };
 
     const Model = getModelForCompany(company);
 
-    const requestType = formData.get("requestType");
-    const description = formData.get("description");
-    const currency = formData.get("currency");
-    const department = formData.get("department");
-    const createdBy = formData.get("createdBy");
-    const items = formData.get("items")
-      ? JSON.parse(formData.get("items"))
-      : [];
+    const data = {
+      company,
+      requestType: formData.get("requestType"),
+      description: formData.get("description"),
+      currency: formData.get("currency"),
+      department: formData.get("department"),
+      createdBy: formData.get("createdBy"),
+      items: formData.get("items")
+        ? JSON.parse(formData.get("items"))
+        : [],
+      attachments: [],
 
-    // 📎 handle attachments
+      workflow: workflowSnapshot,
+      currentStep: 0,
+    };
+
+    /* ---------- Attachments ---------- */
     const files = formData.getAll("attachments");
-    let attachments = [];
-
-    if (files && files.length > 0) {
+    if (files.length > 0) {
       const s3 = new S3Client({
         region: process.env.AWS_REGION,
         credentials: {
@@ -105,59 +147,53 @@ export async function POST(req) {
       });
 
       for (const file of files) {
-        if (!file || !file.name) continue;
+        if (!file?.name) continue;
 
-        const arrayBuffer = await file.arrayBuffer();
-        const buffer = Buffer.from(arrayBuffer);
-        const fileName = `${Date.now()}_${file.name}`;
+        const buffer = Buffer.from(await file.arrayBuffer());
+        const key = `${Date.now()}_${file.name}`;
 
         await s3.send(
           new PutObjectCommand({
             Bucket: process.env.AWS_S3_BUCKET,
-            Key: fileName,
+            Key: key,
             Body: buffer,
             ContentType: file.type,
           })
         );
 
-        attachments.push({
-          key: fileName,
-          name: file.name,
-        });
+        data.attachments.push({ key, name: file.name });
       }
     }
 
-    const newReq = new Model({
-      company,
-      requestType,
-      description,
-      currency,
-      department,
-      items,
-      createdBy,
-      attachments,
-      workflowSteps: ["Ali", "Hassan", "Omar"], // 🧩 تسلسل اليوزرية
-      currentStep: 0,
-      currentApprover: "Ali", // أول شخص
-      status: "Pending",
-    });
+    const newRequest = new Model(data);
+    await newRequest.save();
 
-    await newReq.save();
-
-    return NextResponse.json({ success: true, data: newReq });
+    return NextResponse.json({ success: true, data: newRequest });
   } catch (err) {
     console.error("❌ POST Error:", err.message);
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    return NextResponse.json(
+      { success: false, error: err.message },
+      { status: 500 }
+    );
   }
 }
 
-// 🔵 GET → List requests (مع status)
+/* =========================
+   GET → List OR Single
+========================= */
 export async function GET(req) {
   try {
     await connectDB();
     const { searchParams } = new URL(req.url);
-    const companyParam = searchParams.get("company");
-    let requests = [];
+    const company = searchParams.get("company");
+    const id = searchParams.get("id");
+
+    if (!company) {
+      return NextResponse.json(
+        { success: false, error: "Company is required" },
+        { status: 400 }
+      );
+    }
 
     const s3 = new S3Client({
       region: process.env.AWS_REGION,
@@ -167,87 +203,95 @@ export async function GET(req) {
       },
     });
 
-    if (companyParam && companyParam !== "all") {
-      const companies = companyParam.split(",");
-      for (const company of companies) {
-        const Model = getModelForCompany(company);
-        const companyRequests = await Model.find()
-          .select(
-            "company requestType description currency department createdBy createdAt status"
-          )
-          .sort({ createdAt: -1 });
-        requests.push(...companyRequests);
-      }
-    } else {
-      const db = mongoose.connection.db;
-      const collections = await db.listCollections().toArray();
-      const requestCollections = collections.filter((c) =>
-        c.name.startsWith("requests_")
+    const Model = getModelForCompany(company);
+
+    if (id) {
+      const request = await Model.findById(id).populate(
+        "workflow.steps.user"
       );
 
-      for (const col of requestCollections) {
-        const companyName = col.name.replace("requests_", "");
-        const Model = getModelForCompany(companyName);
-        const companyRequests = await Model.find()
-          .select(
-            "company requestType description currency department createdBy createdAt status"
-          )
-          .sort({ createdAt: -1 });
-        requests.push(...companyRequests);
+      if (!request) {
+        return NextResponse.json(
+          { success: false, error: "Request not found" },
+          { status: 404 }
+        );
       }
-    }
 
-    // 🪣 Attach signed URLs
-    for (const r of requests) {
-      if (Array.isArray(r.attachments)) {
-        for (const file of r.attachments) {
+      if (Array.isArray(request.attachments)) {
+        for (const file of request.attachments) {
           if (!file?.key) continue;
-          const command = new GetObjectCommand({
-            Bucket: process.env.AWS_S3_BUCKET,
-            Key: file.key,
-          });
-          file.url = await getSignedUrl(s3, command, { expiresIn: 3600 });
+          file.url = await getSignedUrl(
+            s3,
+            new GetObjectCommand({
+              Bucket: process.env.AWS_S3_BUCKET,
+              Key: file.key,
+            }),
+            { expiresIn: 3600 }
+          );
         }
       }
+
+      return NextResponse.json({ success: true, data: request });
     }
+
+    const requests = await Model.find().lean().sort({ createdAt: -1 });
 
     return NextResponse.json({ success: true, data: requests });
   } catch (err) {
     console.error("❌ GET Error:", err.message);
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    return NextResponse.json(
+      { success: false, error: err.message },
+      { status: 500 }
+    );
   }
 }
 
-// ✏️ PUT → Update request
+/* =========================
+   PUT → Update Request (NO WORKFLOW EDIT)
+========================= */
 export async function PUT(req) {
   try {
     await connectDB();
     const body = await req.json();
-    const { id, company } = body;
+    const { id, company, ...updateData } = body;
 
-    if (!id || !company)
+    if (!id || !company) {
       return NextResponse.json(
         { success: false, error: "ID & Company required" },
         { status: 400 }
       );
+    }
+
+    // 🔒 Prevent workflow mutation
+    delete updateData.workflow;
+    delete updateData.currentStep;
+    delete updateData.approvalHistory;
 
     const Model = getModelForCompany(company);
-    const updated = await Model.findByIdAndUpdate(id, body, { new: true });
+    const updated = await Model.findByIdAndUpdate(id, updateData, {
+      new: true,
+    });
 
-    if (!updated)
+    if (!updated) {
       return NextResponse.json(
-        { success: false, error: "Not found" },
+        { success: false, error: "Request not found" },
         { status: 404 }
       );
+    }
 
     return NextResponse.json({ success: true, data: updated });
   } catch (err) {
     console.error("❌ PUT Error:", err.message);
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    return NextResponse.json(
+      { success: false, error: err.message },
+      { status: 500 }
+    );
   }
 }
 
-// 🗑 DELETE → Remove request
+/* =========================
+   DELETE → Remove Request
+========================= */
 export async function DELETE(req) {
   try {
     await connectDB();
@@ -255,24 +299,29 @@ export async function DELETE(req) {
     const id = searchParams.get("id");
     const company = searchParams.get("company");
 
-    if (!id || !company)
+    if (!id || !company) {
       return NextResponse.json(
         { success: false, error: "ID & Company required" },
         { status: 400 }
       );
+    }
 
     const Model = getModelForCompany(company);
     const deleted = await Model.findByIdAndDelete(id);
 
-    if (!deleted)
+    if (!deleted) {
       return NextResponse.json(
-        { success: false, error: "Not found" },
+        { success: false, error: "Request not found" },
         { status: 404 }
       );
+    }
 
-    return NextResponse.json({ success: true, message: "Deleted" });
+    return NextResponse.json({ success: true });
   } catch (err) {
     console.error("❌ DELETE Error:", err.message);
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    return NextResponse.json(
+      { success: false, error: err.message },
+      { status: 500 }
+    );
   }
 }

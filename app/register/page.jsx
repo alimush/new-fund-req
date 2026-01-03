@@ -16,7 +16,7 @@ export default function RegisterPage() {
     try {
       const res = await fetch(`/api/users?q=${query}`);
       const data = await res.json();
-      setUsers(data);
+setUsers(data.users);
     } catch (err) {
       console.error("Error fetching users:", err);
     }

@@ -23,6 +23,7 @@ export default function WorkflowDetailsPage() {
     loadUsers();
   }, []);
 
+  // ================= LOAD WORKFLOW =================
   const loadWorkflow = async () => {
     try {
       const res = await fetch(`/api/workflow?id=${id}`);
@@ -32,7 +33,6 @@ export default function WorkflowDetailsPage() {
         setWorkflow(data.workflow);
 
         const normalizedSteps = (data.workflow.steps || []).map((s) => ({
-          _id: s._id,
           user: typeof s.user === "string" ? s.user : s.user?._id || "",
         }));
 
@@ -40,11 +40,12 @@ export default function WorkflowDetailsPage() {
       }
     } catch (err) {
       console.log("Workflow load error:", err);
+    } finally {
+      setLoadingWorkflow(false);
     }
-
-    setLoadingWorkflow(false);
   };
 
+  // ================= LOAD USERS =================
   const loadUsers = async () => {
     try {
       const res = await fetch("/api/users");
@@ -55,20 +56,28 @@ export default function WorkflowDetailsPage() {
       }
     } catch (err) {
       console.log("Users load error:", err);
+    } finally {
+      setLoadingUsers(false);
     }
-
-    setLoadingUsers(false);
   };
 
+  // ================= ADD STEP =================
   const addStep = () => {
     setSteps((prev) => [...prev, { user: "" }]);
   };
 
+  // ================= SAVE =================
   const saveSteps = async () => {
+    // 🔒 تحقق
+    if (steps.some((s) => !s.user)) {
+      return alert("❌ كل Step لازم يكون بيه User");
+    }
+
     setSaving(true);
 
     const payload = {
       id,
+      name: workflow.name,
       steps: steps.map((s) => ({ user: s.user })),
     };
 
@@ -82,18 +91,19 @@ export default function WorkflowDetailsPage() {
       const data = await res.json();
 
       if (data.success) {
-        alert("✔️ تم حفظ الخطوات بنجاح");
+        alert("✔️ تم حفظ الـ Workflow بنجاح\n(سيُطبق على الريكويستات الجديدة فقط)");
         await loadWorkflow();
       } else {
-        alert("❌ فشل حفظ Workflow");
+        alert(data.error || "❌ فشل حفظ Workflow");
       }
     } catch (err) {
       alert("❌ Error saving workflow");
+    } finally {
+      setSaving(false);
     }
-
-    setSaving(false);
   };
 
+  // ================= UI =================
   if (loadingWorkflow)
     return (
       <div className="flex justify-center items-center min-h-screen text-gray-700 text-lg">
@@ -110,7 +120,6 @@ export default function WorkflowDetailsPage() {
 
   return (
     <div className="p-6 min-h-screen bg-gradient-to-br from-gray-100 via-gray-200 to-gray-300">
-
       {/* HEADER */}
       <div className="flex items-center justify-between mb-6">
         <div>
@@ -119,6 +128,9 @@ export default function WorkflowDetailsPage() {
           </h1>
           <p className="text-gray-600 text-sm mt-1">
             الشركة: <span className="font-semibold">{workflow.company}</span>
+          </p>
+          <p className="text-xs text-gray-500 mt-1">
+            التعديلات تؤثر على الريكويستات الجديدة فقط
           </p>
         </div>
 
@@ -136,7 +148,10 @@ export default function WorkflowDetailsPage() {
         animate={{ opacity: 1, y: 0 }}
         className="bg-white/90 border rounded-xl p-5 shadow-lg max-w-2xl mx-auto"
       >
-        <h2 className="text-lg font-semibold mb-4">Workflow Steps</h2>
+        <h2 className="text-lg font-semibold mb-1">Workflow Steps</h2>
+        <p className="text-sm text-gray-500 mb-4">
+          ترتيب الموافقات حسب المستخدمين
+        </p>
 
         <div className="space-y-4">
           {steps.map((s, idx) => (
@@ -144,7 +159,9 @@ export default function WorkflowDetailsPage() {
               key={idx}
               className="p-4 border rounded-xl bg-gray-50 shadow-sm flex items-center justify-between gap-4"
             >
-              <span className="text-gray-700 font-medium">Step {idx + 1}</span>
+              <span className="text-gray-700 font-medium">
+                Step {idx + 1}
+              </span>
 
               {loadingUsers ? (
                 <div className="w-64 flex justify-center">
@@ -158,10 +175,9 @@ export default function WorkflowDetailsPage() {
                   }))}
                   value={
                     s.user
-                      ? (() => {
-                          const u = users.find((u) => u._id === s.user);
-                          return u ? { value: u._id, label: u.username } : null;
-                        })()
+                      ? users
+                          .filter((u) => u._id === s.user)
+                          .map((u) => ({ value: u._id, label: u.username }))[0]
                       : null
                   }
                   onChange={(val) => {
@@ -187,7 +203,7 @@ export default function WorkflowDetailsPage() {
         {/* ADD STEP */}
         <button
           onClick={addStep}
-          className="w-full mt-5 bg-gray-900 text-white rounded-xl p-3 hover:bg-black/80 flex items-center justify-center gap-2 text-base"
+          className="w-full mt-5 bg-gray-900 text-white rounded-xl p-3 hover:bg-black/80 flex items-center justify-center gap-2"
         >
           <FiPlus /> Add Step
         </button>
@@ -196,7 +212,7 @@ export default function WorkflowDetailsPage() {
         <button
           onClick={saveSteps}
           disabled={saving}
-          className="w-full mt-3 bg-blue-600 text-white rounded-xl p-3 hover:bg-blue-700 disabled:opacity-50 text-base"
+          className="w-full mt-3 bg-blue-600 text-white rounded-xl p-3 hover:bg-blue-700 disabled:opacity-50"
         >
           {saving ? "جاري الحفظ..." : "Save Workflow"}
         </button>

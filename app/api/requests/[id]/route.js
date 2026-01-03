@@ -1,11 +1,11 @@
-// File: app/api/requests/[id]/route.js
 import { NextResponse } from "next/server";
 import mongoose from "mongoose";
 import dbConnect from "@/lib/mongodb";
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { cookies } from "next/headers";
 
-// 🔹 Schema محدّث يحتوي على الـ workflow/status
+/* ======================= SCHEMA ======================= */
 const RequestSchema = new mongoose.Schema(
   {
     company: String,
@@ -16,20 +16,42 @@ const RequestSchema = new mongoose.Schema(
     items: [{ desc: String, qty: Number, price: Number }],
     createdBy: String,
     createdAt: { type: Date, default: Date.now },
+
     attachments: [
       {
-        key: String,   // المفتاح داخل S3
-        name: String,  // الاسم الأصلي للملف
-        url: String,   // يتم توليده دايناميك
+        key: String,
+        name: String,
+        url: String,
       },
     ],
-    // 🟢 Workflow fields
+
+    workflow: {
+      name: String,
+      company: String,
+      steps: [
+        {
+          user: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "User",
+          },
+          status: {
+            type: String,
+            enum: ["Pending", "Approved", "Rejected"],
+            default: "Pending",
+          },
+          actedAt: Date,
+        },
+      ],
+    },
+
+    currentStep: { type: Number, default: 0 },
+
     status: {
       type: String,
       enum: ["Pending", "Approved", "Rejected", "Cancelled"],
       default: "Pending",
     },
-    approver: String,
+
     approvalHistory: [
       {
         user: String,
@@ -42,7 +64,7 @@ const RequestSchema = new mongoose.Schema(
   { strict: false }
 );
 
-// 🔧 دالة تجيب الموديل حسب الشركة
+/* ======================= MODEL PER COMPANY ======================= */
 export const getModelForCompany = (company) => {
   const collectionName = `requests_${company.toLowerCase()}`;
   return (
@@ -51,26 +73,37 @@ export const getModelForCompany = (company) => {
   );
 };
 
-// 🔵 GET → جلب تفاصيل ريكويست واحد
-export async function GET(req, context) {
+/* ======================= GET ======================= */
+export async function GET(req, { params }) {
   try {
     await dbConnect();
-    const { id } = await context.params;
+
+    const id = params.id;
     const { searchParams } = new URL(req.url);
     const company = searchParams.get("company");
 
     if (!company) {
-      return NextResponse.json({ success: false, error: "Company is required" }, { status: 400 });
+      return NextResponse.json(
+        { success: false, error: "Company is required" },
+        { status: 400 }
+      );
     }
 
     const Model = getModelForCompany(company);
-    const request = await Model.findById(id);
+
+    const request = await Model.findById(id).populate({
+      path: "workflow.steps.user",
+      model: "User",
+      strictPopulate: false,
+    });
 
     if (!request) {
-      return NextResponse.json({ success: false, error: "Request not found" }, { status: 404 });
+      return NextResponse.json(
+        { success: false, error: "Request not found" },
+        { status: 404 }
+      );
     }
 
-    // ✨ توليد Signed URLs للمرفقات
     if (Array.isArray(request.attachments)) {
       const s3 = new S3Client({
         region: process.env.AWS_REGION,
@@ -92,37 +125,111 @@ export async function GET(req, context) {
 
     return NextResponse.json({ success: true, data: request });
   } catch (err) {
-    console.error("❌ GET [id] Error:", err.message);
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    console.error("❌ GET Error:", err.message);
+    return NextResponse.json(
+      { success: false, error: err.message },
+      { status: 500 }
+    );
   }
 }
-// 🟢 PUT → تحديث ريكويست (منع تعديل workflow)
-export async function PUT(req, context) {
+
+/* ======================= PUT ======================= */
+export async function PUT(req, { params }) {
   try {
     await dbConnect();
-    const { id } = context.params;
+    const id = params.id;
+
+    const { searchParams } = new URL(req.url);
+    let company = searchParams.get("company");
+
     const body = await req.json();
-    const { company } = body;
+    const { action, note } = body;
 
-    if (!company) {
-      return NextResponse.json({ success: false, error: "Company is required" }, { status: 400 });
-    }
+    if (!company) company = body.company;
+    if (!company)
+      return NextResponse.json({ success:false, error:"Company is required"}, {status:400});
 
-    // 🔥 منع التعديلات على workflow
-    delete body.workflowSteps;
-    delete body.currentStep;
-    delete body.status;
+    const cookieStore = cookies();
+    const userId = cookieStore.get("userId")?.value;
+    if (!userId)
+      return NextResponse.json({ success:false, error:"Not authenticated"}, {status:401});
 
     const Model = getModelForCompany(company);
-    const updated = await Model.findByIdAndUpdate(id, body, { new: true });
+    const request = await Model.findById(id);
+    if (!request)
+      return NextResponse.json({ success:false, error:"Request not found"}, {status:404});
 
-    if (!updated) {
-      return NextResponse.json({ success: false, error: "Request not found" }, { status: 404 });
+    if (action === "cancel") {
+      request.status = "Cancelled";
+      request.currentStep = -1;
+    
+      request.workflow.steps.forEach(step => {
+        step.status = "Cancelled";
+        step.actedAt = new Date();
+      });
+    
+      request.approvalHistory.push({
+        user: userId,
+        action: "cancel",
+        note: note || "",
+        date: new Date(),
+      });
+    
+      await request.save();
+      return NextResponse.json({ success: true, data: request });
     }
 
-    return NextResponse.json({ success: true, data: updated });
-  } catch (err) {
-    console.error("❌ PUT [id] Error:", err.message);
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    /* بعد هذا فقط نفحص صلاحية approve/reject */
+    const stepIndex = request.currentStep;
+    const step = request.workflow?.steps?.[stepIndex];
+    if (!step)
+      return NextResponse.json({ success:false, error:"Invalid workflow step"}, {status:400});
+
+    if (String(step.user) !== String(userId))
+      return NextResponse.json(
+        { success:false, error:"You are not authorized to act on this step"},
+        {status:403}
+      );
+
+    /* 🟢 APPROVE */
+    if (action === "approve") {
+      step.status = "Approved";
+      step.actedAt = new Date();
+      if (stepIndex === request.workflow.steps.length - 1) {
+        request.status = "Approved";
+      } else {
+        request.currentStep = stepIndex + 1;
+        const next = request.workflow.steps[request.currentStep];
+        next.status = "Pending";
+        next.actedAt = null;
+      }
+    }
+
+    /* 🔴 REJECT */
+    if (action === "reject") {
+      step.status = "Rejected";
+      step.actedAt = new Date();
+      if (stepIndex > 0) {
+        request.currentStep = stepIndex - 1;
+        const previous = request.workflow.steps[request.currentStep];
+        previous.status = "Pending";
+        previous.actedAt = null;
+      }
+      request.status = "Pending";
+    }
+
+    request.approvalHistory.push({
+      user: userId,
+      action,
+      note: note || "",
+      date: new Date(),
+    });
+
+    await request.save();
+    return NextResponse.json({ success: true, data: request });
+
+  } catch(err) {
+    console.error("❌ PUT Error:", err);
+    return NextResponse.json({ success:false, error:err.message }, {status:500});
   }
 }

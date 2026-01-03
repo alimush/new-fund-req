@@ -11,7 +11,6 @@ import {
   FiRotateCcw,
   FiSearch,
 } from "react-icons/fi";
- 
 
 const Select = dynamic(() => import("react-select"), { ssr: false });
 
@@ -25,7 +24,7 @@ export default function ReportsPage() {
   const [userFilter, setUserFilter] = useState([]);
   const [date, setDate] = useState({ from: "", to: "" });
 
-  // 🎯 تحميل الشركات واليوزرات من MongoDB
+  // 🎯 Load companies & users
   useEffect(() => {
     const loadFilters = async () => {
       try {
@@ -48,7 +47,7 @@ export default function ReportsPage() {
     loadFilters();
   }, []);
 
-  // ✅ منع الجمع بين "All" وباقي القيم
+  // ✅ Prevent mixing "All"
   const handleCompanyChange = (selected) => {
     if (!selected) return setCompanyFilter([]);
     if (selected.some((s) => s.value === "all")) {
@@ -67,19 +66,15 @@ export default function ReportsPage() {
     }
   };
 
-  // 🧮 تطبيق الفلاتر وجلب البيانات من API
+  // 🔍 Fetch data
   const handleSearch = async () => {
     setLoading(true);
     try {
-      let companyQuery = "";
-      if (
+      const companyQuery =
         companyFilter.length === 0 ||
         companyFilter.some((c) => c.value === "all")
-      ) {
-        companyQuery = "all";
-      } else {
-        companyQuery = companyFilter.map((c) => c.value).join(",");
-      }
+          ? "all"
+          : companyFilter.map((c) => c.value).join(",");
 
       const res = await fetch(`/api/requests?company=${companyQuery}`);
       const data = await res.json();
@@ -89,15 +84,18 @@ export default function ReportsPage() {
 
         if (userFilter.length > 0 && !userFilter.some((u) => u.value === "all")) {
           const selectedUsers = userFilter.map((u) => u.value);
-          result = result.filter((r) => selectedUsers.includes(r.createdBy));
+          result = result.filter((r) =>
+            selectedUsers.includes(r.createdBy)
+          );
         }
 
         if (date.from || date.to) {
           result = result.filter((r) => {
             const d = new Date(r.createdAt);
-            const fromOk = date.from ? d >= new Date(date.from) : true;
-            const toOk = date.to ? d <= new Date(date.to) : true;
-            return fromOk && toOk;
+            return (
+              (!date.from || d >= new Date(date.from)) &&
+              (!date.to || d <= new Date(date.to))
+            );
           });
         }
 
@@ -146,20 +144,17 @@ export default function ReportsPage() {
       animate={{ opacity: 1 }}
       transition={{ duration: 0.6 }}
     >
-      {/* 🧭 Header */}
-      <motion.div
+      {/* Header */}
+      <motion.h1
         initial={{ y: -20, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
-        transition={{ duration: 0.5 }}
-        className="flex justify-between items-center mb-8"
+        className="text-3xl font-bold text-gray-800 flex items-center gap-3 mb-8"
       >
-        <h1 className="text-3xl font-bold text-gray-800 flex items-center gap-3">
-          <FiFilter className="text-blue-600" /> Requests Reports
-        </h1>
-      </motion.div>
+        <FiFilter className="text-blue-600" /> Requests Reports
+      </motion.h1>
 
-      {/* 🧩 Filters */}
-      <motion.div
+   {/* 🧩 Filters */}
+   <motion.div
         className="mb-8 grid grid-cols-1 lg:grid-cols-4 gap-4 bg-white rounded-2xl p-6 shadow-md border border-gray-200"
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -254,109 +249,81 @@ export default function ReportsPage() {
           </motion.button>
         </div>
       </motion.div>
+      
+   {/* Table */}
+<AnimatePresence mode="wait">
+  {loading ? (
+    <motion.div className="flex flex-col items-center py-28">
+      <div className="w-12 h-12 border-4 border-gray-200 border-t-blue-600 rounded-full animate-spin" />
+      <p className="mt-4 text-gray-600">Loading data...</p>
+    </motion.div>
+  ) : requests.length > 0 ? (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4, ease: "easeOut" }}
+      className="bg-white rounded-2xl border border-gray-200 shadow-lg overflow-hidden"
+    >
+      <table className="min-w-full text-sm text-gray-700">
+        <thead className="bg-gradient-to-r from-gray-100 to-gray-200 text-gray-800 uppercase text-xs tracking-wide">
+          <tr>
+            <th className="px-6 py-3 text-left">Company</th>
+            <th className="px-6 py-3 text-left">Type</th>
+            <th className="px-6 py-3 text-left">User</th>
+            <th className="px-6 py-3 text-left">Department</th>
+            <th className="px-6 py-3 text-left">Currency</th>
+            <th className="px-6 py-3 text-left">Description</th>
+            <th className="px-6 py-3 text-right">Date</th>
+          </tr>
+        </thead>
 
-      {/* 🧾 Table / Spinner / No Data */}
-      <AnimatePresence mode="wait">
-        {loading ? (
-          <motion.div
-            key="spinner"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="flex flex-col items-center justify-center py-28"
-          >
-            <motion.div
-              className="w-12 h-12 border-4 border-t-4 border-gray-200 border-t-blue-600 rounded-full animate-spin"
-            ></motion.div>
-            <motion.p
-              className="mt-4 text-gray-600 font-medium"
+        <tbody>
+          {requests.map((r) => (
+            <motion.tr
+              key={r._id}
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
+              transition={{ duration: 0.25 }}
+              onClick={() =>
+                window.open(`/requests/${r.company}/${r._id}`, "_blank")
+              }
+              className="
+                border-t
+                cursor-pointer
+                transition-all
+                duration-200
+                ease-out
+                hover:bg-blue-50
+                hover:shadow-sm
+              "
             >
-              Loading data...
-            </motion.p>
-          </motion.div>
-        ) : requests.length > 0 ? (
-          <motion.div
-            key="table"
-            initial={{ opacity: 0, y: 40 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, ease: "easeOut" }}
-            className="bg-white rounded-2xl border border-gray-200 shadow-lg overflow-hidden"
-          >
-            <table className="min-w-full text-sm text-gray-700">
-            <thead className="bg-gradient-to-r from-gray-100 to-gray-200 text-gray-800 uppercase text-xs tracking-wide">
-                <tr>
-                <th className="px-6 py-3 text-left">Company</th>
-    <th className="px-6 py-3 text-left">Type</th>
-    <th className="px-6 py-3 text-left">User</th>
-    <th className="px-6 py-3 text-left">Department</th>
-    <th className="px-6 py-3 text-left">Currency</th>
-    <th className="px-6 py-3 text-left">Description</th>
-    <th className="px-6 py-3 text-right">Date</th>
-    <th className="px-6 py-3 text-left">Status</th>
-                </tr>
-              </thead>
-            
-<tbody>
-  {requests.map((r) => {
-    // 🎨 نحدد لون الحالة حسب القيمة
-    const statusColors = {
-      Approved: "bg-green-100 text-green-700 border border-green-300",
-      Rejected: "bg-red-100 text-red-700 border border-red-300",
-      Pending: "bg-yellow-100 text-yellow-700 border border-yellow-300",
-      Cancelled: "bg-gray-100 text-gray-600 border border-gray-300",
-    };
-
-    const statusClass =
-      statusColors[r.status] || "bg-gray-100 text-gray-600 border border-gray-300";
-
-    return (
-      <motion.tr
-        key={r._id}
-        initial={{ opacity: 0, scale: 0.98 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ duration: 0.25 }}
-        className="border-t hover:bg-blue-50 transition cursor-pointer"
-        onClick={() => window.open(`/requests/${r.company}/${r._id}`, "_blank")}
-      >
-        <td className="px-6 py-4 font-medium text-[15px]">{r.company}</td>
-        <td className="px-6 py-4 text-[15px]">{r.requestType}</td>
-        <td className="px-6 py-4 text-[15px]">{r.createdBy || "-"}</td>
-        <td className="px-6 py-4 text-[15px]">{r.department || "-"}</td>
-        <td className="px-6 py-4 text-[15px]">{r.currency || "-"}</td>
-        <td className="px-6 py-4 text-[15px] truncate max-w-[200px]">
-          {r.description || "-"}
-        </td>
-
-        {/* 🟣 حالة الريكويست */}
-        <td className="px-6 py-4">
-          <span
-            className={`px-3 py-1.5 text-[13px] rounded-full font-semibold ${statusClass}`}
-          >
-            {r.status || "Pending"}
-          </span>
-        </td>
-
-        <td className="px-6 py-4 text-right text-[15px]">
-          {new Date(r.createdAt).toLocaleDateString()}
-        </td>
-      </motion.tr>
-    );
-  })}
-</tbody>
-            </table>
-          </motion.div>
-        ) : (
-          <motion.div
-            key="empty"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="text-center text-gray-500 italic py-20 bg-white rounded-2xl border border-gray-200 shadow"
-          >
-            No requests found
-          </motion.div>
-        )}
-      </AnimatePresence>
+              <td className="px-6 py-4 font-medium">{r.company}</td>
+              <td className="px-6 py-4">{r.requestType}</td>
+              <td className="px-6 py-4">{r.createdBy}</td>
+              <td className="px-6 py-4">{r.department}</td>
+              <td className="px-6 py-4">{r.currency}</td>
+              <td className="px-6 py-4 truncate max-w-[220px]">
+                {r.description}
+              </td>
+              <td className="px-6 py-4 text-right">
+                {new Date(r.createdAt).toLocaleDateString()}
+              </td>
+            </motion.tr>
+          ))}
+        </tbody>
+      </table>
+    </motion.div>
+  ) : (
+    <motion.div
+      key="empty"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      className="text-center text-gray-500 italic py-20 bg-white rounded-2xl border border-gray-200 shadow"
+    >
+      No requests found
+    </motion.div>
+  )}
+</AnimatePresence>
     </motion.div>
   );
 }

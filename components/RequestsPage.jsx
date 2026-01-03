@@ -191,6 +191,7 @@ const handleCreate = async () => {
           <div className="w-12 h-12 rounded-full border-4 border-gray-300 border-t-transparent animate-spin" />
         </div>
       ) : (
+        
         <motion.div
           className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
           variants={gridContainer}
@@ -271,6 +272,7 @@ const handleCreate = async () => {
               {/* المحتوى */}
               <div className="p-6 space-y-4 text-sm text-gray-700">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  
                   <div className="p-3 rounded-xl border bg-white/70">
                     <div className="text-xs text-gray-500">Company</div>
                     <div className="font-medium">{selectedRequest.company || "-"}</div>

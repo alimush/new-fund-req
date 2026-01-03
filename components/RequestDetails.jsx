@@ -18,91 +18,55 @@ import { useRouter } from "next/navigation";
 
 const fmt = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
 
-// 🔐 المستخدم الحالي (لاحقاً يكون Dynamic)
-const currentUserName = "Ali Mushtaq";
-
 export default function RequestDetails({ id, companyKey }) {
   const router = useRouter();
   const [request, setRequest] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [wfLoading, setWfLoading] = useState(true);
-  const [workflowLoading, setWorkflowLoading] = useState(true);
+  const workflow = request?.workflow;
+  const workflowSteps = workflow?.steps || [];
+  const [currentUser, setCurrentUser] = useState(null);
+  
 
-  useEffect(() => {
-    if (!request?.company) return;
-
-    const loadWorkflow = async () => {
-      setWorkflowLoading(true);
-
-      try {
-        const wfRes = await fetch(`/api/workflow?company=${request.company}`);
-        const wfData = await wfRes.json();
-
-        setRequest((prev) => ({
-          ...prev,
-          workflowSteps: wfData?.workflow?.steps || [],
-        }));
-      } catch (err) {
-        console.log("Workflow load error:", err);
-      } finally {
-        setWorkflowLoading(false);
-      }
-    };
-
-    loadWorkflow();
-  }, [request?.company]);
-
-  useEffect(() => {
-    if (!id || !companyKey) return;
-
-    const fetchData = async () => {
-      try {
-        const res = await fetch(`/api/requests/${id}?company=${companyKey}`);
-        const data = await res.json();
-        if (data.success) setRequest(data.data);
-      } catch (err) {
-        console.error("❌ Error loading request:", err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchData();
-  }, [id, companyKey]);
-
-  const handleWorkflow = async (action) => {
-    if (!id || !companyKey) return;
-
+  // 🟢 ---------------- FETCH DATA FUNCTION (خارج useEffect) ----------------
+  const fetchData = async () => {
     try {
-      const confirm = window.confirm(
-        `Are you sure you want to ${action} this request?`
-      );
-      if (!confirm) return;
-
-      const res = await fetch(`/api/requests/${id}/workflow`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          company: companyKey,
-          user: currentUserName,
-          action,
-          note: `Action by ${currentUserName}`,
-        }),
+      const res = await fetch(`/api/requests/${id}?company=${companyKey}`, {
+        cache: "no-store",
+        credentials: "include"
       });
-
       const data = await res.json();
-
-      if (data.success) {
-        alert(`Request ${action} successfully!`);
-        setRequest(data.data);
-      } else {
-        alert(`Failed: ${data.error}`);
-      }
+      if (data.success) setRequest(data.data);
     } catch (err) {
-      console.error("❌ Workflow error:", err);
-      alert("An error occurred while processing the action.");
+      console.error("❌ Error loading request:", err);
+    } finally {
+      setLoading(false);
     }
   };
+  // 🟢 ----------------------------------------------------------------------
 
+  // جلب المستخدم
+  useEffect(() => {
+    const fetchUser = async () => {
+      try {
+        const res = await fetch("/api/userid", {
+          credentials: "include",
+        });
+        const data = await res.json();
+        setCurrentUser(data.user); 
+      } catch (err) {
+        console.error("❌ Error loading user", err);
+      }
+    };
+    fetchUser();
+  }, []);
+
+  // جلب الطلب
+  useEffect(() => {
+    if (!id || !companyKey) return;
+    fetchData();   // 👈 الآن متاحة
+  }, [id, companyKey]);
+
+ 
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gray-50">
@@ -124,57 +88,59 @@ export default function RequestDetails({ id, companyKey }) {
       </div>
     );
   }
+  const isOwner =
+  currentUser &&
+  String(request.createdBy) === String(currentUser.username);
 
-  return (
+const canCancel =
+  request.status === "Pending" && isOwner; return (
     <motion.div
       className="min-h-screen bg-gradient-to-br from-gray-50 via-gray-100 to-gray-200 p-6 md:p-10"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.6 }}
     >
-      {/* HEADER */}
-      <div className="flex justify-between items-center mb-10">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-800 flex items-center gap-3">
-            <FiInfo className="text-blue-600" /> Fund Request Details
-          </h1>
+    <div className="mb-10">
+  <div className="flex items-center justify-between">
+    <h1 className="text-3xl font-bold text-gray-800 flex items-center gap-3">
+      <FiInfo className="text-blue-600" /> Fund Request Details
+    </h1>
 
-          <div className="mt-3">
-            <span
-              className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-semibold shadow-sm ${
-                request.status === "Approved"
-                  ? "bg-green-100 text-green-700 border border-green-300"
-                  : request.status === "Rejected"
-                  ? "bg-red-100 text-red-700 border border-red-300"
-                  : request.status === "Cancelled"
-                  ? "bg-yellow-100 text-yellow-700 border border-yellow-300"
-                  : "bg-gray-100 text-gray-700 border border-gray-300"
-              }`}
-            >
-              {request.status === "Approved" && (
-                <FiCheckCircle className="text-green-600" />
-              )}
-              {request.status === "Rejected" && (
-                <FiXCircle className="text-red-600" />
-              )}
-              {request.status === "Cancelled" && (
-                <FiMinusCircle className="text-yellow-600" />
-              )}
-              {request.status === "Pending" && (
-                <FiClock className="text-gray-600" />
-              )}
-              <span>{request.status}</span>
-            </span>
-          </div>
-        </div>
+    <button
+      onClick={() => router.back()}
+      className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gray-800 text-white hover:bg-gray-900 shadow"
+    >
+      <FiArrowLeft /> Back
+    </button>
+  </div>
 
-        <button
-          onClick={() => router.back()}
-          className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gray-800 text-white hover:bg-gray-900 shadow"
-        >
-          <FiArrowLeft /> Back
-        </button>
-      </div>
+  {/* 🔽 Cancel Button تحت العنوان */}
+  {canCancel && (
+    <button
+      onClick={async () => {
+        try {
+          setLoading(true);
+          await fetch(`/api/requests/cancel`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({ id, company: companyKey }),
+          });
+          await fetchData();
+        } finally {
+          setLoading(false);
+        }
+      }}
+      className="mt-4 flex items-center gap-2 px-4 py-2 rounded-xl
+                 bg-gray-800 text-white border border-gray-800
+                 hover:bg-gray-900 hover:border-gray-900 transition"
+    >
+      <FiMinusCircle />
+      <span className="text-sm font-semibold">Cancel Request</span>
+    </button>
+  )}
+</div>
+
 
       {/* SUMMARY */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-10">
@@ -339,158 +305,244 @@ export default function RequestDetails({ id, companyKey }) {
             </div>
           </Section>
         )}
+        
+{/* ================= WORKFLOW ================= */}
+{workflow && (
+  <Section title={`Workflow: ${workflow.name || ""}`} icon={<FiUsers />}>
+    {workflowSteps.length === 0 && (
+      <p className="text-gray-500 italic text-center py-6">
+        No workflow steps found.
+      </p>
+    )}
 
-      {/* WORKFLOW ACTION BUTTONS */}
+    {workflowSteps.length > 0 && (
+      <div className="flex items-start gap-12 overflow-x-auto pb-8 pt-4">
+        {workflowSteps.map((step, idx) => {
+          const isCurrent = idx === request.currentStep;
+// إذا الطلب Cancelled → خلي كل الخطوات رمادية من البداية
+if (request.status === "Cancelled") {
+  return (
+    <div key={idx} className="flex items-center gap-10">
       <motion.div
-        className="flex flex-wrap justify-center gap-4 mt-10"
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
+        className="min-w-[280px] max-w-[280px] bg-gray-100 border rounded-3xl shadow-lg p-6 opacity-60"
       >
-        {/* -------- APPROVE -------- */}
-        {request.workflowSteps?.length > 0 &&
-          request.workflowSteps[request.currentStep]?.user
-            ?.username === currentUserName && (
-            <motion.button
-              whileHover={{
-                scale: 1.05,
-                boxShadow: "0 4px 10px rgba(34,197,94,0.4)",
-              }}
-              whileTap={{ scale: 0.97 }}
-              onClick={() => handleWorkflow("approve")}
-              className="flex items-center gap-2 px-6 py-2.5 bg-green-600 hover:bg-green-700 text-white font-medium rounded-xl shadow-md transition-all"
-            >
-              <FiCheckCircle className="text-lg" /> Approve
-            </motion.button>
-          )}
+        <div className="flex items-center gap-4 mb-5">
+          <div className="w-12 h-12 rounded-full flex items-center justify-center text-xl font-bold shadow bg-gray-400 text-white">
+            {idx + 1}
+          </div>
 
-        {/* -------- REJECT -------- */}
-        {request.workflowSteps?.length > 0 &&
-          request.workflowSteps[request.currentStep]?.user
-            ?.username === currentUserName && (
-            <motion.button
-              whileHover={{
-                scale: 1.05,
-                boxShadow: "0 4px 10px rgba(239,68,68,0.4)",
-              }}
-              whileTap={{ scale: 0.97 }}
-              onClick={() => handleWorkflow("reject")}
-              className="flex items-center gap-2 px-6 py-2.5 bg-red-600 hover:bg-red-700 text-white font-medium rounded-xl shadow-md transition-all"
-            >
-              <FiXCircle className="text-lg" /> Reject
-            </motion.button>
-          )}
+          <div>
+            <p className="font-bold text-gray-600 text-lg">
+              {step.user?.username || "Unknown User"}
+            </p>
+            <p className="text-xs text-gray-400 tracking-wide">
+              Workflow Step
+            </p>
+          </div>
+        </div>
 
-        {/* -------- CANCEL -------- */}
-        {request.createdBy === currentUserName && (
-          <motion.button
-            whileHover={{
-              scale: 1.05,
-              boxShadow: "0 4px 10px rgba(247,197,34,0.4)",
-            }}
-            whileTap={{ scale: 0.97 }}
-            onClick={() => handleWorkflow("cancel")}
-            className="flex items-center gap-2 px-6 py-2.5 bg-yellow-500 hover:bg-yellow-600 text-white font-medium rounded-xl shadow-md transition-all"
-          >
-            <FiMinusCircle className="text-lg" /> Cancel
-          </motion.button>
-        )}
+        <p className="mt-2 text-xs text-gray-400 italic">Cancelled</p>
       </motion.div>
-
-      {/* WORKFLOW STEPS VISUAL */}
-      {request.company && (
-        <motion.div
-          className="mt-14 bg-white rounded-2xl border border-gray-200 shadow-lg p-10"
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-        >
-          <h2 className="text-2xl font-bold mb-10 flex items-center gap-3 text-gray-900">
-            <FiUsers className="text-blue-600" /> Workflow Steps
-          </h2>
-
-          {workflowLoading && (
-            <div className="flex justify-center py-20">
-              <div className="w-12 h-12 border-4 border-gray-300 border-t-blue-500 rounded-full animate-spin"></div>
-            </div>
-          )}
-
-          {!workflowLoading &&
-            (!request.workflowSteps ||
-              request.workflowSteps.length === 0) && (
-              <p className="text-gray-500 italic text-center py-10 text-lg">
-                No workflow found for this company.
-              </p>
-            )}
-
-          {!workflowLoading && request.workflowSteps?.length > 0 && (
-            <div className="flex items-start gap-12 overflow-x-auto pb-8 pt-4">
-              {request.workflowSteps.map((step, idx) => {
-                let statusColor = "text-gray-600";
-                let badgeColor = "bg-gray-100 border-gray-300";
-
-                if (step.status === "Approved") {
-                  statusColor = "text-green-600";
-                  badgeColor = "bg-green-100 border-green-300";
-                } else if (step.status === "Rejected") {
-                  statusColor = "text-red-600";
-                  badgeColor = "bg-red-100 border-red-300";
-                } else {
-                  statusColor = "text-yellow-600";
-                  badgeColor = "bg-yellow-100 border-yellow-300";
-                }
-
-                return (
-                  <div key={idx} className="flex items-center gap-12">
-                    <motion.div
-                      whileHover={{ scale: 1.04 }}
-                      transition={{ type: "spring", stiffness: 180 }}
-                      className="min-w-[290px] max-w-[290px] bg-white border border-gray-300 rounded-3xl shadow-xl p-7 hover:shadow-2xl transition-all"
-                    >
-                      <div className="flex items-center gap-4 mb-5">
-                        <div className="w-14 h-14 bg-blue-600 text-white rounded-full flex items-center justify-center text-2xl font-bold shadow-lg">
-                          {idx + 1}
-                        </div>
-
-                        <div>
-                          <p className="font-bold text-gray-900 text-xl">
-                            {step.user?.username || "Unknown User"}
-                          </p>
-                          <p className="text-xs text-gray-500 tracking-wide">
-                            Workflow Step
-                          </p>
-                        </div>
+    </div>
+  );
+}
+          // ✅ الشرط الصحيح 100%
+          const stepUserId =
+          typeof step.user === "string"
+            ? step.user
+            : step.user?._id;
+        if (request.status === "Cancelled") {
+  statusColor = "text-gray-500";
+  badgeColor = "bg-gray-200 border-gray-300";
+  stepBg = "bg-gray-100";
+}
+            const canAct =
+            request.status !== "Cancelled" &&            // 🛑 يمنع أي عمل بعد الإلغاء
+            isCurrent &&
+            step.status === "Pending" &&
+            currentUser &&
+            String(stepUserId) === String(currentUser?.id);
+            if (request.status === "Cancelled") {
+              return (
+                <div key={idx} className="flex items-center gap-10">
+                  <motion.div
+                    className="min-w-[280px] max-w-[280px] bg-gray-100 border rounded-3xl shadow-lg p-6 opacity-60"
+                  >
+                    <div className="flex items-center gap-4 mb-5">
+                      <div className="w-12 h-12 rounded-full flex items-center justify-center text-xl font-bold shadow bg-gray-400 text-white">
+                        {idx + 1}
                       </div>
-
-                      <div
-                        className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-full border text-sm font-semibold shadow-sm ${badgeColor}`}
-                      >
-                        <FiClock className={statusColor} />
-                        <span className={statusColor}>
-                          {step.status || "Pending"}
-                        </span>
+            
+                      <div>
+                        <p className="font-bold text-gray-600 text-lg">
+                          {step.user?.username || "Unknown User"}
+                        </p>
+                        <p className="text-xs text-gray-400 tracking-wide">
+                          Workflow Step
+                        </p>
                       </div>
-                    </motion.div>
+                    </div>
+            
+                    {/* لا تعرض أي status */}
+                    <p className="mt-2 text-xs text-gray-400 italic">
+                      Cancelled
+                    </p>
+                  </motion.div>
+                </div>
+              );
+            }
+          let statusColor = "text-gray-600";
+          let badgeColor = "bg-gray-100 border-gray-300";
+          let stepBg = "bg-white";
 
-                    {idx !== request.workflowSteps.length - 1 && (
-                      <motion.div
-                        initial={{ opacity: 0, x: -10 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{
-                          repeat: Infinity,
-                          duration: 1,
-                          ease: "easeInOut",
-                        }}
-                        className="text-5xl text-blue-600 select-none"
-                      >
-                        ➜
-                      </motion.div>
-                    )}
+          if (step.status === "Approved") {
+            statusColor = "text-green-600";
+            badgeColor = "bg-green-100 border-green-300";
+            stepBg = "bg-green-50";
+          } else if (step.status === "Rejected") {
+            statusColor = "text-red-600";
+            badgeColor = "bg-red-100 border-red-300";
+            stepBg = "bg-red-50";
+          } else if (isCurrent) {
+            statusColor = "text-blue-600";
+            badgeColor = "bg-blue-100 border-blue-300";
+            stepBg = "bg-blue-50";
+          }
+
+          return (
+            <div key={idx} className="flex items-center gap-10">
+              {/* STEP CARD */}
+              <motion.div
+                whileHover={{ scale: 1.04 }}
+                transition={{ type: "spring", stiffness: 180 }}
+                className={`min-w-[280px] max-w-[280px] ${stepBg} border rounded-3xl shadow-lg p-6 transition-all`}
+              >
+                <div className="flex items-center gap-4 mb-5">
+                  <div
+                    className={`w-12 h-12 rounded-full flex items-center justify-center text-xl font-bold shadow ${
+                      isCurrent
+                        ? "bg-blue-600 text-white"
+                        : "bg-gray-800 text-white"
+                    }`}
+                  >
+                    {idx + 1}
                   </div>
-                );
-              })}
+
+                  <div>
+                    <p className="font-bold text-gray-900 text-lg">
+                      {step.user?.username || "Unknown User"}
+                    </p>
+                    <p className="text-xs text-gray-500 tracking-wide">
+                      Workflow Step
+                    </p>
+                  </div>
+                </div>
+
+                <div
+                  className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-full border text-sm font-semibold shadow-sm ${badgeColor}`}
+                >
+                  <FiClock className={statusColor} />
+                  <span className={statusColor}>
+                    {step.status || "Pending"}
+                  </span>
+                </div>
+
+                {step.actedAt && (
+                  <p className="mt-3 text-xs text-gray-400">
+                    {new Date(step.actedAt).toLocaleString()}
+                  </p>
+                )}
+
+            
+
+                {/* ✅ APPROVE / REJECT (يطلع بس للي إله الدور) */}
+                {canAct && (
+  <div className="mt-6 flex gap-3">
+
+    {/* APPROVE */}
+    <button
+      onClick={async () => {
+        try {
+          setLoading(true);
+
+          await fetch(`/api/requests/${id}?company=${companyKey}`, {
+            method: "PUT",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: "approve",
+            }),
+          });
+
+          await fetchData(); // تحديث بدون رفرش
+        } finally {
+          setLoading(false);
+        }
+      }}
+      disabled={loading}
+      className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-green-600 hover:bg-green-700 text-white font-semibold"
+    >
+      <FiCheckCircle /> {loading ? "Processing..." : "Approve"}
+    </button>
+
+    {/* REJECT */}
+    <button
+      onClick={async () => {
+        const note = prompt("سبب الرفض");
+        if (!note) return;
+
+        try {
+          setLoading(true);
+
+          await fetch(`/api/requests/${id}?company=${companyKey}`, {
+            method: "PUT",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: "reject",
+              note,
+            }),
+          });
+
+          await fetchData(); // تحديث مباشر
+        } finally {
+          setLoading(false);
+        }
+      }}
+      disabled={loading}
+      className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white font-semibold"
+    >
+      <FiXCircle /> {loading ? "Processing..." : "Reject"}
+    </button>
+
+  </div>
+)}
+              </motion.div>
+
+              {/* ARROW */}
+              {idx !== workflowSteps.length - 1 && (
+                <motion.div
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 10 }}
+                  transition={{
+                    repeat: Infinity,
+                    repeatType: "reverse",
+                    duration: 1,
+                    ease: "easeInOut",
+                  }}
+                  className="text-5xl text-blue-600 select-none"
+                >
+                  ➜
+                </motion.div>
+              )}
             </div>
-          )}
-        </motion.div>
-      )}
+          );
+        })}
+      </div>
+    )}
+  </Section>
+)}
+      
     </motion.div>
   );
 }

@@ -10,26 +10,32 @@ export async function POST(req) {
     const { username, password } = await req.json();
 
     const user = await User.findOne({ username, password }).lean();
-
-    if (!user)
+    if (!user) {
       return NextResponse.json({ success: false, error: "Invalid login" });
+    }
 
-    // extract id
     const userId = user._id.toString();
 
     const groups = await Permissions.find({ users: userId }).lean();
-
     const permissions = [...new Set(groups.flatMap(g => g.permissions))];
 
-    return NextResponse.json({
+    const res = NextResponse.json({
       success: true,
       user: {
         id: userId,
-        username: user.username
+        username: user.username,
       },
-      permissions
+      permissions,
     });
 
+    // 🔥🔥 هذا السطر هو المفتاح
+    res.cookies.set("userId", userId, {
+      httpOnly: true,
+      sameSite: "lax",
+      path: "/",
+    });
+
+    return res;
   } catch (e) {
     return NextResponse.json({ success: false, error: e.message });
   }
