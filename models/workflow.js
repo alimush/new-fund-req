@@ -2,10 +2,35 @@ import mongoose from "mongoose";
 
 const StepSchema = new mongoose.Schema(
   {
-    user: {
+    users: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+        required: true,
+      },
+    ],
+
+    status: {
+      type: String,
+      enum: ["Pending", "Approved", "Rejected", "Cancelled"],
+      default: "Pending",
+    },
+
+    actedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      required: true,
+      default: null,
+    },
+
+    actedAt: {
+      type: Date,
+      default: null,
+    },
+
+    comment: {
+      type: String,
+      default: "",
+      trim: true,
     },
   },
   { _id: false }

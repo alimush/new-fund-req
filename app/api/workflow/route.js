@@ -14,7 +14,7 @@ export async function GET(req) {
   const company = searchParams.get("company");
 
   const populateUser = {
-    path: "steps.user",
+    path: "steps.users",
     model: "User",
     strictPopulate: false,
   };
@@ -102,7 +102,10 @@ export async function PUT(req) {
   const updated = await Workflow.findByIdAndUpdate(
     id,
     { name, steps },
-    { new: true }
+    {
+      new: true,
+      runValidators: true,   // 👈 هذا السطر هو الحل
+    }
   );
 
   if (!updated) {

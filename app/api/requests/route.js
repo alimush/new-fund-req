@@ -41,13 +41,37 @@ const RequestSchema = new mongoose.Schema(
       name: String,
       steps: [
         {
-          user: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+          users: [
+            {
+              type: mongoose.Schema.Types.ObjectId,
+              ref: "User",
+              required: true,
+            },
+          ],
+    
           status: {
             type: String,
-            enum: ["Pending", "Approved", "Rejected"],
+            enum: ["Pending", "Approved", "Rejected", "Cancelled"],
             default: "Pending",
           },
-          actedAt: Date,
+    
+          actedBy: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "User",
+            default: null,
+          },
+    
+          actedAt: {
+            type: Date,
+            default: null,
+          },
+    
+          // ✅ هذا المهم
+          comment: {
+            type: String,
+            default: "",
+            trim: true,
+          },
         },
       ],
     },
@@ -98,8 +122,8 @@ export async function POST(req) {
     }
 
     // 🔹 Get workflow of company
-    const workflow = await Workflow.findOne({ company }).populate("steps.user");
-
+    const workflow = await Workflow.findOne({ company })
+    .populate("steps.users");
     if (!workflow) {
       return NextResponse.json(
         { success: false, error: "No workflow defined for this company" },
@@ -111,7 +135,7 @@ export async function POST(req) {
     const workflowSnapshot = {
       name: workflow.name,
       steps: workflow.steps.map((s) => ({
-        user: s.user._id,
+        users: s.users.map(u => u._id),
         status: "Pending",
         actedAt: null,
       })),
@@ -206,9 +230,10 @@ export async function GET(req) {
     const Model = getModelForCompany(company);
 
     if (id) {
-      const request = await Model.findById(id).populate(
-        "workflow.steps.user"
-      );
+      const request = await Model.findById(id).populate({
+        path: "workflow.steps.users",
+        model: "User",
+      })
 
       if (!request) {
         return NextResponse.json(

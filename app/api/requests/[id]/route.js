@@ -18,29 +18,40 @@ const RequestSchema = new mongoose.Schema(
     createdAt: { type: Date, default: Date.now },
 
     attachments: [
-      {
-        key: String,
-        name: String,
-        url: String,
-      },
+      { key: String, name: String, url: String }
     ],
-
     workflow: {
       name: String,
       company: String,
       steps: [
         {
-          user: {
+          users: [
+            {
+              type: mongoose.Schema.Types.ObjectId,
+              ref: "User",
+              required: true,
+            }
+          ],
+          actedBy: {
             type: mongoose.Schema.Types.ObjectId,
             ref: "User",
+            default: null,
           },
           status: {
             type: String,
-            enum: ["Pending", "Approved", "Rejected"],
+            enum: ["Pending", "Approved", "Rejected", "Cancelled"],
             default: "Pending",
           },
-          actedAt: Date,
+          actedAt: {
+            type: Date,
+            default: null,
+          },          comment: {
+            type: String,
+            default: "",
+            trim: true,
+          },
         },
+        
       ],
     },
 
@@ -91,8 +102,13 @@ export async function GET(req, { params }) {
 
     const Model = getModelForCompany(company);
 
-    const request = await Model.findById(id).populate({
-      path: "workflow.steps.user",
+    const request = await Model.findById(id)
+    .populate({
+      path: "workflow.steps.users",
+      model: "User",
+    })
+    .populate({
+      path: "workflow.steps.actedBy",
       model: "User",
       strictPopulate: false,
     });
@@ -133,7 +149,6 @@ export async function GET(req, { params }) {
   }
 }
 
-/* ======================= PUT ======================= */
 export async function PUT(req, { params }) {
   try {
     await dbConnect();
@@ -146,78 +161,129 @@ export async function PUT(req, { params }) {
     const { action, note } = body;
 
     if (!company) company = body.company;
-    if (!company)
-      return NextResponse.json({ success:false, error:"Company is required"}, {status:400});
+    if (!company) {
+      return NextResponse.json(
+        { success: false, error: "Company is required" },
+        { status: 400 }
+      );
+    }
 
     const cookieStore = cookies();
     const userId = cookieStore.get("userId")?.value;
-    if (!userId)
-      return NextResponse.json({ success:false, error:"Not authenticated"}, {status:401});
+    if (!userId) {
+      return NextResponse.json(
+        { success: false, error: "Not authenticated" },
+        { status: 401 }
+      );
+    }
 
     const Model = getModelForCompany(company);
     const request = await Model.findById(id);
-    if (!request)
-      return NextResponse.json({ success:false, error:"Request not found"}, {status:404});
+    if (!request) {
+      return NextResponse.json(
+        { success: false, error: "Request not found" },
+        { status: 404 }
+      );
+    }
 
+    /* ================= CANCEL ================= */
     if (action === "cancel") {
       request.status = "Cancelled";
       request.currentStep = -1;
-    
+
       request.workflow.steps.forEach(step => {
         step.status = "Cancelled";
+        step.actedBy = userId;
         step.actedAt = new Date();
       });
-    
+
       request.approvalHistory.push({
         user: userId,
         action: "cancel",
         note: note || "",
         date: new Date(),
       });
-    
+
       await request.save();
       return NextResponse.json({ success: true, data: request });
     }
 
-    /* بعد هذا فقط نفحص صلاحية approve/reject */
+    /* ================= CURRENT STEP ================= */
     const stepIndex = request.currentStep;
     const step = request.workflow?.steps?.[stepIndex];
-    if (!step)
-      return NextResponse.json({ success:false, error:"Invalid workflow step"}, {status:400});
 
-    if (String(step.user) !== String(userId))
+    if (!step) {
       return NextResponse.json(
-        { success:false, error:"You are not authorized to act on this step"},
-        {status:403}
+        { success: false, error: "Invalid workflow step" },
+        { status: 400 }
       );
+    }
 
-    /* 🟢 APPROVE */
+    if (step.status !== "Pending") {
+      return NextResponse.json(
+        { success: false, error: "Step already processed" },
+        { status: 400 }
+      );
+    }
+
+    // 🔐 تحقق الصلاحية
+    const isAuthorized = step.users.some(
+      u => String(u) === String(userId)
+    );
+
+    if (!isAuthorized) {
+      return NextResponse.json(
+        { success: false, error: "You are not authorized to act on this step" },
+        { status: 403 }
+      );
+    }
+
+    /* ================= APPROVE ================= */
     if (action === "approve") {
       step.status = "Approved";
+      step.actedBy = userId;
       step.actedAt = new Date();
+      step.comment = note || "";
+    
       if (stepIndex === request.workflow.steps.length - 1) {
         request.status = "Approved";
       } else {
         request.currentStep = stepIndex + 1;
-        const next = request.workflow.steps[request.currentStep];
-        next.status = "Pending";
-        next.actedAt = null;
+        request.workflow.steps[request.currentStep].status = "Pending";
       }
     }
 
-    /* 🔴 REJECT */
+    /* ================= REJECT ================= */
     if (action === "reject") {
+      // 🟥 الستيب الحالي: مرفوض
       step.status = "Rejected";
+      step.actedBy = userId;
       step.actedAt = new Date();
+      step.comment = note || "";
+    
       if (stepIndex > 0) {
-        request.currentStep = stepIndex - 1;
-        const previous = request.workflow.steps[request.currentStep];
-        previous.status = "Pending";
-        previous.actedAt = null;
+        // 👈 رجوع خطوة ورا
+        const prevIndex = stepIndex - 1;
+        request.currentStep = prevIndex;
+    
+        const prevStep = request.workflow.steps[prevIndex];
+    
+        // 🟡 تنظيف الستيب السابق بالكامل
+        prevStep.status = "Pending";
+        prevStep.actedBy = null;
+        prevStep.actedAt = null;
+        prevStep.comment = "";
+      } else {
+        // 👈 إذا أول ستيب (نرجعه Pending بدون أي أثر)
+        step.status = "Pending";
+        step.actedBy = null;
+        step.actedAt = null;
+        step.comment = "";
       }
+    
+      // 🟡 الطلب يبقى Pending
       request.status = "Pending";
     }
-
     request.approvalHistory.push({
       user: userId,
       action,
@@ -228,8 +294,11 @@ export async function PUT(req, { params }) {
     await request.save();
     return NextResponse.json({ success: true, data: request });
 
-  } catch(err) {
+  } catch (err) {
     console.error("❌ PUT Error:", err);
-    return NextResponse.json({ success:false, error:err.message }, {status:500});
+    return NextResponse.json(
+      { success: false, error: err.message },
+      { status: 500 }
+    );
   }
 }

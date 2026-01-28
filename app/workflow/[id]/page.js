@@ -28,14 +28,16 @@ export default function WorkflowDetailsPage() {
     try {
       const res = await fetch(`/api/workflow?id=${id}`);
       const data = await res.json();
-
+  
       if (data.success && data.workflow) {
         setWorkflow(data.workflow);
-
-        const normalizedSteps = (data.workflow.steps || []).map((s) => ({
-          user: typeof s.user === "string" ? s.user : s.user?._id || "",
+  
+        const normalizedSteps = (data.workflow.steps || []).map(s => ({
+          users: Array.isArray(s.users)
+            ? s.users.map(u => (typeof u === "string" ? u : u._id))
+            : []
         }));
-
+  
         setSteps(normalizedSteps);
       }
     } catch (err) {
@@ -63,22 +65,22 @@ export default function WorkflowDetailsPage() {
 
   // ================= ADD STEP =================
   const addStep = () => {
-    setSteps((prev) => [...prev, { user: "" }]);
-  };
+    setSteps(prev => [...prev, { users: [] }]);  };
 
   // ================= SAVE =================
   const saveSteps = async () => {
     // 🔒 تحقق
-    if (steps.some((s) => !s.user)) {
-      return alert("❌ كل Step لازم يكون بيه User");
-    }
+    if (steps.some(s => !s.users || s.users.length === 0))
+      return alert("❌ كل Step لازم بيه مستخدم واحد على الأقل");
 
     setSaving(true);
 
     const payload = {
       id,
       name: workflow.name,
-      steps: steps.map((s) => ({ user: s.user })),
+      steps: steps.map((s) => ({
+        users: s.users,   // 👈 مهم
+      })),
     };
 
     try {
@@ -169,25 +171,23 @@ export default function WorkflowDetailsPage() {
                 </div>
               ) : (
                 <Select
-                  options={users.map((u) => ({
-                    value: u._id,
-                    label: u.username,
-                  }))}
-                  value={
-                    s.user
-                      ? users
-                          .filter((u) => u._id === s.user)
-                          .map((u) => ({ value: u._id, label: u.username }))[0]
-                      : null
-                  }
-                  onChange={(val) => {
-                    const updated = [...steps];
-                    updated[idx].user = val ? val.value : "";
-                    setSteps(updated);
-                  }}
-                  placeholder="اختر المستخدم"
-                  className="w-64"
-                />
+                isMulti
+                options={users.map(u => ({
+                  value: u._id,
+                  label: u.username,
+                }))}
+                value={users
+                  .filter(u => s.users.includes(u._id))
+                  .map(u => ({ value: u._id, label: u.username }))
+                }
+                onChange={(vals) => {
+                  const updated = [...steps];
+                  updated[idx].users = vals ? vals.map(v => v.value) : [];
+                  setSteps(updated);
+                }}
+                placeholder="اختر المستخدمين"
+                className="w-72"
+              />
               )}
 
               <button

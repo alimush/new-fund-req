@@ -39,13 +39,32 @@ const RequestSchema = new mongoose.Schema(
       name: String,
       steps: [
         {
-          user: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+          users: [
+            {
+              type: mongoose.Schema.Types.ObjectId,
+              ref: "User",
+              required: true,
+            },
+          ],
+      
           status: {
             type: String,
-            enum: ["Pending", "Approved", "Rejected", "Cancelled"], 
+            enum: ["Pending", "Approved", "Rejected", "Cancelled"],
             default: "Pending",
           },
+      
+          actedBy: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "User",
+            default: null,
+          },
+      
           actedAt: Date,
+      
+          comment: {
+            type: String,
+            default: "",
+          },
         },
       ],
     },

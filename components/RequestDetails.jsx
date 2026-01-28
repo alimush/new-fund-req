@@ -12,11 +12,10 @@ import {
   FiCheckCircle,
   FiXCircle,
   FiMinusCircle,
-  FiClock,
+  FiClock,FiMessageSquare
 } from "react-icons/fi";
 import { useRouter } from "next/navigation";
-
-const fmt = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
+import CommentModal from "@/components/CommentModal";
 
 export default function RequestDetails({ id, companyKey }) {
   const router = useRouter();
@@ -25,7 +24,10 @@ export default function RequestDetails({ id, companyKey }) {
   const workflow = request?.workflow;
   const workflowSteps = workflow?.steps || [];
   const [currentUser, setCurrentUser] = useState(null);
-  
+  const [showCommentModal, setShowCommentModal] = useState(false);
+const [commentAction, setCommentAction] = useState(null); // approve | reject | view
+const [commentText, setCommentText] = useState("");
+const [activeStep, setActiveStep] = useState(null);
 
   // 🟢 ---------------- FETCH DATA FUNCTION (خارج useEffect) ----------------
   const fetchData = async () => {
@@ -305,8 +307,8 @@ const canCancel =
             </div>
           </Section>
         )}
-        
-{/* ================= WORKFLOW ================= */}
+
+        {/* ================= WORKFLOW ================= */}
 {workflow && (
   <Section title={`Workflow: ${workflow.name || ""}`} icon={<FiUsers />}>
     {workflowSteps.length === 0 && (
@@ -316,224 +318,211 @@ const canCancel =
     )}
 
     {workflowSteps.length > 0 && (
-      <div className="flex items-start gap-12 overflow-x-auto pb-8 pt-4">
+      <div className="flex items-start gap-10 overflow-x-auto py-6">
         {workflowSteps.map((step, idx) => {
           const isCurrent = idx === request.currentStep;
-// إذا الطلب Cancelled → خلي كل الخطوات رمادية من البداية
-if (request.status === "Cancelled") {
-  return (
-    <div key={idx} className="flex items-center gap-10">
-      <motion.div
-        className="min-w-[280px] max-w-[280px] bg-gray-100 border rounded-3xl shadow-lg p-6 opacity-60"
-      >
-        <div className="flex items-center gap-4 mb-5">
-          <div className="w-12 h-12 rounded-full flex items-center justify-center text-xl font-bold shadow bg-gray-400 text-white">
-            {idx + 1}
-          </div>
 
-          <div>
-            <p className="font-bold text-gray-600 text-lg">
-              {step.user?.username || "Unknown User"}
-            </p>
-            <p className="text-xs text-gray-400 tracking-wide">
-              Workflow Step
-            </p>
-          </div>
-        </div>
-
-        <p className="mt-2 text-xs text-gray-400 italic">Cancelled</p>
-      </motion.div>
-    </div>
-  );
-}
-          // ✅ الشرط الصحيح 100%
-          const stepUserId =
-          typeof step.user === "string"
-            ? step.user
-            : step.user?._id;
-        if (request.status === "Cancelled") {
-  statusColor = "text-gray-500";
-  badgeColor = "bg-gray-200 border-gray-300";
-  stepBg = "bg-gray-100";
-}
-            const canAct =
-            request.status !== "Cancelled" &&            // 🛑 يمنع أي عمل بعد الإلغاء
+          const canAct =
+            request.status === "Pending" &&
             isCurrent &&
             step.status === "Pending" &&
             currentUser &&
-            String(stepUserId) === String(currentUser?.id);
-            if (request.status === "Cancelled") {
-              return (
-                <div key={idx} className="flex items-center gap-10">
-                  <motion.div
-                    className="min-w-[280px] max-w-[280px] bg-gray-100 border rounded-3xl shadow-lg p-6 opacity-60"
-                  >
-                    <div className="flex items-center gap-4 mb-5">
-                      <div className="w-12 h-12 rounded-full flex items-center justify-center text-xl font-bold shadow bg-gray-400 text-white">
-                        {idx + 1}
-                      </div>
-            
-                      <div>
-                        <p className="font-bold text-gray-600 text-lg">
-                          {step.user?.username || "Unknown User"}
-                        </p>
-                        <p className="text-xs text-gray-400 tracking-wide">
-                          Workflow Step
-                        </p>
-                      </div>
-                    </div>
-            
-                    {/* لا تعرض أي status */}
-                    <p className="mt-2 text-xs text-gray-400 italic">
-                      Cancelled
-                    </p>
-                  </motion.div>
-                </div>
-              );
-            }
-          let statusColor = "text-gray-600";
-          let badgeColor = "bg-gray-100 border-gray-300";
-          let stepBg = "bg-white";
+            step.users?.some(
+              (user) => String(user._id) === String(currentUser.id)
+            );
 
-          if (step.status === "Approved") {
-            statusColor = "text-green-600";
-            badgeColor = "bg-green-100 border-green-300";
-            stepBg = "bg-green-50";
-          } else if (step.status === "Rejected") {
-            statusColor = "text-red-600";
-            badgeColor = "bg-red-100 border-red-300";
-            stepBg = "bg-red-50";
-          } else if (isCurrent) {
-            statusColor = "text-blue-600";
-            badgeColor = "bg-blue-100 border-blue-300";
-            stepBg = "bg-blue-50";
+          const hasComment = !!step.comment;
+
+          /* ===== Step Style ===== */
+          let stepBg = "bg-white";
+          let stepBorder = "border-gray-200";
+          let statusText = "text-gray-500";
+
+          if (request.status === "Cancelled") {
+            stepBg = "bg-gray-100";
+            stepBorder = "border-gray-300";
+            statusText = "text-gray-400";
+          } else {
+            if (step.status === "Approved") {
+              stepBg = "bg-green-50";
+              stepBorder = "border-green-300";
+              statusText = "text-green-600";
+            }
+
+            if (step.status === "Rejected") {
+              stepBg = "bg-red-50";
+              stepBorder = "border-red-300";
+              statusText = "text-red-600";
+            }
+
+            if (step.status === "Pending") {
+              stepBg = isCurrent ? "bg-blue-50" : "bg-white";
+              stepBorder = isCurrent
+                ? "border-blue-300"
+                : "border-gray-200";
+              statusText = isCurrent
+                ? "text-blue-600"
+                : "text-gray-500";
+            }
           }
 
           return (
-            <div key={idx} className="flex items-center gap-10">
+            <div key={idx} className="flex items-center gap-8">
               {/* STEP CARD */}
               <motion.div
-                whileHover={{ scale: 1.04 }}
-                transition={{ type: "spring", stiffness: 180 }}
-                className={`min-w-[280px] max-w-[280px] ${stepBg} border rounded-3xl shadow-lg p-6 transition-all`}
+                whileHover={request.status === "Cancelled" ? {} : { y: -3 }}
+                transition={{ duration: 0.2 }}
+                onClick={() => {
+                  if (request.status === "Cancelled") return;
+
+                  if (step.actedAt && hasComment) {
+                    setCommentAction("view");
+                    setCommentText(step.comment);
+                    setActiveStep(idx);
+                    setShowCommentModal(true);
+                  }
+                }}
+                className={`relative min-w-[320px] rounded-2xl border ${stepBorder} ${stepBg} p-6 shadow-sm ${
+                  request.status === "Cancelled"
+                    ? "cursor-not-allowed"
+                    : "cursor-pointer"
+                }`}
               >
-                <div className="flex items-center gap-4 mb-5">
-                  <div
-                    className={`w-12 h-12 rounded-full flex items-center justify-center text-xl font-bold shadow ${
-                      isCurrent
-                        ? "bg-blue-600 text-white"
-                        : "bg-gray-800 text-white"
-                    }`}
-                  >
-                    {idx + 1}
+                {/* 💬 Comment Indicator */}
+                {hasComment && request.status !== "Cancelled" && (
+                  <div className="absolute top-3 right-3 flex items-center gap-1 text-blue-600">
+                    <FiMessageSquare className="text-lg" />
+                    <span className="text-xs font-medium">View</span>
                   </div>
-
-                  <div>
-                    <p className="font-bold text-gray-900 text-lg">
-                      {step.user?.username || "Unknown User"}
-                    </p>
-                    <p className="text-xs text-gray-500 tracking-wide">
-                      Workflow Step
-                    </p>
-                  </div>
-                </div>
-
-                <div
-                  className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-full border text-sm font-semibold shadow-sm ${badgeColor}`}
-                >
-                  <FiClock className={statusColor} />
-                  <span className={statusColor}>
-                    {step.status || "Pending"}
-                  </span>
-                </div>
-
-                {step.actedAt && (
-                  <p className="mt-3 text-xs text-gray-400">
-                    {new Date(step.actedAt).toLocaleString()}
-                  </p>
                 )}
 
-            
+                {/* HEADER */}
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-3">
+                    <div
+                      className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold
+                      ${isCurrent ? "bg-blue-600" : "bg-gray-700"}`}
+                    >
+                      {idx + 1}
+                    </div>
+                    <div>
+                      <p className="font-semibold text-gray-800">
+                        Step {idx + 1}
+                      </p>
+                      <p className={`text-xs ${statusText}`}>
+                        {request.status === "Cancelled"
+                          ? "Cancelled"
+                          : step.status}
+                      </p>
+                    </div>
+                  </div>
 
-                {/* ✅ APPROVE / REJECT (يطلع بس للي إله الدور) */}
-                {canAct && (
-  <div className="mt-6 flex gap-3">
+                  {request.status === "Cancelled" ? (
+                    <FiXCircle className="text-gray-400" />
+                  ) : step.status === "Approved" ? (
+                    <FiCheckCircle className="text-green-500" />
+                  ) : step.status === "Rejected" ? (
+                    <FiXCircle className="text-red-500" />
+                  ) : (
+                    <FiClock className="text-gray-400" />
+                  )}
+                </div>
 
-    {/* APPROVE */}
-    <button
-      onClick={async () => {
-        try {
-          setLoading(true);
+                {/* USERS */}
+                <div className="space-y-3">
+                  {(step.users || []).map((user) => {
+                    const acted =
+                      step.status !== "Pending" &&
+                      step.actedBy &&
+                      String(step.actedBy._id) === String(user._id);
 
-          await fetch(`/api/requests/${id}?company=${companyKey}`, {
-            method: "PUT",
-            credentials: "include",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              action: "approve",
-            }),
-          });
+                    const userBg =
+                      request.status === "Cancelled"
+                        ? "bg-gray-100 border-gray-300"
+                        : acted
+                        ? step.status === "Approved"
+                          ? "bg-green-100 border-green-400"
+                          : "bg-red-100 border-red-400"
+                        : "bg-gray-50 border-gray-200";
 
-          await fetchData(); // تحديث بدون رفرش
-        } finally {
-          setLoading(false);
-        }
-      }}
-      disabled={loading}
-      className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-green-600 hover:bg-green-700 text-white font-semibold"
-    >
-      <FiCheckCircle /> {loading ? "Processing..." : "Approve"}
-    </button>
+                    return (
+                      <div
+                        key={user._id}
+                        className={`flex items-center gap-3 p-3 rounded-xl border ${userBg}`}
+                      >
+                        <div
+                          className={`w-9 h-9 rounded-full flex items-center justify-center font-bold
+                          ${
+                            acted
+                              ? step.status === "Approved"
+                                ? "bg-green-600 text-white"
+                                : "bg-red-600 text-white"
+                              : "bg-gray-800 text-white"
+                          }`}
+                        >
+                          {user.username?.charAt(0)?.toUpperCase() || "U"}
+                        </div>
 
-    {/* REJECT */}
-    <button
-      onClick={async () => {
-        const note = prompt("سبب الرفض");
-        if (!note) return;
+                        <div className="flex-1">
+                          <p className="text-sm font-semibold text-gray-800">
+                            {user.username}
+                          </p>
+                          {acted && (
+                            <p className="text-xs text-gray-600">
+                              Took Action
+                            </p>
+                          )}
+                        </div>
 
-        try {
-          setLoading(true);
+                        {acted && (
+                          <span
+                            className={`text-xs font-semibold px-3 py-1 rounded-full ${
+                              step.status === "Approved"
+                                ? "bg-green-600 text-white"
+                                : "bg-red-600 text-white"
+                            }`}
+                          >
+                            {step.status}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
 
-          await fetch(`/api/requests/${id}?company=${companyKey}`, {
-            method: "PUT",
-            credentials: "include",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              action: "reject",
-              note,
-            }),
-          });
+                {/* ACTIONS */}
+                {canAct && request.status !== "Cancelled" && (
+                  <div className="mt-5 flex gap-3">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setCommentAction("approve");
+                        setCommentText("");
+                        setShowCommentModal(true);
+                      }}
+                      className="flex-1 py-2 rounded-xl bg-green-600 hover:bg-green-700 text-white font-semibold"
+                    >
+                      Approve
+                    </button>
 
-          await fetchData(); // تحديث مباشر
-        } finally {
-          setLoading(false);
-        }
-      }}
-      disabled={loading}
-      className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white font-semibold"
-    >
-      <FiXCircle /> {loading ? "Processing..." : "Reject"}
-    </button>
-
-  </div>
-)}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setCommentAction("reject");
+                        setCommentText("");
+                        setShowCommentModal(true);
+                      }}
+                      className="flex-1 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white font-semibold"
+                    >
+                      Reject
+                    </button>
+                  </div>
+                )}
               </motion.div>
 
               {/* ARROW */}
               {idx !== workflowSteps.length - 1 && (
-                <motion.div
-                  initial={{ opacity: 0, x: -10 }}
-                  animate={{ opacity: 1, x: 10 }}
-                  transition={{
-                    repeat: Infinity,
-                    repeatType: "reverse",
-                    duration: 1,
-                    ease: "easeInOut",
-                  }}
-                  className="text-5xl text-blue-600 select-none"
-                >
-                  ➜
-                </motion.div>
+                <div className="text-4xl text-gray-300 select-none">→</div>
               )}
             </div>
           );
@@ -542,7 +531,46 @@ if (request.status === "Cancelled") {
     )}
   </Section>
 )}
-      
+      <CommentModal
+  open={showCommentModal}
+  action={commentAction} // approve | reject | view
+  value={commentText}
+  loading={loading}
+  username={
+    activeStep !== null
+      ? workflowSteps[activeStep]?.actedBy?.username ||
+        workflowSteps[activeStep]?.actedBy?.name ||
+        workflowSteps[activeStep]?.actedBy?.email ||
+        "Unknown User"
+      : ""
+  }
+  readonly={commentAction === "view"}
+  onChange={setCommentText}
+  onClose={() => {
+    setShowCommentModal(false);
+    setActiveStep(null);
+  }}
+  onSubmit={
+    commentAction === "view"
+      ? null
+      : async () => {
+          setLoading(true);
+          await fetch(`/api/requests/${id}?company=${companyKey}`, {
+            method: "PUT",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: commentAction,
+              note: commentText,
+            }),
+          });
+          setShowCommentModal(false);
+          setActiveStep(null);
+          await fetchData();
+          setLoading(false);
+        }
+  }
+/>
     </motion.div>
   );
 }
@@ -558,7 +586,6 @@ function Info({ label, value, icon }) {
     </div>
   );
 }
-
 function Section({ title, icon, children }) {
   return (
     <motion.div
@@ -570,6 +597,7 @@ function Section({ title, icon, children }) {
         {icon} {title}
       </h2>
       {children}
+      
     </motion.div>
   );
 }
