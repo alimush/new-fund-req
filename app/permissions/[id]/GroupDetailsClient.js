@@ -23,7 +23,8 @@ const COMPANY_OPTIONS = [
   "Badur-Baghdad",
   "Ghadeer-Karbala",
   "Tiba-Al-najaf",
-  "badur-Al-najaf"
+  "badur-Al-najaf",
+  "010",
 ];
 // 🧩 Icon لكل صلاحية (الخيار A)
 const PERMISSION_ICONS = {

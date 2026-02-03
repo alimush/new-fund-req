@@ -4,19 +4,22 @@ import { motion, AnimatePresence } from "framer-motion";
 
 export default function RegisterPage() {
   const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");            // ✅ NEW
   const [password, setPassword] = useState("");
+
   const [users, setUsers] = useState([]);
   const [search, setSearch] = useState("");
   const [selectedUser, setSelectedUser] = useState(null);
+  const [newPassword, setNewPassword] = useState(""); // ✅ NEW (اختياري)
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [successMsg, setSuccessMsg] = useState("");
 
   // 🟢 جلب المستخدمين
   const fetchUsers = async (query = "") => {
     try {
-      const res = await fetch(`/api/users?q=${query}`);
+      const res = await fetch(`/api/users?q=${encodeURIComponent(query)}`);
       const data = await res.json();
-setUsers(data.users);
+      setUsers(data.users || []);
     } catch (err) {
       console.error("Error fetching users:", err);
     }
@@ -32,11 +35,12 @@ setUsers(data.users);
     const res = await fetch("/api/users", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, password }),
+      body: JSON.stringify({ username, email, password }), // ✅
     });
 
     if (res.ok) {
       setUsername("");
+      setEmail("");     // ✅
       setPassword("");
       fetchUsers(search);
       setSuccessMsg("✅ User created successfully!");
@@ -59,14 +63,19 @@ setUsers(data.users);
   const handleEdit = async () => {
     if (!selectedUser) return;
 
+    const payload = {
+      id: selectedUser._id,
+      username: selectedUser.username,
+      email: selectedUser.email || "", // ✅
+    };
+
+    // ✅ إذا كتب باسورد جديد نرسله، غير هذا لا
+    if (newPassword.trim()) payload.password = newPassword;
+
     const res = await fetch("/api/users", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        id: selectedUser._id,
-        username: selectedUser.username,
-        password: selectedUser.password,
-      }),
+      body: JSON.stringify(payload),
     });
 
     if (res.ok) {
@@ -81,8 +90,10 @@ setUsers(data.users);
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center 
-                    bg-gradient-to-br from-gray-50 via-gray-100 to-gray-200 relative overflow-hidden">
+    <div
+      className="flex min-h-screen items-center justify-center 
+                 bg-gradient-to-br from-gray-50 via-gray-100 to-gray-200 relative overflow-hidden"
+    >
       {/* زخارف خلفية */}
       <div className="absolute -top-40 -left-32 w-[30rem] h-[30rem] rounded-full bg-gray-300/20 blur-3xl" />
       <div className="absolute -bottom-40 -right-32 w-[28rem] h-[28rem] rounded-full bg-slate-400/20 blur-3xl" />
@@ -94,9 +105,11 @@ setUsers(data.users);
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.8, ease: "easeOut" }}
       >
-        <h1 className="text-2xl font-bold text-center 
-                       bg-gradient-to-r from-gray-600 via-slate-700 to-gray-900 
-                       text-transparent bg-clip-text mb-6">
+        <h1
+          className="text-2xl font-bold text-center 
+                     bg-gradient-to-r from-gray-600 via-slate-700 to-gray-900 
+                     text-transparent bg-clip-text mb-6"
+        >
           Users Management
         </h1>
 
@@ -124,6 +137,17 @@ setUsers(data.users);
                        outline-none focus:ring-2 focus:ring-gray-400 bg-white/70"
             required
           />
+
+          {/* ✅ Email */}
+          <input
+            type="email"
+            placeholder="Email (optional)"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="w-full border border-gray-300 rounded-lg p-3 
+                       outline-none focus:ring-2 focus:ring-gray-400 bg-white/70"
+          />
+
           <input
             type="password"
             placeholder="Password"
@@ -133,6 +157,7 @@ setUsers(data.users);
                        outline-none focus:ring-2 focus:ring-gray-400 bg-white/70"
             required
           />
+
           <motion.button
             type="submit"
             className="w-full bg-gradient-to-r from-gray-500 via-slate-600 to-gray-800 
@@ -164,6 +189,7 @@ setUsers(data.users);
         <h2 className="text-lg font-semibold text-gray-700 mb-2">
           Registered Users
         </h2>
+
         <ul className="space-y-2 max-h-64 overflow-y-auto">
           {users.length > 0 ? (
             users.map((u) => (
@@ -173,10 +199,17 @@ setUsers(data.users);
                            bg-white/60 rounded-lg border border-gray-200 
                            text-sm text-gray-700 backdrop-blur-sm"
               >
-                <span className="font-medium">{u.username}</span>
+                <div className="min-w-0">
+                  <div className="font-medium truncate">{u.username}</div>
+                  <div className="text-xs text-gray-500 truncate">
+                    {u.email || "No email"}
+                  </div>
+                </div>
+
                 <motion.button
                   onClick={() => {
                     setSelectedUser(u);
+                    setNewPassword(""); // ✅ كل مرة تفتح مودال نخليه فارغ
                     setIsModalOpen(true);
                   }}
                   className="px-3 py-1 bg-gray-600 text-white rounded text-xs hover:bg-gray-700"
@@ -210,14 +243,17 @@ setUsers(data.users);
               exit={{ scale: 0.8, opacity: 0 }}
               transition={{ duration: 0.3 }}
             >
-              <h2 className="text-xl font-bold 
-                             bg-gradient-to-r from-gray-600 via-slate-700 to-gray-900 
-                             text-transparent bg-clip-text mb-4">
+              <h2
+                className="text-xl font-bold 
+                           bg-gradient-to-r from-gray-600 via-slate-700 to-gray-900 
+                           text-transparent bg-clip-text mb-4"
+              >
                 User Details
               </h2>
 
               {/* فورم التعديل */}
               <div className="space-y-3 mb-4">
+                {/* Username */}
                 <div>
                   <label className="block text-sm font-medium text-gray-600">
                     Username
@@ -226,28 +262,39 @@ setUsers(data.users);
                     type="text"
                     value={selectedUser.username}
                     onChange={(e) =>
-                      setSelectedUser({
-                        ...selectedUser,
-                        username: e.target.value,
-                      })
+                      setSelectedUser({ ...selectedUser, username: e.target.value })
                     }
                     className="w-full border border-gray-300 rounded-lg p-2 mt-1 
                                outline-none focus:ring-2 focus:ring-gray-400 bg-white/70"
                   />
                 </div>
+
+                {/* ✅ Email */}
                 <div>
                   <label className="block text-sm font-medium text-gray-600">
-                    Password
+                    Email
                   </label>
                   <input
-                    type="text"
-                    value={selectedUser.password}
+                    type="email"
+                    value={selectedUser.email || ""}
                     onChange={(e) =>
-                      setSelectedUser({
-                        ...selectedUser,
-                        password: e.target.value,
-                      })
+                      setSelectedUser({ ...selectedUser, email: e.target.value })
                     }
+                    className="w-full border border-gray-300 rounded-lg p-2 mt-1 
+                               outline-none focus:ring-2 focus:ring-gray-400 bg-white/70"
+                  />
+                </div>
+
+                {/* ✅ New Password (اختياري) */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-600">
+                    New Password (optional)
+                  </label>
+                  <input
+                    type="password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="Leave empty to keep current"
                     className="w-full border border-gray-300 rounded-lg p-2 mt-1 
                                outline-none focus:ring-2 focus:ring-gray-400 bg-white/70"
                   />

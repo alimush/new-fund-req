@@ -28,7 +28,8 @@ export default function RequestDetails({ id, companyKey }) {
 const [commentAction, setCommentAction] = useState(null); // approve | reject | view
 const [commentText, setCommentText] = useState("");
 const [activeStep, setActiveStep] = useState(null);
-
+const fmt = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
+const [stepAttachment, setStepAttachment] = useState(null); // File | string(url) | null
   // 🟢 ---------------- FETCH DATA FUNCTION (خارج useEffect) ----------------
   const fetchData = async () => {
     try {
@@ -331,8 +332,11 @@ const canCancel =
               (user) => String(user._id) === String(currentUser.id)
             );
 
-          const hasComment = !!step.comment;
+            const hasComment = !!(step.comment && step.comment.trim());
 
+            const hasAttach =
+              (Array.isArray(step.tagAttachments) && step.tagAttachments.length > 0) ||
+              !!step.tag; // اذا عندك tagUrl قديم
           /* ===== Step Style ===== */
           let stepBg = "bg-white";
           let stepBorder = "border-gray-200";
@@ -374,11 +378,24 @@ const canCancel =
                 transition={{ duration: 0.2 }}
                 onClick={() => {
                   if (request.status === "Cancelled") return;
-
-                  if (step.actedAt && hasComment) {
+                
+                  if (step.actedAt && (hasComment || hasAttach)) {
                     setCommentAction("view");
-                    setCommentText(step.comment);
+                    setCommentText(step.comment || "");
                     setActiveStep(idx);
+                
+                    const last =
+                      Array.isArray(step.tagAttachments) && step.tagAttachments.length
+                        ? step.tagAttachments[step.tagAttachments.length - 1]
+                        : null;
+                
+                    // ✅ إذا موجود tagAttachments نعرضه، إذا لا نخلي null (والـ CommentModal يعرض tagUrl عبر tagUrl prop)
+                    setStepAttachment(
+                      last?.url
+                        ? { url: last.url, name: last.name, type: last.type, size: last.size }
+                        : null
+                    );
+                
                     setShowCommentModal(true);
                   }
                 }}
@@ -388,14 +405,12 @@ const canCancel =
                     : "cursor-pointer"
                 }`}
               >
-                {/* 💬 Comment Indicator */}
-                {hasComment && request.status !== "Cancelled" && (
-                  <div className="absolute top-3 right-3 flex items-center gap-1 text-blue-600">
-                    <FiMessageSquare className="text-lg" />
-                    <span className="text-xs font-medium">View</span>
-                  </div>
-                )}
-
+             {(hasComment || hasAttach) && request.status !== "Cancelled" && (
+  <div className="absolute top-3 right-3 flex items-center gap-1 text-blue-600">
+    <FiMessageSquare className="text-lg" />
+    <span className="text-xs font-medium">View</span>
+  </div>
+)}
                 {/* HEADER */}
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-3">
@@ -493,29 +508,33 @@ const canCancel =
                 {/* ACTIONS */}
                 {canAct && request.status !== "Cancelled" && (
                   <div className="mt-5 flex gap-3">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setCommentAction("approve");
-                        setCommentText("");
-                        setShowCommentModal(true);
-                      }}
-                      className="flex-1 py-2 rounded-xl bg-green-600 hover:bg-green-700 text-white font-semibold"
-                    >
-                      Approve
-                    </button>
+              <button
+  onClick={(e) => {
+    e.stopPropagation();
+    setActiveStep(idx);          // ✅ مهم
+    setCommentAction("approve");
+    setCommentText("");
+    setStepAttachment(null);     // ✅ تصفير المرفق القديم
+    setShowCommentModal(true);
+  }}
+  className="flex-1 py-2 rounded-xl bg-green-600 hover:bg-green-700 text-white font-semibold"
+>
+  Approve
+</button>
 
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setCommentAction("reject");
-                        setCommentText("");
-                        setShowCommentModal(true);
-                      }}
-                      className="flex-1 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white font-semibold"
-                    >
-                      Reject
-                    </button>
+<button
+  onClick={(e) => {
+    e.stopPropagation();
+    setActiveStep(idx);          // ✅ مهم
+    setCommentAction("reject");
+    setCommentText("");
+    setStepAttachment(null);     // ✅ تصفير المرفق القديم
+    setShowCommentModal(true);
+  }}
+  className="flex-1 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white font-semibold"
+>
+  Reject
+</button>
                   </div>
                 )}
               </motion.div>
@@ -531,45 +550,53 @@ const canCancel =
     )}
   </Section>
 )}
-      <CommentModal
+<CommentModal
   open={showCommentModal}
-  action={commentAction} // approve | reject | view
+  action={commentAction}
   value={commentText}
-  loading={loading}
-  username={
-    activeStep !== null
-      ? workflowSteps[activeStep]?.actedBy?.username ||
-        workflowSteps[activeStep]?.actedBy?.name ||
-        workflowSteps[activeStep]?.actedBy?.email ||
-        "Unknown User"
-      : ""
-  }
-  readonly={commentAction === "view"}
   onChange={setCommentText}
+  loading={loading}
+  stepStatus={activeStep !== null ? workflowSteps?.[activeStep]?.status : "Pending"}
+  attachment={stepAttachment}
+  onAttachmentChange={setStepAttachment}
+  companyKey={companyKey}
+  requestId={id}
+  tagUrl={activeStep !== null ? workflowSteps?.[activeStep]?.tag : ""}
+
+  stepIndex={activeStep}
   onClose={() => {
     setShowCommentModal(false);
     setActiveStep(null);
+    setCommentAction(null);
+    setCommentText("");
+    setStepAttachment(null);
   }}
-  onSubmit={
-    commentAction === "view"
-      ? null
-      : async () => {
-          setLoading(true);
-          await fetch(`/api/requests/${id}?company=${companyKey}`, {
-            method: "PUT",
-            credentials: "include",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              action: commentAction,
-              note: commentText,
-            }),
-          });
-          setShowCommentModal(false);
-          setActiveStep(null);
-          await fetchData();
-          setLoading(false);
-        }
-  }
+  onSubmit={commentAction === "view" ? null : async () => {
+    setLoading(true);
+    try {
+      await fetch(`/api/requests/${id}?company=${companyKey}`, {
+        method: "PUT",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: commentAction,
+          note: commentText,
+        }),
+      });
+
+      await fetchData();
+
+      setShowCommentModal(false);
+      setActiveStep(null);
+      setCommentAction(null);
+      setCommentText("");
+      setStepAttachment(null);
+
+      router.refresh();
+    } finally {
+      setLoading(false);
+    }
+  }}
 />
     </motion.div>
   );
