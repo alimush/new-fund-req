@@ -29,6 +29,15 @@ const RequestSchema = new mongoose.Schema(
   {
     companyKey: { type: String, index: true, required: true },
 
+     //  (رمز الطلب)
+     requestCode: {
+      type: String,
+      index: true,
+      unique: true,
+      sparse: true, // مهم: يسمح بوجود docs قديمة بدون requestCode
+    },
+
+    
     requestType: String,
     description: String,
     currency: String,

@@ -1,7 +1,6 @@
 "use client";
 
-import { use , useEffect, useState } from "react";
-import {
+import { useEffect, useState } from "react";import {
   FiArrowLeft,
   FiUsers,
   FiShield,
@@ -25,6 +24,7 @@ const COMPANY_OPTIONS = [
   "Tiba-Al-najaf",
   "badur-Al-najaf",
   "010",
+  
 ];
 // 🧩 Icon لكل صلاحية (الخيار A)
 const PERMISSION_ICONS = {
@@ -61,24 +61,24 @@ export default function GroupDetailsClient({ groupId }) {
 
     const load = async () => {
       try {
-        // load group
-        const resGroup = await fetch(`/api/permissions?id=${groupId}`);
+        const [resGroup, resUsers] = await Promise.all([
+          fetch(`/api/permissions?id=${groupId}`),
+          fetch("/api/users"),
+        ]);
+    
         const dataGroup = await resGroup.json();
-
-        // load users
-        const resUsers = await fetch("/api/users");
         const dataUsers = await resUsers.json();
-        setAllUsers(dataUsers || []);
+    
+        if (dataUsers.success) {
+          setAllUsers(dataUsers.users || []);
+        }
+    
         if (dataGroup.success) {
           const g = dataGroup.data;
           setGroup(g);
           setGroupUsers(g.users || []);
           setGroupPermissions(g.permissions || []);
           setGroupCompanies(g.companies || []);
-        }
-
-        if (dataUsers.success) {
-          setAllUsers(dataUsers.data || []);
         }
       } catch (err) {
         console.error("❌ Load group details error:", err);

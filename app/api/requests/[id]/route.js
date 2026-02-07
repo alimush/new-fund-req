@@ -419,15 +419,16 @@ export async function GET(req, { params }) {
     const Model = getModelForCompany(company);
 
     const request = await Model.findById(id)
-      .populate({
-        path: "workflow.steps.users",
-        model: "User",
-      })
-      .populate({
-        path: "workflow.steps.actedBy",
-        model: "User",
-        strictPopulate: false,
-      });
+    .populate({
+      path: "workflow.steps.users",
+      model: "User",
+      strictPopulate: false,
+    })
+    .populate({
+      path: "workflow.steps.actedBy",
+      model: "User",
+      strictPopulate: false,
+    });
 
     if (!request) {
       return NextResponse.json(
@@ -492,7 +493,13 @@ export async function PUT(req, { params }) {
     let company = searchParams.get("company");
 
     const body = await req.json();
-    const { action, note, attachmentMeta } = body;
+    const {
+      action,
+      note,
+      attachmentMeta,
+      stepIndex: bodyStepIndex, // نخليه فقط للتأكد/حماية
+      clearTag,
+    } = body;
 
     if (!company) company = body.company;
     if (!company) {
@@ -528,10 +535,10 @@ export async function PUT(req, { params }) {
       request.status = "Cancelled";
       request.currentStep = -1;
 
-      request.workflow.steps.forEach((step) => {
-        step.status = "Cancelled";
-        step.actedBy = userId;
-        step.actedAt = new Date();
+      request.workflow.steps.forEach((st) => {
+        st.status = "Cancelled";
+        st.actedBy = userId;
+        st.actedAt = new Date();
       });
 
       request.approvalHistory.push({
@@ -546,12 +553,35 @@ export async function PUT(req, { params }) {
     }
 
     /* ================= CURRENT STEP ================= */
+    // ✅ مهم جداً: الأكشن دائماً على currentStep الحقيقي بالسيرفر
     const stepIndex = request.currentStep;
+
+    // ✅ حماية: إذا الفرونت مرسل stepIndex مختلف نرفض (اختياري بس مفيد)
+    if (Number.isInteger(bodyStepIndex) && bodyStepIndex !== stepIndex) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Step index mismatch (stale UI). Please refresh.",
+          serverStep: stepIndex,
+          clientStep: bodyStepIndex,
+        },
+        { status: 409 }
+      );
+    }
+
     const step = request.workflow?.steps?.[stepIndex];
 
     if (!step) {
       return NextResponse.json(
         { success: false, error: "Invalid workflow step" },
+        { status: 400 }
+      );
+    }
+
+    // إذا الطلب ملغي لا تقبل أكشن
+    if (String(request.status || "").toLowerCase() === "cancelled") {
+      return NextResponse.json(
+        { success: false, error: "Request is cancelled" },
         { status: 400 }
       );
     }
@@ -572,7 +602,7 @@ export async function PUT(req, { params }) {
       );
     }
 
-    // ✅ helper: خزّن الاتاج بالستيب إذا موجود
+    // ✅ helper: خزّن/امسح المرفق بالستيب الحالي
     const applyStepAttachment = () => {
       if (attachmentMeta?.key) {
         step.attachment = {
@@ -581,10 +611,24 @@ export async function PUT(req, { params }) {
           type: attachmentMeta.type || "",
           size: attachmentMeta.size || 0,
         };
+      } else if (clearTag) {
+        step.attachment = null;
       }
     };
 
-    // نحتاج نعرف منو يستلم بعد الاكشن
+    // ✅ helper: تصفير ستِب (حتى ما تبقى آثار)
+    const resetStepToPendingClean = (st) => {
+      if (!st) return;
+      st.status = "Pending";
+      st.actedBy = null;
+      st.actedAt = null;
+      st.comment = "";
+      st.attachment = null;
+
+      if (Array.isArray(st.tagAttachments)) st.tagAttachments = [];
+      if (typeof st.tag !== "undefined") st.tag = "";
+    };
+
     const stepFrom = stepIndex;
     let stepTo = null;
 
@@ -596,14 +640,23 @@ export async function PUT(req, { params }) {
       step.comment = note || "";
       applyStepAttachment();
 
-      if (stepIndex === request.workflow.steps.length - 1) {
+      const lastIdx = request.workflow.steps.length - 1;
+
+      if (stepIndex === lastIdx) {
+        // ✅ آخر خطوة => الطلب Approved
         request.status = "Approved";
-        stepTo = stepIndex; // ماكو انتقال (آخر خطوة)
+        stepTo = stepIndex;
       } else {
-        request.currentStep = stepIndex + 1;
-        request.workflow.steps[request.currentStep].status = "Pending";
+        // ✅ انتقال للخطوة الجاية + تصفيرها Pending نظيف
+        const nextIndex = stepIndex + 1;
+        request.currentStep = nextIndex;
+
+        const nextStep = request.workflow.steps[nextIndex];
+        resetStepToPendingClean(nextStep);
+
+        // ✅ لأن بعده ما خلص
         request.status = "Pending";
-        stepTo = request.currentStep; // ✅ الخطوة الجاية
+        stepTo = nextIndex;
       }
     }
 
@@ -614,28 +667,30 @@ export async function PUT(req, { params }) {
       step.actedAt = new Date();
       step.comment = note || "";
       applyStepAttachment();
-
+    
       if (stepIndex > 0) {
-        const prevIndex = stepIndex - 1;
-        request.currentStep = prevIndex;
-
-        const prevStep = request.workflow.steps[prevIndex];
-        prevStep.status = "Pending";
-        prevStep.actedBy = null;
-        prevStep.actedAt = null;
-        prevStep.comment = "";
-
-        request.status = "Pending";
-        stepTo = request.currentStep; // ✅ الخطوة السابقة
+        const backIndex = stepIndex - 1;
+        request.currentStep = backIndex;
+    
+        const backStep = request.workflow.steps[backIndex];
+        resetStepToPendingClean(backStep);
+    
+        request.status = "Rejected";
+        stepTo = backIndex;
       } else {
-        // إذا أول خطوة: نرجعها Pending وماكو انتقال فعلي
-        step.status = "Pending";
-        step.actedBy = null;
-        step.actedAt = null;
-        step.comment = "";
-        request.status = "Pending";
+        // ✅ أول خطوة: نخلي الطلب Rejected ونبقى currentStep = 0
+        request.status = "Rejected";
+        request.currentStep = 0;
         stepTo = 0;
       }
+    }
+
+    // ✅ إذا action مو approve/reject/cancel
+    if (action !== "approve" && action !== "reject" && action !== "cancel") {
+      return NextResponse.json(
+        { success: false, error: "Invalid action" },
+        { status: 400 }
+      );
     }
 
     request.approvalHistory.push({
@@ -648,60 +703,52 @@ export async function PUT(req, { params }) {
     await request.save();
 
     /* ================= EMAIL NOTIFY (بعد الحفظ) ================= */
-    // نرسل ايميل فقط إذا صار انتقال حقيقي إلى خطوة ثانية
-    // approve: إذا مو آخر خطوة
-    // reject: إذا stepIndex > 0
     const shouldNotify =
-      (action === "approve" && stepIndex < request.workflow.steps.length - 1) ||
-      (action === "reject" && stepIndex > 0);
+      (action === "approve" && stepFrom < request.workflow.steps.length - 1) ||
+      (action === "reject" && stepFrom > 0);
 
     if (shouldNotify && stepTo !== null && stepTo !== undefined) {
       try {
         const targetUsersIds = request.workflow?.steps?.[stepTo]?.users || [];
-if (Array.isArray(targetUsersIds) && targetUsersIds.length > 0) {
-  // ✅ جيب اليوزرات (ايميل + يوزرنيم)
-  const users = await User.find({ _id: { $in: targetUsersIds } })
-    .select("email username")
-    .lean();
 
-  const emails = users.map((u) => u.email).filter(Boolean);
+        if (Array.isArray(targetUsersIds) && targetUsersIds.length > 0) {
+          const users = await User.find({ _id: { $in: targetUsersIds } })
+            .select("email username")
+            .lean();
 
-  // ✅ اسم الشخص اللي سوى الاكشن
-  const actor = await User.findById(userId).select("username").lean();
-  const actorName = actor?.username || "";
+          const emails = users.map((u) => u.email).filter(Boolean);
 
-  // ✅ رابط الطلب
-  const requestUrl = `https://rida-funds.spc-it.com.iq/fund-requests/${id}`;
+          const actor = await User.findById(userId).select("username").lean();
+          const actorName = actor?.username || "";
 
-  // ✅ اسم مقدم الطلب (fallbacks)
-  const requesterName =
-    request?.createdByName ||
-    request?.createdByUsername ||
-    request?.createdBy?.username ||
-    "";
+          const requestUrl = `https://rida-funds.spc-it.com.iq/fund-requests/${id}`;
 
-  // ✅ لا تذكر أسماء الخطوة الجاية إذا بيها أكثر من واحد
-  const toUserName = users.length === 1 ? (users[0]?.username || "") : "";
+          const requesterName =
+            request?.createdByName ||
+            request?.createdByUsername ||
+            request?.createdBy?.username ||
+            "";
 
-  const subject = `[Workflow] ${action.toUpperCase()} → Step ${Number(stepTo) + 1} | ${company}`;
+          const toUserName = users.length === 1 ? (users[0]?.username || "") : "";
 
-  const html = buildEmailHtml({
-    action,
-    requestId: id,
-    company,
-    stepFrom,
-    stepTo,
-    note,
-    actorName,
-    requesterName,
-    toUserName,   // إذا أكثر من واحد راح تكون ""
-    requestUrl,
-  });
+          const subject = `[Workflow] ${action.toUpperCase()} → Step ${Number(stepTo) + 1} | ${company}`;
 
-  await sendWorkflowEmail({ toEmails: emails, subject, html });
-}
+          const html = buildEmailHtml({
+            action,
+            requestId: id,
+            company,
+            stepFrom,
+            stepTo,
+            note,
+            actorName,
+            requesterName,
+            toUserName,
+            requestUrl,
+          });
+
+          await sendWorkflowEmail({ toEmails: emails, subject, html });
+        }
       } catch (e) {
-        // لا نفشل العملية إذا الايميل فشل
         console.error("❌ Email notify failed:", e.message);
       }
     }

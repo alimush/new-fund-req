@@ -18,9 +18,9 @@ export default function LoginPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ username, password }),
     });
-    
+
     const data = await res.json();
-    
+
     if (data.success) {
       localStorage.setItem("userId", data.user.id);
       localStorage.setItem("username", data.user.username);
@@ -29,44 +29,53 @@ export default function LoginPage() {
 
       window.dispatchEvent(new Event("userChanged"));
       router.push("/home");
-    
     } else {
       alert(data.error || "❌ خطأ باليوزر أو الباسورد");
     }
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[#ffffff] text-[#171717] relative overflow-hidden">
-
-      {/* خلفيات ناعمة */}
-      <div className="absolute -top-40 -left-40 w-[28rem] h-[28rem] bg-gray-200/30 rounded-full blur-3xl" />
-      <div className="absolute -bottom-40 -right-40 w-[24rem] h-[24rem] bg-gray-300/20 rounded-full blur-3xl" />
-
+    // ✅ بدون أي خلفية: يعتمد على RootLayout
+    <div className="relative flex min-h-screen items-center justify-center px-4">
       <motion.form
         onSubmit={handleLogin}
-        initial={{ opacity: 0, y: 40 }}
+        initial={{ opacity: 0, y: 28 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.7, ease: "easeOut" }}
-        className="relative w-96 bg-white/70 backdrop-blur-xl shadow-xl border border-gray-200/70 rounded-2xl p-8 space-y-7"
+        transition={{ duration: 0.6, ease: "easeOut" }}
+        className="
+          relative w-full max-w-sm
+          rounded-3xl p-8 space-y-7
+          bg-white/35 backdrop-blur-2xl
+          ring-1 ring-white/25
+          shadow-[0_18px_45px_-25px_rgba(0,0,0,0.35)]
+        "
       >
-        {/* أيقونة المستخدم */}
+        {/* Icon */}
         <motion.div
           className="flex justify-center"
-          initial={{ scale: 0.7, opacity: 0 }}
+          initial={{ scale: 0.8, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
-          transition={{ delay: 0.2, duration: 0.5 }}
+          transition={{ delay: 0.1, duration: 0.45 }}
         >
-          <FaUserCircle className="text-7xl text-gray-700 drop-shadow-md" />
+          <div
+            className="
+              h-16 w-16 rounded-2xl
+              bg-white/45 backdrop-blur
+              ring-1 ring-white/25
+              shadow-sm
+              flex items-center justify-center
+            "
+          >
+            <FaUserCircle className="text-5xl text-gray-800/90" />
+          </div>
         </motion.div>
 
-        {/* عنوان */}
+        {/* Title */}
         <motion.h1
-          className="text-2xl font-bold text-center tracking-wide 
-                     bg-gradient-to-r from-gray-600 via-gray-800 to-gray-900 
-                     bg-clip-text text-transparent"
+          className="text-2xl font-black text-center text-gray-800 tracking-wide"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          transition={{ delay: 0.3, duration: 0.5 }}
+          transition={{ delay: 0.18, duration: 0.45 }}
         >
           Sign in
         </motion.h1>
@@ -76,12 +85,9 @@ export default function LoginPage() {
           className="relative"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          transition={{ delay: 0.4, duration: 0.5 }}
+          transition={{ delay: 0.28, duration: 0.45 }}
         >
-          <span
-            className="absolute inset-y-0 left-3 flex items-center text-gray-500 transition-all duration-200 pointer-events-none"
-            id="userIcon"
-          >
+          <span className="absolute inset-y-0 left-3 flex items-center text-gray-500 pointer-events-none">
             <FaUser />
           </span>
 
@@ -90,15 +96,15 @@ export default function LoginPage() {
             placeholder="Username"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
-            onFocus={() =>
-              (document.getElementById("userIcon").style.color = "#000")
-            }
-            onBlur={() =>
-              (document.getElementById("userIcon").style.color = "#6b7280")
-            }
-            className="w-full p-3 pl-10 rounded-lg border border-gray-300 
-                       focus:ring-2 focus:ring-gray-400 outline-none 
-                       bg-white text-gray-900 transition"
+            className="
+              w-full p-3 pl-10 rounded-2xl
+              bg-white/45 backdrop-blur
+              ring-1 ring-black/5
+              text-gray-900 placeholder:text-gray-500
+              outline-none
+              focus:ring-2 focus:ring-blue-200/70
+              transition
+            "
             required
           />
         </motion.div>
@@ -108,12 +114,9 @@ export default function LoginPage() {
           className="relative"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          transition={{ delay: 0.5, duration: 0.5 }}
+          transition={{ delay: 0.36, duration: 0.45 }}
         >
-          <span
-            className="absolute inset-y-0 left-3 flex items-center text-gray-500 transition-all duration-200 pointer-events-none"
-            id="passIcon"
-          >
+          <span className="absolute inset-y-0 left-3 flex items-center text-gray-500 pointer-events-none">
             <FaLock />
           </span>
 
@@ -122,29 +125,39 @@ export default function LoginPage() {
             placeholder="Password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            onFocus={() =>
-              (document.getElementById("passIcon").style.color = "#000")
-            }
-            onBlur={() =>
-              (document.getElementById("passIcon").style.color = "#6b7280")
-            }
-            className="w-full p-3 pl-10 rounded-lg border border-gray-300 
-                       focus:ring-2 focus:ring-gray-400 outline-none 
-                       bg-white text-gray-900 transition"
+            className="
+              w-full p-3 pl-10 rounded-2xl
+              bg-white/45 backdrop-blur
+              ring-1 ring-black/5
+              text-gray-900 placeholder:text-gray-500
+              outline-none
+              focus:ring-2 focus:ring-blue-200/70
+              transition
+            "
             required
           />
         </motion.div>
 
-        {/* Login Button */}
+        {/* Button */}
         <motion.button
           type="submit"
-          whileHover={{ scale: 1.03 }}
-          whileTap={{ scale: 0.96 }}
-          className="w-full p-3 rounded-lg bg-gradient-to-r from-gray-500 via-gray-700 to-gray-800 
-                     text-white font-semibold shadow-lg hover:from-gray-600 hover:to-gray-900 transition"
+          whileHover={{ y: -1 }}
+          whileTap={{ scale: 0.98 }}
+          className="
+            w-full p-3 rounded-2xl
+            bg-gray-900 text-white font-semibold
+            shadow-sm
+            hover:bg-gray-800
+            transition
+          "
         >
           Login
         </motion.button>
+
+        {/* Small hint (اختياري) */}
+        <p className="text-center text-xs text-gray-600">
+          Please enter your credentials to continue
+        </p>
       </motion.form>
     </div>
   );

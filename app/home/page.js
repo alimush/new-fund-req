@@ -16,6 +16,7 @@ const cards = [
   { key: "Tiba-Al-najaf", name: "طلبات طيبة النجف", logo: "/طيبة_النجف.png" },
   { key: "badur-Al-najaf", name: "طلبات بدور النجف", logo: "/بدور_النجف.png" },
   { key: "010", name: "شاورما الحلوين", logo: "/1.png" },
+  { key: "RYD", name: "رياض", logo: "" },
 
 ];
 
@@ -34,11 +35,10 @@ export default function HomePage() {
   const allowedCards = cards.filter(c => companies.includes(c.key));
   return (
     <div
-      className="min-h-screen relative p-6 md:p-10 overflow-hidden 
-                    bg-gradient-to-br from-gray-50 via-gray-100 to-gray-200"
+
     >
       {/* الهيدر */}
-      <div className="max-w-6xl mx-auto mb-10 text-center relative">
+      <div className="max-w-6xl mx-auto mb-10 text-center mt-16 relative">
         <motion.h1
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -60,51 +60,58 @@ export default function HomePage() {
           اختر الشركة لعرض تفاصيل الطلبات
         </motion.p>
       </div>
-
-      {/* الكروت */}
+{/* الكروت */}
+<motion.div
+  className="max-w-6xl mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6"
+  variants={container}
+  initial="hidden"
+  animate="show"
+>
+  {allowedCards.map((c, idx) => (
+    <Link key={idx} href={`/requests/${c.key}`} passHref>
       <motion.div
-        className="max-w-6xl mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6"
-        variants={container}
-        initial="hidden"
-        animate="show"
+        variants={item}
+        whileHover={{ y: -4, scale: 1.015 }}
+        whileTap={{ scale: 0.995 }}
+        transition={{ duration: 0.2, ease: "easeOut" }}
+        className="
+          group relative cursor-pointer rounded-3xl p-6
+          bg-white/40 backdrop-blur-2xl
+          ring-1 ring-white/25
+          shadow-[0_18px_45px_-25px_rgba(0,0,0,0.35)]
+          hover:bg-white/55 hover:ring-white/35
+          transition-all duration-300
+          text-center flex flex-col items-center
+        "
       >
-       {allowedCards.map((c, idx) => (
-          <Link key={idx} href={`/requests/${c.key}`} passHref>
-            <motion.div
-              variants={item}
-              whileHover={{ scale: 1.03, y: -5 }}
-              transition={{ duration: 0.15, ease: "easeOut" }}
-              className="group relative cursor-pointer rounded-2xl p-6
-                         border border-gray-200 bg-white/70
-                         backdrop-blur-md shadow-md hover:shadow-xl
-                         ring-1 ring-gray-200/50 hover:ring-2 hover:ring-gray-300/70
-                         transition-all duration-300 text-center flex flex-col items-center"
-            >
-              {/* زخارف */}
-              <div className="pointer-events-none absolute -top-8 -left-8 w-24 h-24 rounded-full blur-2xl bg-gray-200/30" />
-              <div className="pointer-events-none absolute -bottom-10 -right-10 w-28 h-28 rounded-full blur-2xl bg-gray-300/30" />
+        {/* زخارف ناعمة */}
+        <div className="pointer-events-none absolute inset-0 rounded-3xl bg-gradient-to-br from-white/25 via-transparent to-transparent opacity-80" />
 
-              {/* اللوغو */}
-              <div
-                className="relative w-20 h-20 rounded-2xl bg-white/90 
-                              border border-gray-200 shadow-sm overflow-hidden"
-              >
-                <Image
-                  src={c.logo}
-                  alt={`${c.name} logo`}
-                  fill
-                  className="object-contain p-2 transition-transform duration-500 group-hover:scale-105"
-                />
-              </div>
+        {/* اللوغو */}
+        <div
+          className="
+            relative w-20 h-20 rounded-2xl
+            bg-white/55 backdrop-blur
+            ring-1 ring-white/25
+            shadow-sm overflow-hidden
+          "
+        >
+          <Image
+            src={c.logo}
+            alt={`${c.name} logo`}
+            fill
+            className="object-contain p-2 transition-transform duration-500 group-hover:scale-105"
+          />
+        </div>
 
-              {/* النص */}
-              <h2 className="mt-3 text-lg font-semibold tracking-tight text-gray-700">
-                {c.name}
-              </h2>
-            </motion.div>
-          </Link>
-        ))}
+        {/* النص */}
+        <h2 className="mt-4 text-lg font-bold tracking-tight text-gray-900">
+          {c.name}
+        </h2>
       </motion.div>
+    </Link>
+  ))}
+</motion.div>
     </div>
   );
 }

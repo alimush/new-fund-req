@@ -4,13 +4,23 @@ import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import Workflow from "@/models/Workflow";
 import { getModelForCompany } from "@/models/Request";
+import User from "@/models/User";
+import mongoose from "mongoose";
 
+const CounterSchema = new mongoose.Schema({
+  key: { type: String, unique: true },
+  seq: { type: Number, default: 0 },
+});
+
+const Counter =
+  mongoose.models.Counter || mongoose.model("Counter", CounterSchema);
 /* =========================
    POST → Create Request (WITH WORKFLOW SNAPSHOT)
 ========================= */
 export async function POST(req) {
   try {
     await dbConnect();
+    
     const formData = await req.formData();
 
     const company = formData.get("company");
@@ -42,12 +52,30 @@ export async function POST(req) {
       })),
     };
 
+// ====== REQUEST CODE COUNTER ======
+const companyText = String(company).toUpperCase().replaceAll(" ", "-");
+const counterKey = `REQ_${companyText}`;
+
+// atomically increment
+const counter = await Counter.findOneAndUpdate(
+  { key: counterKey },
+  { $inc: { seq: 1 } },
+  { new: true, upsert: true }
+);
+
+// format number (5 digits)
+const serial = String(counter.seq).padStart(5, "0");
+
+// final code
+const requestCode = `REQ-${companyText}-${serial}`;
+
     const Model = getModelForCompany(company);
 
     const data = {
       // ✅ FIX: موديلك يحتاج companyKey
       companyKey: company,
       company,
+      requestCode,
 
       requestType: formData.get("requestType"),
       description: formData.get("description"),
