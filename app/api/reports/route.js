@@ -1,7 +1,6 @@
 // app/api/reports/route.js
 import { NextResponse } from "next/server";
 import dbConnect from "@/lib/mongodb";
-import mongoose from "mongoose";
 import User from "@/models/User";
 import { getModelForCompany } from "@/models/Request";
 import { cookies } from "next/headers";
@@ -35,12 +34,37 @@ async function getUserAccess(userId) {
   };
 }
 
+function isFiltersOnlyRequest(searchParams) {
+  if (searchParams.get("filters") === "1") return true;
+  const keys = Array.from(searchParams.keys());
+  if (keys.length === 0) return true;
+  if (keys.length === 1 && keys[0] === "company") return true;
+  return false;
+}
+
+function computePendingWithIds(doc) {
+  try {
+    if (
+      doc?.status === "Pending" &&
+      Number.isInteger(doc?.currentStep) &&
+      doc?.workflow?.steps?.length
+    ) {
+      const st = doc.workflow.steps[doc.currentStep];
+      if (st?.status === "Pending" && Array.isArray(st?.users)) {
+        return st.users.map((u) => String(u));
+      }
+    }
+  } catch {}
+  return [];
+}
+
 export async function GET(req) {
   try {
     await dbConnect();
 
     const cookieStore = await cookies();
-    const userId = cookieStore.get("userId")?.value;    if (!userId) {
+    const userId = cookieStore.get("userId")?.value;
+    if (!userId) {
       return NextResponse.json(
         { success: false, error: "Unauthorized" },
         { status: 401 }
@@ -49,7 +73,6 @@ export async function GET(req) {
 
     const { allowedCompanies, allowedPerms } = await getUserAccess(userId);
 
-    // ✅ لازم يمتلك VIEW_REPORTS
     if (!allowedPerms.includes(PERMISSIONS.VIEW_REPORTS)) {
       return NextResponse.json(
         { success: false, error: "Forbidden: missing VIEW_REPORTS permission" },
@@ -57,7 +80,6 @@ export async function GET(req) {
       );
     }
 
-    // إذا ما عنده شركات => رجع فاضي
     if (!allowedCompanies.length) {
       return NextResponse.json({
         success: true,
@@ -69,41 +91,36 @@ export async function GET(req) {
           pendingUsers: [],
         },
         data: [],
+        meta: { total: 0, totalPages: 0, page: 1, pageSize: 0 },
       });
     }
 
     const { searchParams } = new URL(req.url);
 
-    // ✅ Mode: return requestCode suggestions for ONE company
+    // =========================
+    // 1) CODES MODE (GLOBAL)
+    // =========================
     const codesMode = searchParams.get("codes") === "1";
     if (codesMode) {
-      const company = (searchParams.get("company") || "").trim(); // companyKey
-      const q = (searchParams.get("q") || "").trim(); // search text
-
-      if (!company) {
-        return NextResponse.json(
-          { success: false, error: "company is required" },
-          { status: 400 }
-        );
-      }
-
-      // ✅ ممنوع يطلب أكواد لشركة مو ضمن صلاحياته
-      if (!allowedCompanies.includes(company)) {
-        return NextResponse.json(
-          { success: false, error: "Forbidden company" },
-          { status: 403 }
-        );
-      }
-
-      const Model = getModelForCompany(company);
+      const q = (searchParams.get("q") || "").trim();
 
       const cond = {};
       if (q) cond.requestCode = { $regex: q, $options: "i" };
 
-      const codes = await Model.distinct("requestCode", cond);
+      const allCodes = await Promise.all(
+        allowedCompanies.map(async (companyKey) => {
+          const Model = getModelForCompany(companyKey);
+          const codes = await Model.distinct("requestCode", cond);
+          return codes || [];
+        })
+      );
 
-      const data = (codes || [])
-        .filter(Boolean)
+      const set = new Set();
+      for (const arr of allCodes) {
+        for (const c of arr) if (c) set.add(String(c));
+      }
+
+      const data = Array.from(set)
         .sort()
         .slice(0, 50)
         .map((c) => ({ value: c, label: c }));
@@ -111,17 +128,86 @@ export async function GET(req) {
       return NextResponse.json({ success: true, data });
     }
 
-    // ========= Query Params (Filters) =========
-    const companiesParam = searchParams.get("company") || "all"; // all OR a,b,c
-    const usersParam = searchParams.get("user") || "all"; // createdBy (string)
+    // =========================
+    // 2) FILTERS ONLY
+    // =========================
+    if (isFiltersOnlyRequest(searchParams)) {
+      const wantFull = searchParams.get("filters") === "1";
+
+      const pendingUsers = await User.find({})
+        .select("_id username")
+        .lean();
+
+      if (!wantFull) {
+        return NextResponse.json({
+          success: true,
+          filters: {
+            companies: allowedCompanies,
+            users: [],
+            currencies: [],
+            statuses: ["Pending", "Approved", "Rejected", "Cancelled"],
+            pendingUsers: pendingUsers.map((u) => ({
+              value: String(u._id),
+              label: u.username,
+            })),
+          },
+          data: [],
+          meta: { total: 0, totalPages: 0, page: 1, pageSize: 0 },
+        });
+      }
+
+      // FULL filters
+      const allUsers = await User.find({}).select("username").lean();
+
+      const currencyArrays = await Promise.all(
+        allowedCompanies.map(async (companyKey) => {
+          const Model = getModelForCompany(companyKey);
+          const arr = await Model.distinct("currency", {});
+          return arr || [];
+        })
+      );
+
+      const currenciesSet = new Set();
+      currencyArrays.flat().forEach((c) => c && currenciesSet.add(String(c)));
+
+      const statuses = ["Pending", "Approved", "Rejected", "Cancelled"];
+
+      return NextResponse.json({
+        success: true,
+        filters: {
+          companies: allowedCompanies,
+          users: allUsers.map((u) => u.username).filter(Boolean),
+          currencies: Array.from(currenciesSet).sort(),
+          statuses,
+          pendingUsers: pendingUsers.map((u) => ({
+            value: String(u._id),
+            label: u.username,
+          })),
+        },
+        data: [],
+        meta: { total: 0, totalPages: 0, page: 1, pageSize: 0 },
+      });
+    }
+
+    // =========================
+    // 3) QUERY PARAMS (✅ هذا كان ناقص عندك)
+    // =========================
+    const companiesParam = searchParams.get("company") || "all";
+    const usersParam = searchParams.get("user") || "all";
     const statusParam = searchParams.get("status") || "all";
     const currencyParam = searchParams.get("currency") || "all";
-    const pendingParam = searchParams.get("pending") || "all"; // userId OR all
+    const pendingParam = searchParams.get("pending") || "all";
     const fromDate = searchParams.get("from") || "";
     const toDate = searchParams.get("to") || "";
     const codeParam = (searchParams.get("code") || "").trim();
 
-    // ✅ companyList: إذا all => خليها allowedCompanies، إذا محدد => تقاطع مع allowedCompanies
+    const page = Math.max(1, parseInt(searchParams.get("page") || "1", 10));
+    const pageSize = Math.max(
+      10,
+      Math.min(200, parseInt(searchParams.get("pageSize") || "25", 10))
+    );
+
+    // companyList based on allowedCompanies
     let companyList = null;
     if (companiesParam === "all") {
       companyList = allowedCompanies;
@@ -130,8 +216,8 @@ export async function GET(req) {
       companyList = requested.filter((c) => allowedCompanies.includes(c));
     }
 
-    // إذا بعد التقاطع ما بقى شي => فاضي
     if (!companyList.length) {
+      const pendingUsers = await User.find({}).select("_id username").lean();
       return NextResponse.json({
         success: true,
         filters: {
@@ -139,26 +225,20 @@ export async function GET(req) {
           users: [],
           currencies: [],
           statuses: [],
-          pendingUsers: [],
+          pendingUsers: pendingUsers.map((u) => ({
+            value: String(u._id),
+            label: u.username,
+          })),
         },
         data: [],
+        meta: { total: 0, totalPages: 0, page, pageSize },
       });
     }
 
+    // createdBy list
     const createdByList = usersParam === "all" ? null : safeSplit(usersParam);
 
-    // ========= Build Filters Options =========
-    const allCompanies = new Set(companyList); // ✅ فقط المسموح
-    const allUsers = new Set();
-    const allCurrencies = new Set();
-    const allStatuses = new Set();
-
-    // ========= Data =========
-    let allResults = [];
-
-    for (const companyKey of companyList) {
-      const Model = getModelForCompany(companyKey);
-
+    const buildQuery = () => {
       const query = {};
 
       if (codeParam) query.requestCode = { $regex: codeParam, $options: "i" };
@@ -169,52 +249,144 @@ export async function GET(req) {
       if (fromDate || toDate) {
         query.createdAt = {};
         if (fromDate) query.createdAt.$gte = new Date(fromDate);
-        if (toDate) query.createdAt.$lte = new Date(toDate);
+        if (toDate) {
+          const end = new Date(toDate);
+          end.setHours(23, 59, 59, 999);
+          query.createdAt.$lte = end;
+        }
       }
 
-      const docs = await Model.find(query).lean().sort({ createdAt: -1 });
+      return query;
+    };
 
-      // تحديث قوائم الفلاتر
-      for (const d of docs) {
-        if (d.createdBy) allUsers.add(d.createdBy);
-        if (d.currency) allCurrencies.add(d.currency);
-        if (d.status) allStatuses.add(d.status);
+    const queryBase = buildQuery();
+
+    // ====== total count (per company) ======
+    const countsByCompany = await Promise.all(
+      companyList.map(async (companyKey) => {
+        const Model = getModelForCompany(companyKey);
+        const c = await Model.countDocuments(queryBase);
+        return { companyKey, count: c };
+      })
+    );
+
+    const total = countsByCompany.reduce((a, x) => a + x.count, 0);
+    const totalPages = total ? Math.ceil(total / pageSize) : 0;
+
+    if (!total) {
+      const pendingUsers = await User.find({}).select("_id username").lean();
+      return NextResponse.json({
+        success: true,
+        filters: {
+          companies: companyList,
+          users: [],
+          currencies: [],
+          statuses: [],
+          pendingUsers: pendingUsers.map((u) => ({
+            value: String(u._id),
+            label: u.username,
+          })),
+        },
+        data: [],
+        meta: { total: 0, totalPages: 0, page, pageSize },
+      });
+    }
+
+    // ====== smart skip/limit across companies ======
+    const globalSkip = (page - 1) * pageSize;
+    let remainingSkip = globalSkip;
+    let remainingTake = pageSize;
+
+    const plan = [];
+
+    for (const { companyKey, count } of countsByCompany) {
+      if (remainingTake <= 0) break;
+      if (count <= 0) continue;
+
+      if (remainingSkip >= count) {
+        remainingSkip -= count;
+        continue;
       }
 
-      // PendingWith + فلتر pendingParam
-      for (const d of docs) {
-        let pendingWithIds = [];
-        let pendingWithNames = [];
+      const skip = Math.max(0, remainingSkip);
+      const available = count - skip;
+      const limit = Math.min(remainingTake, available);
 
-        if (
-          d?.status === "Pending" &&
-          Number.isInteger(d?.currentStep) &&
-          d?.workflow?.steps?.length
-        ) {
-          const st = d.workflow.steps[d.currentStep];
-          if (st?.status === "Pending" && Array.isArray(st?.users)) {
-            pendingWithIds = st.users.map((u) => String(u));
-          }
-        }
+      plan.push({ companyKey, skip, limit });
 
-        if (pendingParam !== "all") {
-          if (!pendingWithIds.includes(String(pendingParam))) continue;
-        }
+      remainingSkip = 0;
+      remainingTake -= limit;
+    }
 
-        if (pendingWithIds.length > 0) {
-          const users = await User.find({ _id: { $in: pendingWithIds } })
-            .select("username")
-            .lean();
-          pendingWithNames = users.map((u) => u.username).filter(Boolean);
-        }
+    // fetch only needed
+    const fetchPromises = plan.map(async ({ companyKey, skip, limit }) => {
+      const Model = getModelForCompany(companyKey);
 
-        allResults.push({
-          ...d,
-          companyKey,
-          pendingWithIds,
-          pendingWithNames,
-        });
+      const docs = await Model.find(queryBase)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean();
+
+      return docs.map((d) => ({ ...d, companyKey }));
+    });
+
+    let merged = (await Promise.all(fetchPromises)).flat();
+
+    for (const d of merged) d.pendingWithIds = computePendingWithIds(d);
+
+    if (pendingParam !== "all") {
+      const p = String(pendingParam);
+      merged = merged.filter((d) => d.pendingWithIds?.includes(p));
+    }
+
+    merged.sort((a, b) => {
+      const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return tb - ta;
+    });
+
+    // pendingWithNames
+    const allPendingIds = new Set();
+    for (const d of merged)
+      (d.pendingWithIds || []).forEach((id) => allPendingIds.add(String(id)));
+
+    let pendingNameMap = new Map();
+    if (allPendingIds.size > 0) {
+      const users = await User.find({ _id: { $in: Array.from(allPendingIds) } })
+        .select("_id username")
+        .lean();
+      pendingNameMap = new Map(users.map((u) => [String(u._id), u.username]));
+    }
+
+    const finalData = merged.map((d) => {
+      let totalAmount = 0;
+    
+      if (Array.isArray(d.items)) {
+        totalAmount = d.items.reduce((sum, it) => {
+          const q = Number(it.qty || 0);
+          const p = Number(it.price || 0);
+          return sum + q * p;
+        }, 0);
       }
+    
+      return {
+        ...d,
+        totalAmount, // ✅ هذا المهم
+        pendingWithNames: (d.pendingWithIds || [])
+          .map((id) => pendingNameMap.get(String(id)))
+          .filter(Boolean),
+      };
+    });
+    // light filters from current page
+    const pageUsers = new Set();
+    const pageCurrencies = new Set();
+    const pageStatuses = new Set();
+
+    for (const d of finalData) {
+      if (d.createdBy) pageUsers.add(d.createdBy);
+      if (d.currency) pageCurrencies.add(d.currency);
+      if (d.status) pageStatuses.add(d.status);
     }
 
     const pendingUsers = await User.find({}).select("_id username").lean();
@@ -222,16 +394,17 @@ export async function GET(req) {
     return NextResponse.json({
       success: true,
       filters: {
-        companies: Array.from(allCompanies),
-        users: Array.from(allUsers),
-        currencies: Array.from(allCurrencies),
-        statuses: Array.from(allStatuses),
+        companies: companyList,
+        users: Array.from(pageUsers),
+        currencies: Array.from(pageCurrencies),
+        statuses: Array.from(pageStatuses),
         pendingUsers: pendingUsers.map((u) => ({
           value: String(u._id),
           label: u.username,
         })),
       },
-      data: allResults,
+      data: finalData,
+      meta: { total, totalPages, page, pageSize },
     });
   } catch (err) {
     console.error("❌ Reports API Error:", err);

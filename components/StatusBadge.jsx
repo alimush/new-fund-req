@@ -20,7 +20,7 @@ export default function StatusBadge({ status, className = "" }) {
     return (
       <span className={`${base} text-green-800 ring-1 ring-green-200/60`}>
         <FiCheckCircle className="text-green-600 text-sm" />
-        Approved
+        موافق
       </span>
     );
 
@@ -28,7 +28,7 @@ export default function StatusBadge({ status, className = "" }) {
     return (
       <span className={`${base} text-red-800 ring-1 ring-red-200/60`}>
         <FiXCircle className="text-red-600 text-sm" />
-        Rejected
+        مرفوض
       </span>
     );
 
@@ -36,15 +36,15 @@ export default function StatusBadge({ status, className = "" }) {
     return (
       <span className={`${base} text-gray-700 ring-1 ring-gray-200/60`}>
         <FiMinusCircle className="text-gray-500 text-sm" />
-        Cancelled
+        ملغي
       </span>
     );
 
-  // Pending (default)
+  // قيد الانتظار (افتراضي)
   return (
     <span className={`${base} text-amber-800 ring-1 ring-amber-200/60`}>
       <FiClock className="text-amber-600 text-sm" />
-      Pending
+      قيد الانتظار
     </span>
   );
 }

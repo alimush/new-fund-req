@@ -52,6 +52,7 @@ export async function POST(req) {
       })),
     };
 
+    
 // ====== REQUEST CODE COUNTER ======
 const companyText = String(company).toUpperCase().replaceAll(" ", "-");
 const counterKey = `REQ_${companyText}`;

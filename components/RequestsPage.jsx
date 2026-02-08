@@ -15,39 +15,47 @@ import { useRouter } from "next/navigation";
 import { usePermissions } from "@/context/PermissionContext";
 import { PERMISSIONS } from "@/lib/permission";
 import StatusBadge from "@/components/StatusBadge";
-
+import Pagination from "@/components/Pagination";
+import { paginate } from "@/lib/paginate";
 import CreateRequestModal from "@/components/CreateRequestModal";
 
 export default function RequestsPage({ companyKey }) {
   const router = useRouter();
   const { permissions } = usePermissions();
-const canViewAll =
-  Array.isArray(permissions) &&
-  permissions.includes(PERMISSIONS.VIEW_REPORTS);
+
+  const canViewAll =
+    Array.isArray(permissions) &&
+    permissions.includes(PERMISSIONS.VIEW_REPORTS);
+
   const canCreate =
     Array.isArray(permissions) &&
     permissions.includes(PERMISSIONS.CREATE_REQUEST);
 
-  const [requests, setRequests] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const PAGE_SIZE = 20;
 
-  const [isCreateOpen, setIsCreateOpen] = useState(false);
-
+  // ✅ لازم يكون q فوق لأن نستخدمه بكذا مكان
   const [q, setQ] = useState("");
   const [mounted, setMounted] = useState(false);
+
+  const [requests, setRequests] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+
+  // ✅ صفحات لكل سكشن
+  const [pageMy, setPageMy] = useState(1);
+  const [pagePending, setPagePending] = useState(1);
+  const [pageCancelled, setPageCancelled] = useState(1);
+  const [pageArchived, setPageArchived] = useState(1);
+
+  useEffect(() => setMounted(true), []);
+
   const allowedCompanies = useMemo(() => {
     if (!Array.isArray(permissions)) return [];
-  
-    // مثال: صلاحيات الشركات بصيغة COMPANY:<KEY>
     return permissions
       .filter((p) => typeof p === "string" && p.startsWith("COMPANY:"))
       .map((p) => p.replace("COMPANY:", "").trim())
       .filter(Boolean);
   }, [permissions]);
-
-  useEffect(() => setMounted(true), []);
-  
-  
 
   const fetchRequests = useCallback(async () => {
     if (!companyKey) return;
@@ -81,19 +89,12 @@ const canViewAll =
   // =========================
   const pageV = {
     hidden: { opacity: 0, y: 10 },
-    show: {
-      opacity: 1,
-      y: 0,
-      transition: { duration: 0.35, ease: "easeOut" },
-    },
+    show: { opacity: 1, y: 0, transition: { duration: 0.35, ease: "easeOut" } },
   };
 
   const staggerV = {
     hidden: { opacity: 1 },
-    show: {
-      opacity: 1,
-      transition: { staggerChildren: 0.06, delayChildren: 0.05 },
-    },
+    show: { opacity: 1, transition: { staggerChildren: 0.06, delayChildren: 0.05 } },
   };
 
   const sectionV = {
@@ -141,25 +142,20 @@ const canViewAll =
   }, [requests, currentUsername]);
 
   // =========================
-  // Stats
+  // Stats + Sections
   // =========================
- // ✅ أولاً
-const myRequests = useMemo(() => {
-  return normalized.filter((r) => r._isMine).slice(0, 20);
-}, [normalized]);
+  const myRequests = useMemo(() => {
+    // ✅ لا تسوي slice هنا حتى الـ pagination يشتغل
+    return normalized.filter((r) => r._isMine);
+  }, [normalized]);
 
-// ✅ بعدها
-const stats = useMemo(() => {
-  const total = myRequests.length;
-  const approved = myRequests.filter((r) => r._isApproved).length;
-  const pending = myRequests.filter((r) => r._isPending).length;
+  const stats = useMemo(() => {
+    const total = myRequests.length;
+    const approved = myRequests.filter((r) => r._isApproved).length;
+    const pending = myRequests.filter((r) => r._isPending).length;
+    return { total, approved, pending };
+  }, [myRequests]);
 
-  return { total, approved, pending };
-}, [myRequests]);
-
-  // =========================
-  // Search helpers
-  // =========================
   const buildHaystack = useCallback((r) => {
     return [
       r.requestCode,
@@ -176,67 +172,78 @@ const stats = useMemo(() => {
       .toLowerCase();
   }, []);
 
-  // =========================
-  // Sections
-  // =========================
- // ✅ فقط ريكوستات اليوزر الحالي
+  const pendingOthers = useMemo(() => {
+    if (!canViewAll) return [];
+    // ✅ لا slice
+    return normalized.filter((r) => r._isPending && !r._isMine);
+  }, [normalized, canViewAll]);
 
+  const cancelled = useMemo(() => {
+    const text = q.trim().toLowerCase();
+    const base = canViewAll
+      ? normalized.filter((r) => r._isCancelled)
+      : myRequests.filter((r) => r._isCancelled);
 
-// ❌ نخليها فاضية حالياً// ✅ Pending Approvals (غير مالتي) فقط للي عنده VIEW_REPORTS
-const pendingOthers = useMemo(() => {
-  if (!canViewAll) return []; // ما عنده صلاحية -> لا يطلع شي
-  return normalized.filter((r) => r._isPending && !r._isMine).slice(0, 20);
-}, [normalized, canViewAll]);
+    if (!text) return base;
+    return base.filter((r) => buildHaystack(r).includes(text));
+  }, [normalized, myRequests, q, buildHaystack, canViewAll]);
 
-// ✅ Cancelled (كل الشركات المسموحة) فقط للي عنده VIEW_REPORTS
-// وإذا ما عنده صلاحية -> خليها مالته
-const cancelled = useMemo(() => {
-  const text = q.trim().toLowerCase();
-  const base = canViewAll
-    ? normalized.filter((r) => r._isCancelled)
-    : myRequests.filter((r) => r._isCancelled);
+  const archivedOther = useMemo(() => {
+    const text = q.trim().toLowerCase();
+    const base = canViewAll
+      ? normalized.filter((r) => r._isApproved || r._isRejected)
+      : myRequests.filter((r) => r._isApproved || r._isRejected);
 
-  if (!text) return base;
-  return base.filter((r) => buildHaystack(r).includes(text));
-}, [normalized, myRequests, q, buildHaystack, canViewAll]);
+    if (!text) return base;
+    return base.filter((r) => buildHaystack(r).includes(text));
+  }, [normalized, myRequests, q, buildHaystack, canViewAll]);
 
-// ✅ Approved & Rejected (كل الشركات المسموحة) فقط للي عنده VIEW_REPORTS
-// وإذا ما عنده صلاحية -> خليها مالته
-const archivedOther = useMemo(() => {
-  const text = q.trim().toLowerCase();
-  const base = canViewAll
-    ? normalized.filter((r) => r._isApproved || r._isRejected)
-    : myRequests.filter((r) => r._isApproved || r._isRejected);
+  // ✅ Reset pages when search changes
+  useEffect(() => {
+    setPageCancelled(1);
+    setPageArchived(1);
+  }, [q]);
 
-  if (!text) return base;
-  return base.filter((r) => buildHaystack(r).includes(text));
-}, [normalized, myRequests, q, buildHaystack, canViewAll]);
+  // ✅ Reset pages when company changes (حتى لا تبقى على صفحة بعيدة)
+  useEffect(() => {
+    setPageMy(1);
+    setPagePending(1);
+    setPageCancelled(1);
+    setPageArchived(1);
+  }, [companyKey]);
+
+  // ✅ Paged lists
+  const myPaged = useMemo(
+    () => paginate(myRequests, pageMy, PAGE_SIZE),
+    [myRequests, pageMy, PAGE_SIZE]
+  );
+  const pendingPaged = useMemo(
+    () => paginate(pendingOthers, pagePending, PAGE_SIZE),
+    [pendingOthers, pagePending, PAGE_SIZE]
+  );
+  const cancelledPaged = useMemo(
+    () => paginate(cancelled, pageCancelled, PAGE_SIZE),
+    [cancelled, pageCancelled, PAGE_SIZE]
+  );
+  const archivedPaged = useMemo(
+    () => paginate(archivedOther, pageArchived, PAGE_SIZE),
+    [archivedOther, pageArchived, PAGE_SIZE]
+  );
 
   // =========================
   // UI Components
   // =========================
-  
-
   const SoftSpinner = ({ label }) => (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      className="flex items-center justify-center py-14"
-    >
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center justify-center py-14">
       <div className="flex items-center gap-3 rounded-2xl bg-white/35 ring-1 ring-white/25 px-4 py-3">
         <div className="w-6 h-6 rounded-full border-4 border-white/70 border-t-transparent animate-spin" />
-        <div className="text-sm font-bold text-gray-900">
-          {label || "Loading..."}
-        </div>
+        <div className="text-sm font-bold text-gray-900">{label || "Loading..."}</div>
       </div>
     </motion.div>
   );
 
   const EmptyState = ({ icon: Icon, title, subtitle }) => (
-    <motion.div
-      variants={sectionV}
-      className="rounded-3xl bg-white/30 ring-1 ring-white/25 p-10 text-center"
-    >
+    <motion.div variants={sectionV} className="rounded-3xl bg-white/30 ring-1 ring-white/25 p-10 text-center">
       <motion.div
         initial={{ scale: 0.9, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
@@ -246,17 +253,12 @@ const archivedOther = useMemo(() => {
         {Icon ? <Icon /> : <FiFileText />}
       </motion.div>
       <div className="text-sm font-black text-gray-900">{title}</div>
-      {subtitle && (
-        <div className="text-xs text-gray-800/70 mt-1">{subtitle}</div>
-      )}
+      {subtitle && <div className="text-xs text-gray-800/70 mt-1">{subtitle}</div>}
     </motion.div>
   );
 
   const RequestCard = ({ r, compact = false, index = 0 }) => {
-    const dateText = r.createdAt
-      ? new Date(r.createdAt).toLocaleDateString()
-      : "-";
-
+    const dateText = r.createdAt ? new Date(r.createdAt).toLocaleDateString() : "-";
     return (
       <motion.div
         layout
@@ -275,7 +277,6 @@ const archivedOther = useMemo(() => {
         ].join(" ")}
         onClick={() => router.push(`/requests/${companyKey}/${r._id}`)}
       >
-        {/* glow */}
         <div className="pointer-events-none absolute inset-0 rounded-2xl bg-gradient-to-br from-white/25 via-transparent to-transparent opacity-80" />
 
         <div className="relative flex items-start justify-between gap-3">
@@ -284,25 +285,16 @@ const archivedOther = useMemo(() => {
               <StatusBadge status={r.status} />
               <span className="text-xs text-gray-600/80">{dateText}</span>
             </div>
-
             <div className="mt-2 text-sm font-extrabold text-gray-900 line-clamp-1">
               {r.requestType || "Request"}
             </div>
-
-            <div className="mt-1 text-xs text-gray-700/80 line-clamp-2">
-              {r.description || "-"}
-            </div>
-
-            <div className="mt-2 text-[11px] font-mono text-gray-700/80">
-              {r.requestCode || r._id}
-            </div>
+            <div className="mt-1 text-xs text-gray-700/80 line-clamp-2">{r.description || "-"}</div>
+            <div className="mt-2 text-[11px] font-mono text-gray-700/80">{r.requestCode || r._id}</div>
           </div>
 
           <div className="shrink-0 text-right">
             <div className="text-[11px] text-gray-600/80">Currency</div>
-            <div className="text-sm font-black text-gray-900">
-              {r.currency || "-"}
-            </div>
+            <div className="text-sm font-black text-gray-900">{r.currency || "-"}</div>
           </div>
         </div>
 
@@ -311,9 +303,7 @@ const archivedOther = useMemo(() => {
             <FiFileText />
             {r.company || companyKey}
           </span>
-          <span className="truncate max-w-[55%]">
-            By: {r.createdBy || "Unknown"}
-          </span>
+          <span className="truncate max-w-[55%]">By: {r.createdBy || "Unknown"}</span>
         </div>
       </motion.div>
     );
@@ -334,29 +324,18 @@ const archivedOther = useMemo(() => {
             )}
             <div>
               <div className="text-sm font-black text-gray-900">{title}</div>
-              {subtitle && (
-                <div className="text-xs text-gray-700/80">{subtitle}</div>
-              )}
+              {subtitle && <div className="text-xs text-gray-700/80">{subtitle}</div>}
             </div>
           </div>
-
           {right}
         </div>
       </div>
-
       <div className="p-5">{children}</div>
     </motion.div>
   );
 
   const ScrollBox = ({ children, height = "max-h-[520px]" }) => (
-    <div
-      className={[
-        height,
-        "overflow-y-auto pr-1",
-        "scrollbar-thin",
-        "scrollbar-thumb-gray-300/60 scrollbar-track-transparent",
-      ].join(" ")}
-    >
+    <div className={[height, "overflow-y-auto pr-1", "scrollbar-thin", "scrollbar-thumb-gray-300/60 scrollbar-track-transparent"].join(" ")}>
       {children}
     </div>
   );
@@ -378,13 +357,7 @@ const archivedOther = useMemo(() => {
   );
 
   return (
-    <motion.div
-      variants={pageV}
-      initial="hidden"
-      animate="show"
-      className="min-h-screen w-full"
-    >
-      {/* Background glass */}
+    <motion.div variants={pageV} initial="hidden" animate="show" className="min-h-screen w-full">
       <div className="fixed inset-0 -z-10 bg-gradient-to-br from-slate-50 via-slate-100 to-slate-200" />
       <div className="fixed inset-0 -z-10 opacity-70">
         <div className="absolute -top-24 -left-24 h-96 w-96 rounded-full bg-blue-200/40 blur-3xl" />
@@ -394,12 +367,7 @@ const archivedOther = useMemo(() => {
 
       <div className="mx-auto max-w-6xl px-6 py-6">
         {/* ===== Top Bar ===== */}
-        <motion.div
-          variants={staggerV}
-          initial="hidden"
-          animate="show"
-          className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
-        >
+        <motion.div variants={staggerV} initial="hidden" animate="show" className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <motion.div variants={sectionV} className="flex items-center gap-3">
             <motion.button
               type="button"
@@ -409,17 +377,13 @@ const archivedOther = useMemo(() => {
               className="inline-flex items-center gap-2 px-3 py-2 rounded-2xl bg-white/40 backdrop-blur-xl ring-1 ring-white/30 text-gray-800 shadow-sm hover:bg-white/55"
               title="Back to Dashboard"
             >
-              <FiArrowLeft />
-              Back
+              <FiArrowLeft /> Back
             </motion.button>
 
             <div className="flex flex-col gap-1">
-              <h1 className="text-xl sm:text-2xl font-black text-gray-900 tracking-tight">
-                Fund Requests Management
-              </h1>
-
+              <h1 className="text-xl sm:text-2xl font-black text-gray-900 tracking-tight">Fund Requests Management</h1>
               <div className="flex items-center gap-2 text-sm text-gray-800/80">
-                <span className="font-semibold">Company:</span>
+                <span className="font-semibold">الشركة:</span>
                 <span className="px-2.5 py-1 rounded-xl bg-white/45 backdrop-blur ring-1 ring-white/25 text-gray-900 font-extrabold">
                   {companyKey}
                 </span>
@@ -427,10 +391,7 @@ const archivedOther = useMemo(() => {
             </div>
           </motion.div>
 
-          <motion.div
-            variants={sectionV}
-            className="flex items-center gap-2"
-          >
+          <motion.div variants={sectionV} className="flex items-center gap-2">
             {canCreate && (
               <motion.button
                 onClick={() => setIsCreateOpen(true)}
@@ -438,50 +399,24 @@ const archivedOther = useMemo(() => {
                 whileTap={{ scale: 0.98 }}
                 className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-gray-900/85 backdrop-blur text-white shadow hover:bg-gray-900"
               >
-                <FiPlus />
-                Create Request
+                <FiPlus /> Create Request
               </motion.button>
             )}
           </motion.div>
         </motion.div>
 
         {/* ===== Stats ===== */}
-        <motion.div
-          variants={staggerV}
-          initial="hidden"
-          animate="show"
-          className="mt-6 grid grid-cols-1 sm:grid-cols-3 gap-4"
-        >
-          <StatCard
-            title="Approved Requests"
-            value={stats.approved}
-            icon={FiCheckCircle}
-            iconClass="text-green-700"
-          />
-          <StatCard
-            title="Pending Requests"
-            value={stats.pending}
-            icon={FiClock}
-            iconClass="text-amber-700"
-          />
-          <StatCard
-            title="Total Requests"
-            value={stats.total}
-            icon={FiFileText}
-            iconClass="text-blue-700"
-          />
+        <motion.div variants={staggerV} initial="hidden" animate="show" className="mt-6 grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <StatCard title="طلباتي الموافق عليها" value={stats.approved} icon={FiCheckCircle} iconClass="text-green-700" />
+          <StatCard title="طلباتي قيد الانتظار" value={stats.pending} icon={FiClock} iconClass="text-amber-700" />
+          <StatCard title="مجموع طلباتي" value={stats.total} icon={FiFileText} iconClass="text-blue-700" />
         </motion.div>
 
         {/* ===== Two columns ===== */}
-        <motion.div
-          variants={staggerV}
-          initial="hidden"
-          animate="show"
-          className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6"
-        >
-          {/* Left: Pending Others */}
+        <motion.div variants={staggerV} initial="hidden" animate="show" className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Pending Others */}
           <SectionShell
-            title="Pending Approvals"
+            title="طلبات قيد الانتظار  "
             subtitle="Pending requests created by other users"
             icon={FiClock}
             right={
@@ -499,67 +434,58 @@ const archivedOther = useMemo(() => {
             {loading ? (
               <SoftSpinner label="Loading pending approvals..." />
             ) : pendingOthers.length === 0 ? (
-              <EmptyState
-                icon={FiClock}
-                title="No Pending Requests"
-                subtitle="There are no pending requests from other users"
-              />
+              <EmptyState icon={FiClock} title="No Pending Requests" subtitle="There are no pending requests from other users" />
             ) : (
-              <ScrollBox height="max-h-[520px]">
-                <motion.div variants={staggerV} initial="hidden" animate="show">
-                  <div className="space-y-3">
-                    <AnimatePresence initial={false}>
-                      {pendingOthers.map((r, idx) => (
-                        <RequestCard key={r._id} r={r} compact index={idx} />
-                      ))}
-                    </AnimatePresence>
-                  </div>
-                </motion.div>
-              </ScrollBox>
+              <>
+                <ScrollBox height="max-h-[520px]">
+                  <motion.div variants={staggerV} initial="hidden" animate="show">
+                    <div className="space-y-3">
+                      <AnimatePresence initial={false}>
+                        {pendingPaged.items.map((r, idx) => (
+                          <RequestCard key={r._id} r={r} compact index={idx} />
+                        ))}
+                      </AnimatePresence>
+                    </div>
+                  </motion.div>
+                </ScrollBox>
+
+                <Pagination page={pendingPaged.page} totalPages={pendingPaged.totalPages} onPage={setPagePending} />
+              </>
             )}
           </SectionShell>
 
-          {/* Right: My Requests */}
+          {/* My Requests */}
           <SectionShell
-            title="My All Requests"
-            subtitle={
-              mounted && currentUsername
-                ? `Requests created by: ${currentUsername}`
-                : "Requests created by:"
-            }
+            title="جميع طلباتي"
+            subtitle={mounted && currentUsername ? `Requests created by: ${currentUsername}` : "Requests created by:"}
             icon={FiFileText}
           >
             {loading ? (
               <SoftSpinner label="Loading my requests..." />
             ) : myRequests.length === 0 ? (
-              <EmptyState
-                icon={FiFileText}
-                title="No Requests"
-                subtitle="You haven’t created any requests yet"
-              />
+              <EmptyState icon={FiFileText} title="لا يوجد طلبات" subtitle="لم تنشئ اي طلب لحد الان" />
             ) : (
-              <ScrollBox height="max-h-[520px]">
-                <motion.div variants={staggerV} initial="hidden" animate="show">
-                  <div className="space-y-3">
-                    <AnimatePresence initial={false}>
-                      {myRequests.map((r, idx) => (
-                        <RequestCard key={r._id} r={r} compact index={idx} />
-                      ))}
-                    </AnimatePresence>
-                  </div>
-                </motion.div>
-              </ScrollBox>
+              <>
+                <ScrollBox height="max-h-[520px]">
+                  <motion.div variants={staggerV} initial="hidden" animate="show">
+                    <div className="space-y-3">
+                      <AnimatePresence initial={false}>
+                        {myPaged.items.map((r, idx) => (
+                          <RequestCard key={r._id} r={r} compact index={idx} />
+                        ))}
+                      </AnimatePresence>
+                    </div>
+                  </motion.div>
+                </ScrollBox>
+
+                <Pagination page={myPaged.page} totalPages={myPaged.totalPages} onPage={setPageMy} />
+              </>
             )}
           </SectionShell>
         </motion.div>
 
-        {/* ===== Bottom: Archive + Search ===== */}
-        <motion.div
-          variants={staggerV}
-          initial="hidden"
-          animate="show"
-          className="mt-6"
-        >
+        {/* ===== Archive + Search ===== */}
+        <motion.div variants={staggerV} initial="hidden" animate="show" className="mt-6">
           <SectionShell
             title="Archive"
             subtitle="Cancelled requests + Approved/Rejected requests"
@@ -578,70 +504,58 @@ const archivedOther = useMemo(() => {
           >
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* Cancelled */}
-              <SectionShell
-                title="Cancelled Requests"
-                subtitle="All cancelled requests"
-                icon={FiXCircle}
-              >
+              <SectionShell title="الطلبات الملغية" subtitle="All cancelled requests" icon={FiXCircle}>
                 {loading ? (
                   <SoftSpinner label="Loading cancelled..." />
                 ) : cancelled.length === 0 ? (
                   <motion.div variants={sectionV} className="text-center py-6">
-                    <div className="text-sm font-black text-gray-900">
-                      No cancelled requests
-                    </div>
-                    {q?.trim() ? (
-                      <div className="text-xs text-gray-800/70 mt-1">
-                        Try another keyword
-                      </div>
-                    ) : null}
+                    <div className="text-sm font-black text-gray-900">No cancelled requests</div>
+                    {q?.trim() ? <div className="text-xs text-gray-800/70 mt-1">Try another keyword</div> : null}
                   </motion.div>
                 ) : (
-                  <ScrollBox height="max-h-[620px]">
-                    <motion.div variants={staggerV} initial="hidden" animate="show">
-                      <div className="grid grid-cols-1 gap-4">
-                        <AnimatePresence initial={false}>
-                          {cancelled.map((r, idx) => (
-                            <RequestCard key={r._id} r={r} index={idx} />
-                          ))}
-                        </AnimatePresence>
-                      </div>
-                    </motion.div>
-                  </ScrollBox>
+                  <>
+                    <ScrollBox height="max-h-[620px]">
+                      <motion.div variants={staggerV} initial="hidden" animate="show">
+                        <div className="grid grid-cols-1 gap-4">
+                          <AnimatePresence initial={false}>
+                            {cancelledPaged.items.map((r, idx) => (
+                              <RequestCard key={r._id} r={r} index={idx} />
+                            ))}
+                          </AnimatePresence>
+                        </div>
+                      </motion.div>
+                    </ScrollBox>
+
+                    <Pagination page={cancelledPaged.page} totalPages={cancelledPaged.totalPages} onPage={setPageCancelled} />
+                  </>
                 )}
               </SectionShell>
 
               {/* Approved + Rejected */}
-              <SectionShell
-                title="Approved & Rejected Requests"
-                subtitle="All approved and rejected requests"
-                icon={FiCheckCircle}
-              >
+              <SectionShell title="الطلبات الموافق عليها & المرفوضة" subtitle="All approved and rejected requests" icon={FiCheckCircle}>
                 {loading ? (
                   <SoftSpinner label="Loading approved & rejected..." />
                 ) : archivedOther.length === 0 ? (
                   <motion.div variants={sectionV} className="text-center py-6">
-                    <div className="text-sm font-black text-gray-900">
-                      No approved/rejected requests
-                    </div>
-                    {q?.trim() ? (
-                      <div className="text-xs text-gray-800/70 mt-1">
-                        Try another keyword
-                      </div>
-                    ) : null}
+                    <div className="text-sm font-black text-gray-900">No approved/rejected requests</div>
+                    {q?.trim() ? <div className="text-xs text-gray-800/70 mt-1">Try another keyword</div> : null}
                   </motion.div>
                 ) : (
-                  <ScrollBox height="max-h-[620px]">
-                    <motion.div variants={staggerV} initial="hidden" animate="show">
-                      <div className="grid grid-cols-1 gap-4">
-                        <AnimatePresence initial={false}>
-                          {archivedOther.map((r, idx) => (
-                            <RequestCard key={r._id} r={r} index={idx} />
-                          ))}
-                        </AnimatePresence>
-                      </div>
-                    </motion.div>
-                  </ScrollBox>
+                  <>
+                    <ScrollBox height="max-h-[620px]">
+                      <motion.div variants={staggerV} initial="hidden" animate="show">
+                        <div className="grid grid-cols-1 gap-4">
+                          <AnimatePresence initial={false}>
+                            {archivedPaged.items.map((r, idx) => (
+                              <RequestCard key={r._id} r={r} index={idx} />
+                            ))}
+                          </AnimatePresence>
+                        </div>
+                      </motion.div>
+                    </ScrollBox>
+
+                    <Pagination page={archivedPaged.page} totalPages={archivedPaged.totalPages} onPage={setPageArchived} />
+                  </>
                 )}
               </SectionShell>
             </div>

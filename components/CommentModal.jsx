@@ -175,29 +175,29 @@ export default function CommentModal({
     if (isView) {
       if (localStatus === "Approved")
         return {
-          title: "Approved",
-          subtitle: "This step has been approved",
+          title: "موافق",
+          subtitle: " هذه الخطوة تم الموافقة عليها",
           icon: <FiCheckCircle className="text-green-600" />,
           bubble: "bg-green-500/10 border-green-500/15",
         };
       if (localStatus === "Rejected")
         return {
-          title: "Rejected",
-          subtitle: "This step has been rejected",
+          title: "مرفوض",
+          subtitle: " هذه الخطوة تم رفضها",
           icon: <FiXCircle className="text-red-600" />,
           bubble: "bg-red-500/10 border-red-500/15",
         };
       if (localStatus === "Cancelled")
         return {
-          title: "Cancelled",
-          subtitle: "This step has been cancelled",
+          title: " ملغي",
+          subtitle: " هذه الخطوة تم إلغاؤها",
           icon: <FiSlash className="text-slate-700" />,
           bubble: "bg-slate-500/10 border-slate-500/15",
         };
 
       return {
-        title: "Pending",
-        subtitle: "Not acted yet",
+        title: " قيد الانتظار",
+        subtitle: " هذه الخطوة لم يتم اتخاذ إجراء عليها بعد",
         icon: <FiClock className="text-amber-600" />,
         bubble: "bg-amber-500/10 border-amber-500/15",
       };
@@ -579,7 +579,7 @@ export default function CommentModal({
             <div className="rounded-3xl border border-white/20 bg-white/25 backdrop-blur-xl p-4">
               {/* Comment */}
               <div className="mb-4">
-                <p className="text-xs text-slate-600/80 mb-2 font-bold">Comment</p>
+                <p className="text-xs text-slate-600/80 mb-2 font-bold">تعليق</p>
 
                 {isView ? (
                   <div className="text-sm text-slate-900 whitespace-pre-wrap bg-white/35 border border-white/25 rounded-3xl p-3">

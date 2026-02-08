@@ -195,29 +195,29 @@ className="rounded-3xl bg-white/35 backdrop-blur-2xl ring-1 ring-white/25 shadow
           animate={{ opacity: 1, y: 0 }}
         >
           <h2 className="text-lg font-semibold mb-4 flex items-center gap-2 text-gray-700">
-            <FiInfo /> Request Information
+            <FiInfo /> معلومات الطلب
           </h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm text-gray-700">
   {/* Request Code */}
   <div className="rounded-2xl transition-all duration-300 hover:-translate-y-1 hover:bg-white/45 hover:shadow-[0_12px_30px_-15px_rgba(0,0,0,0.35)]">
     <Info
-      label="Request Code"
+      label="رمز الطلب"
       value={request.requestCode || request.code || request._id}
       icon={<FiInfo />}
     />
   </div>
 
   <div className="rounded-2xl transition-all duration-300 hover:-translate-y-1 hover:bg-white/45 hover:shadow-[0_12px_30px_-15px_rgba(0,0,0,0.35)]">
-    <Info label="Company" value={request.company} icon={<FiUsers />} />
+    <Info label=" الشركة" value={request.company} icon={<FiUsers />} />
   </div>
 
   <div className="rounded-2xl transition-all duration-300 hover:-translate-y-1 hover:bg-white/45 hover:shadow-[0_12px_30px_-15px_rgba(0,0,0,0.35)]">
-    <Info label="Type" value={request.requestType} icon={<FiInfo />} />
+    <Info label="النوع" value={request.requestType} icon={<FiInfo />} />
   </div>
 
   <div className="rounded-2xl transition-all duration-300 hover:-translate-y-1 hover:bg-white/45 hover:shadow-[0_12px_30px_-15px_rgba(0,0,0,0.35)]">
     <Info
-      label="Currency"
+      label="العملة"
       value={request.currency}
       icon={<FiDollarSign />}
     />
@@ -225,7 +225,7 @@ className="rounded-3xl bg-white/35 backdrop-blur-2xl ring-1 ring-white/25 shadow
 
   <div className="rounded-2xl transition-all duration-300 hover:-translate-y-1 hover:bg-white/45 hover:shadow-[0_12px_30px_-15px_rgba(0,0,0,0.35)]">
     <Info
-      label="Department"
+      label="القسم"
       value={request.department}
       icon={<FiUsers />}
     />
@@ -233,7 +233,7 @@ className="rounded-3xl bg-white/35 backdrop-blur-2xl ring-1 ring-white/25 shadow
 
   <div className="rounded-2xl transition-all duration-300 hover:-translate-y-1 hover:bg-white/45 hover:shadow-[0_12px_30px_-15px_rgba(0,0,0,0.35)]">
     <Info
-      label="Created At"
+      label="تاريخ الإنشاء"
       value={new Date(request.createdAt).toLocaleString()}
       icon={<FiCalendar />}
     />
@@ -247,7 +247,7 @@ className="rounded-3xl bg-white/35 backdrop-blur-2xl ring-1 ring-white/25 shadow
           animate={{ opacity: 1, y: 0 }}
         >
           <h2 className="text-lg font-semibold mb-4 flex items-center gap-2 text-gray-700">
-            <FiUsers /> Requester Information
+            <FiUsers /> معلومات مقدم الطلب
           </h2>
           <div className="flex items-center gap-4">
             <div className="w-14 h-14 bg-gray-100 rounded-full flex items-center justify-center shadow-inner">
@@ -266,7 +266,7 @@ className="rounded-3xl bg-white/35 backdrop-blur-2xl ring-1 ring-white/25 shadow
       </div>
 
       {/* DESCRIPTION */}
-      <Section title="Description" icon={<FiInfo />}>
+      <Section title="الوصف" icon={<FiInfo />}>
         <p className="text-gray-700 text-sm leading-relaxed">
           {request.description || "-"}
         </p>
@@ -300,16 +300,16 @@ className="rounded-3xl bg-white/35 backdrop-blur-2xl ring-1 ring-white/25 shadow
             "
           >
             <th className="px-5 py-4 text-left font-black w-[52%]">
-              Description
+              الوصف
             </th>
             <th className="px-5 py-4 text-right font-black w-[16%]">
-              Qty
+              العدد
             </th>
             <th className="px-5 py-4 text-right font-black w-[16%]">
-              Price
+              المبلغ
             </th>
             <th className="px-5 py-4 text-right font-black w-[16%]">
-              Subtotal
+              المجموع الكلي
             </th>
           </tr>
         </thead>
@@ -543,7 +543,7 @@ className="rounded-3xl bg-white/35 backdrop-blur-2xl ring-1 ring-white/25 shadow
 
                       <div>
                         <p className="font-semibold text-gray-800">
-                          Step {idx + 1}
+                          الخطوة {idx + 1}
                         </p>
 
                         {/* ✅ status from component (مرة وحده) */}

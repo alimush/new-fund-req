@@ -238,7 +238,7 @@ export default function CreateRequestModal({
   onChange={(e) => setRequestType(e.target.value)}
   className="border border-gray-300 rounded-lg p-2 bg-white text-gray-800"
 >
-  <option value="">Select type</option>
+  <option value="">حدد نوع الطلب</option>
 
   <option value="تسديد مستحقات">تسديد مستحقات</option>
   <option value="موجودات">موجودات</option>
@@ -260,7 +260,7 @@ export default function CreateRequestModal({
 </select>
 
                   <textarea
-                    placeholder="Description"
+                    placeholder="الوصف"
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
                     className="sm:col-span-2 border border-gray-300 rounded-lg p-3 bg-white text-gray-800"
@@ -277,7 +277,7 @@ export default function CreateRequestModal({
                     onChange={(e) => setCurrency(e.target.value)}
                     className="border border-gray-300 rounded-lg p-2 bg-white text-gray-800"
                   >
-                    <option value="">Select currency</option>
+                    <option value="">حدد العملة</option>
                     <option value="USD">USD</option>
                     <option value="IQD">IQD</option>
                   </select>
@@ -286,7 +286,7 @@ export default function CreateRequestModal({
   onChange={(e) => setDepartment(e.target.value)}
   className="border border-gray-300 rounded-lg p-2 bg-white text-gray-800"
 >
-  <option value="">Select department</option>
+  <option value="">حدد القسم</option>
 
   <option value="تكنولوجيا المعلومات">تكنولوجيا المعلومات</option>
   <option value="المكتب التنفيذي">المكتب التنفيذي</option>
@@ -310,21 +310,21 @@ export default function CreateRequestModal({
                   <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
                     <input
                       type="text"
-                      placeholder="Item description"
+                      placeholder="وصف المادة"
                       value={newItem.desc}
                       onChange={(e) => setNewItem({ ...newItem, desc: e.target.value })}
                       className="sm:col-span-6 border border-gray-300 rounded-lg p-2 bg-white text-gray-800"
                     />
                     <input
                       type="number"
-                      placeholder="Qty"
+                      placeholder="العدد"
                       value={newItem.qty}
                       onChange={(e) => setNewItem({ ...newItem, qty: e.target.value })}
                       className="sm:col-span-2 border border-gray-300 rounded-lg p-2 bg-white text-gray-800"
                     />
                     <input
                       type="number"
-                      placeholder="Price"
+                      placeholder="المبلغ"
                       value={newItem.price}
                       onChange={(e) => setNewItem({ ...newItem, price: e.target.value })}
                       className="sm:col-span-2 border border-gray-300 rounded-lg p-2 bg-white text-gray-800"
@@ -334,7 +334,7 @@ export default function CreateRequestModal({
                       onClick={addItem}
                       className="sm:col-span-2 rounded-lg bg-gray-800 text-white px-3 py-2 hover:bg-gray-900"
                     >
-                      Add
+                      اضف
                     </button>
                   </div>
 
@@ -344,10 +344,10 @@ export default function CreateRequestModal({
       {/* Header */}
       <thead className="sticky top-0 z-10 bg-white/70 backdrop-blur-xl text-gray-700 border-b border-black/10">
         <tr>
-          <th className="text-left px-4 py-3 font-semibold">Description</th>
-          <th className="text-right px-4 py-3 font-semibold">Qty</th>
-          <th className="text-right px-4 py-3 font-semibold">Price</th>
-          <th className="text-right px-4 py-3 font-semibold">Subtotal</th>
+          <th className="text-left px-4 py-3 font-semibold">الوصف</th>
+          <th className="text-right px-4 py-3 font-semibold">العدد</th>
+          <th className="text-right px-4 py-3 font-semibold">السعر</th>
+          <th className="text-right px-4 py-3 font-semibold">المبلغ الكلي</th>
           <th className="px-4 py-3"></th>
         </tr>
       </thead>
@@ -387,7 +387,7 @@ export default function CreateRequestModal({
                     onClick={() => removeItem(i)}
                     className="inline-flex items-center justify-center rounded-xl border border-black/10 bg-gray-800 text-white px-3 py-1.5 text-xs shadow-sm hover:bg-gray-900 active:scale-[0.98] transition"
                   >
-                    Remove
+                    حذف
                   </button>
                 </td>
               </tr>
@@ -413,7 +413,7 @@ export default function CreateRequestModal({
         <tfoot>
           <tr className="bg-white/70 backdrop-blur-xl border-t border-black/10">
             <td className="px-4 py-3 font-semibold text-gray-700" colSpan={3}>
-              Total
+              المجموع
             </td>
             <td className="px-4 py-3 text-right font-extrabold text-gray-900 tabular-nums">
               {fmt.format(itemsTotal)}
@@ -434,9 +434,9 @@ export default function CreateRequestModal({
     {/* Header */}
     <div className="flex items-center justify-between">
       <div>
-        <div className="text-sm font-semibold text-gray-800">Attachments</div>
+        <div className="text-sm font-semibold text-gray-800">المرفقات</div>
         <div className="text-xs text-gray-500">
-          Add one or more files (PDF, images, documents)
+        pdf  يمكنك إرفاق ملفات مثل اكسل أو صور او  
         </div>
       </div>
 
@@ -455,9 +455,9 @@ export default function CreateRequestModal({
             <FiPaperclip className="text-lg" />
           </div>
           <div>
-            <div className="text-sm font-medium text-gray-800">Upload Attachments</div>
+            <div className="text-sm font-medium text-gray-800">رفع مرفق</div>
             <div className="text-xs text-gray-500">
-              Click the button to choose files
+            "Add Files" لاختيار الملفات من جهازك اضغط على
             </div>
           </div>
         </div>
@@ -537,10 +537,10 @@ export default function CreateRequestModal({
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
 
       {[
-        { icon: FiBriefcase, label: "Company", value: companyKey || "-" },
-        { icon: FiTag, label: "Type", value: requestType || "-" },
-        { icon: FiDollarSign, label: "Currency", value: currency || "-" },
-        { icon: FiLayers, label: "Department", value: department || "-" },
+        { icon: FiBriefcase, label: "الشركة", value: companyKey || "-" },
+        { icon: FiTag, label: "نوع الطلب", value: requestType || "-" },
+        { icon: FiDollarSign, label: "العملة", value: currency || "-" },
+        { icon: FiLayers, label: "القسم", value: department || "-" },
       ].map((c, i) => (
         <div
           key={i}
@@ -604,7 +604,7 @@ export default function CreateRequestModal({
         {/* Content */}
         <div className="flex-1 relative">
           <div className="text-[10px] uppercase tracking-wide text-gray-500 mb-0.5">
-            Description
+            الوصف
           </div>
 
           <div className="text-sm text-gray-700 leading-relaxed whitespace-pre-line">
@@ -639,7 +639,7 @@ export default function CreateRequestModal({
 
           <div>
             <div className="text-sm font-semibold text-gray-800">
-              Attachments
+              المرفقات
             </div>
             <div className="text-xs text-gray-500">
               {attachment?.length
@@ -682,7 +682,7 @@ export default function CreateRequestModal({
           </div>
         ) : (
           <div className="text-xs text-gray-500 text-center py-3 border border-dashed rounded-xl">
-            No attachments available
+          لا توجد مرفقات
           </div>
         )}
       </div>
@@ -724,10 +724,10 @@ export default function CreateRequestModal({
         <table className="min-w-full text-sm">
           <thead className="bg-gray-100/70 text-gray-700">
             <tr>
-              <th className="text-left px-4 py-2 font-semibold">Description</th>
-              <th className="text-right px-4 py-2 font-semibold">Qty</th>
-              <th className="text-right px-4 py-2 font-semibold">Price</th>
-              <th className="text-right px-4 py-2 font-semibold">Subtotal</th>
+              <th className="text-left px-4 py-2 font-semibold">الوصف</th>
+              <th className="text-right px-4 py-2 font-semibold">العدد</th>
+              <th className="text-right px-4 py-2 font-semibold">المبلغ</th>
+              <th className="text-right px-4 py-2 font-semibold">المبلغ الكلي</th>
             </tr>
           </thead>
 
@@ -770,7 +770,7 @@ export default function CreateRequestModal({
             <tfoot>
               <tr className="bg-gray-50/80 border-t">
                 <td colSpan={3} className="px-4 py-2 font-semibold text-gray-700">
-                  Total
+                  المجموع
                 </td>
                 <td className="px-4 py-2 text-right font-bold text-gray-900">
                   {fmt.format(itemsTotal)}
@@ -794,7 +794,7 @@ export default function CreateRequestModal({
                 }}
                 className="px-4 py-2 rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-100"
               >
-                Cancel
+                الغاء
               </button>
 
               {activeTab === "Review" ? (
@@ -824,7 +824,7 @@ export default function CreateRequestModal({
                   {isCreating ? (
                     <>
                       <motion.div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      Creating...
+                      إنشاء طلب...
                     </>
                   ) : (
                     "Create"
@@ -839,7 +839,7 @@ export default function CreateRequestModal({
                   whileHover={{ scale: 1.03 }}
                   className="px-5 py-2.5 rounded-lg bg-gray-700 text-white hover:bg-gray-800"
                 >
-                  Next →
+                  التالي →
                 </motion.button>
               )}
             </div>
