@@ -19,7 +19,7 @@ import CommentModal from "@/components/CommentModal";
 import StatusBadge from "@/components/StatusBadge";
 import { usePermissions } from "@/context/PermissionContext";
 import { PERMISSIONS } from "@/lib/permission";
-
+import VoucherModal from "@/components/VoucherModal";
 
 export default function RequestDetails({ id, companyKey }) {
   const router = useRouter();
@@ -28,10 +28,12 @@ export default function RequestDetails({ id, companyKey }) {
   const workflow = request?.workflow;
   const workflowSteps = workflow?.steps || [];
   const [currentUser, setCurrentUser] = useState(null);
+  
   const [showCommentModal, setShowCommentModal] = useState(false);
 const [commentAction, setCommentAction] = useState(null); // approve | reject | view
 const [commentText, setCommentText] = useState("");
 const [activeStep, setActiveStep] = useState(null);
+const [showVoucherModal, setShowVoucherModal] = useState(false);
 const fmt = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
 const [stepAttachment, setStepAttachment] = useState(null); // File | string(url) | null
 const { permissions } = usePermissions();
@@ -71,8 +73,14 @@ const base =
     try {
       const res = await fetch(`/api/requests/${id}?company=${companyKey}`, {
         cache: "no-store",
-        credentials: "include"
+        credentials: "include",
       });
+  
+      if (res.status === 401 || res.status === 403) {
+        router.replace("/home");
+        return;
+      }
+  
       const data = await res.json();
       if (data.success) setRequest(data.data);
     } catch (err) {
@@ -104,6 +112,8 @@ const base =
     if (!id || !companyKey) return;
     fetchData();   // 👈 الآن متاحة
   }, [id, companyKey]);
+
+
 
  
   if (loading) {
@@ -459,6 +469,20 @@ className="rounded-3xl bg-white/35 backdrop-blur-2xl ring-1 ring-white/25 shadow
 
         <div className="flex items-start gap-6 overflow-x-auto py-6 px-1">
           {workflowSteps.map((step, idx) => {
+            const lastIdx = workflowSteps.length - 1;
+            const isLast = idx === lastIdx;
+            
+            const isFinalApproved =
+              isLast &&
+              request.status === "Approved" &&
+              step.status === "Approved";
+              
+              const isLastStepUser =
+  isLast &&
+  currentUser &&
+  step.users?.some((u) => String(u._id) === String(currentUser.id));
+
+              
             const isCurrent = idx === request.currentStep;
             const canAct =
             (request.status === "Pending" || request.status === "Rejected") &&
@@ -649,8 +673,22 @@ className="rounded-3xl bg-white/35 backdrop-blur-2xl ring-1 ring-white/25 shadow
                       >
                         Reject
                       </button>
+                  
                     </div>
                   )}
+                    {isFinalApproved && isLastStepUser && (
+  <div className="mt-4">
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        setShowVoucherModal(true);
+      }}
+      className="w-full py-2.5 rounded-2xl bg-gray-900 text-white font-extrabold hover:bg-black shadow"
+    >
+      وصل صرف
+    </button>
+  </div>
+)}
                 </motion.div>
 
                 {/* ARROW */}
@@ -728,6 +766,16 @@ className="rounded-3xl bg-white/35 backdrop-blur-2xl ring-1 ring-white/25 shadow
         }
   }
 />
+<VoucherModal
+  open={showVoucherModal}
+  onClose={() => setShowVoucherModal(false)}
+  request={request}
+  companyKey={companyKey}
+  requestId={id}
+  onSaved={async () => {
+    await fetchData();
+  }}
+/>
     </motion.div>
   );
 }
@@ -757,5 +805,8 @@ function Section({ title, icon, children }) {
       {children}
       
     </motion.div>
+
+    
   );
+  
 }

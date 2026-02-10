@@ -7,6 +7,7 @@ import { getModelForCompany } from "@/models/Request";
 import User from "@/models/User";
 import mongoose from "mongoose";
 
+
 const CounterSchema = new mongoose.Schema({
   key: { type: String, unique: true },
   seq: { type: Number, default: 0 },
@@ -20,27 +21,20 @@ const Counter =
 export async function POST(req) {
   try {
     await dbConnect();
-    
-    const formData = await req.formData();
 
-    const company = formData.get("company");
+    const formData = await req.formData();
+    const companyRaw = String(formData.get("company") || "");
+    const company = companyRaw.trim();
+
     if (!company) {
-      return NextResponse.json(
-        { success: false, error: "Company is required" },
-        { status: 400 }
-      );
+      return NextResponse.json({ success: false, error: "Company is required" }, { status: 400 });
     }
 
-    // 🔹 Get workflow of company
     const workflow = await Workflow.findOne({ company }).populate("steps.users");
     if (!workflow) {
-      return NextResponse.json(
-        { success: false, error: "No workflow defined for this company" },
-        { status: 400 }
-      );
+      return NextResponse.json({ success: false, error: "No workflow defined for this company" }, { status: 400 });
     }
 
-    // 🔹 Snapshot
     const workflowSnapshot = {
       name: workflow.name,
       steps: workflow.steps.map((s) => ({
@@ -52,32 +46,11 @@ export async function POST(req) {
       })),
     };
 
-    
-// ====== REQUEST CODE COUNTER ======
-const companyText = String(company).toUpperCase().replaceAll(" ", "-");
-const counterKey = `REQ_${companyText}`;
-
-// atomically increment
-const counter = await Counter.findOneAndUpdate(
-  { key: counterKey },
-  { $inc: { seq: 1 } },
-  { new: true, upsert: true }
-);
-
-// format number (5 digits)
-const serial = String(counter.seq).padStart(5, "0");
-
-// final code
-const requestCode = `REQ-${companyText}-${serial}`;
-
     const Model = getModelForCompany(company);
 
-    const data = {
-      // ✅ FIX: موديلك يحتاج companyKey
+    const baseData = {
       companyKey: company,
       company,
-      requestCode,
-
       requestType: formData.get("requestType"),
       description: formData.get("description"),
       currency: formData.get("currency"),
@@ -90,46 +63,41 @@ const requestCode = `REQ-${companyText}-${serial}`;
       status: "Pending",
     };
 
-    /* ---------- Attachments ---------- */
-    const files = formData.getAll("attachments");
-    if (files.length > 0) {
-      const s3 = new S3Client({
-        region: process.env.AWS_REGION,
-        credentials: {
-          accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-          secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-        },
-      });
+    // attachments (مثل كودك الحالي) ...
+    // baseData.attachments.push(...)
 
-      for (const file of files) {
-        if (!file?.name) continue;
+    const companyText = company.toUpperCase().replace(/\s+/g, "-").replace(/-+/g, "-");
+    const counterKey = `REQ_${companyText}`;
 
-        const buffer = Buffer.from(await file.arrayBuffer());
-        const key = `${Date.now()}_${file.name}`;
+    // ✅ Retry loop على duplicate requestCode
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const counter = await Counter.findOneAndUpdate(
+        { key: counterKey },
+        { $inc: { seq: 1 } },
+        { new: true, upsert: true, setDefaultsOnInsert: true }
+      );
 
-        await s3.send(
-          new PutObjectCommand({
-            Bucket: process.env.AWS_S3_BUCKET,
-            Key: key,
-            Body: buffer,
-            ContentType: file.type,
-          })
-        );
+      const serial = String(counter.seq).padStart(5, "0");
+      const requestCode = `REQ-${companyText}-${serial}`;
 
-        data.attachments.push({ key, name: file.name });
+      try {
+        const newRequest = new Model({ ...baseData, requestCode });
+        await newRequest.save();
+        return NextResponse.json({ success: true, data: newRequest });
+      } catch (e) {
+        // duplicate key => جرّب مرة ثانية
+        if (e?.code === 11000 && e?.message?.includes("requestCode")) continue;
+        throw e;
       }
     }
 
-    const newRequest = new Model(data);
-    await newRequest.save();
-
-    return NextResponse.json({ success: true, data: newRequest });
+    return NextResponse.json(
+      { success: false, error: "Could not generate unique requestCode, try again." },
+      { status: 409 }
+    );
   } catch (err) {
     console.error("❌ POST Error:", err.message);
-    return NextResponse.json(
-      { success: false, error: err.message },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }
 }
 

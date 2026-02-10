@@ -531,7 +531,13 @@ export default function CreateRequestModal({
 )}
             {/* Review */}
 {activeTab === "Review" && (
-  <div className="space-y-5">
+  <div
+    className="space-y-5 overflow-y-auto pr-1"
+    style={{
+      maxHeight: "60vh",
+      WebkitOverflowScrolling: "touch",
+    }}
+  >
 
     {/* ================= Summary Cards ================= */}
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

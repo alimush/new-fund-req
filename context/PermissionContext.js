@@ -26,8 +26,7 @@ export function PermissionProvider({ children }) {
       setCompanies(data.companies || []);   // 🟦 خزن الشركات
 
       // خزن محلياً
-      localStorage.setItem("permissions", JSON.stringify(data.permissions));
-      localStorage.setItem("companies", JSON.stringify(data.companies));
+
     }
   };
 

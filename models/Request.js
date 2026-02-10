@@ -62,6 +62,17 @@ const RequestSchema = new mongoose.Schema(
       enum: ["Pending", "Approved", "Rejected", "Cancelled"],
       default: "Pending",
     },
+    
+    paymentVoucher: {
+      amount: Number,
+      amountWords: String,
+      currency: String, // IQD / USD
+      date: Date,
+      description: String,
+      createdBy: String,
+      createdAt: Date
+    },
+    
 
     cancelledAt: { type: Date, default: null },
     cancelledNote: { type: String, default: "" },
@@ -70,6 +81,7 @@ const RequestSchema = new mongoose.Schema(
       { user: String, action: String, note: String, date: { type: Date, default: Date.now } },
     ],
   },
+  
   { timestamps: true, strict: false }
 );
 

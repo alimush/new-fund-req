@@ -31,12 +31,35 @@ export default function Header({ onLogout }) {
     return () => window.removeEventListener("userChanged", updateUser);
   }, []);
 
-  const handleLogout = () => {
-    localStorage.removeItem("username");
-    setUsername(null);
-    window.dispatchEvent(new Event("userChanged"));
-    if (onLogout) onLogout();
-    router.push("/login");
+  const handleLogout = async () => {
+    try {
+      // 1) امسح كل بيانات اليوزر من localStorage
+      localStorage.removeItem("userId");
+      localStorage.removeItem("username");
+      localStorage.removeItem("companies");
+      localStorage.removeItem("user");
+      localStorage.removeItem("permissions");
+  
+      // إذا تحب تمسح كل شي مرّة وحدة:
+      // localStorage.clear();
+  
+      // 2) (اختياري) امسح sessionStorage هم
+      sessionStorage.clear();
+  
+      // 3) نادِ endpoint يمسح cookie userId (أكثر أمان)
+      await fetch("/api/logout", { method: "POST", credentials: "include" }).catch(() => {});
+  
+      // 4) حدّث الحالة
+      setUsername(null);
+      setMenuOpen(false);
+      window.dispatchEvent(new Event("userChanged"));
+  
+      // 5) تحويل + منع الرجوع بالـ back لصفحات محمية
+      router.replace("/login");
+      router.refresh(); // يساعد يفشل أي data cached بالـ app router
+    } catch (e) {
+      router.replace("/login");
+    }
   };
 
   return (

@@ -7,7 +7,9 @@ import { cookies } from "next/headers";
 import nodemailer from "nodemailer";
 import User from "@/models/User";
 import { getModelForCompany } from "@/models/Request";
+import Permissions from "@/models/Permissions";
 
+import { Types } from "mongoose";
 /* ======================= EMAIL HELPERS ======================= */
 function getTransporter() {
   const host = process.env.SMTP_HOST;
@@ -26,7 +28,21 @@ function getTransporter() {
     auth: { user, pass },
   });
 }
+async function hasCompanyAccess(userId, company) {
+  if (!userId || !company) return false;
 
+  // ✅ حماية من ID مو صالح
+  if (!Types.ObjectId.isValid(userId)) return false;
+
+  const uid = new Types.ObjectId(userId);
+
+  const exists = await Permissions.exists({
+    users: uid,
+    companies: company,
+  });
+
+  return !!exists;
+}
 function escapeHtml(str = "") {
   return String(str)
     .replaceAll("&", "&amp;")
@@ -410,6 +426,24 @@ export async function GET(req, { params }) {
     const company = searchParams.get("company");
 
     if (!company) {
+      return NextResponse.json({ success: false, error: "Company is required" }, { status: 400 });
+    }
+    
+    // ✅ Auth
+    const cookieStore = cookies(); // بدون await
+    const userId = cookieStore.get("userId")?.value;
+    
+    if (!userId) {
+      return NextResponse.json({ success: false, error: "Not authenticated" }, { status: 401 });
+    }
+    
+    // ✅ Company access check
+    const allowedCompany = await hasCompanyAccess(userId, company);
+    if (!allowedCompany) {
+      return NextResponse.json({ success: false, error: "No access to this company" }, { status: 403 });
+    }
+
+    if (!company) {
       return NextResponse.json(
         { success: false, error: "Company is required" },
         { status: 400 }
@@ -509,6 +543,9 @@ export async function PUT(req, { params }) {
       );
     }
 
+    
+    
+
     // ✅ Auth
     const cookieStore = await cookies();
     const userId = cookieStore.get("userId")?.value;
@@ -529,7 +566,10 @@ export async function PUT(req, { params }) {
         { status: 404 }
       );
     }
-
+    const allowedCompany = await hasCompanyAccess(userId, company);
+    if (!allowedCompany) {
+      return NextResponse.json({ success: false, error: "No access to this company" }, { status: 403 });
+    }
     /* ================= CANCEL ================= */
     if (action === "cancel") {
       request.status = "Cancelled";

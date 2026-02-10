@@ -15,7 +15,7 @@ const cards = [
   },
   { key: "Tiba-Al-najaf", name: "طلبات طيبة النجف", logo: "/طيبة_النجف.png" },
   { key: "badur-Al-najaf", name: "طلبات بدور النجف", logo: "/بدور_النجف.png" },
-  { key: "010", name: "شاورما الحلوين", logo: "/1.png" },
+  { key: "010", name: "test", logo: "/12.png" },
   { key: "RYD", name: "رياض", logo: "" },
 
 ];

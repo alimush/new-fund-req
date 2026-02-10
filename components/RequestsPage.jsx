@@ -21,7 +21,9 @@ import CreateRequestModal from "@/components/CreateRequestModal";
 
 export default function RequestsPage({ companyKey }) {
   const router = useRouter();
-  const { permissions } = usePermissions();
+
+  // ✅ استخدم نفس مصدر الصلاحيات مثل صفحة الشركات (companies)
+  const { permissions, companies } = usePermissions();
 
   const canViewAll =
     Array.isArray(permissions) &&
@@ -41,6 +43,10 @@ export default function RequestsPage({ companyKey }) {
   const [loading, setLoading] = useState(true);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
 
+  // ✅ Access Guard (مثل RequestDetails)
+  const [accessChecked, setAccessChecked] = useState(false);
+  const [accessDenied, setAccessDenied] = useState(false);
+
   // ✅ صفحات لكل سكشن
   const [pageMy, setPageMy] = useState(1);
   const [pagePending, setPagePending] = useState(1);
@@ -48,41 +54,6 @@ export default function RequestsPage({ companyKey }) {
   const [pageArchived, setPageArchived] = useState(1);
 
   useEffect(() => setMounted(true), []);
-
-  const allowedCompanies = useMemo(() => {
-    if (!Array.isArray(permissions)) return [];
-    return permissions
-      .filter((p) => typeof p === "string" && p.startsWith("COMPANY:"))
-      .map((p) => p.replace("COMPANY:", "").trim())
-      .filter(Boolean);
-  }, [permissions]);
-
-  const fetchRequests = useCallback(async () => {
-    if (!companyKey) return;
-    try {
-      setLoading(true);
-      const res = await fetch(`/api/requests?company=${companyKey}`, {
-        credentials: "include",
-        cache: "no-store",
-      });
-      const data = await res.json();
-      if (data?.success && Array.isArray(data?.data)) setRequests(data.data);
-      else setRequests([]);
-    } catch {
-      setRequests([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [companyKey]);
-
-  useEffect(() => {
-    fetchRequests();
-  }, [fetchRequests]);
-
-  const currentUsername = useMemo(() => {
-    if (typeof window === "undefined") return "";
-    return localStorage.getItem("username") || "";
-  }, []);
 
   // =========================
   // Motion Variants
@@ -94,7 +65,10 @@ export default function RequestsPage({ companyKey }) {
 
   const staggerV = {
     hidden: { opacity: 1 },
-    show: { opacity: 1, transition: { staggerChildren: 0.06, delayChildren: 0.05 } },
+    show: {
+      opacity: 1,
+      transition: { staggerChildren: 0.06, delayChildren: 0.05 },
+    },
   };
 
   const sectionV = {
@@ -112,6 +86,67 @@ export default function RequestsPage({ companyKey }) {
     show: { opacity: 1, y: 0, transition: { duration: 0.22 } },
     exit: { opacity: 0, y: 8, transition: { duration: 0.15 } },
   };
+
+  // =========================
+  // ACCESS GUARD (اعتمد companies مثل HomePage)
+  // =========================
+  useEffect(() => {
+    if (!companyKey) return;
+
+    // ننتظر لحد ما context يجيب الشركات
+    if (!Array.isArray(companies)) return;
+
+    const ok = companies
+      .map((x) => String(x || "").trim().toLowerCase())
+      .includes(String(companyKey || "").trim().toLowerCase());
+
+    if (!ok) {
+      setAccessDenied(true);
+      router.replace("/home");
+      return;
+    }
+
+    setAccessDenied(false);
+    setAccessChecked(true);
+  }, [companyKey, companies, router]);
+
+  // =========================
+  // Fetch Requests
+  // =========================
+  const fetchRequests = useCallback(async () => {
+    if (!companyKey) return;
+    try {
+      setLoading(true);
+      const res = await fetch(`/api/requests?company=${companyKey}`, {
+        credentials: "include",
+        cache: "no-store",
+      });
+
+      // لو API يرجع 401/403 بسبب session
+      if (res.status === 401 || res.status === 403) {
+        router.replace("/home");
+        return;
+      }
+
+      const data = await res.json();
+      if (data?.success && Array.isArray(data?.data)) setRequests(data.data);
+      else setRequests([]);
+    } catch {
+      setRequests([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [companyKey, router]);
+
+  useEffect(() => {
+    if (!accessChecked || accessDenied) return;
+    fetchRequests();
+  }, [fetchRequests, accessChecked, accessDenied]);
+
+  const currentUsername = useMemo(() => {
+    if (typeof window === "undefined") return "";
+    return localStorage.getItem("username") || "";
+  }, []);
 
   // =========================
   // Normalize + Sort
@@ -231,19 +266,34 @@ export default function RequestsPage({ companyKey }) {
   );
 
   // =========================
+  // Guards
+  // =========================
+  if (!accessChecked) return null;
+  if (accessDenied) return null;
+
+  // =========================
   // UI Components
   // =========================
   const SoftSpinner = ({ label }) => (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center justify-center py-14">
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      className="flex items-center justify-center py-14"
+    >
       <div className="flex items-center gap-3 rounded-2xl bg-white/35 ring-1 ring-white/25 px-4 py-3">
         <div className="w-6 h-6 rounded-full border-4 border-white/70 border-t-transparent animate-spin" />
-        <div className="text-sm font-bold text-gray-900">{label || "Loading..."}</div>
+        <div className="text-sm font-bold text-gray-900">
+          {label || "Loading..."}
+        </div>
       </div>
     </motion.div>
   );
 
   const EmptyState = ({ icon: Icon, title, subtitle }) => (
-    <motion.div variants={sectionV} className="rounded-3xl bg-white/30 ring-1 ring-white/25 p-10 text-center">
+    <motion.div
+      variants={sectionV}
+      className="rounded-3xl bg-white/30 ring-1 ring-white/25 p-10 text-center"
+    >
       <motion.div
         initial={{ scale: 0.9, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
@@ -253,12 +303,16 @@ export default function RequestsPage({ companyKey }) {
         {Icon ? <Icon /> : <FiFileText />}
       </motion.div>
       <div className="text-sm font-black text-gray-900">{title}</div>
-      {subtitle && <div className="text-xs text-gray-800/70 mt-1">{subtitle}</div>}
+      {subtitle && (
+        <div className="text-xs text-gray-800/70 mt-1">{subtitle}</div>
+      )}
     </motion.div>
   );
 
   const RequestCard = ({ r, compact = false, index = 0 }) => {
-    const dateText = r.createdAt ? new Date(r.createdAt).toLocaleDateString() : "-";
+    const dateText = r.createdAt
+      ? new Date(r.createdAt).toLocaleDateString()
+      : "-";
     return (
       <motion.div
         layout
@@ -288,13 +342,19 @@ export default function RequestsPage({ companyKey }) {
             <div className="mt-2 text-sm font-extrabold text-gray-900 line-clamp-1">
               {r.requestType || "Request"}
             </div>
-            <div className="mt-1 text-xs text-gray-700/80 line-clamp-2">{r.description || "-"}</div>
-            <div className="mt-2 text-[11px] font-mono text-gray-700/80">{r.requestCode || r._id}</div>
+            <div className="mt-1 text-xs text-gray-700/80 line-clamp-2">
+              {r.description || "-"}
+            </div>
+            <div className="mt-2 text-[11px] font-mono text-gray-700/80">
+              {r.requestCode || r._id}
+            </div>
           </div>
 
           <div className="shrink-0 text-right">
             <div className="text-[11px] text-gray-600/80">Currency</div>
-            <div className="text-sm font-black text-gray-900">{r.currency || "-"}</div>
+            <div className="text-sm font-black text-gray-900">
+              {r.currency || "-"}
+            </div>
           </div>
         </div>
 
@@ -303,7 +363,9 @@ export default function RequestsPage({ companyKey }) {
             <FiFileText />
             {r.company || companyKey}
           </span>
-          <span className="truncate max-w-[55%]">By: {r.createdBy || "Unknown"}</span>
+          <span className="truncate max-w-[55%]">
+            By: {r.createdBy || "Unknown"}
+          </span>
         </div>
       </motion.div>
     );
@@ -324,7 +386,9 @@ export default function RequestsPage({ companyKey }) {
             )}
             <div>
               <div className="text-sm font-black text-gray-900">{title}</div>
-              {subtitle && <div className="text-xs text-gray-700/80">{subtitle}</div>}
+              {subtitle && (
+                <div className="text-xs text-gray-700/80">{subtitle}</div>
+              )}
             </div>
           </div>
           {right}
@@ -335,7 +399,14 @@ export default function RequestsPage({ companyKey }) {
   );
 
   const ScrollBox = ({ children, height = "max-h-[520px]" }) => (
-    <div className={[height, "overflow-y-auto pr-1", "scrollbar-thin", "scrollbar-thumb-gray-300/60 scrollbar-track-transparent"].join(" ")}>
+    <div
+      className={[
+        height,
+        "overflow-y-auto pr-1",
+        "scrollbar-thin",
+        "scrollbar-thumb-gray-300/60 scrollbar-track-transparent",
+      ].join(" ")}
+    >
       {children}
     </div>
   );
@@ -357,7 +428,12 @@ export default function RequestsPage({ companyKey }) {
   );
 
   return (
-    <motion.div variants={pageV} initial="hidden" animate="show" className="min-h-screen w-full">
+    <motion.div
+      variants={pageV}
+      initial="hidden"
+      animate="show"
+      className="min-h-screen w-full"
+    >
       <div className="fixed inset-0 -z-10 bg-gradient-to-br from-slate-50 via-slate-100 to-slate-200" />
       <div className="fixed inset-0 -z-10 opacity-70">
         <div className="absolute -top-24 -left-24 h-96 w-96 rounded-full bg-blue-200/40 blur-3xl" />
@@ -367,7 +443,12 @@ export default function RequestsPage({ companyKey }) {
 
       <div className="mx-auto max-w-6xl px-6 py-6">
         {/* ===== Top Bar ===== */}
-        <motion.div variants={staggerV} initial="hidden" animate="show" className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <motion.div
+          variants={staggerV}
+          initial="hidden"
+          animate="show"
+          className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
+        >
           <motion.div variants={sectionV} className="flex items-center gap-3">
             <motion.button
               type="button"
@@ -381,7 +462,9 @@ export default function RequestsPage({ companyKey }) {
             </motion.button>
 
             <div className="flex flex-col gap-1">
-              <h1 className="text-xl sm:text-2xl font-black text-gray-900 tracking-tight">Fund Requests Management</h1>
+              <h1 className="text-xl sm:text-2xl font-black text-gray-900 tracking-tight">
+                Fund Requests Management
+              </h1>
               <div className="flex items-center gap-2 text-sm text-gray-800/80">
                 <span className="font-semibold">الشركة:</span>
                 <span className="px-2.5 py-1 rounded-xl bg-white/45 backdrop-blur ring-1 ring-white/25 text-gray-900 font-extrabold">
@@ -406,17 +489,42 @@ export default function RequestsPage({ companyKey }) {
         </motion.div>
 
         {/* ===== Stats ===== */}
-        <motion.div variants={staggerV} initial="hidden" animate="show" className="mt-6 grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <StatCard title="طلباتي الموافق عليها" value={stats.approved} icon={FiCheckCircle} iconClass="text-green-700" />
-          <StatCard title="طلباتي قيد الانتظار" value={stats.pending} icon={FiClock} iconClass="text-amber-700" />
-          <StatCard title="مجموع طلباتي" value={stats.total} icon={FiFileText} iconClass="text-blue-700" />
+        <motion.div
+          variants={staggerV}
+          initial="hidden"
+          animate="show"
+          className="mt-6 grid grid-cols-1 sm:grid-cols-3 gap-4"
+        >
+          <StatCard
+            title="طلباتي الموافق عليها"
+            value={stats.approved}
+            icon={FiCheckCircle}
+            iconClass="text-green-700"
+          />
+          <StatCard
+            title="طلباتي قيد الانتظار"
+            value={stats.pending}
+            icon={FiClock}
+            iconClass="text-amber-700"
+          />
+          <StatCard
+            title="مجموع طلباتي"
+            value={stats.total}
+            icon={FiFileText}
+            iconClass="text-blue-700"
+          />
         </motion.div>
 
         {/* ===== Two columns ===== */}
-        <motion.div variants={staggerV} initial="hidden" animate="show" className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <motion.div
+          variants={staggerV}
+          initial="hidden"
+          animate="show"
+          className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6"
+        >
           {/* Pending Others */}
           <SectionShell
-            title="طلبات قيد الانتظار  "
+            title="طلبات قيد الانتظار"
             subtitle="Pending requests created by other users"
             icon={FiClock}
             right={
@@ -434,7 +542,11 @@ export default function RequestsPage({ companyKey }) {
             {loading ? (
               <SoftSpinner label="Loading pending approvals..." />
             ) : pendingOthers.length === 0 ? (
-              <EmptyState icon={FiClock} title="No Pending Requests" subtitle="There are no pending requests from other users" />
+              <EmptyState
+                icon={FiClock}
+                title="No Pending Requests"
+                subtitle="There are no pending requests from other users"
+              />
             ) : (
               <>
                 <ScrollBox height="max-h-[520px]">
@@ -449,7 +561,11 @@ export default function RequestsPage({ companyKey }) {
                   </motion.div>
                 </ScrollBox>
 
-                <Pagination page={pendingPaged.page} totalPages={pendingPaged.totalPages} onPage={setPagePending} />
+                <Pagination
+                  page={pendingPaged.page}
+                  totalPages={pendingPaged.totalPages}
+                  onPage={setPagePending}
+                />
               </>
             )}
           </SectionShell>
@@ -457,13 +573,21 @@ export default function RequestsPage({ companyKey }) {
           {/* My Requests */}
           <SectionShell
             title="جميع طلباتي"
-            subtitle={mounted && currentUsername ? `Requests created by: ${currentUsername}` : "Requests created by:"}
+            subtitle={
+              mounted && currentUsername
+                ? `Requests created by: ${currentUsername}`
+                : "Requests created by:"
+            }
             icon={FiFileText}
           >
             {loading ? (
               <SoftSpinner label="Loading my requests..." />
             ) : myRequests.length === 0 ? (
-              <EmptyState icon={FiFileText} title="لا يوجد طلبات" subtitle="لم تنشئ اي طلب لحد الان" />
+              <EmptyState
+                icon={FiFileText}
+                title="لا يوجد طلبات"
+                subtitle="لم تنشئ اي طلب لحد الان"
+              />
             ) : (
               <>
                 <ScrollBox height="max-h-[520px]">
@@ -478,14 +602,23 @@ export default function RequestsPage({ companyKey }) {
                   </motion.div>
                 </ScrollBox>
 
-                <Pagination page={myPaged.page} totalPages={myPaged.totalPages} onPage={setPageMy} />
+                <Pagination
+                  page={myPaged.page}
+                  totalPages={myPaged.totalPages}
+                  onPage={setPageMy}
+                />
               </>
             )}
           </SectionShell>
         </motion.div>
 
         {/* ===== Archive + Search ===== */}
-        <motion.div variants={staggerV} initial="hidden" animate="show" className="mt-6">
+        <motion.div
+          variants={staggerV}
+          initial="hidden"
+          animate="show"
+          className="mt-6"
+        >
           <SectionShell
             title="Archive"
             subtitle="Cancelled requests + Approved/Rejected requests"
@@ -504,13 +637,23 @@ export default function RequestsPage({ companyKey }) {
           >
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* Cancelled */}
-              <SectionShell title="الطلبات الملغية" subtitle="All cancelled requests" icon={FiXCircle}>
+              <SectionShell
+                title="الطلبات الملغية"
+                subtitle="All cancelled requests"
+                icon={FiXCircle}
+              >
                 {loading ? (
                   <SoftSpinner label="Loading cancelled..." />
                 ) : cancelled.length === 0 ? (
                   <motion.div variants={sectionV} className="text-center py-6">
-                    <div className="text-sm font-black text-gray-900">No cancelled requests</div>
-                    {q?.trim() ? <div className="text-xs text-gray-800/70 mt-1">Try another keyword</div> : null}
+                    <div className="text-sm font-black text-gray-900">
+                      No cancelled requests
+                    </div>
+                    {q?.trim() ? (
+                      <div className="text-xs text-gray-800/70 mt-1">
+                        Try another keyword
+                      </div>
+                    ) : null}
                   </motion.div>
                 ) : (
                   <>
@@ -526,19 +669,33 @@ export default function RequestsPage({ companyKey }) {
                       </motion.div>
                     </ScrollBox>
 
-                    <Pagination page={cancelledPaged.page} totalPages={cancelledPaged.totalPages} onPage={setPageCancelled} />
+                    <Pagination
+                      page={cancelledPaged.page}
+                      totalPages={cancelledPaged.totalPages}
+                      onPage={setPageCancelled}
+                    />
                   </>
                 )}
               </SectionShell>
 
               {/* Approved + Rejected */}
-              <SectionShell title="الطلبات الموافق عليها & المرفوضة" subtitle="All approved and rejected requests" icon={FiCheckCircle}>
+              <SectionShell
+                title="الطلبات الموافق عليها & المرفوضة"
+                subtitle="All approved and rejected requests"
+                icon={FiCheckCircle}
+              >
                 {loading ? (
                   <SoftSpinner label="Loading approved & rejected..." />
                 ) : archivedOther.length === 0 ? (
                   <motion.div variants={sectionV} className="text-center py-6">
-                    <div className="text-sm font-black text-gray-900">No approved/rejected requests</div>
-                    {q?.trim() ? <div className="text-xs text-gray-800/70 mt-1">Try another keyword</div> : null}
+                    <div className="text-sm font-black text-gray-900">
+                      No approved/rejected requests
+                    </div>
+                    {q?.trim() ? (
+                      <div className="text-xs text-gray-800/70 mt-1">
+                        Try another keyword
+                      </div>
+                    ) : null}
                   </motion.div>
                 ) : (
                   <>
@@ -554,7 +711,11 @@ export default function RequestsPage({ companyKey }) {
                       </motion.div>
                     </ScrollBox>
 
-                    <Pagination page={archivedPaged.page} totalPages={archivedPaged.totalPages} onPage={setPageArchived} />
+                    <Pagination
+                      page={archivedPaged.page}
+                      totalPages={archivedPaged.totalPages}
+                      onPage={setPageArchived}
+                    />
                   </>
                 )}
               </SectionShell>
