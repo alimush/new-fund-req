@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import dbConnect from "@/lib/mongodb";
-import Request from "@/models/Request"; // عدل المسار حسب موديلك
+import { getModelForCompany } from "@/models/Request";
 import User from "@/models/User";
 import nodemailer from "nodemailer";
 import mongoose from "mongoose";
