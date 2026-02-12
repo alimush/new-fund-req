@@ -10,6 +10,8 @@ export default function WorkflowDetailsPage() {
   const { id } = useParams();
   const router = useRouter();
 
+  const [authorized, setAuthorized] = useState(false);
+
   const [workflow, setWorkflow] = useState(null);
   const [users, setUsers] = useState([]);
   const [steps, setSteps] = useState([]);
@@ -18,30 +20,96 @@ export default function WorkflowDetailsPage() {
   const [loadingUsers, setLoadingUsers] = useState(true);
   const [saving, setSaving] = useState(false);
 
+  // ✅ helper: userId + headers
+  const getUserId = () => localStorage.getItem("userId") || "";
+  const authHeaders = (extra = {}) => ({
+    ...extra,
+    "x-user-id": getUserId(),
+  });
+
+  // =========================
+  // ✅ Auth Guard (MANAGE_PERMISSIONS)
+  // =========================
   useEffect(() => {
+    const guard = async () => {
+      const userId = getUserId();
+
+      if (!userId) {
+        router.replace("/login");
+        return;
+      }
+
+      try {
+        const res = await fetch(
+          `/api/user-permissions?id=${encodeURIComponent(userId)}`,
+          { cache: "no-store" }
+        );
+
+        const data = await res.json();
+        const perms = Array.isArray(data?.permissions) ? data.permissions : [];
+
+        if (!perms.includes("MANAGE_PERMISSIONS")) {
+          router.replace("/home");
+          return;
+        }
+
+        setAuthorized(true);
+      } catch {
+        router.replace("/home");
+      }
+    };
+
+    guard();
+  }, [router]);
+
+  // =========================
+  // ✅ Load Data بعد السماح فقط
+  // =========================
+  useEffect(() => {
+    if (!authorized) return;
     loadWorkflow();
     loadUsers();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authorized, id]);
 
   // ================= LOAD WORKFLOW =================
   const loadWorkflow = async () => {
+    setLoadingWorkflow(true);
     try {
-      const res = await fetch(`/api/workflow?id=${id}`);
+      const res = await fetch(`/api/workflow?id=${encodeURIComponent(id)}`, {
+        cache: "no-store",
+        headers: authHeaders(),
+      });
+
+      if (res.status === 401) {
+        router.replace("/login");
+        return;
+      }
+      if (res.status === 403) {
+        router.replace("/home");
+        return;
+      }
+
       const data = await res.json();
-  
-      if (data.success && data.workflow) {
+
+      if (data?.success && data?.workflow) {
         setWorkflow(data.workflow);
-  
-        const normalizedSteps = (data.workflow.steps || []).map(s => ({
+
+        const normalizedSteps = (data.workflow.steps || []).map((s) => ({
           users: Array.isArray(s.users)
-            ? s.users.map(u => (typeof u === "string" ? u : u._id))
-            : []
+            ? s.users.map((u) => (typeof u === "string" ? u : u._id))
+            : [],
         }));
-  
+
         setSteps(normalizedSteps);
+      } else {
+        setWorkflow(null);
+        setSteps([]);
       }
     } catch (err) {
       console.log("Workflow load error:", err);
+      setWorkflow(null);
+      setSteps([]);
     } finally {
       setLoadingWorkflow(false);
     }
@@ -49,15 +117,32 @@ export default function WorkflowDetailsPage() {
 
   // ================= LOAD USERS =================
   const loadUsers = async () => {
+    setLoadingUsers(true);
     try {
-      const res = await fetch("/api/users");
+      const res = await fetch("/api/users", {
+        cache: "no-store",
+        headers: authHeaders(),
+      });
+
+      if (res.status === 401) {
+        router.replace("/login");
+        return;
+      }
+      if (res.status === 403) {
+        router.replace("/home");
+        return;
+      }
+
       const data = await res.json();
 
-      if (data.success && Array.isArray(data.users)) {
+      if (data?.success && Array.isArray(data?.users)) {
         setUsers(data.users);
+      } else {
+        setUsers([]);
       }
     } catch (err) {
       console.log("Users load error:", err);
+      setUsers([]);
     } finally {
       setLoadingUsers(false);
     }
@@ -65,38 +150,43 @@ export default function WorkflowDetailsPage() {
 
   // ================= ADD STEP =================
   const addStep = () => {
-    setSteps(prev => [...prev, { users: [] }]);  };
+    setSteps((prev) => [...prev, { users: [] }]);
+  };
 
   // ================= SAVE =================
   const saveSteps = async () => {
+    if (!workflow) return;
+
     // 🔒 تحقق
-    if (steps.some(s => !s.users || s.users.length === 0))
+    if (steps.some((s) => !s.users || s.users.length === 0)) {
       return alert("❌ كل Step لازم بيه مستخدم واحد على الأقل");
+    }
 
     setSaving(true);
 
     const payload = {
       id,
       name: workflow.name,
-      steps: steps.map((s) => ({
-        users: s.users,   // 👈 مهم
-      })),
+      steps: steps.map((s) => ({ users: s.users })),
     };
 
     try {
       const res = await fetch("/api/workflow", {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify(payload),
       });
 
+      if (res.status === 401) return router.replace("/login");
+      if (res.status === 403) return router.replace("/home");
+
       const data = await res.json();
 
-      if (data.success) {
+      if (data?.success) {
         alert("✔️ تم حفظ الـ Workflow بنجاح\n(سيُطبق على الريكويستات الجديدة فقط)");
         await loadWorkflow();
       } else {
-        alert(data.error || "❌ فشل حفظ Workflow");
+        alert(data?.error || "❌ فشل حفظ Workflow");
       }
     } catch (err) {
       alert("❌ Error saving workflow");
@@ -104,6 +194,9 @@ export default function WorkflowDetailsPage() {
       setSaving(false);
     }
   };
+
+  // ✅ إذا بعد ما تحققنا لا نرندر شي
+  if (!authorized) return null;
 
   // ================= UI =================
   if (loadingWorkflow)
@@ -161,9 +254,7 @@ export default function WorkflowDetailsPage() {
               key={idx}
               className="p-4 border rounded-xl bg-gray-50 shadow-sm flex items-center justify-between gap-4"
             >
-              <span className="text-gray-700 font-medium">
-                Step {idx + 1}
-              </span>
+              <span className="text-gray-700 font-medium">Step {idx + 1}</span>
 
               {loadingUsers ? (
                 <div className="w-64 flex justify-center">
@@ -171,23 +262,22 @@ export default function WorkflowDetailsPage() {
                 </div>
               ) : (
                 <Select
-                isMulti
-                options={users.map(u => ({
-                  value: u._id,
-                  label: u.username,
-                }))}
-                value={users
-                  .filter(u => s.users.includes(u._id))
-                  .map(u => ({ value: u._id, label: u.username }))
-                }
-                onChange={(vals) => {
-                  const updated = [...steps];
-                  updated[idx].users = vals ? vals.map(v => v.value) : [];
-                  setSteps(updated);
-                }}
-                placeholder="اختر المستخدمين"
-                className="w-72"
-              />
+                  isMulti
+                  options={users.map((u) => ({
+                    value: u._id,
+                    label: u.username,
+                  }))}
+                  value={users
+                    .filter((u) => s.users.includes(u._id))
+                    .map((u) => ({ value: u._id, label: u.username }))}
+                  onChange={(vals) => {
+                    const updated = [...steps];
+                    updated[idx].users = vals ? vals.map((v) => v.value) : [];
+                    setSteps(updated);
+                  }}
+                  placeholder="اختر المستخدمين"
+                  className="w-72"
+                />
               )}
 
               <button

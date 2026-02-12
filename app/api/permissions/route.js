@@ -1,21 +1,85 @@
 import dbConnect from "@/lib/mongodb";
 import Permissions from "@/models/Permissions";
-import mongoose from "mongoose";
+import User from "@/models/User";
 import { NextResponse } from "next/server";
+import mongoose from "mongoose";
+import { PERMISSIONS } from "@/lib/permission";
 
+// =========================
+// Helpers
+// =========================
+function getUserIdFromReq(req) {
+  return req.headers.get("x-user-id") || "";
+}
+
+async function requireManagePermissions(req) {
+  const userId = getUserIdFromReq(req);
+
+  if (!userId) {
+    return {
+      ok: false,
+      res: NextResponse.json(
+        { success: false, error: "Missing x-user-id" },
+        { status: 401 }
+      ),
+    };
+  }
+
+  await dbConnect();
+
+  const user = await User.findById(userId).lean();
+  if (!user) {
+    return {
+      ok: false,
+      res: NextResponse.json(
+        { success: false, error: "Invalid user" },
+        { status: 401 }
+      ),
+    };
+  }
+
+  // ✅ اجلب كل الكروبات الي هذا المستخدم ضمنها
+  const groups = await Permissions.find({ users: user._id })
+    .select("permissions companies")
+    .lean();
+
+  // ✅ اجمع كل الصلاحيات
+  const allPerms = new Set();
+  for (const g of groups) {
+    (g.permissions || []).forEach((p) => allPerms.add(p));
+  }
+
+  const canManage =
+    allPerms.has(PERMISSIONS.MANAGE_PERMISSIONS) ||
+    allPerms.has("manage_permissions"); // fallback إذا مخزنها سترنغ مباشر
+
+  if (!canManage) {
+    return {
+      ok: false,
+      res: NextResponse.json(
+        { success: false, error: "Access denied" },
+        { status: 403 }
+      ),
+    };
+  }
+
+  return { ok: true, user, groups };
+}
+
+// =========================
 // 🟢 GET (ALL or ONE)
+// =========================
 export async function GET(req) {
   try {
-    await dbConnect();
+    const guard = await requireManagePermissions(req);
+    if (!guard.ok) return guard.res;
 
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
 
     // إذا اكو ID → رجع كروب واحد
     if (id) {
-      const group = await Permissions.findById(id)
-        .populate("users")
-        .lean();
+      const group = await Permissions.findById(id).populate("users").lean();
 
       if (!group) {
         return NextResponse.json(
@@ -28,12 +92,8 @@ export async function GET(req) {
     }
 
     // رجّع كل الكروبات
-    const groups = await Permissions.find({})
-      .populate("users")
-      .lean();
-
+    const groups = await Permissions.find({}).populate("users").lean();
     return NextResponse.json({ success: true, data: groups });
-
   } catch (err) {
     return NextResponse.json(
       { success: false, error: err.message },
@@ -42,10 +102,13 @@ export async function GET(req) {
   }
 }
 
+// =========================
 // 🟢 CREATE
+// =========================
 export async function POST(req) {
   try {
-    await dbConnect();
+    const guard = await requireManagePermissions(req);
+    if (!guard.ok) return guard.res;
 
     const { name } = await req.json();
     if (!name) {
@@ -59,10 +122,10 @@ export async function POST(req) {
       name,
       permissions: [],
       users: [],
+      companies: [],
     });
 
     return NextResponse.json({ success: true, data: group });
-
   } catch (err) {
     return NextResponse.json(
       { success: false, error: err.message },
@@ -70,10 +133,14 @@ export async function POST(req) {
     );
   }
 }
+
+// =========================
 // 🟢 UPDATE
+// =========================
 export async function PUT(req) {
   try {
-    await dbConnect();
+    const guard = await requireManagePermissions(req);
+    if (!guard.ok) return guard.res;
 
     const { id, name, users, permissions, companies } = await req.json();
 
@@ -85,21 +152,17 @@ export async function PUT(req) {
     }
 
     // تنظيف البيانات
-    const cleanUsers =
-      users?.map((u) => new mongoose.Types.ObjectId(u)) || [];
-
+    const cleanUsers = (users || []).map((u) => new mongoose.Types.ObjectId(u));
     const cleanPerms = permissions || [];
+    const cleanCompanies = companies || [];
 
-    const cleanCompanies = companies || []; // ← 🔥🔥 لازم نستلمها
-
-    // 🔥 تحديث الكروب بالكامل بما يحتويه (users + permissions + companies)
     const updated = await Permissions.findByIdAndUpdate(
       id,
       {
         name,
         users: cleanUsers,
         permissions: cleanPerms,
-        companies: cleanCompanies, // ← أهم سطر
+        companies: cleanCompanies,
       },
       { new: true }
     )
@@ -107,7 +170,6 @@ export async function PUT(req) {
       .lean();
 
     return NextResponse.json({ success: true, data: updated });
-
   } catch (err) {
     console.error("UPDATE PERMISSION ERROR:", err);
     return NextResponse.json(
@@ -116,27 +178,31 @@ export async function PUT(req) {
     );
   }
 }
+
+// =========================
 // 🟥 DELETE
+// =========================
 export async function DELETE(req) {
   try {
-    await dbConnect();
+    const guard = await requireManagePermissions(req);
+    if (!guard.ok) return guard.res;
+
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
 
-    if (!id)
+    if (!id) {
       return NextResponse.json(
         { success: false, error: "Group ID required" },
         { status: 400 }
       );
+    }
 
     await Permissions.findByIdAndDelete(id);
-
     return NextResponse.json({ success: true, message: "Group deleted" });
-
   } catch (err) {
     return NextResponse.json(
       { success: false, error: err.message },
       { status: 500 }
     );
   }
-} 
+}

@@ -20,6 +20,9 @@ import {
   FiShield,
   FiDownload,
 } from "react-icons/fi";
+import { useRouter } from "next/navigation";
+import { usePermissions } from "@/context/PermissionContext";
+import { PERMISSIONS } from "@/lib/permission";
 
 import TablePagination from "@/components/TablePagination";
 
@@ -63,6 +66,22 @@ export default function ReportsPage() {
 
   // حتى ما يسوي fetch أول ما يفتح الصفحة
   const hasSearchedRef = useRef(false);
+
+  const router = useRouter();
+const { permissions } = usePermissions();
+
+const canViewReports =
+  Array.isArray(permissions) &&
+  permissions.includes(PERMISSIONS.VIEW_REPORTS);
+
+  useEffect(() => {
+    // ننتظر لحد ما تنزل الصلاحيات
+    if (!Array.isArray(permissions)) return;
+  
+    if (!canViewReports) {
+      router.replace("/home");
+    }
+  }, [permissions, canViewReports, router]);
 
   // ✅ Fix portal target (for react-select)
   const [menuTarget, setMenuTarget] = useState(null);
@@ -397,7 +416,8 @@ export default function ReportsPage() {
       </div>
     </motion.div>
   );
-
+if (!Array.isArray(permissions)) return null;
+if (!canViewReports) return null;
   return (
     <motion.div
       className="min-h-screen p-4 md:p-8"
@@ -449,7 +469,7 @@ export default function ReportsPage() {
             disabled={loading}
             className="px-5 py-2.5 rounded-xl bg-white/80 backdrop-blur border border-gray-200 text-gray-900 flex items-center gap-2 shadow-sm hover:bg-white"
           >
-            <FiRotateCcw /> تصفير
+            <FiRotateCcw /> مسح الفلاتر
           </motion.button>
 
           <motion.button

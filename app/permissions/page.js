@@ -1,12 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import {
-  FiShield,
-  FiUsers,
-  FiPlus,
-  FiTrash2,FiX , FiLayers
-} from "react-icons/fi";
+import { FiShield, FiUsers, FiPlus, FiTrash2, FiX, FiLayers } from "react-icons/fi";
 
 export default function PermissionsPage() {
   const [groups, setGroups] = useState([]);
@@ -17,11 +12,35 @@ export default function PermissionsPage() {
   const [newGroupName, setNewGroupName] = useState("");
   const [saving, setSaving] = useState(false);
 
+  // ✅ helper: get userId + guard
+  const getUserIdOrRedirect = () => {
+    const userId = localStorage.getItem("userId");
+    if (!userId) {
+      window.location.href = "/login";
+      return null;
+    }
+    return userId;
+  };
+
   // 🟦 تحميل الكروبات
   useEffect(() => {
     const load = async () => {
+      const userId = getUserIdOrRedirect();
+      if (!userId) return;
+
       try {
-        const res = await fetch("/api/permissions");
+        const res = await fetch("/api/permissions", {
+          cache: "no-store",
+          headers: {
+            "x-user-id": userId, // ✅ مهم
+          },
+        });
+
+        if (res.status === 401 || res.status === 403) {
+          window.location.href = "/home";
+          return;
+        }
+
         const data = await res.json();
         if (data.success) setGroups(data.data);
       } catch (err) {
@@ -30,6 +49,7 @@ export default function PermissionsPage() {
         setLoading(false);
       }
     };
+
     load();
   }, []);
 
@@ -40,20 +60,33 @@ export default function PermissionsPage() {
       return;
     }
 
+    const userId = getUserIdOrRedirect();
+    if (!userId) return;
+
     try {
       setSaving(true);
 
       const res = await fetch("/api/permissions", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "x-user-id": userId, // ✅ مهم
+        },
         body: JSON.stringify({ name: newGroupName }),
       });
+
+      if (res.status === 401 || res.status === 403) {
+        window.location.href = "/home";
+        return;
+      }
 
       const data = await res.json();
       if (data.success) {
         setGroups((prev) => [...prev, data.data]);
         setNewGroupName("");
         setPopupOpen(false);
+      } else {
+        alert(data.error || "Failed to create group");
       }
     } catch (err) {
       console.error("❌ Create group error:", err);
@@ -66,14 +99,27 @@ export default function PermissionsPage() {
   const deleteGroup = async (id) => {
     if (!confirm("هل تريد حذف هذا الكروب؟")) return;
 
+    const userId = getUserIdOrRedirect();
+    if (!userId) return;
+
     try {
       const res = await fetch(`/api/permissions?id=${id}`, {
         method: "DELETE",
+        headers: {
+          "x-user-id": userId, // ✅ مهم
+        },
       });
+
+      if (res.status === 401 || res.status === 403) {
+        window.location.href = "/home";
+        return;
+      }
 
       const data = await res.json();
       if (data.success) {
         setGroups((prev) => prev.filter((g) => g._id !== id));
+      } else {
+        alert(data.error || "Failed to delete group");
       }
     } catch (err) {
       console.error("❌ Delete group error:", err);
@@ -110,86 +156,83 @@ export default function PermissionsPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-7">
           {groups.map((g) => (
             <motion.div
-            key={g._id}
-            initial={{ opacity: 0, y: 35 }}
-            animate={{ opacity: 1, y: 0 }}
-            whileHover={{ scale: 1.03 }}
-            transition={{ duration: 0.25 }}
-            onClick={() => (window.location.href = `/permissions/${g._id}`)}
-            className="group cursor-pointer p-7 rounded-3xl bg-white/90 
-                       border border-gray-200 shadow-lg hover:shadow-2xl 
-                       hover:bg-white transition relative overflow-hidden"
-          >
-          
-            {/* DELETE BUTTON */}
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                deleteGroup(g._id);
-              }}
-              className="absolute top-4 right-4 text-red-500 hover:text-red-700 
-                         p-2 rounded-full hover:bg-red-50 transition"
+              key={g._id}
+              initial={{ opacity: 0, y: 35 }}
+              animate={{ opacity: 1, y: 0 }}
+              whileHover={{ scale: 1.03 }}
+              transition={{ duration: 0.25 }}
+              onClick={() => (window.location.href = `/permissions/${g._id}`)}
+              className="group cursor-pointer p-7 rounded-3xl bg-white/90
+                         border border-gray-200 shadow-lg hover:shadow-2xl
+                         hover:bg-white transition relative overflow-hidden"
             >
-              <FiTrash2 />
-            </button>
-          
-            {/* GROUP NAME */}
-            <div className="mb-6">
-              <h2 className="text-2xl font-bold text-gray-900 tracking-wide">
-                {g.name}
-              </h2>
-              <p className="text-sm text-gray-500 mt-1">
-                Click to manage users, permissions & companies
-              </p>
-            </div>
-          
-            {/* INFO ROWS */}
-            <div className="space-y-4">
-          
-              {/* USERS */}
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 bg-gray-900 text-white rounded-2xl 
-                                flex items-center justify-center shadow-md">
-                  <FiUsers className="text-xl" />
+              {/* DELETE BUTTON */}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  deleteGroup(g._id);
+                }}
+                className="absolute top-4 right-4 text-red-500 hover:text-red-700
+                           p-2 rounded-full hover:bg-red-50 transition"
+              >
+                <FiTrash2 />
+              </button>
+
+              {/* GROUP NAME */}
+              <div className="mb-6">
+                <h2 className="text-2xl font-bold text-gray-900 tracking-wide">
+                  {g.name}
+                </h2>
+                <p className="text-sm text-gray-500 mt-1">
+                  Click to manage users, permissions & companies
+                </p>
+              </div>
+
+              {/* INFO ROWS */}
+              <div className="space-y-4">
+                {/* USERS */}
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-gray-900 text-white rounded-2xl
+                                  flex items-center justify-center shadow-md">
+                    <FiUsers className="text-xl" />
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">Users</p>
+                    <p className="text-xl font-semibold text-gray-800">
+                      {g.users?.length || 0}
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-xs text-gray-500">Users</p>
-                  <p className="text-xl font-semibold text-gray-800">
-                    {g.users?.length || 0}
-                  </p>
+
+                {/* PERMISSIONS */}
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-blue-600 text-white rounded-2xl
+                                  flex items-center justify-center shadow-md">
+                    <FiShield className="text-xl" />
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">Permissions</p>
+                    <p className="text-xl font-semibold text-gray-800">
+                      {g.permissions?.length || 0}
+                    </p>
+                  </div>
+                </div>
+
+                {/* COMPANIES */}
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-green-600 text-white rounded-2xl
+                                  flex items-center justify-center shadow-md">
+                    <FiLayers className="text-xl" />
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-600">Companies</p>
+                    <p className="text-xl font-semibold text-gray-800">
+                      {g.companies?.length || 0}
+                    </p>
+                  </div>
                 </div>
               </div>
-          
-              {/* PERMISSIONS */}
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 bg-blue-600 text-white rounded-2xl 
-                                flex items-center justify-center shadow-md">
-                  <FiShield className="text-xl" />
-                </div>
-                <div>
-                  <p className="text-xs text-gray-500">Permissions</p>
-                  <p className="text-xl font-semibold text-gray-800">
-                    {g.permissions?.length || 0}
-                  </p>
-                </div>
-              </div>
-          
-              {/* COMPANIES — NEW SECTION */}
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 bg-green-600 text-white rounded-2xl 
-                                flex items-center justify-center shadow-md">
-                  <FiLayers className="text-xl" />
-                </div>
-                <div>
-                  <p className="text-xs text-gray-600">Companies</p>
-                  <p className="text-xl font-semibold text-gray-800">
-                    {g.companies?.length || 0}
-                  </p>
-                </div>
-              </div>
-          
-            </div>
-          </motion.div>
+            </motion.div>
           ))}
         </div>
       )}
@@ -227,7 +270,7 @@ export default function PermissionsPage() {
                 placeholder="Group name..."
                 value={newGroupName}
                 onChange={(e) => setNewGroupName(e.target.value)}
-                className="w-full px-4 py-3 border rounded-xl bg-gray-50 text-gray-800 
+                className="w-full px-4 py-3 border rounded-xl bg-gray-50 text-gray-800
                            focus:ring-2 focus:ring-blue-400"
               />
 
@@ -242,7 +285,7 @@ export default function PermissionsPage() {
                 <button
                   onClick={createGroup}
                   disabled={saving}
-                  className="px-5 py-2 rounded-xl bg-blue-600 text-white 
+                  className="px-5 py-2 rounded-xl bg-blue-600 text-white
                              hover:bg-blue-700 disabled:opacity-50"
                 >
                   {saving ? "Saving..." : "Create"}

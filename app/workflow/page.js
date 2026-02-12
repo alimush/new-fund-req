@@ -2,12 +2,21 @@
 
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { FiPlus, FiLayers, FiFileText, FiUsers, FiTrash2, FiX } from "react-icons/fi";
+import {
+  FiPlus,
+  FiLayers,
+  FiFileText,
+  FiUsers,
+  FiTrash2,
+  FiX,
+} from "react-icons/fi";
 import Select from "react-select";
 import { useRouter } from "next/navigation";
 
 export default function WorkflowPage() {
   const router = useRouter();
+
+  const [authorized, setAuthorized] = useState(false);
 
   const [workflows, setWorkflows] = useState([]);
   const [companies, setCompanies] = useState([]);
@@ -18,43 +27,132 @@ export default function WorkflowPage() {
   const [name, setName] = useState("");
   const [company, setCompany] = useState("");
 
+  // ✅ helper: userId + headers
+  const getUserId = () => localStorage.getItem("userId") || "";
+
+  const authHeaders = (extra = {}) => ({
+    ...extra,
+    "x-user-id": getUserId(),
+  });
+
+  // =========================
+  // ✅ Auth Guard (اعتماداً على userId في localStorage)
+  // =========================
   useEffect(() => {
+    const guard = async () => {
+      const userId = getUserId();
+
+      // مو ملوغن
+      if (!userId) {
+        router.replace("/login");
+        return;
+      }
+
+      try {
+        const res = await fetch(
+          `/api/user-permissions?id=${encodeURIComponent(userId)}`,
+          { cache: "no-store" }
+        );
+
+        const data = await res.json();
+        const perms = Array.isArray(data?.permissions) ? data.permissions : [];
+
+        const ok = perms.includes("MANAGE_PERMISSIONS");
+        if (!ok) {
+          router.replace("/home");
+          return;
+        }
+
+        setAuthorized(true);
+      } catch (e) {
+        router.replace("/home");
+      }
+    };
+
+    guard();
+  }, [router]);
+
+  // =========================
+  // ✅ Load Data (بعد السماح فقط)
+  // =========================
+  useEffect(() => {
+    if (!authorized) return;
     loadWorkflows();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authorized]);
 
   // STEP 1 → Load existing workflows
   const loadWorkflows = async () => {
-    const res = await fetch("/api/workflow");
-    const data = await res.json();
+    setLoading(true);
 
-    if (data.success) {
-      setWorkflows(data.workflows);
-      await loadCompanies(data.workflows || []);
+    try {
+      const res = await fetch("/api/workflow", {
+        cache: "no-store",
+        headers: authHeaders(),
+      });
+
+      // إذا السيرفر رجّع 401/403 معناها ما وصل userId أو مو مسموح
+      if (res.status === 401) {
+        router.replace("/login");
+        return;
+      }
+      if (res.status === 403) {
+        router.replace("/home");
+        return;
+      }
+
+      const data = await res.json();
+
+      if (data?.success) {
+        setWorkflows(data.workflows || []);
+        await loadCompanies(data.workflows || []);
+      } else {
+        setWorkflows([]);
+      }
+    } catch {
+      setWorkflows([]);
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
   };
 
   // STEP 2 → Load companies and remove used ones
   const loadCompanies = async (wfList) => {
-    if (!Array.isArray(wfList)) wfList = [];
+    try {
+      if (!Array.isArray(wfList)) wfList = [];
 
-    const res = await fetch("/api/permissions");
-    const data = await res.json();
+      const res = await fetch("/api/permissions", {
+        cache: "no-store",
+        headers: authHeaders(),
+      });
 
-    if (!data.success) return;
+      if (res.status === 401) {
+        router.replace("/login");
+        return;
+      }
+      if (res.status === 403) {
+        router.replace("/home");
+        return;
+      }
 
-    const compSet = new Set();
-    data.data.forEach((grp) => {
-      (grp.companies || []).forEach((c) => compSet.add(c));
-    });
+      const data = await res.json();
+      if (!data?.success) return;
 
-    const allCompanies = [...compSet];
-    const usedCompanies = new Set(wfList.map((w) => w.company));
-    const filtered = allCompanies.filter((c) => !usedCompanies.has(c));
+      const compSet = new Set();
+      (data.data || []).forEach((grp) => {
+        (grp.companies || []).forEach((c) => compSet.add(c));
+      });
 
-    setCompanies(allCompanies);
-    setAvailableCompanies(filtered);
+      const allCompanies = [...compSet];
+      const usedCompanies = new Set((wfList || []).map((w) => w.company));
+      const filtered = allCompanies.filter((c) => !usedCompanies.has(c));
+
+      setCompanies(allCompanies);
+      setAvailableCompanies(filtered);
+    } catch {
+      setCompanies([]);
+      setAvailableCompanies([]);
+    }
   };
 
   // CREATE WORKFLOW
@@ -64,15 +162,20 @@ export default function WorkflowPage() {
 
     const res = await fetch("/api/workflow", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: authHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({ name, company }),
     });
+
+    if (res.status === 401) return router.replace("/login");
+    if (res.status === 403) return router.replace("/home");
 
     const data = await res.json();
 
     if (data.success) {
       setOpenModal(false);
       router.push(`/workflow/${data.workflow._id}`);
+    } else {
+      alert(data.error || "فشل إنشاء Workflow");
     }
   };
 
@@ -82,19 +185,27 @@ export default function WorkflowPage() {
 
     const res = await fetch(`/api/workflow?id=${id}`, {
       method: "DELETE",
+      headers: authHeaders(),
     });
+
+    if (res.status === 401) return router.replace("/login");
+    if (res.status === 403) return router.replace("/home");
 
     const data = await res.json();
 
     if (data.success) {
       alert("✔️ تم حذف الـ Workflow");
       loadWorkflows();
+    } else {
+      alert(data.error || "فشل حذف Workflow");
     }
   };
 
+  // ✅ إذا ما بعد متحقق/مو مسموح: لا تعرض شي (حتى ما يصير flicker)
+  if (!authorized) return null;
+
   return (
     <div className="p-10 min-h-screen bg-gradient-to-br from-gray-100 to-gray-300">
-      
       {/* HEADER */}
       <div className="flex justify-between items-center mb-10">
         <h1 className="text-3xl font-bold text-gray-800 flex items-center gap-3">
@@ -147,7 +258,9 @@ export default function WorkflowPage() {
                   </div>
                   <div>
                     <p className="text-xs text-gray-500">Steps</p>
-                    <p className="text-xl font-bold text-gray-800">{wf.steps.length}</p>
+                    <p className="text-xl font-bold text-gray-800">
+                      {wf.steps?.length || 0}
+                    </p>
                   </div>
                 </div>
               </div>
@@ -183,7 +296,7 @@ export default function WorkflowPage() {
 
             <Select
               options={availableCompanies.map((c) => ({ value: c, label: c }))}
-              onChange={(val) => setCompany(val.value)}
+              onChange={(val) => setCompany(val?.value)}
               placeholder="Select Company"
               className="mb-4"
             />
@@ -197,7 +310,6 @@ export default function WorkflowPage() {
           </motion.div>
         </div>
       )}
-
     </div>
   );
 }

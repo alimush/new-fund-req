@@ -5,18 +5,59 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import Workflow from "@/models/Workflow";
 import { getModelForCompany } from "@/models/Request";
 import User from "@/models/User";
+import Permissions from "@/models/Permissions"; // ✅ اضفناها
 import mongoose from "mongoose";
-
 
 const CounterSchema = new mongoose.Schema({
   key: { type: String, unique: true },
   seq: { type: Number, default: 0 },
 });
 
-const Counter =
-  mongoose.models.Counter || mongoose.model("Counter", CounterSchema);
+const Counter = mongoose.models.Counter || mongoose.model("Counter", CounterSchema);
+
+// =========================
+// ✅ helpers للحماية
+// =========================
+const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
+
+async function hasCompanyAccess(userId, company) {
+  if (!userId || !company) return false;
+  if (!isValidObjectId(userId)) return false;
+
+  const exists = await Permissions.exists({
+    users: new mongoose.Types.ObjectId(userId),
+    companies: company,
+  });
+
+  return !!exists;
+}
+
+async function requireCompanyAccess(req, company) {
+  await dbConnect();
+
+  const userId = req.headers.get("x-user-id"); // ✅ جاي من localStorage بالفرونت
+
+  if (!userId) {
+    return { ok: false, status: 401, error: "Missing x-user-id" };
+  }
+  if (!isValidObjectId(userId)) {
+    return { ok: false, status: 401, error: "Invalid userId" };
+  }
+  if (!company) {
+    return { ok: false, status: 400, error: "Company is required" };
+  }
+
+  const allowed = await hasCompanyAccess(userId, company);
+  if (!allowed) {
+    return { ok: false, status: 403, error: "No access to this company" };
+  }
+
+  return { ok: true, userId };
+}
+
 /* =========================
    POST → Create Request (WITH WORKFLOW SNAPSHOT)
+   (اختياري تحميه لاحقاً، هسه خليته مثل ما هو)
 ========================= */
 export async function POST(req) {
   try {
@@ -63,13 +104,9 @@ export async function POST(req) {
       status: "Pending",
     };
 
-    // attachments (مثل كودك الحالي) ...
-    // baseData.attachments.push(...)
-
     const companyText = company.toUpperCase().replace(/\s+/g, "-").replace(/-+/g, "-");
     const counterKey = `REQ_${companyText}`;
 
-    // ✅ Retry loop على duplicate requestCode
     for (let attempt = 0; attempt < 5; attempt++) {
       const counter = await Counter.findOneAndUpdate(
         { key: counterKey },
@@ -85,7 +122,6 @@ export async function POST(req) {
         await newRequest.save();
         return NextResponse.json({ success: true, data: newRequest });
       } catch (e) {
-        // duplicate key => جرّب مرة ثانية
         if (e?.code === 11000 && e?.message?.includes("requestCode")) continue;
         throw e;
       }
@@ -102,7 +138,7 @@ export async function POST(req) {
 }
 
 /* =========================
-   GET → List OR Single
+   ✅ GET → List OR Single (PROTECTED)
 ========================= */
 export async function GET(req) {
   try {
@@ -111,27 +147,28 @@ export async function GET(req) {
     const company = searchParams.get("company");
     const id = searchParams.get("id");
 
-    if (!company) {
-      return NextResponse.json(
-        { success: false, error: "Company is required" },
-        { status: 400 }
-      );
+    // ✅ حماية الشركة + الهيدر
+    const auth = await requireCompanyAccess(req, company);
+    if (!auth.ok) {
+      return NextResponse.json({ success: false, error: auth.error }, { status: auth.status });
     }
 
     const Model = getModelForCompany(company);
 
     // ✅ Single request
     if (id) {
+      if (!isValidObjectId(id)) {
+        return NextResponse.json({ success: false, error: "Invalid id" }, { status: 400 });
+      }
+
       const request = await Model.findById(id).populate({
         path: "workflow.steps.users",
         model: "User",
+        strictPopulate: false,
       });
 
       if (!request) {
-        return NextResponse.json(
-          { success: false, error: "Request not found" },
-          { status: 404 }
-        );
+        return NextResponse.json({ success: false, error: "Request not found" }, { status: 404 });
       }
 
       // ✅ Signed URLs for attachments
@@ -165,15 +202,13 @@ export async function GET(req) {
     return NextResponse.json({ success: true, data: requests });
   } catch (err) {
     console.error("❌ GET Error:", err.message);
-    return NextResponse.json(
-      { success: false, error: err.message },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }
 }
 
 /* =========================
    PUT → Update Request (NO WORKFLOW EDIT)
+   (ممكن تحميه نفس GET لاحقاً)
 ========================= */
 export async function PUT(req) {
   try {
@@ -182,18 +217,13 @@ export async function PUT(req) {
     const { id, company, ...updateData } = body;
 
     if (!id || !company) {
-      return NextResponse.json(
-        { success: false, error: "ID & Company required" },
-        { status: 400 }
-      );
+      return NextResponse.json({ success: false, error: "ID & Company required" }, { status: 400 });
     }
 
-    // 🔒 Prevent workflow mutation
     delete updateData.workflow;
     delete updateData.currentStep;
     delete updateData.approvalHistory;
 
-    // ✅ (اختياري) إذا أي update يحتاج companyKey همين
     updateData.companyKey = company;
     updateData.company = company;
 
@@ -201,24 +231,19 @@ export async function PUT(req) {
     const updated = await Model.findByIdAndUpdate(id, updateData, { new: true });
 
     if (!updated) {
-      return NextResponse.json(
-        { success: false, error: "Request not found" },
-        { status: 404 }
-      );
+      return NextResponse.json({ success: false, error: "Request not found" }, { status: 404 });
     }
 
     return NextResponse.json({ success: true, data: updated });
   } catch (err) {
     console.error("❌ PUT Error:", err.message);
-    return NextResponse.json(
-      { success: false, error: err.message },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }
 }
 
 /* =========================
    DELETE → Remove Request
+   (ممكن تحميه نفس GET لاحقاً)
 ========================= */
 export async function DELETE(req) {
   try {
@@ -228,28 +253,19 @@ export async function DELETE(req) {
     const company = searchParams.get("company");
 
     if (!id || !company) {
-      return NextResponse.json(
-        { success: false, error: "ID & Company required" },
-        { status: 400 }
-      );
+      return NextResponse.json({ success: false, error: "ID & Company required" }, { status: 400 });
     }
 
     const Model = getModelForCompany(company);
     const deleted = await Model.findByIdAndDelete(id);
 
     if (!deleted) {
-      return NextResponse.json(
-        { success: false, error: "Request not found" },
-        { status: 404 }
-      );
+      return NextResponse.json({ success: false, error: "Request not found" }, { status: 404 });
     }
 
     return NextResponse.json({ success: true });
   } catch (err) {
     console.error("❌ DELETE Error:", err.message);
-    return NextResponse.json(
-      { success: false, error: err.message },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }
 }

@@ -9,6 +9,7 @@ import { MdPolicy } from "react-icons/md";
 import { FaSquarePollVertical } from "react-icons/fa6";
 import { usePermissions } from "@/context/PermissionContext";
 import { PERMISSIONS } from "@/lib/permission";
+
 const poppins = Poppins({
   subsets: ["latin"],
   weight: ["400", "600", "700"],
@@ -19,6 +20,7 @@ export default function Header({ onLogout }) {
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
   const [username, setUsername] = useState(null);
+  
   const { permissions, user } = usePermissions();
   useEffect(() => {
     const updateUser = () => {
@@ -30,7 +32,10 @@ export default function Header({ onLogout }) {
     window.addEventListener("userChanged", updateUser);
     return () => window.removeEventListener("userChanged", updateUser);
   }, []);
-
+  const canViewReports =
+  Array.isArray(permissions) &&
+  permissions.includes(PERMISSIONS.VIEW_REPORTS);
+  
   const handleLogout = async () => {
     try {
       // 1) امسح كل بيانات اليوزر من localStorage
@@ -195,14 +200,16 @@ export default function Header({ onLogout }) {
     label="إدارة الصلاحيات"
   />
 )}
-                        <MenuItem
-                          onClick={() => {
-                            setMenuOpen(false);
-                            router.push("/reports");
-                          }}
-                          icon={<FaSquarePollVertical className="text-gray-200" />}
-                          label="تقارير"
-                        />
+                      {canViewReports && (
+  <MenuItem
+    onClick={() => {
+      setMenuOpen(false);
+      router.push("/reports");
+    }}
+    icon={<FaSquarePollVertical className="text-gray-200" />}
+    label="تقارير"
+  />
+)}
                         <MenuItem
                           onClick={handleLogout}
                           icon={<FaSignOutAlt className="text-red-400" />}

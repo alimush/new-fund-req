@@ -61,10 +61,27 @@ export default function GroupDetailsClient({ groupId }) {
 
     const load = async () => {
       try {
+        const userId = localStorage.getItem("userId");
+        if (!userId) {
+          window.location.href = "/login";
+          return;
+        }
+        
         const [resGroup, resUsers] = await Promise.all([
-          fetch(`/api/permissions?id=${groupId}`),
-          fetch("/api/users"),
+          fetch(`/api/permissions?id=${groupId}`, {
+            cache: "no-store",
+            headers: { "x-user-id": userId },
+          }),
+          fetch("/api/users", {
+            cache: "no-store",
+            headers: { "x-user-id": userId },
+          }),
         ]);
+        
+        if (resGroup.status === 401 || resGroup.status === 403) {
+          window.location.href = "/home";
+          return;
+        }
     
         const dataGroup = await resGroup.json();
         const dataUsers = await resUsers.json();
@@ -125,15 +142,21 @@ export default function GroupDetailsClient({ groupId }) {
     setGroupUsers(updatedUsers);
   
     // 🔥 حفظ مباشرة في MongoDB
+    const userId = localStorage.getItem("userId");
+    if (!userId) return;
+    
     await fetch("/api/permissions", {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "x-user-id": userId,
+      },
       body: JSON.stringify({
         id: groupId,
         name: group?.name || "",
-        users: groupUsers.map((u) => u._id),
+        users: updatedUsers.map((u) => u._id), // 🔥 مهم
         permissions: groupPermissions,
-        companies: groupCompanies,   // ← 🔥 لازم نرسلها
+        companies: groupCompanies,
       }),
     });
   };
@@ -160,21 +183,31 @@ export default function GroupDetailsClient({ groupId }) {
     setGroupPermissions(updatedPermissions);
   
     // 🔥 تحديث MongoDB فوراً
+    const userId = localStorage.getItem("userId");
+    if (!userId) return;
+    
     await fetch("/api/permissions", {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "x-user-id": userId,
+      },
       body: JSON.stringify({
         id: groupId,
         name: group?.name || "",
         users: groupUsers.map(u => u._id),
         permissions: updatedPermissions,
+        companies: groupCompanies, // 🔥 مهم حتى لا تنمسح
       }),
     });
   };
   // 🟦 حفظ التغييرات
   const saveChanges = async () => {
-    if (!groupId) {
-      alert("Group ID missing – cannot save.");
+    if (!groupId) return;
+  
+    const userId = localStorage.getItem("userId");
+    if (!userId) {
+      window.location.href = "/login";
       return;
     }
   
@@ -183,31 +216,31 @@ export default function GroupDetailsClient({ groupId }) {
   
       const res = await fetch("/api/permissions", {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "x-user-id": userId,
+        },
         body: JSON.stringify({
           id: groupId,
           name: group?.name || "",
           users: groupUsers.map((u) => u._id),
           permissions: groupPermissions,
-          companies: groupCompanies   // ← ← ← الحل
+          companies: groupCompanies,
         }),
       });
+  
+      if (res.status === 401 || res.status === 403) {
+        window.location.href = "/home";
+        return;
+      }
   
       const data = await res.json();
   
       if (data.success) {
-        alert("Saved successfully");
-        setGroup(data.data);
-        setGroupUsers(data.data.users || []);
-        setGroupPermissions(data.data.permissions || []);
-        setGroupCompanies(data.data.companies || []);
-        window.location.reload();
-      } else {
-        alert(data.error || "Failed to update");
+        window.location.reload(); // ✅ رفرش مباشر بدون alert
       }
     } catch (err) {
       console.error(err);
-      alert("Error while saving changes");
     } finally {
       setSaving(false);
     }

@@ -20,6 +20,11 @@ import StatusBadge from "@/components/StatusBadge";
 import { usePermissions } from "@/context/PermissionContext";
 import { PERMISSIONS } from "@/lib/permission";
 import VoucherModal from "@/components/VoucherModal";
+import { useRef } from "react";
+import html2canvas from "html2canvas";
+import { PDFDocument } from "pdf-lib";
+import PrintableRequestPDF from "@/components/PrintableRequestPDF";
+import { FiDownload } from "react-icons/fi";
 
 export default function RequestDetails({ id, companyKey }) {
   const router = useRouter();
@@ -37,7 +42,7 @@ const [showVoucherModal, setShowVoucherModal] = useState(false);
 const fmt = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
 const [stepAttachment, setStepAttachment] = useState(null); // File | string(url) | null
 const { permissions } = usePermissions();
-
+const printRef = useRef(null);
 const canViewAll =
   Array.isArray(permissions) &&
   permissions.includes(PERMISSIONS.VIEW_REPORTS);
@@ -68,6 +73,127 @@ useEffect(() => {
 
 const base =
   "inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-semibold border";
+
+  const handleDownloadPDF = async () => {
+    if (!printRef.current) return;
+  
+    const root = printRef.current;
+  
+    // اخفاء اي شي ما تريده بالـ PDF داخل printable
+    const hiddenEls = root.querySelectorAll("[data-no-pdf='1']");
+    hiddenEls.forEach((el) => (el.style.display = "none"));
+  
+    // ✅ ستايل مؤقت: يلغي blur/shadow + يحوّل tailwind colors إلى HEX (يتجنب lab/oklch)
+    const style = document.createElement("style");
+    style.innerHTML = `
+      /* Disable effects that html2canvas sometimes messes up */
+      .no-pdf-effects, .no-pdf-effects * {
+        backdrop-filter: none !important;
+        filter: none !important;
+        box-shadow: none !important;
+        text-shadow: none !important;
+        background-image: none !important;
+      }
+  
+      /* ✅ مهم: لا تخلي background transparent */
+      .no-pdf-effects { background-color: #ffffff !important; }
+  
+      /* =========================
+         ✅ TAILWIND COLOR FIX (HEX)
+         غطّي كل الكلاسات اللي مستخدمها بالـ PrintableRequestPDF
+         ========================= */
+  
+      /* Backgrounds */
+      .no-pdf-effects .bg-white { background-color: #ffffff !important; }
+      .no-pdf-effects .bg-gray-50 { background-color: #f9fafb !important; }
+      .no-pdf-effects .bg-gray-100 { background-color: #f3f4f6 !important; }
+      .no-pdf-effects .bg-slate-50 { background-color: #f8fafc !important; }
+      .no-pdf-effects .bg-slate-200 { background-color: #e2e8f0 !important; }
+  
+      .no-pdf-effects .bg-green-50 { background-color: #f0fdf4 !important; }
+      .no-pdf-effects .bg-yellow-50 { background-color: #fefce8 !important; }
+      .no-pdf-effects .bg-red-50 { background-color: #fef2f2 !important; }
+  
+      /* Text */
+      .no-pdf-effects .text-black { color: #000000 !important; }
+      .no-pdf-effects .text-gray-600 { color: #4b5563 !important; }
+      .no-pdf-effects .text-gray-700 { color: #374151 !important; }
+  
+      .no-pdf-effects .text-green-600 { color: #16a34a !important; }
+      .no-pdf-effects .text-yellow-600 { color: #ca8a04 !important; }
+      .no-pdf-effects .text-red-600 { color: #dc2626 !important; }
+  
+      /* Borders */
+      .no-pdf-effects .border-gray-600 { border-color: #4b5563 !important; }
+      .no-pdf-effects .border-gray-300 { border-color: #d1d5db !important; }
+  
+      .no-pdf-effects .border-green-300 { border-color: #86efac !important; }
+      .no-pdf-effects .border-yellow-300 { border-color: #fde047 !important; }
+      .no-pdf-effects .border-red-300 { border-color: #fca5a5 !important; }
+  
+      /* ✅ احتياط: حتى لو tailwind يطلع color-mix للـ border/text */
+      .no-pdf-effects, .no-pdf-effects * {
+        outline-color: #d1d5db !important;
+        caret-color: #111827 !important;
+      }
+    `;
+    document.head.appendChild(style);
+  
+    // ✅ فعّل الكلاس قبل الالتقاط
+    root.classList.add("no-pdf-effects");
+  
+    // انتظر رندر بسيط
+    await new Promise((r) => setTimeout(r, 250));
+  
+    // html2canvas
+    const canvas = await html2canvas(root, {
+      scale: 2,
+      useCORS: true,
+      backgroundColor: "#ffffff",
+      scrollX: 0,
+      scrollY: 0,
+      windowWidth: root.scrollWidth,
+      windowHeight: root.scrollHeight,
+    });
+  
+    // رجّع كلشي
+    root.classList.remove("no-pdf-effects");
+    document.head.removeChild(style);
+    hiddenEls.forEach((el) => (el.style.display = ""));
+  
+    // pdf-lib (A4 Landscape)
+    const pdf = await PDFDocument.create();
+    const pageW = 841.89;
+    const pageH = 595.28;
+  
+    const pngBytes = await new Promise((resolve) =>
+      canvas.toBlob((b) => resolve(b), "image/png", 1)
+    ).then((b) => b.arrayBuffer());
+  
+    const pngImage = await pdf.embedPng(pngBytes);
+  
+    const scale = pageW / pngImage.width;
+    const scaledHeight = pngImage.height * scale;
+    const pagesCount = Math.ceil(scaledHeight / pageH);
+  
+    for (let i = 0; i < pagesCount; i++) {
+      const page = pdf.addPage([pageW, pageH]);
+      page.drawImage(pngImage, {
+        x: 0,
+        y: pageH - scaledHeight + i * pageH,
+        width: pageW,
+        height: scaledHeight,
+      });
+    }
+  
+    const pdfBytes = await pdf.save();
+    const blob = new Blob([pdfBytes], { type: "application/pdf" });
+  
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `Request-${request?.requestCode || request?._id}.pdf`;
+    link.click();
+  };
   // 🟢 ---------------- FETCH DATA FUNCTION (خارج useEffect) ----------------
   const fetchData = async () => {
     try {
@@ -80,7 +206,7 @@ const base =
         router.replace("/home");
         return;
       }
-  
+     
       const data = await res.json();
       if (data.success) setRequest(data.data);
     } catch (err) {
@@ -135,9 +261,12 @@ const base =
         >
           Back
         </button>
+        
       </div>
+      
     );
   }
+  const companyLabel = request?.company || request?._oldProjectName || companyKey || "-";
   const isOwner =
   currentUser &&
   String(request.createdBy) === String(currentUser.username);
@@ -158,6 +287,7 @@ const canCancel =
     <h1 className="text-3xl font-bold text-gray-800 flex items-center gap-3">
       <FiInfo className="text-blue-600" /> Fund Request Details
     </h1>
+    
 
     <button
       onClick={() => router.back()}
@@ -165,37 +295,55 @@ const canCancel =
     >
       <FiArrowLeft /> Back
     </button>
+    
   </div>
+  
+{/* 🔽 Action Buttons */}
+<div className="mt-4 flex flex-wrap items-center gap-3">
 
-  {/* 🔽 Cancel Button تحت العنوان */}
   {canCancel && (
-  <button
-    onClick={async () => {
-      const ok = window.confirm("هل أنت متأكد من إلغاء الطلب؟");
-      if (!ok) return;
+    <button
+      onClick={async () => {
+        const ok = window.confirm("هل أنت متأكد من إلغاء الطلب؟");
+        if (!ok) return;
 
-      try {
-        setLoading(true);
-        await fetch(`/api/requests/cancel`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify({ id, company: companyKey }),
-        });
-        await fetchData();
-      } finally {
-        setLoading(false);
-      }
-    }}
-    className="mt-4 flex items-center gap-2 px-4 py-2 rounded-xl
-               bg-gray-800 text-white border border-gray-800
-               hover:bg-gray-900 hover:border-gray-900 transition"
+        try {
+          setLoading(true);
+          await fetch(`/api/requests/cancel`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({ id, company: companyKey }),
+          });
+          await fetchData();
+        } finally {
+          setLoading(false);
+        }
+      }}
+      className="flex items-center gap-2 px-4 py-2 rounded-xl
+                 bg-gray-800 text-white
+                 hover:bg-gray-900 transition shadow"
+    >
+      <FiMinusCircle />
+      <span className="text-sm font-semibold">Cancel</span>
+    </button>
+  )}
+
+  <button
+    data-no-pdf="1"
+    onClick={handleDownloadPDF}
+    className="flex items-center gap-2 px-4 py-2 rounded-xl
+               bg-blue-600 text-white
+               hover:bg-blue-700 transition shadow"
   >
-    <FiMinusCircle />
-    <span className="text-sm font-semibold">Cancel Request</span>
+    <FiDownload />
+    <span className="text-sm font-semibold">PDF</span>
   </button>
-)}
+
 </div>
+</div>
+
+
 
 
       {/* SUMMARY */}
@@ -218,8 +366,7 @@ className="rounded-3xl bg-white/35 backdrop-blur-2xl ring-1 ring-white/25 shadow
   </div>
 
   <div className="rounded-2xl transition-all duration-300 hover:-translate-y-1 hover:bg-white/45 hover:shadow-[0_12px_30px_-15px_rgba(0,0,0,0.35)]">
-    <Info label=" الشركة" value={request.company} icon={<FiUsers />} />
-  </div>
+  <Info label=" الشركة" value={companyLabel} icon={<FiUsers />} />  </div>
 
   <div className="rounded-2xl transition-all duration-300 hover:-translate-y-1 hover:bg-white/45 hover:shadow-[0_12px_30px_-15px_rgba(0,0,0,0.35)]">
     <Info label="النوع" value={request.requestType} icon={<FiInfo />} />
@@ -478,18 +625,20 @@ className="rounded-3xl bg-white/35 backdrop-blur-2xl ring-1 ring-white/25 shadow
               step.status === "Approved";
               
               const isLastStepUser =
-  isLast &&
-  currentUser &&
-  step.users?.some((u) => String(u._id) === String(currentUser.id));
+              isLast &&
+              currentUser &&
+              step.users?.some(
+                (u) => String(u.username) === String(currentUser?.username)
+              );
 
               
             const isCurrent = idx === request.currentStep;
             const canAct =
-            (request.status === "Pending" || request.status === "Rejected") &&
-            isCurrent &&
-            step.status === "Pending" &&
-            currentUser &&
-            step.users?.some((user) => String(user._id) === String(currentUser.id));
+  (request.status === "Pending" || request.status === "Rejected") &&
+  isCurrent &&
+  step.status === "Pending" &&
+  currentUser &&
+  step.users?.some((user) => String(user.username) === String(currentUser.username));
             const hasComment = !!(step.comment && step.comment.trim());
 
             const hasAttach =
@@ -776,6 +925,19 @@ className="rounded-3xl bg-white/35 backdrop-blur-2xl ring-1 ring-white/25 shadow
     await fetchData();
   }}
 />
+
+<div
+  ref={printRef}
+  style={{
+    position: "absolute",
+    top: "-10000px",
+    left: "-10000px",
+    width: "297mm",
+    background: "#fff",
+  }}
+>
+  <PrintableRequestPDF companyKey={companyKey} request={request} />
+</div>
     </motion.div>
   );
 }

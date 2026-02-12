@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 
 export default function RegisterPage() {
   const [username, setUsername] = useState("");
-  const [email, setEmail] = useState("");            // ✅ NEW
+  const [email, setEmail] = useState(""); // ✅ NEW
   const [password, setPassword] = useState("");
 
   const [users, setUsers] = useState([]);
@@ -14,14 +14,53 @@ export default function RegisterPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [successMsg, setSuccessMsg] = useState("");
 
+  // ✅ حالة صلاحية/دخول
+  const [authError, setAuthError] = useState("");
+
+  // =========================
+  // ✅ Helper: show message for 401/403 + always send x-user-id
+  // =========================
+  const apiFetch = async (url, options = {}) => {
+    const userId =
+      typeof window !== "undefined" ? localStorage.getItem("userId") : "";
+
+    if (!userId) {
+      setAuthError("❌ لازم تسوي Login أولاً.");
+      throw new Error("Missing userId");
+    }
+
+    const res = await fetch(url, {
+      ...options,
+      headers: {
+        ...(options.headers || {}),
+        "x-user-id": userId, // ✅ المهم
+      },
+    });
+
+    if (res.status === 401) {
+      setAuthError("❌ لازم تسوي Login أولاً.");
+      throw new Error("Unauthorized");
+    }
+
+    if (res.status === 403) {
+      setAuthError("⛔ ما عندك صلاحية MANAGE_PERMISSIONS.");
+      throw new Error("Forbidden");
+    }
+
+    return res;
+  };
+
   // 🟢 جلب المستخدمين
   const fetchUsers = async (query = "") => {
     try {
-      const res = await fetch(`/api/users?q=${encodeURIComponent(query)}`);
+      setAuthError("");
+      const res = await apiFetch(`/api/users?q=${encodeURIComponent(query)}`);
       const data = await res.json();
       setUsers(data.users || []);
     } catch (err) {
+      // إذا authError مضبوط، ما نحتاج نسوي شي
       console.error("Error fetching users:", err);
+      setUsers([]);
     }
   };
 
@@ -32,31 +71,41 @@ export default function RegisterPage() {
   // ➕ إنشاء مستخدم
   const handleRegister = async (e) => {
     e.preventDefault();
-    const res = await fetch("/api/users", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, email, password }), // ✅
-    });
+    try {
+      setAuthError("");
+      const res = await apiFetch("/api/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, email, password }), // ✅
+      });
 
-    if (res.ok) {
-      setUsername("");
-      setEmail("");     // ✅
-      setPassword("");
-      fetchUsers(search);
-      setSuccessMsg("✅ User created successfully!");
-      setTimeout(() => setSuccessMsg(""), 2000);
-    } else {
-      const data = await res.json();
-      alert(data.error || "❌ Failed to register user");
+      if (res.ok) {
+        setUsername("");
+        setEmail(""); // ✅
+        setPassword("");
+        fetchUsers(search);
+        setSuccessMsg("✅ User created successfully!");
+        setTimeout(() => setSuccessMsg(""), 2000);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || "❌ Failed to register user");
+      }
+    } catch (err) {
+      console.error("Error register:", err);
     }
   };
 
   // 🗑 حذف
   const handleDelete = async (id) => {
     if (!confirm("هل تريد حذف هذا المستخدم؟")) return;
-    await fetch(`/api/users?id=${id}`, { method: "DELETE" });
-    fetchUsers(search);
-    setIsModalOpen(false);
+    try {
+      setAuthError("");
+      await apiFetch(`/api/users?id=${id}`, { method: "DELETE" });
+      fetchUsers(search);
+      setIsModalOpen(false);
+    } catch (err) {
+      console.error("Error delete:", err);
+    }
   };
 
   // ✏️ تعديل
@@ -72,20 +121,25 @@ export default function RegisterPage() {
     // ✅ إذا كتب باسورد جديد نرسله، غير هذا لا
     if (newPassword.trim()) payload.password = newPassword;
 
-    const res = await fetch("/api/users", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+    try {
+      setAuthError("");
+      const res = await apiFetch("/api/users", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
 
-    if (res.ok) {
-      fetchUsers(search);
-      setSuccessMsg("✅ User updated successfully!");
-      setTimeout(() => setSuccessMsg(""), 2000);
-      setIsModalOpen(false);
-    } else {
-      const data = await res.json();
-      alert(data.error || "❌ Failed to update user");
+      if (res.ok) {
+        fetchUsers(search);
+        setSuccessMsg("✅ User updated successfully!");
+        setTimeout(() => setSuccessMsg(""), 2000);
+        setIsModalOpen(false);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || "❌ Failed to update user");
+      }
+    } catch (err) {
+      console.error("Error edit:", err);
     }
   };
 
@@ -112,6 +166,21 @@ export default function RegisterPage() {
         >
           Users Management
         </h1>
+
+        {/* ✅ رسالة صلاحيات/دخول */}
+        <AnimatePresence>
+          {authError && (
+            <motion.div
+              className="mb-4 text-red-600 font-medium text-center"
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.25 }}
+            >
+              {authError}
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* 🔍 البحث */}
         <input
@@ -165,6 +234,8 @@ export default function RegisterPage() {
                        hover:from-gray-600 hover:to-gray-900 transition"
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
+            disabled={!!authError}
+            title={authError ? "لازم صلاحية MANAGE_PERMISSIONS" : "Add User"}
           >
             Add User
           </motion.button>
@@ -209,12 +280,13 @@ export default function RegisterPage() {
                 <motion.button
                   onClick={() => {
                     setSelectedUser(u);
-                    setNewPassword(""); // ✅ كل مرة تفتح مودال نخليه فارغ
+                    setNewPassword("");
                     setIsModalOpen(true);
                   }}
                   className="px-3 py-1 bg-gray-600 text-white rounded text-xs hover:bg-gray-700"
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
+                  disabled={!!authError}
                 >
                   Details
                 </motion.button>
@@ -228,7 +300,7 @@ export default function RegisterPage() {
 
       {/* 🟢 مودال التفاصيل والتعديل */}
       <AnimatePresence>
-        {isModalOpen && selectedUser && (
+        {isModalOpen && selectedUser && !authError && (
           <motion.div
             className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
             initial={{ opacity: 0 }}
@@ -262,7 +334,10 @@ export default function RegisterPage() {
                     type="text"
                     value={selectedUser.username}
                     onChange={(e) =>
-                      setSelectedUser({ ...selectedUser, username: e.target.value })
+                      setSelectedUser({
+                        ...selectedUser,
+                        username: e.target.value,
+                      })
                     }
                     className="w-full border border-gray-300 rounded-lg p-2 mt-1 
                                outline-none focus:ring-2 focus:ring-gray-400 bg-white/70"
@@ -300,21 +375,6 @@ export default function RegisterPage() {
                   />
                 </div>
               </div>
-
-              {/* ✅ رسالة نجاح داخل المودال */}
-              <AnimatePresence>
-                {successMsg && (
-                  <motion.div
-                    className="mb-3 text-green-600 font-medium text-center"
-                    initial={{ opacity: 0, y: -10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -10 }}
-                    transition={{ duration: 0.3 }}
-                  >
-                    {successMsg}
-                  </motion.div>
-                )}
-              </AnimatePresence>
 
               {/* الأزرار */}
               <div className="flex justify-end gap-2">

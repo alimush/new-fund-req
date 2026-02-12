@@ -115,19 +115,31 @@ export default function RequestsPage({ companyKey }) {
   // =========================
   const fetchRequests = useCallback(async () => {
     if (!companyKey) return;
+  
+    const userId = localStorage.getItem("userId"); // ✅ من localStorage
+  
+    // إذا ماكو userId يعني مو ملوغن
+    if (!userId) {
+      router.replace("/login");
+      return;
+    }
+  
     try {
       setLoading(true);
+  
       const res = await fetch(`/api/requests?company=${companyKey}`, {
-        credentials: "include",
         cache: "no-store",
+        headers: {
+          "x-user-id": userId, // ✅ المهم
+        },
       });
-
-      // لو API يرجع 401/403 بسبب session
+  
+      // إذا ما عنده صلاحية/ماكو هيدر
       if (res.status === 401 || res.status === 403) {
         router.replace("/home");
         return;
       }
-
+  
       const data = await res.json();
       if (data?.success && Array.isArray(data?.data)) setRequests(data.data);
       else setRequests([]);
