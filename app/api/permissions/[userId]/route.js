@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import mongoose from "mongoose";
-import Permissions from "@/models/Permission";
+import Permissions from "@/models/Permissions";
 
 let isConnected = false;
 const connectDB = async () => {
