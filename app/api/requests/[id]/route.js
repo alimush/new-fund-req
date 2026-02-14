@@ -473,10 +473,10 @@ export async function GET(req, { params }) {
 
     // ✅ S3 Client (مرة وحدة)
     const s3 = new S3Client({
-      region: process.env.AWS_REGION,
+      region: process.env.S3_REGION,
       credentials: {
-        accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+        accessKeyId: process.env.S3_ACCESS_KEY_ID,
+        secretAccessKey: process.env.S3_SECRET_ACCESS_KEY,
       },
     });
 
@@ -485,7 +485,7 @@ export async function GET(req, { params }) {
       for (const file of request.attachments) {
         if (!file?.key) continue;
         const command = new GetObjectCommand({
-          Bucket: process.env.AWS_S3_BUCKET,
+          Bucket: process.env.S3_BUCKET_NAME,
           Key: file.key,
         });
         file.url = await getSignedUrl(s3, command, { expiresIn: 3600 });
@@ -498,7 +498,7 @@ export async function GET(req, { params }) {
         if (!st?.attachment?.key) continue;
 
         const command = new GetObjectCommand({
-          Bucket: process.env.AWS_S3_BUCKET,
+          Bucket: process.env.S3_BUCKET_NAME,
           Key: st.attachment.key,
         });
 
