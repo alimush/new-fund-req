@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import dbConnect from "@/lib/mongodb";
-<<<<<<< HEAD
+
 import { getModelForCompany } from "@/models/Request";
-=======
+
 import Request from "@/models/Request"; // عدل المسار حسب موديلك\
 
->>>>>>> 90e5b78 (ف)
+
 import User from "@/models/User";
 import nodemailer from "nodemailer";
 import mongoose from "mongoose";
