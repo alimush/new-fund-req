@@ -47,8 +47,8 @@ export async function POST(req) {
     }
 
     /* ================= Generate Signed URL ================= */
-    const bucket = process.env.S3_BUCKET_NAME;
-    const region = process.env.S3_REGION;
+    const bucket = process.env.local.S3_BUCKET_NAME;
+    const region = process.env.local.S3_REGION;
 
     if (!bucket || !region) {
       return NextResponse.json(
@@ -60,8 +60,8 @@ export async function POST(req) {
     const s3 = new S3Client({
       region,
       credentials: {
-        accessKeyId: process.env.S3_ACCESS_KEY_ID,
-        secretAccessKey: process.env.S3_SECRET_ACCESS_KEY,
+        accessKeyId: process.env.local.S3_ACCESS_KEY_ID,
+        secretAccessKey: process.env.local.S3_SECRET_ACCESS_KEY,
       },
     });
 
