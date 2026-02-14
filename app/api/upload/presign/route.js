@@ -27,7 +27,8 @@ export async function POST(req) {
 
     const bucket = process.env.S3_BUCKET_NAME;
     const region = process.env.S3_REGION;
-
+console.log("S3_BUCKET_NAME:", bucket);
+console.log("S3_REGION:", region); 
     if (!bucket || !region) {
       return NextResponse.json(
         { success: false, error: "Missing S3 env" },
