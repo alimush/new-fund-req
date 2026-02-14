@@ -63,35 +63,67 @@ function buildEmailHtml({
   note,
   actorName,
 
-  // ✅ إضافات حتى يصير مثل المثال مالك
   requesterName = "",
   toUserName = "",
-  requestUrl = "",
+  requestUrl = "", // اختياري
+
+  // ✅ دومين امبليفاير (ثابت)
+  baseDomain = "https://main.d2fatueaza47h3.amplifyapp.com",
 }) {
   const actionTxt =
-    action === "approve" ? "Approved" : action === "reject" ? "Rejected" : String(action);
+    action === "approve"
+      ? "Approved"
+      : action === "reject"
+      ? "Rejected"
+      : String(action);
 
-  // ✅ نص عربي حسب approve/reject
+  // ✅ تحويل step to numbers safely
+  const fromIdx = Number.isFinite(Number(stepFrom)) ? Number(stepFrom) : 0;
+  const toIdx = Number.isFinite(Number(stepTo)) ? Number(stepTo) : 0;
+
+  // ✅ نبني رابط الطلب تلقائياً إذا ما منطيته
+  const computedUrl =
+    requestUrl?.trim() ||
+    `${String(baseDomain).replace(/\/+$/, "")}/requests/${encodeURIComponent(
+      company || ""
+    )}/${encodeURIComponent(requestId || "")}`;
+
+  // ✅ المطلوب: “تمت الموافقة/الرفض على الخطوة السابقة”
+  // approve/reject دا يصير على stepFrom (الخطوة اللي اتخذت بيها الاكشن)
+  const actedStepNum = fromIdx + 1;
+
+  // ✅ المطلوب: “ننتظر الموافقة أو الرفض” للخطوة الحالية للمستلم
+  // بعد approve يروح للـ stepTo، وبعد reject يرجع للـ stepTo
+  const waitingStepNum = toIdx + 1;
+
+  // ✅ سطر عربي رئيسي (approve/reject على الخطوة السابقة)
   const arabicActionLine =
     action === "approve"
-      ? `تمت الموافقة على الخطوة ${Number(stepTo) + 1} من طلب التمويل الخاص بك بواسطة <b style="color:#f8fafc">${escapeHtml(
+      ? `تمت الموافقة على الخطوة ${actedStepNum} من طلب التمويل الخاص بك بواسطة <b style="color:#f8fafc">${escapeHtml(
           actorName || "System"
         )}</b>.`
       : action === "reject"
-      ? `تم رفض الخطوة ${Number(stepFrom) + 1} من طلب التمويل الخاص بك بواسطة <b style="color:#f8fafc">${escapeHtml(
+      ? `تم رفض الخطوة ${actedStepNum} من طلب التمويل الخاص بك بواسطة <b style="color:#f8fafc">${escapeHtml(
           actorName || "System"
         )}</b>.`
-      : `تم تحديث طلب التمويل الخاص بك بواسطة <b style="color:#f8fafc">${escapeHtml(actorName || "System")}</b>.`;
+      : `تم تحديث طلب التمويل الخاص بك بواسطة <b style="color:#f8fafc">${escapeHtml(
+          actorName || "System"
+        )}</b>.`;
 
+  // ✅ تحويل/ارجاع + ننتظر موافقتك/رفضك
   const routingLine =
     action === "approve"
       ? toUserName
-        ? `تم تحويل الطلب إلى الموظف التالي: <b style="color:#f8fafc">${escapeHtml(toUserName)}</b>.`
-        : "تم تحويل الطلب إلى الموظف التالي."
+        ? `تم تحويل الطلب إلى الموظف التالي: <b style="color:#f8fafc">${escapeHtml(
+            toUserName
+          )}</b>. <br/>ننتظر الموافقة أو الرفض على الخطوة ${waitingStepNum}.`
+        : `تم تحويل الطلب إلى الموظف التالي. <br/>ننتظر الموافقة أو الرفض على الخطوة ${waitingStepNum}.`
       : action === "reject"
       ? toUserName
-        ? `تم إرجاع الطلب إلى الموظف السابق: <b style="color:#f8fafc">${escapeHtml(toUserName)}</b>.`
-        : "تم إرجاع الطلب إلى الموظف السابق."
+        ? `تم إرجاع الطلب إلى الموظف السابق: <b style="color:#f8fafc">${escapeHtml(
+            toUserName
+          )}</b>. <br/>ننتظر الموافقة أو الرفض على الخطوة ${waitingStepNum}.`
+        : `تم إرجاع الطلب إلى الموظف السابق. <br/>ننتظر الموافقة أو الرفض على الخطوة ${waitingStepNum}.`
       : "";
 
   return `
@@ -252,7 +284,7 @@ function buildEmailHtml({
             👋 عزيزي ${escapeHtml(requesterName || "زميلنا")}
           </div>
 
-          <!-- Main message exactly like your sample -->
+          <!-- Main message -->
           <div style="
             text-align:right;
             font-family:Arial,sans-serif;
@@ -270,42 +302,35 @@ function buildEmailHtml({
 
           <!-- Details Button (ONLY, no text link) -->
           <div style="text-align:center;margin:18px 0 8px 0">
-            <a href="${escapeHtml(requestUrl || "#")}" style="
-  display:inline-block;
-  padding:12px 24px;
-  border-radius:999px;
-
-  font-family:Arial,sans-serif;
-  font-size:15px;
-  font-weight:900;
-  letter-spacing:.3px;
-
-  /* خلفية الزر نفس الهيدر */
-  background:linear-gradient(to bottom,#1f2937,#1f2937 40%,#111827);
-  border:1px solid rgba(255,255,255,.28);
-
-  box-shadow:
-    0 14px 28px rgba(0,0,0,.55),
-    inset 0 1px 0 rgba(255,255,255,.18);
-
-  text-decoration:none;
-">
-  <span style="
-    font-weight:900;
-    font-size:15px;
-    letter-spacing:.3px;
-
-    background:linear-gradient(90deg,#d1d5db,#f3f4f6,#ffffff);
-    -webkit-background-clip:text;
-    background-clip:text;
-    color:transparent;
-
-    text-shadow:0 1px 2px rgba(0,0,0,.45);
-    display:inline-block;
-  ">
-    📋 عرض التفاصيل
-  </span>
-</a>
+            <a href="${escapeHtml(computedUrl || "#")}" style="
+              display:inline-block;
+              padding:12px 24px;
+              border-radius:999px;
+              font-family:Arial,sans-serif;
+              font-size:15px;
+              font-weight:900;
+              letter-spacing:.3px;
+              background:linear-gradient(to bottom,#1f2937,#1f2937 40%,#111827);
+              border:1px solid rgba(255,255,255,.28);
+              box-shadow:
+                0 14px 28px rgba(0,0,0,.55),
+                inset 0 1px 0 rgba(255,255,255,.18);
+              text-decoration:none;
+            ">
+              <span style="
+                font-weight:900;
+                font-size:15px;
+                letter-spacing:.3px;
+                background:linear-gradient(90deg,#d1d5db,#f3f4f6,#ffffff);
+                -webkit-background-clip:text;
+                background-clip:text;
+                color:transparent;
+                text-shadow:0 1px 2px rgba(0,0,0,.45);
+                display:inline-block;
+              ">
+                📋 عرض التفاصيل
+              </span>
+            </a>
           </div>
 
           <!-- Compact info row -->
@@ -339,9 +364,15 @@ function buildEmailHtml({
                   box-shadow:0 10px 18px rgba(0,0,0,.35);
                   min-height:64px;
                 ">
-                  <div style="font-size:11px;color:#94a3b8;font-weight:900;margin-bottom:6px">Moved</div>
+                  <div style="font-size:11px;color:#94a3b8;font-weight:900;margin-bottom:6px">${
+                    action === "approve" || action === "reject" ? "Next Action" : "Moved"
+                  }</div>
                   <div style="font-size:14px;color:#f8fafc;font-weight:900;line-height:1.3">
-                    Step ${Number(stepFrom) + 1} → Step ${Number(stepTo) + 1}
+                    ${
+                      action === "approve" || action === "reject"
+                        ? `Awaiting Approval/Reject • Step ${waitingStepNum}`
+                        : `Step ${fromIdx + 1} → Step ${toIdx + 1}`
+                    }
                   </div>
                 </div>
               </td>
@@ -549,8 +580,8 @@ export async function PUT(req, { params }) {
     
 
     // ✅ Auth
-    const cookieStore = await cookies();
-    const userId = cookieStore.get("userId")?.value;
+    const cookieStore = cookies();
+        const userId = cookieStore.get("userId")?.value;
 
     if (!userId) {
       return NextResponse.json(
@@ -763,7 +794,7 @@ export async function PUT(req, { params }) {
           const actor = await User.findById(userId).select("username").lean();
           const actorName = actor?.username || "";
 
-          const requestUrl = `https://rida-funds.spc-it.com.iq/fund-requests/${id}`;
+
 
           const requesterName =
             request?.createdByName ||
@@ -785,7 +816,7 @@ export async function PUT(req, { params }) {
             actorName,
             requesterName,
             toUserName,
-            requestUrl,
+            baseDomain: "https://main.d2fatueaza47h3.amplifyapp.com",
           });
 
           await sendWorkflowEmail({ toEmails: emails, subject, html });
