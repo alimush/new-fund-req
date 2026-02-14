@@ -31,7 +31,7 @@ console.log("S3_BUCKET_NAME:", bucket);
 console.log("S3_REGION:", region); 
     if (!bucket || !region) {
       return NextResponse.json(
-        { success: false, error: "Missing S3 env" },
+        { success: false, error: "Missing S3 env", bucket, region },
         { status: 500 }
       );
     }
