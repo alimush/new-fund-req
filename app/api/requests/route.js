@@ -68,12 +68,18 @@ export async function POST(req) {
     const company = companyRaw.trim();
 
     if (!company) {
-      return NextResponse.json({ success: false, error: "Company is required" }, { status: 400 });
+      return NextResponse.json(
+        { success: false, error: "Company is required" },
+        { status: 400 }
+      );
     }
 
     const workflow = await Workflow.findOne({ company }).populate("steps.users");
     if (!workflow) {
-      return NextResponse.json({ success: false, error: "No workflow defined for this company" }, { status: 400 });
+      return NextResponse.json(
+        { success: false, error: "No workflow defined for this company" },
+        { status: 400 }
+      );
     }
 
     const workflowSnapshot = {
@@ -87,6 +93,47 @@ export async function POST(req) {
       })),
     };
 
+    // ✅ 1) Upload attachments to S3
+    const attachments = [];
+    const files = formData.getAll("attachments"); // لازم نفس الاسم بالفرونت
+
+    if (files && files.length > 0) {
+      const s3 = new S3Client({
+        region: process.env.S3_REGION,
+        credentials: {
+          accessKeyId: process.env.S3_ACCESS_KEY_ID,
+          secretAccessKey: process.env.S3_SECRET_ACCESS_KEY,
+        },
+      });
+
+      for (const file of files) {
+        if (!file || typeof file.arrayBuffer !== "function") continue;
+
+        const bytes = Buffer.from(await file.arrayBuffer());
+        const safeName = String(file.name || "file").replace(/[^\w.\-() ]+/g, "_");
+
+        const key = `requests/${company}/${Date.now()}-${Math.random()
+          .toString(16)
+          .slice(2)}-${safeName}`;
+
+        await s3.send(
+          new PutObjectCommand({
+            Bucket: process.env.S3_BUCKET_NAME,
+            Key: key,
+            Body: bytes,
+            ContentType: file.type || "application/octet-stream",
+          })
+        );
+
+        attachments.push({
+          key,
+          name: safeName,
+          type: file.type || "",
+          size: file.size || 0,
+        });
+      }
+    }
+
     const Model = getModelForCompany(company);
 
     const baseData = {
@@ -98,13 +145,16 @@ export async function POST(req) {
       department: formData.get("department"),
       createdBy: formData.get("createdBy"),
       items: formData.get("items") ? JSON.parse(formData.get("items")) : [],
-      attachments: [],
+      attachments, // ✅ هنا التعديل
       workflow: workflowSnapshot,
       currentStep: 0,
       status: "Pending",
     };
 
-    const companyText = company.toUpperCase().replace(/\s+/g, "-").replace(/-+/g, "-");
+    const companyText = company
+      .toUpperCase()
+      .replace(/\s+/g, "-")
+      .replace(/-+/g, "-");
     const counterKey = `REQ_${companyText}`;
 
     for (let attempt = 0; attempt < 5; attempt++) {
@@ -132,8 +182,11 @@ export async function POST(req) {
       { status: 409 }
     );
   } catch (err) {
-    console.error("❌ POST Error:", err.message);
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    console.error("❌ POST Error:", err);
+    return NextResponse.json(
+      { success: false, error: err?.message || "POST failed" },
+      { status: 500 }
+    );
   }
 }
 
