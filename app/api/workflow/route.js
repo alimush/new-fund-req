@@ -4,6 +4,7 @@ import Permissions from "@/models/Permissions";
 import { NextResponse } from "next/server";
 import mongoose from "mongoose";
 
+
 const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
 
 // ✅ نفس حماية users: تحقق MANAGE_PERMISSIONS اعتماداً على userId
