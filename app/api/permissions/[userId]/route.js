@@ -7,7 +7,7 @@ export const runtime = "nodejs";
 let isConnected = false;
 const connectDB = async () => {
   if (isConnected) return;
-  await mongoose.connect(process.env.local.MONGODB_URI, { dbName: "FundRrq" });
+  await mongoose.connect(process.env.MONGODB_URI, { dbName: "FundRrq" });
   isConnected = true;
 };
 

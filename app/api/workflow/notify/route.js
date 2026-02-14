@@ -38,10 +38,10 @@ function buildHtml({ action, request, targetStepIndex, actorUsername, note }) {
 }
 
 function getTransporter() {
-  const host = process.env.local.SMTP_HOST;
-  const port = Number(process.env.local.SMTP_PORT || "587");
-  const user = process.env.local.SMTP_USER;
-  const pass = process.env.local.SMTP_PASS;
+  const host = process.env.SMTP_HOST;
+  const port = Number(process.env.SMTP_PORT || "587");
+  const user = process.env.SMTP_USER;
+  const pass = process.env.SMTP_PASS;
 
   if (!host || !user || !pass) {
     throw new Error("Missing SMTP env vars (SMTP_HOST/SMTP_PORT/SMTP_USER/SMTP_PASS)");
@@ -121,7 +121,7 @@ export async function POST(req) {
     }
 
     const transporter = getTransporter();
-    const from = process.env.local.MAIL_FROM || process.env.local.SMTP_USER;
+    const from = process.env.MAIL_FROM || process.env.SMTP_USER;
 
     const subject = buildSubject({ action, companyKey, requestId, stepIndex: currentIdx });
     const html = buildHtml({
