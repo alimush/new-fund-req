@@ -4,6 +4,8 @@ import Permissions from "@/models/Permissions";
 import { NextResponse } from "next/server";
 import mongoose from "mongoose";
 
+export const runtime = "nodejs";
+
 
 const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
 

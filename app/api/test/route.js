@@ -1,5 +1,7 @@
 import dbConnect from "@/lib/mongodb";
 
+export const runtime = "nodejs";
+
 export async function GET() {
   try {
     await dbConnect();

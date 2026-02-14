@@ -10,6 +10,8 @@ import { getModelForCompany } from "@/models/Request";
 import Permissions from "@/models/Permissions";
 
 import { Types } from "mongoose";
+
+export const runtime = "nodejs";
 /* ======================= EMAIL HELPERS ======================= */
 function getTransporter() {
   const host = process.env.SMTP_HOST;

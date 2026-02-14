@@ -3,6 +3,8 @@ import { NextResponse } from "next/server";
 import dbConnect from "@/lib/mongodb";
 import User from "@/models/User";
 import { getModelForCompany } from "@/models/Request";
+
+export const runtime = "nodejs";
 import { cookies } from "next/headers";
 import Permissions from "@/models/Permissions";
 import { PERMISSIONS } from "@/lib/permission";

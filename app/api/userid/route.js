@@ -3,6 +3,8 @@ import User from "@/models/User";
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 
+export const runtime = "nodejs";
+
 export async function GET() {
   try {
     await dbConnect();

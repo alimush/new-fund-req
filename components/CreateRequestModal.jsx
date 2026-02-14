@@ -98,26 +98,59 @@ export default function CreateRequestModal({
     setItems((prev) => prev.filter((_, i) => i !== idx));
   };
 
-  // ✅ POST create request (نفس كودك)
+  // ✅ POST create request (presigned URL upload)
   const handleCreate = async () => {
-    const fd = new FormData();
-    fd.append("company", companyKey);
-    fd.append("requestType", requestType);
-    fd.append("description", description);
-    fd.append("currency", currency);
-    fd.append("department", department);
-    fd.append("createdBy", localStorage.getItem("username"));
-    fd.append("items", JSON.stringify(items));
+    // 1) Upload files directly to S3 via presigned URLs
+    const uploadedAttachments = [];
 
     if (attachment?.length > 0) {
-      attachment.forEach((file) => {
-        fd.append("attachments", file);
-      });
+      for (const file of attachment) {
+        // Get presigned URL from API
+        const presignRes = await fetch("/api/upload/presign", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            fileName: file.name,
+            fileType: file.type,
+            prefix: `requests/${companyKey}`,
+          }),
+        });
+
+        if (!presignRes.ok) throw new Error("Failed to get upload URL");
+        const { url, key } = await presignRes.json();
+
+        // Upload file directly to S3
+        const uploadRes = await fetch(url, {
+          method: "PUT",
+          body: file,
+          headers: { "Content-Type": file.type || "application/octet-stream" },
+        });
+
+        if (!uploadRes.ok) throw new Error("Failed to upload file");
+
+        uploadedAttachments.push({
+          key,
+          name: file.name,
+          type: file.type || "",
+          size: file.size || 0,
+        });
+      }
     }
 
+    // 2) Create request with attachment metadata (no files in body)
     const res = await fetch(`/api/requests?company=${companyKey}`, {
       method: "POST",
-      body: fd,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        company: companyKey,
+        requestType,
+        description,
+        currency,
+        department,
+        createdBy: localStorage.getItem("username"),
+        items,
+        attachments: uploadedAttachments,
+      }),
     });
 
     if (!res.ok) throw new Error("Create failed");

@@ -3,6 +3,8 @@ import User from "@/models/User";
 import Permissions from "@/models/Permissions";
 import { NextResponse } from "next/server";
 
+export const runtime = "nodejs";
+
 export async function POST(req) {
   try {
     await dbConnect();

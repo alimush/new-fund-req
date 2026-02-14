@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import mongoose from "mongoose";
 import Permissions from "@/models/Permissions";
 
+export const runtime = "nodejs";
+
 let isConnected = false;
 const connectDB = async () => {
   if (isConnected) return;

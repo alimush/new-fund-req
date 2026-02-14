@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import dbConnect from "@/lib/mongodb";
 import mongoose from "mongoose";
 
+export const runtime = "nodejs";
+
 const CounterSchema = new mongoose.Schema({
   key: { type: String, unique: true },
   seq: { type: Number, default: 0 },

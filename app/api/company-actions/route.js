@@ -3,6 +3,8 @@ import dbConnect from "@/lib/mongodb";
 import { cookies } from "next/headers";
 import CompanySeen from "@/models/CompanySeen";
 import { getModelForCompany } from "@/models/Request";
+
+export const runtime = "nodejs";
 import User from "@/models/User";
 
 /**

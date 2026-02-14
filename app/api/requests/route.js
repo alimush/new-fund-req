@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
 import dbConnect from "@/lib/mongodb";
-import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import Workflow from "@/models/Workflow";
 import { getModelForCompany } from "@/models/Request";
 import User from "@/models/User";
 import Permissions from "@/models/Permissions"; // ✅ اضفناها
 import mongoose from "mongoose";
+
+export const runtime = "nodejs";
 
 const CounterSchema = new mongoose.Schema({
   key: { type: String, unique: true },
@@ -63,9 +65,8 @@ export async function POST(req) {
   try {
     await dbConnect();
 
-    const formData = await req.formData();
-    const companyRaw = String(formData.get("company") || "");
-    const company = companyRaw.trim();
+    const body = await req.json();
+    const company = String(body.company || "").trim();
 
     if (!company) {
       return NextResponse.json(
@@ -93,59 +94,18 @@ export async function POST(req) {
       })),
     };
 
-    // ✅ 1) Upload attachments to S3
-    const attachments = [];
-    const files = formData.getAll("attachments"); // لازم نفس الاسم بالفرونت
-
-    if (files && files.length > 0) {
-      const s3 = new S3Client({
-        region: process.env.S3_REGION,
-        credentials: {
-          accessKeyId: process.env.S3_ACCESS_KEY_ID,
-          secretAccessKey: process.env.S3_SECRET_ACCESS_KEY,
-        },
-      });
-
-      for (const file of files) {
-        if (!file || typeof file.arrayBuffer !== "function") continue;
-
-        const bytes = Buffer.from(await file.arrayBuffer());
-        const safeName = String(file.name || "file").replace(/[^\w.\-() ]+/g, "_");
-
-        const key = `requests/${company}/${Date.now()}-${Math.random()
-          .toString(16)
-          .slice(2)}-${safeName}`;
-
-        await s3.send(
-          new PutObjectCommand({
-            Bucket: process.env.S3_BUCKET_NAME,
-            Key: key,
-            Body: bytes,
-            ContentType: file.type || "application/octet-stream",
-          })
-        );
-
-        attachments.push({
-          key,
-          name: safeName,
-          type: file.type || "",
-          size: file.size || 0,
-        });
-      }
-    }
-
     const Model = getModelForCompany(company);
 
     const baseData = {
       companyKey: company,
       company,
-      requestType: formData.get("requestType"),
-      description: formData.get("description"),
-      currency: formData.get("currency"),
-      department: formData.get("department"),
-      createdBy: formData.get("createdBy"),
-      items: formData.get("items") ? JSON.parse(formData.get("items")) : [],
-      attachments, // ✅ هنا التعديل
+      requestType: body.requestType,
+      description: body.description,
+      currency: body.currency,
+      department: body.department,
+      createdBy: body.createdBy,
+      items: Array.isArray(body.items) ? body.items : [],
+      attachments: Array.isArray(body.attachments) ? body.attachments : [],
       workflow: workflowSnapshot,
       currentStep: 0,
       status: "Pending",

@@ -3,11 +3,11 @@ import dbConnect from "@/lib/mongodb";
 
 import { getModelForCompany } from "@/models/Request";
 
-
-
 import User from "@/models/User";
 import nodemailer from "nodemailer";
 import mongoose from "mongoose";
+
+export const runtime = "nodejs";
 
 const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
 

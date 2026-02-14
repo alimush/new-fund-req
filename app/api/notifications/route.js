@@ -3,6 +3,8 @@ import dbConnect from "@/lib/mongodb";
 import { cookies } from "next/headers";
 import { getModelForCompany } from "@/models/Request";
 import Permissions from "@/models/Permissions";
+
+export const runtime = "nodejs";
 import { Types } from "mongoose";
 
 export async function GET() {

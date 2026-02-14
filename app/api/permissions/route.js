@@ -3,6 +3,8 @@ import Permissions from "@/models/Permissions";
 import User from "@/models/User";
 import { NextResponse } from "next/server";
 import mongoose from "mongoose";
+
+export const runtime = "nodejs";
 import { PERMISSIONS } from "@/lib/permission";
 
 // =========================

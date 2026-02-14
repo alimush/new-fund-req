@@ -1,6 +1,8 @@
 import mongoose from "mongoose";
 import dbConnect from "@/lib/mongodb"; // تأكد أن هذا الملف موجود عندك ويتصل بـ MongoDB
 
+export const runtime = "nodejs";
+
 export async function DELETE() {
   try {
     // ✅ الاتصال بقاعدة البيانات

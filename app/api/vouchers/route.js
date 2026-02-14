@@ -3,6 +3,8 @@ import dbConnect from "@/lib/mongodb";
 import { cookies } from "next/headers";
 import { getModelForCompany } from "@/models/Request";
 
+export const runtime = "nodejs";
+
 function calcTotal(items = []) {
   return items.reduce((sum, it) => {
     const qty = Number(it?.qty) || 0;

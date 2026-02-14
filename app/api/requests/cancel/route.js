@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import dbConnect from "@/lib/mongodb";
 import { getModelForCompany } from "@/models/Request";
 
+export const runtime = "nodejs";
+
 export async function PUT(req) {
   try {
     await dbConnect();

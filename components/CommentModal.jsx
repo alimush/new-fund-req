@@ -227,23 +227,56 @@ export default function CommentModal({
       throw new Error("Missing companyKey/requestId/stepIndex");
     }
 
-    const fd = new FormData();
-    fd.append("file", pickedFile);
+    // 1) Get presigned URL
+    const presignRes = await fetch("/api/upload/presign", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({
+        fileName: pickedFile.name,
+        fileType: pickedFile.type,
+        prefix: "workflow/attachments",
+      }),
+    });
 
-    const res = await fetch(
-      `/api/workflow/workflow_attach?company=${encodeURIComponent(
-        companyKey
-      )}&requestId=${encodeURIComponent(requestId)}&stepIndex=${encodeURIComponent(
-        String(stepIndex)
-      )}`,
-      { method: "POST", body: fd, credentials: "include" }
-    );
+    const presignData = await presignRes.json().catch(() => ({}));
+    if (!presignRes.ok || !presignData?.success) {
+      throw new Error(presignData?.error || "Failed to get upload URL");
+    }
 
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok || !data?.success) throw new Error(data?.error || "Upload failed");
+    // 2) Upload directly to S3
+    const uploadRes = await fetch(presignData.url, {
+      method: "PUT",
+      body: pickedFile,
+      headers: { "Content-Type": pickedFile.type || "application/octet-stream" },
+    });
+
+    if (!uploadRes.ok) throw new Error("Failed to upload file to S3");
+
+    // 3) Save the key to the workflow step
+    const saveRes = await fetch("/api/workflow/workflow_attach", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({
+        companyKey,
+        requestId,
+        stepIndex,
+        key: presignData.key,
+        name: pickedFile.name,
+        type: pickedFile.type,
+        size: pickedFile.size,
+      }),
+    });
+
+    const saveData = await saveRes.json().catch(() => ({}));
+    if (!saveRes.ok || !saveData?.success) {
+      throw new Error(saveData?.error || "Failed to save attachment");
+    }
 
     return {
-      url: data.tagUrl,
+      url: saveData.tagUrl,
+      key: presignData.key,
       name: pickedFile.name || "",
       type: pickedFile.type || "",
       size: pickedFile.size || 0,

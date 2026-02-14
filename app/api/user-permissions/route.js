@@ -3,6 +3,8 @@ import Permissions from "@/models/Permissions";
 import mongoose from "mongoose";
 import { NextResponse } from "next/server";
 
+export const runtime = "nodejs";
+
 export async function GET(req) {
   try {
     await dbConnect();
