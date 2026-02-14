@@ -14,10 +14,10 @@ import { Types } from "mongoose";
 export const runtime = "nodejs";
 /* ======================= EMAIL HELPERS ======================= */
 function getTransporter() {
-  const host = process.env.SMTP_HOST;
-  const port = Number(process.env.SMTP_PORT || "587");
-  const user = process.env.SMTP_USER;
-  const pass = process.env.SMTP_PASS;
+  const host = process.env.local.SMTP_HOST;
+  const port = Number(process.env.local.SMTP_PORT || "587");
+  const user = process.env.local.SMTP_USER;
+  const pass = process.env.local.SMTP_PASS;
 
   if (!host || !user || !pass) {
     throw new Error("Missing SMTP env vars (SMTP_HOST/SMTP_PORT/SMTP_USER/SMTP_PASS)");
@@ -406,7 +406,7 @@ async function sendWorkflowEmail({ toEmails, subject, html }) {
   if (!Array.isArray(toEmails) || toEmails.length === 0) return { skipped: true };
 
   const transporter = getTransporter();
-  const from = process.env.MAIL_FROM || process.env.SMTP_USER;
+  const from = process.env.local.MAIL_FROM || process.env.local.SMTP_USER;
 
   const info = await transporter.sendMail({
     from,
@@ -475,10 +475,10 @@ export async function GET(req, { params }) {
 
     // ✅ S3 Client (مرة وحدة)
     const s3 = new S3Client({
-      region: process.env.S3_REGION,
+      region: process.env.local.S3_REGION,
       credentials: {
-        accessKeyId: process.env.S3_ACCESS_KEY_ID,
-        secretAccessKey: process.env.S3_SECRET_ACCESS_KEY,
+        accessKeyId: process.env.local.S3_ACCESS_KEY_ID,
+        secretAccessKey: process.env.local.S3_SECRET_ACCESS_KEY,
       },
     });
 
@@ -500,7 +500,7 @@ export async function GET(req, { params }) {
         if (!st?.attachment?.key) continue;
 
         const command = new GetObjectCommand({
-          Bucket: process.env.S3_BUCKET_NAME,
+          Bucket: process.env.local.S3_BUCKET_NAME,
           Key: st.attachment.key,
         });
 
