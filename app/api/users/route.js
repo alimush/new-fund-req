@@ -2,8 +2,12 @@ import dbConnect from "@/lib/mongodb";
 import User from "@/models/User";
 import Permissions from "@/models/Permissions";
 import { NextResponse } from "next/server";
+import bcrypt from "bcryptjs";
+import mongoose from "mongoose";
 
 export const runtime = "nodejs";
+
+const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
 
 async function requireManagePermissions(req) {
   await dbConnect();
@@ -21,8 +25,21 @@ async function requireManagePermissions(req) {
     };
   }
 
+  if (!isValidObjectId(userId)) {
+    return {
+      ok: false,
+      res: NextResponse.json(
+        { success: false, error: "Invalid userId" },
+        { status: 401 }
+      ),
+    };
+  }
+
   // ✅ نجيب كروباته ونطلع صلاحياته
-  const groups = await Permissions.find({ users: userId }).lean();
+  const groups = await Permissions.find({
+    users: new mongoose.Types.ObjectId(userId),
+  }).lean();
+
   const perms = [...new Set(groups.flatMap((g) => g.permissions || []))];
 
   if (!perms.includes("MANAGE_PERMISSIONS")) {
@@ -47,7 +64,9 @@ export async function GET(req) {
   const q = searchParams.get("q");
 
   const users = q
-    ? await User.find({ username: { $regex: q, $options: "i" } }).select("-password")
+    ? await User.find({ username: { $regex: q, $options: "i" } }).select(
+        "-password"
+      )
     : await User.find({}).select("-password");
 
   const usersWithGroups = await Promise.all(
@@ -60,12 +79,19 @@ export async function GET(req) {
   return NextResponse.json({ success: true, users: usersWithGroups });
 }
 
-// 🟢 POST — create user (مع email)
+// 🟢 POST — create user (مع email) + ✅ HASH PASSWORD
 export async function POST(req) {
   const auth = await requireManagePermissions(req);
   if (!auth.ok) return auth.res;
 
   const { username, password, email, group, companies } = await req.json();
+
+  if (!username || !password) {
+    return NextResponse.json(
+      { success: false, error: "Username & password are required" },
+      { status: 400 }
+    );
+  }
 
   const exists = await User.findOne({ username });
   if (exists) {
@@ -75,9 +101,12 @@ export async function POST(req) {
     );
   }
 
+  // ✅ hash
+  const hashedPassword = await bcrypt.hash(String(password), 10);
+
   const newUser = await User.create({
     username,
-    password,
+    password: hashedPassword, // ✅ بدل plain
     email: (email || "").trim().toLowerCase(),
     group: group || null,
     companies: companies || [],
@@ -89,28 +118,42 @@ export async function POST(req) {
   return NextResponse.json({ success: true, user: userObj }, { status: 201 });
 }
 
-// 🟡 PUT — update user (email + optional password)
+// 🟡 PUT — update user (email + optional password) + ✅ HASH IF PROVIDED
 export async function PUT(req) {
   const auth = await requireManagePermissions(req);
   if (!auth.ok) return auth.res;
 
   const { id, username, password, email, group, companies } = await req.json();
 
+  if (!id || !isValidObjectId(id)) {
+    return NextResponse.json(
+      { success: false, error: "Valid user id required" },
+      { status: 400 }
+    );
+  }
+
   const updateData = {};
   if (username !== undefined) updateData.username = username;
-  if (email !== undefined) updateData.email = (email || "").trim().toLowerCase();
+  if (email !== undefined)
+    updateData.email = (email || "").trim().toLowerCase();
 
+  // ✅ إذا كتب باسورد جديد نعمله hash
   if (password !== undefined && String(password).trim() !== "") {
-    updateData.password = password;
+    updateData.password = await bcrypt.hash(String(password), 10);
   }
 
   if (group !== undefined) updateData.group = group;
   if (companies !== undefined) updateData.companies = companies;
 
-  const user = await User.findByIdAndUpdate(id, updateData, { new: true }).select("-password");
+  const user = await User.findByIdAndUpdate(id, updateData, {
+    new: true,
+  }).select("-password");
 
   if (!user) {
-    return NextResponse.json({ success: false, error: "User not found" }, { status: 404 });
+    return NextResponse.json(
+      { success: false, error: "User not found" },
+      { status: 404 }
+    );
   }
 
   return NextResponse.json({ success: true, user }, { status: 200 });
@@ -124,11 +167,24 @@ export async function DELETE(req) {
   const { searchParams } = new URL(req.url);
   const id = searchParams.get("id");
 
+  if (!id || !isValidObjectId(id)) {
+    return NextResponse.json(
+      { success: false, error: "Valid id required" },
+      { status: 400 }
+    );
+  }
+
   const deleted = await User.findByIdAndDelete(id);
 
   if (!deleted) {
-    return NextResponse.json({ success: false, error: "User not found" }, { status: 404 });
+    return NextResponse.json(
+      { success: false, error: "User not found" },
+      { status: 404 }
+    );
   }
 
-  return NextResponse.json({ success: true, message: "User deleted" }, { status: 200 });
+  return NextResponse.json(
+    { success: true, message: "User deleted" },
+    { status: 200 }
+  );
 }

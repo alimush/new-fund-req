@@ -75,7 +75,33 @@ export async function POST(req) {
       );
     }
 
-    const workflow = await Workflow.findOne({ company }).populate("steps.users");
+    const userId = req.headers.get("x-user-id");
+
+let workflow = null;
+let userHasMarketing = false;
+
+if (userId && isValidObjectId(userId)) {
+  const groups = await Permissions.find({
+    users: new mongoose.Types.ObjectId(userId),
+  }).lean();
+
+  const perms = [...new Set(groups.flatMap((g) => g.permissions || []))];
+
+  userHasMarketing = perms.includes("MARKETING");
+}
+
+// 🔥 إذا الشركة الغدير + عنده ماركتنك
+if (company === "Al-Ghadeer" && userHasMarketing) {
+  workflow = await Workflow.findOne({
+    company,
+    code: "ALGHDEER-2",
+  }).populate("steps.users");
+}
+
+// 🔥 غيره ياخذ الافتراضي
+if (!workflow) {
+  workflow = await Workflow.findOne({ company }).populate("steps.users");
+}
     if (!workflow) {
       return NextResponse.json(
         { success: false, error: "No workflow defined for this company" },

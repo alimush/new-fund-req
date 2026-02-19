@@ -825,7 +825,9 @@ className="rounded-3xl bg-white/35 backdrop-blur-2xl ring-1 ring-white/25 shadow
                   
                     </div>
                   )}
-                    {isFinalApproved && isLastStepUser && (
+         {isFinalApproved &&
+ isLastStepUser &&
+ ["Badur-Baghdad", "Al-Ghadeer"].includes(companyKey) && (
   <div className="mt-4">
     <button
       onClick={(e) => {

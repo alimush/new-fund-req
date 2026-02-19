@@ -2,9 +2,14 @@
 
 import { motion, AnimatePresence } from "framer-motion";
 import { useMemo, useRef, useState, useEffect } from "react";
-
 import { toPng } from "html-to-image";
-import jsPDF from "jspdf";
+import { Cairo } from "next/font/google";
+import { FiPrinter, FiX } from "react-icons/fi";
+
+const cairo = Cairo({
+  subsets: ["arabic"],
+  weight: ["400", "600", "700", "800"],
+});
 
 function format2(n) {
   const x = Number(n || 0);
@@ -98,30 +103,8 @@ function toArabicWords(amount, currency) {
   return `${words} ${curr} فقط لا غير`;
 }
 
-const BASE_W = 1200;
-const BASE_H = 800;
-
-const POS = {
-  date: { top: 240, left: 920 },
-  recipient: { top: 190, left: 160, width: 860 },
-  amountWords: { top: 368, left: 640, width: 900 },
-  description: { top: 438, left: 300, width: 650, height: 120 },
-};
-
-const AMOUNT_POS = {
-  USD: {
-    amountUSD: { top: 117, left: 358 },
-    amountIQD: { top: 155, left: 460 },
-  },
-  IQD: {
-    amountUSD: { top: 117, left: 183 },
-    amountIQD: { top: 155, left: 460 },
-  },
-};
-
 async function waitForImages(node) {
   if (!node) return;
-
   const imgs = Array.from(node.querySelectorAll("img"));
   await Promise.all(
     imgs.map((img) => {
@@ -135,7 +118,9 @@ async function waitForImages(node) {
   );
 
   await Promise.all(
-    imgs.map((img) => (typeof img.decode === "function" ? img.decode().catch(() => {}) : Promise.resolve()))
+    imgs.map((img) =>
+      typeof img.decode === "function" ? img.decode().catch(() => {}) : Promise.resolve()
+    )
   );
 }
 
@@ -146,16 +131,74 @@ function isArabicText(s = "") {
   return ar >= en && ar > 0;
 }
 
+/** ✅ POS نسبية */
+const POS = {
+  date: { top: 19.2, left: 75.0 },
+  amountFixed: { top: 13.6, left: 12.0 },
+  currencyUSDBox: { top: 8.0, left: 22.3 },
+  currencyIQDBox: { top: 8.0, left: 13.0 },
+  amountWords: { top: 38.0, left: -2.0, width: 75.0 },
+  description: { top: 53.5, left: 35.0, width: 54.2, height: 15.0 },
+};
+
+/** ✅ حقول إضافية (نفس فكرة الكود السابق) — عدّل top/left حسب صورتك */
+const EXTRA = {
+  bank: { top: 70, left: -20, width: 54.2, height: 6.0 },
+  fxRate: { top: 20, left: 12.0, width: 30.0, height: 6.0 },
+  receivedBy: { top: 29.2, left: 18.8, width: 54.2, height: 6.0 },
+  beneficiary: { top: 85.8, left: -20, width: 54.2, height: 6.0 },
+  notes: { top: 84.0, left: 50.0, width: 40.2, height: 8.0 },
+  cb1: { top: 71.7, left: 81.2 },
+  cb2: { top: 71.7, left: 70.3 },
+};
+
+const pctStyle = (p) => ({ top: `${p.top}%`, left: `${p.left}%` });
+
+async function fetchNextVoucherNo(companyKey, mode = "payment") {
+  const res = await fetch("/api/vouchers/next", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ companyKey, mode }),
+    cache: "no-store",
+  });
+
+  const text = await res.text();
+
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    throw new Error(`API returned non-JSON (status ${res.status}). First chars: ${text.slice(0, 80)}`);
+  }
+
+  if (!res.ok) throw new Error(data?.error || "Failed to get next voucher no");
+
+  return data.seq;
+}
 export default function VoucherModal({ open, onClose, request, companyKey, requestId, onSaved }) {
   const [saving, setSaving] = useState(false);
-  const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [printing, setPrinting] = useState(false);
 
   const paperRef = useRef(null);
 
   const [bgDataUrl, setBgDataUrl] = useState("");
   const [bgReady, setBgReady] = useState(false);
+  const [voucherNo, setVoucherNo] = useState(null);
 
+  const resetAllLocal = () => {
+    setVoucherNo(null);
+  
+    setVBank("");
+    setVFxRate("");
+    setVReceivedBy("");
+    setVBeneficiary("");
+    setVNotes("");
+    setCbOne(false);
+    setCbTwo(false);
+  };
+  const voucherImg = companyKey === "Badur-Baghdad" ? "/voucher2.jpg" : "/voucher.jpg";
+
+  // ✅ تحميل الخلفية كـ dataUrl حتى html-to-image يكون ثابت
   useEffect(() => {
     if (!open) return;
 
@@ -165,7 +208,7 @@ export default function VoucherModal({ open, onClose, request, companyKey, reque
 
     (async () => {
       try {
-        const res = await fetch("/voucher.jpg", { cache: "no-store" });
+        const res = await fetch(voucherImg, { cache: "no-store" });
         const blob = await res.blob();
 
         const dataUrl = await new Promise((resolve, reject) => {
@@ -188,18 +231,23 @@ export default function VoucherModal({ open, onClose, request, companyKey, reque
     return () => {
       cancelled = true;
     };
-  }, [open]);
+  }, [open, voucherImg]);
 
+  /** ✅ بيانات “من الريكوست” بدون تعديل */
   const total = useMemo(() => {
     const items = Array.isArray(request?.items) ? request.items : [];
     return items.reduce((sum, it) => sum + (Number(it.qty) || 0) * (Number(it.price) || 0), 0);
   }, [request]);
 
   const currency = String(request?.currency || "IQD").toUpperCase();
+  const isUSD = currency === "USD";
 
-  const date = useMemo(() => {
+  const dateParts = useMemo(() => {
     const d = request?.createdAt ? new Date(request.createdAt) : new Date();
-    return d.toISOString().slice(0, 10);
+    const day = String(d.getDate()).padStart(2, "0");
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const yearShort = String(d.getFullYear()).slice(-2);
+    return { day, month, yearShort };
   }, [request]);
 
   const description = request?.description || "";
@@ -208,6 +256,32 @@ export default function VoucherModal({ open, onClose, request, companyKey, reque
   const descIsArabic = useMemo(() => isArabicText(description), [description]);
   const descDir = descIsArabic ? "rtl" : "ltr";
   const descAlign = descIsArabic ? "right" : "left";
+
+  /** ✅ حقول تكتبها أنت (نفس الكود السابق) */
+  const [vBank, setVBank] = useState("");
+  const [vFxRate, setVFxRate] = useState("");
+  const [vReceivedBy, setVReceivedBy] = useState("");
+  const [vBeneficiary, setVBeneficiary] = useState("");
+  const [vNotes, setVNotes] = useState("");
+  const [cbOne, setCbOne] = useState(false);
+  const [cbTwo, setCbTwo] = useState(false);
+
+  const bankRef = useRef(null);
+  const fxRef = useRef(null);
+  const receivedByRef = useRef(null);
+  const beneficiaryRef = useRef(null);
+  const notesRef = useRef(null);
+
+  // ✅ كل ما يفتح المودال صفّر الإضافات (بدون لمس حقول الريكوست)
+  useEffect(() => {
+    if (!open) {
+      resetAllLocal();
+      return;
+    }
+    resetAllLocal();
+    // optional: فوكس أول حقل
+    setTimeout(() => fxRef.current?.focus(), 50);
+  }, [open]);
 
   const saveVoucher = async () => {
     setSaving(true);
@@ -232,52 +306,7 @@ export default function VoucherModal({ open, onClose, request, companyKey, reque
     }
   };
 
-  const downloadAsPdf = async () => {
-    if (!paperRef.current) return;
-
-    if (!bgReady) {
-      alert("خلي ثواني… دا أحمل صورة الوصل");
-      return;
-    }
-
-    setDownloadingPdf(true);
-    try {
-      await waitForImages(paperRef.current);
-      await new Promise((r) => requestAnimationFrame(() => r()));
-      await new Promise((r) => requestAnimationFrame(() => r()));
-
-      const dataUrl = await toPng(paperRef.current, {
-        cacheBust: true,
-        pixelRatio: 3,
-        backgroundColor: "#ffffff",
-      });
-
-      const pdf = new jsPDF("p", "mm", "a4");
-      const pageW = pdf.internal.pageSize.getWidth();
-      const pageH = pdf.internal.pageSize.getHeight();
-
-      const img = new Image();
-      img.src = dataUrl;
-      await new Promise((resolve, reject) => {
-        img.onload = resolve;
-        img.onerror = reject;
-      });
-
-      const ratio = Math.min(pageW / img.width, pageH / img.height);
-      const w = img.width * ratio;
-      const h = img.height * ratio;
-
-      pdf.addImage(dataUrl, "PNG", (pageW - w) / 2, (pageH - h) / 2, w, h, undefined, "FAST");
-      pdf.save(`voucher_${request?.requestCode || requestId}_${currency}.pdf`);
-    } catch (e) {
-      console.error(e);
-      alert("تعذر تحويل الوصل إلى PDF.");
-    } finally {
-      setDownloadingPdf(false);
-    }
-  };
-
-  // ✅ Print: CSS داخل body (جوه) + توسيط كامل + بدون قص
+  /** ✅ طباعة A5 landscape + تملي الورقة (bleed) */
   const printVoucher = async () => {
     if (!paperRef.current) return;
   
@@ -287,40 +316,27 @@ export default function VoucherModal({ open, onClose, request, companyKey, reque
     }
   
     setPrinting(true);
+  
+    // ✅ جلب رقم الوصل مرة واحدة فقط
     try {
+      if (voucherNo === null) {
+        const seq = await fetchNextVoucherNo(companyKey, "payment");
+        setVoucherNo(seq);
+  
+        // انتظر رندرين حتى الرقم يظهر بالـ preview قبل التصوير
+        await new Promise((r) => requestAnimationFrame(r));
+        await new Promise((r) => requestAnimationFrame(r));
+      }
+  
       await waitForImages(paperRef.current);
-      await new Promise((r) => requestAnimationFrame(() => r()));
-      await new Promise((r) => requestAnimationFrame(() => r()));
+      await new Promise((r) => requestAnimationFrame(r));
+      await new Promise((r) => requestAnimationFrame(r));
   
       const dataUrl = await toPng(paperRef.current, {
         cacheBust: true,
         pixelRatio: 3,
         backgroundColor: "#ffffff",
       });
-  
-      // ✅ خليها Portrait (مثل نافذة الطباعة عندك)
-      const PAGE_W_MM = 210;
-      const PAGE_H_MM = 297;
-  
-      // ✅ تريد تنزّل الصورة؟ غيّر هذا
-      const EXTRA_DOWN_MM = 20;
-  
-      // ✅ نزغر شوي حتى نضمن 100% صفحة وحدة (مهم)
-      const SAFE_SCALE = 0.94;
-  
-      // ✅ نحسب القياس حتى يدخل داخل A4 بدون ما يطلع برا
-      const ratio = Math.min(PAGE_W_MM / BASE_W, PAGE_H_MM / BASE_H) * SAFE_SCALE;
-      const printW = BASE_W * ratio;
-      const printH = BASE_H * ratio;
-  
-      // ✅ توسيط
-      const offsetX = (PAGE_W_MM - printW) / 2;
-      const offsetY = (PAGE_H_MM - printH) / 2;
-  
-      // ✅ أهم سطر: امنع النزول يخليها تتجاوز جوه (حتى ما تصير Page 2)
-      const maxDown = PAGE_H_MM - (offsetY + printH); // المساحة الباقية تحت
-      const down = Math.min(EXTRA_DOWN_MM, maxDown);
-      const topMm = offsetY + down;
   
       const iframe = document.createElement("iframe");
       iframe.style.position = "fixed";
@@ -338,62 +354,106 @@ export default function VoucherModal({ open, onClose, request, companyKey, reque
         return;
       }
   
+      const BLEED_SCALE = 1.04;
+  
       doc.open();
       doc.write(`
         <!doctype html>
         <html>
           <head>
             <meta charset="utf-8" />
+            <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0" />
+            <meta http-equiv="Pragma" content="no-cache" />
+            <meta http-equiv="Expires" content="0" />
             <title>Voucher</title>
-          </head>
-          <body>
             <style>
-              @page { size: A4 portrait; margin: 0; }
-              html, body { margin: 0; padding: 0; background: #fff; height: ${PAGE_H_MM}mm; overflow: hidden; }
-              * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-              .sheet {
-                width: ${PAGE_W_MM}mm;
-                height: ${PAGE_H_MM}mm;
-                position: relative;
-                overflow: hidden; /* ✅ يمنع أي صفحة ثانية */
+              @page { size: A5 landscape; margin: 0; }
+              html, body {
+                margin: 0 !important;
+                padding: 0 !important;
+                width: 210mm;
+                height: 148mm;
+                overflow: hidden;
                 background: #fff;
               }
+              * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  
+              .sheet {
+                width: 210mm;
+                height: 148mm;
+                overflow: hidden;
+                background: #fff;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+              }
+  
               img.v {
-                position: absolute;
-                left: ${offsetX}mm;
-                top: ${topMm}mm;
-                width: ${printW}mm;
-                height: ${printH}mm;
+                width: 210mm;
+                height: 148mm;
                 display: block;
+                object-fit: cover;
+                transform: scale(${BLEED_SCALE});
+                transform-origin: center center;
               }
             </style>
-  
+          </head>
+          <body>
             <div class="sheet">
-              <img class="v" id="v" />
+              <img class="v" id="v" alt="voucher" />
             </div>
   
             <script>
               const img = document.getElementById("v");
               img.src = ${JSON.stringify(dataUrl)};
-              img.onload = () => setTimeout(() => { window.focus(); window.print(); }, 120);
-              setTimeout(() => { window.focus(); window.print(); }, 700);
-              window.onafterprint = () => window.close();
+  
+              img.onload = () => {
+                setTimeout(() => { window.focus(); window.print(); }, 120);
+              };
+  
+              window.onafterprint = () => {
+                try { parent.postMessage({ type: "IFRAME_PRINT_DONE" }, "*"); } catch(e){}
+              };
             </script>
           </body>
         </html>
       `);
       doc.close();
   
-      // تنظيف
-      setTimeout(() => {
-        try { iframe.remove(); } catch {}
-      }, 5000);
+      const onMsg = (ev) => {
+        if (ev?.data?.type !== "IFRAME_PRINT_DONE") return;
+  
+        window.removeEventListener("message", onMsg);
+  
+        // ✅ بعد الطباعة: امسح وسكّر
+        resetAllLocal();
+        onClose?.();
+  
+        setTimeout(() => {
+          try { iframe.remove(); } catch {}
+        }, 50);
+      };
+  
+      window.addEventListener("message", onMsg);
     } catch (e) {
       console.error(e);
       alert("تعذر طباعة الوصل.");
     } finally {
-      setPrinting(false);
+      setTimeout(() => setPrinting(false), 350);
     }
+  };
+
+  const clearExtras = () => {
+    setVBank("");
+    setVFxRate("");
+    setVReceivedBy("");
+    setVBeneficiary("");
+    setVNotes("");
+    setCbOne(false);
+    setCbTwo(false);
+
+    // ركّز أول حقل إضافي
+    setTimeout(() => fxRef.current?.focus(), 50);
   };
 
   return (
@@ -418,37 +478,48 @@ export default function VoucherModal({ open, onClose, request, companyKey, reque
                 وصل صرف — {companyKey} — {request?.requestCode || requestId}
               </div>
 
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={downloadAsPdf}
-                  disabled={downloadingPdf}
-                  className="px-4 py-2 rounded-2xl bg-red-700 text-white font-extrabold hover:bg-red-800 disabled:opacity-60"
-                >
-                  {downloadingPdf ? "جاري التحويل..." : "تحميل PDF"}
-                </button>
-
-                {/* <button
-                  onClick={saveVoucher}
-                  disabled={saving}
-                  className="px-4 py-2 rounded-2xl bg-gray-900 text-white font-extrabold hover:bg-black disabled:opacity-60"
-                >
-                  {saving ? "جاري الحفظ..." : "توليد/حفظ الوصل"}
-                </button> */}
-
+              <div className="flex items-center gap-3">
                 <button
                   onClick={printVoucher}
                   disabled={printing}
-                  className="px-4 py-2 rounded-2xl bg-white/50 ring-1 ring-white/25 font-bold hover:bg-white/70 disabled:opacity-60"
+                  className="
+                    flex items-center gap-2
+                    px-5 py-2.5
+                    rounded-2xl
+                    bg-white/70 backdrop-blur
+                    ring-1 ring-black/5
+                    shadow-sm
+                    font-extrabold text-gray-800
+                    hover:bg-white hover:shadow-md
+                    active:scale-[0.97]
+                    disabled:opacity-60
+                    transition-all duration-150
+                  "
                 >
+                  <FiPrinter className={`text-lg ${printing ? "animate-spin" : ""}`} />
                   {printing ? "جاري الطباعة..." : "طباعة"}
                 </button>
 
                 <button
-                  onClick={onClose}
-                  className="px-4 py-2 rounded-2xl bg-white/50 ring-1 ring-white/25 font-bold hover:bg-white/70"
-                >
-                  إغلاق
-                </button>
+  onClick={() => {
+    resetAllLocal(); // 🧹 يمسح رقم الوصل + extras
+    onClose?.();     // ❌ يسكر المودال
+  }}
+  className="
+    flex items-center gap-2
+    px-5 py-2.5
+    rounded-2xl
+    bg-red-600 text-white
+    shadow-sm
+    font-extrabold
+    hover:bg-red-700 hover:shadow-md
+    active:scale-[0.97]
+    transition-all duration-150
+  "
+>
+  <FiX className="text-lg" />
+  إغلاق
+</button>
               </div>
             </div>
 
@@ -457,68 +528,72 @@ export default function VoucherModal({ open, onClose, request, companyKey, reque
                 <div className="w-full overflow-auto">
                   <div
                     ref={paperRef}
-                    className="relative bg-white rounded-2xl overflow-hidden ring-1 ring-black/5"
+                    className={`relative bg-white rounded-2xl overflow-hidden ring-1 ring-black/5 ${cairo.className}`}
                     style={{
                       width: "100%",
-                      maxWidth: BASE_W,
-                      aspectRatio: `${BASE_W}/${BASE_H}`,
+                      maxWidth: 1200,
+                      aspectRatio: "1200/800",
                       margin: "0 auto",
                     }}
                   >
                     <img
-                      src={bgDataUrl || "/voucher.jpg"}
+                      src={bgDataUrl || voucherImg}
                       alt="voucher"
                       className="absolute inset-0 w-full h-full object-contain"
                       draggable={false}
                     />
 
-                    <div className="absolute inset-0">
+                    {/* =======================
+                        ✅ Overlay (البيانات)
+                       ======================= */}
+                    <div className="absolute inset-0 pointer-events-none">
+                      {/* التاريخ (من الريكوست) */}
                       <div
-                        className="absolute text-[14px] font-bold text-gray-900"
-                        style={{
-                          top: `${(POS.date.top / BASE_H) * 100}%`,
-                          left: `${(POS.date.left / BASE_W) * 100}%`,
-                        }}
+                        className="absolute flex items-center gap-5 font-extrabold text-gray-900"
+                        style={{ ...pctStyle(POS.date), fontSize: "18px" }}
                       >
-                        {date}
+                        <span style={{ transform: "translateX(-8px)" }}>{dateParts.yearShort}</span>
+                        <span>{dateParts.month}</span>
+                        <span>{dateParts.day}</span>
                       </div>
 
+                      {/* ✓ العملة (من الريكوست) */}
                       <div
-                        className="absolute text-[14px] font-extrabold text-gray-900"
-                        style={{
-                          top: `${(
-                            (currency === "USD" ? AMOUNT_POS.USD.amountUSD.top : AMOUNT_POS.IQD.amountUSD.top) /
-                            BASE_H
-                          ) * 100}%`,
-                          left: `${(
-                            (currency === "USD" ? AMOUNT_POS.USD.amountUSD.left : AMOUNT_POS.IQD.amountUSD.left) /
-                            BASE_W
-                          ) * 100}%`,
-                        }}
+                        className="absolute text-[18px] font-extrabold text-gray-900 leading-none"
+                        style={pctStyle(isUSD ? POS.currencyUSDBox : POS.currencyIQDBox)}
+                      >
+                        ✓
+                      </div>
+
+                      {/* المبلغ (من الريكوست) */}
+                      <div
+                        className="absolute text-[16px] font-extrabold text-gray-900"
+                        style={pctStyle(POS.amountFixed)}
                       >
                         {format2(total)}
                       </div>
 
+                      {/* المبلغ بالحروف (من الريكوست) */}
                       <div
-                        className="absolute text-[13px] font-bold text-gray-900 leading-tight"
+                        className="absolute text-[16px] font-bold text-gray-900 leading-tight"
                         style={{
-                          top: `${(POS.amountWords.top / BASE_H) * 100}%`,
-                          left: `${(POS.amountWords.left / BASE_W) * 100}%`,
-                          width: `${(POS.amountWords.width / BASE_W) * 100}%`,
+                          ...pctStyle(POS.amountWords),
+                          width: `${POS.amountWords.width}%`,
+                          direction: "rtl",
+                          textAlign: "right",
+                          whiteSpace: "normal",
                         }}
                       >
                         {amountWords}
                       </div>
 
+                      {/* الوصف (من الريكوست) */}
                       <div
-                        className="absolute text-[13px] font-semibold text-gray-900 whitespace-pre-wrap"
+                        className="absolute text-[16px] font-semibold text-gray-900 whitespace-pre-wrap"
                         style={{
-                          top: `${(POS.description.top / BASE_H) * 100}%`,
-                          left: `${(POS.description.left / BASE_W) * 100}%`,
-                          width: `${((POS.description.width || 900) / BASE_W) * 100}%`,
-                          maxHeight: POS.description.height
-                            ? `${(POS.description.height / BASE_H) * 100}%`
-                            : "auto",
+                          ...pctStyle(POS.description),
+                          width: `${POS.description.width}%`,
+                          maxHeight: POS.description.height ? `${POS.description.height}%` : "auto",
                           overflow: "hidden",
                           direction: descDir,
                           textAlign: descAlign,
@@ -529,11 +604,372 @@ export default function VoucherModal({ open, onClose, request, companyKey, reque
                       >
                         {description}
                       </div>
+
+                      {/* ✅ حقول إضافية تكتبها أنت */}
+                      {vFxRate ? (
+                        <div
+                          className="absolute text-gray-900 font-bold"
+                          style={{
+                            ...pctStyle(EXTRA.fxRate),
+                            width: `${EXTRA.fxRate.width}%`,
+                            maxHeight: `${EXTRA.fxRate.height}%`,
+                            fontSize: "16px",
+                            direction: "ltr",
+                            textAlign: "left",
+                          }}
+                        >
+                          {vFxRate}
+                        </div>
+                      ) : null}
+
+                      {vReceivedBy ? (
+                        <div
+                          className="absolute text-gray-900 font-bold"
+                          style={{
+                            ...pctStyle(EXTRA.receivedBy),
+                            width: `${EXTRA.receivedBy.width}%`,
+                            maxHeight: `${EXTRA.receivedBy.height}%`,
+                            fontSize: "16px",
+                            direction: "rtl",
+                            textAlign: "right",
+                          }}
+                        >
+                          {vReceivedBy}
+                        </div>
+                      ) : null}
+
+                      {vBank ? (
+                        <div
+                          className="absolute text-gray-900 font-bold"
+                          style={{
+                            ...pctStyle(EXTRA.bank),
+                            width: `${EXTRA.bank.width}%`,
+                            maxHeight: `${EXTRA.bank.height}%`,
+                            fontSize: "16px",
+                            direction: "rtl",
+                            textAlign: "right",
+                          }}
+                        >
+                          {vBank}
+                        </div>
+                      ) : null}
+
+                      {vBeneficiary ? (
+                        <div
+                          className="absolute text-gray-900 font-bold"
+                          style={{
+                            ...pctStyle(EXTRA.beneficiary),
+                            width: `${EXTRA.beneficiary.width}%`,
+                            maxHeight: `${EXTRA.beneficiary.height}%`,
+                            fontSize: "16px",
+                            direction: "rtl",
+                            textAlign: "right",
+                          }}
+                        >
+                          {vBeneficiary}
+                        </div>
+                      ) : null}
+
+                      {vNotes ? (
+                        <div
+                          className="absolute text-gray-900 font-bold whitespace-pre-wrap"
+                          style={{
+                            ...pctStyle(EXTRA.notes),
+                            width: `${EXTRA.notes.width}%`,
+                            maxHeight: `${EXTRA.notes.height}%`,
+                            fontSize: "16px",
+                            direction: "rtl",
+                            textAlign: "right",
+                            lineHeight: 1.25,
+                            overflowWrap: "anywhere",
+                            wordBreak: "break-word",
+                          }}
+                        >
+                          {vNotes}
+                        </div>
+                      ) : null}
+
+                      {/* شيك بوكسين */}
+                      {cbOne ? (
+                        <div
+                          className="absolute text-gray-900 font-extrabold leading-none"
+                          style={{ ...pctStyle(EXTRA.cb1), fontSize: "18px" }}
+                        >
+                          ✓
+                        </div>
+                      ) : null}
+
+                      {cbTwo ? (
+                        <div
+                          className="absolute text-gray-900 font-extrabold leading-none"
+                          style={{ ...pctStyle(EXTRA.cb2), fontSize: "18px" }}
+                        >
+                          ✓
+                        </div>
+
+                        
+                      ) : null}
+
+{voucherNo !== null ? (
+  <div
+    className="absolute text-gray-900 font-extrabold leading-none"
+    style={{
+      top: "24%",
+      left: "46%",
+      fontSize: "20px",
+      direction: "ltr",
+      textAlign: "left",
+      letterSpacing: "1px",
+    }}
+  >
+    {"NO:"}
+    {String(voucherNo).padStart(5, "0")}
+  </div>
+) : null}
+                    </div>
+
+                    {/* =======================
+                        ✅ Inputs (للكتابة)
+                       ======================= */}
+                    <div className="absolute inset-0">
+                      {/* سعر الصرف */}
+                      <input
+                        ref={fxRef}
+                        value={vFxRate}
+                        onChange={(e) => setVFxRate(e.target.value)}
+                        className="absolute"
+                        style={{
+                          ...pctStyle(EXTRA.fxRate),
+                          width: `${EXTRA.fxRate.width}%`,
+                          height: `${EXTRA.fxRate.height}%`,
+                          opacity: 0,
+                          background: "transparent",
+                          border: "none",
+                          outline: "none",
+                          direction: "ltr",
+                          textAlign: "left",
+                          caretColor: "black",
+                          fontFamily: "inherit",
+                          fontSize: "16px",
+                          fontWeight: 800,
+                        }}
+                      />
+
+                      {/* استلمت من */}
+                      <input
+                        ref={receivedByRef}
+                        value={vReceivedBy}
+                        onChange={(e) => setVReceivedBy(e.target.value)}
+                        className="absolute"
+                        style={{
+                          ...pctStyle(EXTRA.receivedBy),
+                          width: `${EXTRA.receivedBy.width}%`,
+                          height: `${EXTRA.receivedBy.height}%`,
+                          opacity: 0,
+                          background: "transparent",
+                          border: "none",
+                          outline: "none",
+                          direction: "rtl",
+                          textAlign: "right",
+                          unicodeBidi: "plaintext",
+                          caretColor: "black",
+                          fontFamily: "inherit",
+                          fontSize: "16px",
+                          fontWeight: 700,
+                        }}
+                      />
+
+                      {/* على بنك */}
+                      <input
+                        ref={bankRef}
+                        value={vBank}
+                        onChange={(e) => setVBank(e.target.value)}
+                        className="absolute"
+                        style={{
+                          ...pctStyle(EXTRA.bank),
+                          width: `${EXTRA.bank.width}%`,
+                          height: `${EXTRA.bank.height}%`,
+                          opacity: 0,
+                          background: "transparent",
+                          border: "none",
+                          outline: "none",
+                          direction: "rtl",
+                          textAlign: "right",
+                          unicodeBidi: "plaintext",
+                          caretColor: "black",
+                          fontFamily: "inherit",
+                          fontSize: "16px",
+                          fontWeight: 700,
+                          padding: "0 10px",
+                        }}
+                      />
+
+                      {/* المستفيد */}
+                      <input
+                        ref={beneficiaryRef}
+                        value={vBeneficiary}
+                        onChange={(e) => setVBeneficiary(e.target.value)}
+                        className="absolute"
+                        style={{
+                          ...pctStyle(EXTRA.beneficiary),
+                          width: `${EXTRA.beneficiary.width}%`,
+                          height: `${EXTRA.beneficiary.height}%`,
+                          opacity: 0,
+                          background: "transparent",
+                          border: "none",
+                          outline: "none",
+                          direction: "rtl",
+                          textAlign: "right",
+                          unicodeBidi: "plaintext",
+                          caretColor: "black",
+                          fontFamily: "inherit",
+                          fontSize: "16px",
+                          fontWeight: 700,
+                        }}
+                      />
+
+                      {/* ملاحظات */}
+                      <textarea
+                        ref={notesRef}
+                        value={vNotes}
+                        onChange={(e) => setVNotes(e.target.value)}
+                        className="absolute resize-none"
+                        style={{
+                          ...pctStyle(EXTRA.notes),
+                          width: `${EXTRA.notes.width}%`,
+                          height: `${EXTRA.notes.height}%`,
+                          opacity: 0,
+                          background: "transparent",
+                          border: "none",
+                          outline: "none",
+                          direction: "rtl",
+                          textAlign: "right",
+                          unicodeBidi: "plaintext",
+                          caretColor: "black",
+                          fontFamily: "inherit",
+                          fontSize: "16px",
+                          fontWeight: 700,
+                          lineHeight: 1.25,
+                        }}
+                      />
+
+                      {/* شيك بوكسين */}
+                      <label
+                        className="absolute"
+                        style={{
+                          ...pctStyle(EXTRA.cb1),
+                          width: "3%",
+                          height: "3%",
+                          opacity: 0,
+                          cursor: "pointer",
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={cbOne}
+                          onChange={(e) => setCbOne(e.target.checked)}
+                          style={{ width: "100%", height: "100%", margin: 0, cursor: "pointer" }}
+                        />
+                      </label>
+
+                      <label
+                        className="absolute"
+                        style={{
+                          ...pctStyle(EXTRA.cb2),
+                          width: "3%",
+                          height: "3%",
+                          opacity: 0,
+                          cursor: "pointer",
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={cbTwo}
+                          onChange={(e) => setCbTwo(e.target.checked)}
+                          style={{ width: "100%", height: "100%", margin: 0, cursor: "pointer" }}
+                        />
+                      </label>
                     </div>
                   </div>
                 </div>
 
-                {!bgReady && <div className="mt-3 text-xs text-gray-600">جاري تحميل صورة الوصل…</div>}
+                {/* ✅ أزرار “أضف” مثل الكود السابق */}
+                <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => fxRef.current?.focus()}
+                      className="px-4 py-2 rounded-2xl bg-white/70 hover:bg-white ring-1 ring-black/5 font-extrabold text-gray-800 transition"
+                    >
+                      أضف سعر الصرف
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => receivedByRef.current?.focus()}
+                      className="px-4 py-2 rounded-2xl bg-white/70 hover:bg-white ring-1 ring-black/5 font-extrabold text-gray-800 transition"
+                    >
+                      أضف استلمت من
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => bankRef.current?.focus()}
+                      className="px-4 py-2 rounded-2xl bg-white/70 hover:bg-white ring-1 ring-black/5 font-extrabold text-gray-800 transition"
+                    >
+                      أضف بنك
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => beneficiaryRef.current?.focus()}
+                      className="px-4 py-2 rounded-2xl bg-white/70 hover:bg-white ring-1 ring-black/5 font-extrabold text-gray-800 transition"
+                    >
+                      أضف مستفيد
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => notesRef.current?.focus()}
+                      className="px-4 py-2 rounded-2xl bg-white/70 hover:bg-white ring-1 ring-black/5 font-extrabold text-gray-800 transition"
+                    >
+                      أضف ملاحظات
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={clearExtras}
+                      className="
+                        px-5 py-2.5
+                        rounded-2xl
+                        bg-red-50
+                        text-red-600
+                        ring-1 ring-red-200
+                        font-extrabold
+                        shadow-sm
+                        hover:bg-red-100
+                        hover:ring-red-300
+                        active:scale-[0.96]
+                        transition-all duration-150
+                      "
+                    >
+                      🗑️ مسح البيانات
+                    </button>
+                  </div>
+
+                  {!bgReady && <div className="text-xs text-gray-600">جاري تحميل صورة الوصل…</div>}
+                </div>
+
+                {/* (اختياري) زر حفظ إذا تحتاجه */}
+                {/* <div className="mt-4">
+                  <button
+                    onClick={saveVoucher}
+                    disabled={saving}
+                    className="px-5 py-2.5 rounded-2xl bg-gray-900 text-white font-extrabold disabled:opacity-60"
+                  >
+                    {saving ? "جاري الحفظ..." : "حفظ الوصل"}
+                  </button>
+                </div> */}
               </div>
             </div>
           </motion.div>

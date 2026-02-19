@@ -9,6 +9,7 @@ import {
   FiUsers,
   FiTrash2,
   FiX,
+  FiHash,
 } from "react-icons/fi";
 import Select from "react-select";
 import { useRouter } from "next/navigation";
@@ -27,6 +28,9 @@ export default function WorkflowPage() {
   const [name, setName] = useState("");
   const [company, setCompany] = useState("");
 
+  // ✅ NEW
+  const [code, setCode] = useState("");
+
   // ✅ helper: userId + headers
   const getUserId = () => localStorage.getItem("userId") || "";
 
@@ -36,23 +40,21 @@ export default function WorkflowPage() {
   });
 
   // =========================
-  // ✅ Auth Guard (اعتماداً على userId في localStorage)
+  // ✅ Auth Guard
   // =========================
   useEffect(() => {
     const guard = async () => {
       const userId = getUserId();
 
-      // مو ملوغن
       if (!userId) {
         router.replace("/login");
         return;
       }
 
       try {
-        const res = await fetch(
-          `/api/user-permissions?id=${encodeURIComponent(userId)}`,
-          { cache: "no-store" }
-        );
+        const res = await fetch(`/api/user-permissions?id=${encodeURIComponent(userId)}`, {
+          cache: "no-store",
+        });
 
         const data = await res.json();
         const perms = Array.isArray(data?.permissions) ? data.permissions : [];
@@ -73,7 +75,7 @@ export default function WorkflowPage() {
   }, [router]);
 
   // =========================
-  // ✅ Load Data (بعد السماح فقط)
+  // ✅ Load Data
   // =========================
   useEffect(() => {
     if (!authorized) return;
@@ -81,7 +83,6 @@ export default function WorkflowPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authorized]);
 
-  // STEP 1 → Load existing workflows
   const loadWorkflows = async () => {
     setLoading(true);
 
@@ -91,15 +92,8 @@ export default function WorkflowPage() {
         headers: authHeaders(),
       });
 
-      // إذا السيرفر رجّع 401/403 معناها ما وصل userId أو مو مسموح
-      if (res.status === 401) {
-        router.replace("/login");
-        return;
-      }
-      if (res.status === 403) {
-        router.replace("/home");
-        return;
-      }
+      if (res.status === 401) return router.replace("/login");
+      if (res.status === 403) return router.replace("/home");
 
       const data = await res.json();
 
@@ -116,7 +110,7 @@ export default function WorkflowPage() {
     }
   };
 
-  // STEP 2 → Load companies and remove used ones
+  // ✅ Load companies (بدون فلترة لأن نسمح بأكثر من Workflow لنفس الشركة)
   const loadCompanies = async (wfList) => {
     try {
       if (!Array.isArray(wfList)) wfList = [];
@@ -126,14 +120,8 @@ export default function WorkflowPage() {
         headers: authHeaders(),
       });
 
-      if (res.status === 401) {
-        router.replace("/login");
-        return;
-      }
-      if (res.status === 403) {
-        router.replace("/home");
-        return;
-      }
+      if (res.status === 401) return router.replace("/login");
+      if (res.status === 403) return router.replace("/home");
 
       const data = await res.json();
       if (!data?.success) return;
@@ -144,26 +132,34 @@ export default function WorkflowPage() {
       });
 
       const allCompanies = [...compSet];
-      const usedCompanies = new Set((wfList || []).map((w) => w.company));
-      const filtered = allCompanies.filter((c) => !usedCompanies.has(c));
-
       setCompanies(allCompanies);
-      setAvailableCompanies(filtered);
+      setAvailableCompanies(allCompanies);
     } catch {
       setCompanies([]);
       setAvailableCompanies([]);
     }
   };
 
+  // ✅ helper: normalize code
+  const normalizeCode = (s) =>
+    String(s || "")
+      .trim()
+      .replace(/\s+/g, "-")
+      .toUpperCase();
+
   // CREATE WORKFLOW
   const createWorkflow = async () => {
     if (!name.trim()) return alert("اكتب اسم الـ Workflow");
     if (!company) return alert("اختر الشركة");
 
+    // ✅ NEW: code required
+    const normCode = normalizeCode(code);
+    if (!normCode) return alert("اكتب كود للـ Workflow (مثلاً: ALGHDEER-1 أو ALGHDEER-2)");
+
     const res = await fetch("/api/workflow", {
       method: "POST",
       headers: authHeaders({ "Content-Type": "application/json" }),
-      body: JSON.stringify({ name, company }),
+      body: JSON.stringify({ name, company, code: normCode }), // ✅ NEW
     });
 
     if (res.status === 401) return router.replace("/login");
@@ -173,6 +169,10 @@ export default function WorkflowPage() {
 
     if (data.success) {
       setOpenModal(false);
+      setName("");
+      setCompany("");
+      setCode(""); // ✅ NEW
+
       router.push(`/workflow/${data.workflow._id}`);
     } else {
       alert(data.error || "فشل إنشاء Workflow");
@@ -201,7 +201,6 @@ export default function WorkflowPage() {
     }
   };
 
-  // ✅ إذا ما بعد متحقق/مو مسموح: لا تعرض شي (حتى ما يصير flicker)
   if (!authorized) return null;
 
   return (
@@ -240,10 +239,7 @@ export default function WorkflowPage() {
                 <FiTrash2 size={20} />
               </button>
 
-              <div
-                onClick={() => router.push(`/workflow/${wf._id}`)}
-                className="cursor-pointer"
-              >
+              <div onClick={() => router.push(`/workflow/${wf._id}`)} className="cursor-pointer">
                 <h2 className="text-2xl font-semibold text-gray-900 flex items-center gap-2">
                   <FiFileText className="text-blue-600" /> {wf.name}
                 </h2>
@@ -252,15 +248,19 @@ export default function WorkflowPage() {
                   Company: <span className="font-semibold">{wf.company}</span>
                 </p>
 
+                {/* ✅ NEW: show code */}
+                <p className="text-gray-600 mt-1 flex items-center gap-2">
+                  <FiHash className="text-gray-500" />
+                  Code: <span className="font-semibold">{wf.code || "-"}</span>
+                </p>
+
                 <div className="mt-4 flex items-center gap-3">
                   <div className="w-12 h-12 bg-gray-900 text-white rounded-2xl flex items-center justify-center shadow">
                     <FiUsers className="text-xl" />
                   </div>
                   <div>
                     <p className="text-xs text-gray-500">Steps</p>
-                    <p className="text-xl font-bold text-gray-800">
-                      {wf.steps?.length || 0}
-                    </p>
+                    <p className="text-xl font-bold text-gray-800">{wf.steps?.length || 0}</p>
                   </div>
                 </div>
               </div>
@@ -291,6 +291,15 @@ export default function WorkflowPage() {
               placeholder="Workflow name"
               value={name}
               onChange={(e) => setName(e.target.value)}
+              className="w-full p-3 border rounded-xl mb-4"
+            />
+
+            {/* ✅ NEW: code input */}
+            <input
+              type="text"
+              placeholder="Workflow code (مثلاً: ALGHDEER-1)"
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
               className="w-full p-3 border rounded-xl mb-4"
             />
 

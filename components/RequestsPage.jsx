@@ -742,6 +742,8 @@ export default function RequestsPage({ companyKey }) {
           open={isCreateOpen}
           onClose={() => setIsCreateOpen(false)}
           companyKey={companyKey}
+          userId={typeof window !== "undefined" ? localStorage.getItem("userId") : null} // ✅ جديد
+
           onCreated={async () => {
             await fetchRequests();
           }}

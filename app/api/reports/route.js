@@ -202,6 +202,8 @@ export async function GET(req) {
     const fromDate = searchParams.get("from") || "";
     const toDate = searchParams.get("to") || "";
     const codeParam = (searchParams.get("code") || "").trim();
+    const amountParamRaw = (searchParams.get("amount") || "").trim();
+const amountParam = amountParamRaw ? Number(amountParamRaw) : null;
 
     const page = Math.max(1, parseInt(searchParams.get("page") || "1", 10));
     const pageSize = Math.max(
@@ -363,7 +365,7 @@ export async function GET(req) {
 
     const finalData = merged.map((d) => {
       let totalAmount = 0;
-    
+     
       if (Array.isArray(d.items)) {
         totalAmount = d.items.reduce((sum, it) => {
           const q = Number(it.qty || 0);
@@ -380,12 +382,18 @@ export async function GET(req) {
           .filter(Boolean),
       };
     });
+
+    let filteredData = finalData;
+
+    if (Number.isFinite(amountParam)) {
+      filteredData = finalData.filter((d) => Number(d.totalAmount) === amountParam);
+    }
     // light filters from current page
     const pageUsers = new Set();
     const pageCurrencies = new Set();
     const pageStatuses = new Set();
 
-    for (const d of finalData) {
+    for (const d of filteredData) {
       if (d.createdBy) pageUsers.add(d.createdBy);
       if (d.currency) pageCurrencies.add(d.currency);
       if (d.status) pageStatuses.add(d.status);
@@ -405,7 +413,7 @@ export async function GET(req) {
           label: u.username,
         })),
       },
-      data: finalData,
+      data: filteredData,
       meta: { total, totalPages, page, pageSize },
     });
   } catch (err) {

@@ -9,55 +9,39 @@ const StepSchema = new mongoose.Schema(
         required: true,
       },
     ],
-
     status: {
       type: String,
       enum: ["Pending", "Approved", "Rejected", "Cancelled"],
       default: "Pending",
     },
-
     actedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       default: null,
     },
-
-    actedAt: {
-      type: Date,
-      default: null,
-    },
-
-    comment: {
-      type: String,
-      default: "",
-      trim: true,
-    },
+    actedAt: { type: Date, default: null },
+    comment: { type: String, default: "", trim: true },
   },
   { _id: false }
 );
 
 const WorkflowSchema = new mongoose.Schema(
   {
-    name: {
-      type: String,
-      required: true,
-      trim: true,
-    },
+    name: { type: String, required: true, trim: true },
 
-    company: {
-      type: String,
-      required: true,
-      unique: true, // ✔️ Workflow واحد فقط لكل شركة
-      trim: true,
-    },
+    // ✅ مهم: شيل unique
+    company: { type: String, required: true, trim: true },
 
-    steps: {
-      type: [StepSchema],
-      default: [],
-    },
+    // ✅ الافتراضي بدون كود
+    code: { type: String, default: "", trim: true, index: true },
+
+    steps: { type: [StepSchema], default: [] },
   },
   { timestamps: true }
 );
+
+// ✅ لازم قبل model
+WorkflowSchema.index({ company: 1, code: 1 }, { unique: true });
 
 export default mongoose.models.Workflow ||
   mongoose.model("Workflow", WorkflowSchema);

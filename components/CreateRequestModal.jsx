@@ -138,9 +138,15 @@ export default function CreateRequestModal({
     }
 
     // 2) Create request with attachment metadata (no files in body)
+    const userId = localStorage.getItem("userId");
+
     const res = await fetch(`/api/requests?company=${companyKey}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      cache: "no-store",
+      headers: {
+        "Content-Type": "application/json",
+        "x-user-id": userId || "",   // ✅ هذا المهم حتى يشتغل MARKETING
+      },
       body: JSON.stringify({
         company: companyKey,
         requestType,

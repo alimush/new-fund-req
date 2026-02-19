@@ -9,6 +9,7 @@ import { MdPolicy } from "react-icons/md";
 import { FaSquarePollVertical } from "react-icons/fa6";
 import { usePermissions } from "@/context/PermissionContext";
 import { PERMISSIONS } from "@/lib/permission";
+import { IoReceipt } from "react-icons/io5";
 
 const poppins = Poppins({
   subsets: ["latin"],
@@ -96,16 +97,19 @@ export default function Header({ onLogout }) {
                            bg-gradient-to-r from-gray-500 via-gray-400 to-gray-300 opacity-80" />
         </div>
 
-        {/* الوسط – العنوان */}
-        <div className="flex justify-center">
-          <h1
-            className="text-base sm:text-lg md:text-2xl font-bold tracking-tight
-                       bg-gradient-to-r from-gray-200 via-gray-100 to-white
-                       text-transparent bg-clip-text"
-          >
-            Fund Request
-          </h1>
-        </div>
+      {/* الوسط – العنوان */}
+<div className="flex justify-center">
+  <h1
+    onClick={() => router.push("/home")}
+    className="cursor-pointer
+               text-base sm:text-lg md:text-2xl font-bold tracking-tight
+               bg-gradient-to-r from-gray-200 via-gray-100 to-white
+               text-transparent bg-clip-text
+               hover:opacity-80 transition"
+  >
+    Fund Request
+  </h1>
+</div>
 
         {/* يمين */}
         <div className="flex justify-end items-center relative">
@@ -198,6 +202,16 @@ export default function Header({ onLogout }) {
     }}
     icon={<MdPolicy className="text-gray-200" />}
     label="إدارة الصلاحيات"
+  />
+)}
+                      {permissions?.includes(PERMISSIONS.RECEIPTS) && (
+  <MenuItem
+    onClick={() => {
+      setMenuOpen(false);
+      router.push("/vouchers");
+    }}
+    icon={<IoReceipt className="text-gray-200" />}
+    label="وصل صرف وقبض"
   />
 )}
                       {canViewReports && (

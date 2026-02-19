@@ -51,6 +51,24 @@ export default function ReportsPage() {
   const [statuses, setStatuses] = useState([]);
   const [pendingUsers, setPendingUsers] = useState([]);
   const [codeOptions, setCodeOptions] = useState([]);
+  const [amountOptions, setAmountOptions] = useState([]);
+const [amountFilter, setAmountFilter] = useState(null); // {value,label} أو null
+useEffect(() => {
+  const set = new Set();
+  (requests || []).forEach((r) => {
+    const n = Number(getAmount(r));
+    if (Number.isFinite(n)) set.add(n);
+  });
+
+  const opts = Array.from(set)
+    .sort((a, b) => a - b)
+    .map((n) => ({
+      value: String(n),
+      label: new Intl.NumberFormat("en-US").format(n),
+    }));
+
+  setAmountOptions(opts);
+}, [requests]);
 
   // Selected filters
   const [companyFilter, setCompanyFilter] = useState([]);
@@ -63,6 +81,7 @@ export default function ReportsPage() {
   const [date, setDate] = useState({ from: "", to: "" });
 
   const [codeQ, setCodeQ] = useState("");
+  
 
   // حتى ما يسوي fetch أول ما يفتح الصفحة
   const hasSearchedRef = useRef(false);
@@ -245,7 +264,7 @@ const canViewReports =
       params.set("status", statusFilter?.value || "all");
       params.set("currency", currencyFilter?.value || "all");
       params.set("pending", pendingFilter?.value || "all");
-
+      if (amountFilter?.value) params.set("amount", amountFilter.value);
       if (date.from) params.set("from", date.from);
       if (date.to) params.set("to", date.to);
 
@@ -256,7 +275,7 @@ const canViewReports =
 
       return params;
     },
-    [companyFilter, userFilter, statusFilter, currencyFilter, pendingFilter, date, codeOption]
+    [companyFilter, userFilter, statusFilter, currencyFilter, pendingFilter, date, codeOption , amountFilter]
   );
 
   const fetchPage = useCallback(
@@ -307,6 +326,7 @@ const canViewReports =
     setRequests([]);
     setMeta({ total: 0, totalPages: 0, page: 1, pageSize: PAGE_SIZE });
     setPage(1);
+    setAmountFilter(null);
     hasSearchedRef.current = false;
   };
 
@@ -637,6 +657,28 @@ if (!canViewReports) return null;
               components={noClearComponents} // ✅ بدون X
             />
           </div>
+          {/* المبلغ */}
+<div className="text-right">
+  <label className="text-sm text-gray-600 mb-1 flex items-center justify-end gap-2">
+    <FiDollarSign /> المبلغ
+  </label>
+  <Select
+    {...selectMenuProps}
+    options={amountOptions}
+    value={amountFilter}
+    onChange={(v) => setAmountFilter(v || null)}
+    onInputChange={(val, meta) => {
+      if (meta.action === "input-change") {
+        const cleaned = String(val || "").replace(/[^\d]/g, "");
+        if (cleaned) setAmountFilter({ value: cleaned, label: new Intl.NumberFormat("en-US").format(Number(cleaned)) });
+        else setAmountFilter(null);
+      }
+    }}
+    isSearchable
+    placeholder="اكتب مبلغ أو اختار..."
+    styles={selectStyles}
+  />
+</div>
         </div>
       </motion.div>
 
