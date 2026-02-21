@@ -112,11 +112,15 @@ if (!workflow) {
     const workflowSnapshot = {
       name: workflow.name,
       steps: workflow.steps.map((s) => ({
+        // ✅ اسم الستيب
+        name: s.name || s.title || s.stepName || "",
+    
         users: s.users.map((u) => u._id),
         status: "Pending",
         actedBy: null,
         actedAt: null,
         comment: "",
+        attachment: null,
       })),
     };
 

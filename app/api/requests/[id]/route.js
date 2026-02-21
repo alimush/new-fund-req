@@ -60,14 +60,13 @@ function buildEmailHtml({
   company,
   stepFrom,
   stepTo,
+  stepFromName = "",
+  stepToName = "",
   note,
   actorName,
-
   requesterName = "",
   toUserName = "",
-  requestUrl = "", // اختياري
-
-  // ✅ دومين امبليفاير (ثابت)
+  requestUrl = "",
   baseDomain = "https://main.d2fatueaza47h3.amplifyapp.com",
 }) {
   const actionTxt =
@@ -97,18 +96,23 @@ function buildEmailHtml({
   const waitingStepNum = toIdx + 1;
 
   // ✅ سطر عربي رئيسي (approve/reject على الخطوة السابقة)
-  const arabicActionLine =
-    action === "approve"
-      ? `تمت الموافقة على الخطوة ${actedStepNum} من طلب التمويل الخاص بك بواسطة <b style="color:#f8fafc">${escapeHtml(
-          actorName || "System"
-        )}</b>.`
-      : action === "reject"
-      ? `تم رفض الخطوة ${actedStepNum} من طلب التمويل الخاص بك بواسطة <b style="color:#f8fafc">${escapeHtml(
-          actorName || "System"
-        )}</b>.`
-      : `تم تحديث طلب التمويل الخاص بك بواسطة <b style="color:#f8fafc">${escapeHtml(
-          actorName || "System"
-        )}</b>.`;
+  const stepLabel =
+  stepFromName && stepFromName.trim() !== ""
+    ? escapeHtml(stepFromName)
+    : `رقم ${actedStepNum}`;
+
+const arabicActionLine =
+  action === "approve"
+    ? `تمت الموافقة على خطوة <b style="color:#f8fafc">${stepLabel}</b> من طلب التمويل الخاص بك بواسطة <b style="color:#f8fafc">${escapeHtml(
+        actorName || "System"
+      )}</b>.`
+    : action === "reject"
+    ? `تم رفض خطوة <b style="color:#f8fafc">${stepLabel}</b> من طلب التمويل الخاص بك بواسطة <b style="color:#f8fafc">${escapeHtml(
+        actorName || "System"
+      )}</b>.`
+    : `تم تحديث طلب التمويل الخاص بك بواسطة <b style="color:#f8fafc">${escapeHtml(
+        actorName || "System"
+      )}</b>.`;
 
   // ✅ تحويل/ارجاع + ننتظر موافقتك/رفضك
   const routingLine =
@@ -281,7 +285,7 @@ function buildEmailHtml({
             color:#e5e7eb;
             margin:6px 2px 10px 2px;
           ">
-            👋 عزيزي ${escapeHtml(requesterName || "زميلنا")}
+           👋 عزيزي ${escapeHtml(toUserName || requesterName || "زميلنا")}
           </div>
 
           <!-- Main message -->
@@ -780,51 +784,92 @@ export async function PUT(req, { params }) {
       (action === "approve" && stepFrom < request.workflow.steps.length - 1) ||
       (action === "reject" && stepFrom > 0);
 
-    if (shouldNotify && stepTo !== null && stepTo !== undefined) {
-      try {
-        const targetUsersIds = request.workflow?.steps?.[stepTo]?.users || [];
-
-        if (Array.isArray(targetUsersIds) && targetUsersIds.length > 0) {
-          const users = await User.find({ _id: { $in: targetUsersIds } })
-            .select("email username")
-            .lean();
-
-          const emails = users.map((u) => u.email).filter(Boolean);
-
-          const actor = await User.findById(userId).select("username").lean();
-          const actorName = actor?.username || "";
-
-
-
+      if (shouldNotify && stepTo !== null && stepTo !== undefined) {
+        try {
+          const targetUsersIds = request.workflow?.steps?.[stepTo]?.users || [];
+      
+          // ✅ 1) Users of next step
+          let nextUsers = [];
+          if (Array.isArray(targetUsersIds) && targetUsersIds.length > 0) {
+            nextUsers = await User.find({ _id: { $in: targetUsersIds } })
+              .select("email username")
+              .lean();
+          }
+          const nextEmails = nextUsers.map((u) => u.email).filter(Boolean);
+      
+          // ✅ 2) Requester user (صاحب الطلب)
+          let requesterUser = null;
+          if (request?.createdBy && Types.ObjectId.isValid(request.createdBy)) {
+            requesterUser = await User.findById(request.createdBy)
+              .select("email username")
+              .lean();
+          }
+          const requesterEmail = requesterUser?.email || request?.createdByEmail || "";
           const requesterName =
             request?.createdByName ||
             request?.createdByUsername ||
-            request?.createdBy?.username ||
+            requesterUser?.username ||
             "";
-
-          const toUserName = users.length === 1 ? (users[0]?.username || "") : "";
-
+      
+          // ✅ actor name
+          const actor = await User.findById(userId).select("username").lean();
+          const actorName = actor?.username || "";
+      
+          // ✅ step names
+          const stepFromName = request?.workflow?.steps?.[stepFrom]?.name || "";
+          const stepToName = request?.workflow?.steps?.[stepTo]?.name || "";
+      
           const subject = `[Workflow] ${action.toUpperCase()} → Step ${Number(stepTo) + 1} | ${company}`;
-
-          const html = buildEmailHtml({
-            action,
-            requestId: id,
-            company,
-            stepFrom,
-            stepTo,
-            note,
-            actorName,
-            requesterName,
-            toUserName,
-            baseDomain: "https://main.d2fatueaza47h3.amplifyapp.com",
-          });
-
-          await sendWorkflowEmail({ toEmails: emails, subject, html });
+      
+          // =========================
+          // ✅ Email A: to next approvers
+          // =========================
+          if (nextEmails.length > 0) {
+            const toUserName = nextUsers.length === 1 ? (nextUsers[0]?.username || "") : "";
+      
+            const htmlNext = buildEmailHtml({
+              action,
+              requestId: id,
+              company,
+              stepFrom,
+              stepTo,
+              note,
+              actorName,
+              requesterName,
+              toUserName, // ✅ اسم مستلم الايميل
+              baseDomain: "https://main.d2fatueaza47h3.amplifyapp.com",
+              stepFromName,
+              stepToName,
+            });
+      
+            await sendWorkflowEmail({ toEmails: nextEmails, subject, html: htmlNext });
+          }
+      
+          // =========================
+          // ✅ Email B: to requester (always)
+          // =========================
+          if (requesterEmail) {
+            const htmlRequester = buildEmailHtml({
+              action,
+              requestId: id,
+              company,
+              stepFrom,
+              stepTo,
+              note,
+              actorName,
+              requesterName,   // ✅ greeting يطلع باسمه
+              toUserName: requesterName, // ✅ حتى greeting يكون واضح
+              baseDomain: "https://main.d2fatueaza47h3.amplifyapp.com",
+              stepFromName,
+              stepToName,
+            });
+      
+            await sendWorkflowEmail({ toEmails: [requesterEmail], subject, html: htmlRequester });
+          }
+        } catch (e) {
+          console.error("❌ Email notify failed:", e.message);
         }
-      } catch (e) {
-        console.error("❌ Email notify failed:", e.message);
       }
-    }
 
     return NextResponse.json({ success: true, data: request });
   } catch (err) {
