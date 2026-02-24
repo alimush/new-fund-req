@@ -12,39 +12,24 @@ import Permissions from "@/models/Permissions";
 import { Types } from "mongoose";
 
 export const runtime = "nodejs";
-
 /* ======================= EMAIL HELPERS ======================= */
-let _transporter = null;
-
 function getTransporter() {
-  if (_transporter) return _transporter;
-
   const host = process.env.SMTP_HOST;
   const port = Number(process.env.SMTP_PORT || "587");
   const user = process.env.SMTP_USER;
   const pass = process.env.SMTP_PASS;
 
-  _transporter = nodemailer.createTransport({
+  if (!host || !user || !pass) {
+    throw new Error("Missing SMTP env vars (SMTP_HOST/SMTP_PORT/SMTP_USER/SMTP_PASS)");
+  }
+
+  return nodemailer.createTransport({
     host,
     port,
     secure: port === 465,
     auth: { user, pass },
-
-    // ✅ تحسينات سرعة/ثبات
-    pool: true,
-    maxConnections: 2,
-    maxMessages: 50,
-    keepAlive: true,
-
-    // ✅ تايم آوتات حتى ما يعلق
-    connectionTimeout: 10_000,
-    greetingTimeout: 10_000,
-    socketTimeout: 20_000,
   });
-
-  return _transporter;
 }
-
 async function hasCompanyAccess(userId, company) {
   if (!userId || !company) return false;
 
@@ -60,7 +45,6 @@ async function hasCompanyAccess(userId, company) {
 
   return !!exists;
 }
-
 function escapeHtml(str = "") {
   return String(str)
     .replaceAll("&", "&amp;")
@@ -76,13 +60,14 @@ function buildEmailHtml({
   company,
   stepFrom,
   stepTo,
-  stepFromName = "",
-  stepToName = "",
   note,
   actorName,
+
   requesterName = "",
   toUserName = "",
-  requestUrl = "",
+  requestUrl = "", // اختياري
+
+  // ✅ دومين امبليفاير (ثابت)
   baseDomain = "https://main.d2fatueaza47h3.amplifyapp.com",
 }) {
   const actionTxt =
@@ -103,54 +88,49 @@ function buildEmailHtml({
       company || ""
     )}/${encodeURIComponent(requestId || "")}`;
 
+  // ✅ المطلوب: “تمت الموافقة/الرفض على الخطوة السابقة”
+  // approve/reject دا يصير على stepFrom (الخطوة اللي اتخذت بيها الاكشن)
   const actedStepNum = fromIdx + 1;
+
+  // ✅ المطلوب: “ننتظر الموافقة أو الرفض” للخطوة الحالية للمستلم
+  // بعد approve يروح للـ stepTo، وبعد reject يرجع للـ stepTo
   const waitingStepNum = toIdx + 1;
 
-  const stepLabel =
-    stepFromName && stepFromName.trim() !== ""
-      ? escapeHtml(stepFromName)
-      : `رقم ${actedStepNum}`;
-
-  // إذا المستلم هو الريكويستر
-  const isRequester =
-    requesterName &&
-    toUserName &&
-    String(requesterName) === String(toUserName);
-
-  const requestLabel = isRequester ? "طلب التمويل الخاص بك" : "طلب التمويل";
-
+  // ✅ سطر عربي رئيسي (approve/reject على الخطوة السابقة)
   const arabicActionLine =
     action === "approve"
-      ? `تمت الموافقة على خطوة <b style="color:#f8fafc">${stepLabel}</b> من ${requestLabel} بواسطة <b style="color:#f8fafc">${escapeHtml(
+      ? `تمت الموافقة على الخطوة ${actedStepNum} من طلب التمويل الخاص بك بواسطة <b style="color:#f8fafc">${escapeHtml(
           actorName || "System"
         )}</b>.`
       : action === "reject"
-      ? `تم رفض خطوة <b style="color:#f8fafc">${stepLabel}</b> من ${requestLabel} بواسطة <b style="color:#f8fafc">${escapeHtml(
+      ? `تم رفض الخطوة ${actedStepNum} من طلب التمويل الخاص بك بواسطة <b style="color:#f8fafc">${escapeHtml(
           actorName || "System"
         )}</b>.`
-      : action === "cancel"
-      ? `تم إلغاء ${requestLabel} بواسطة <b style="color:#f8fafc">${escapeHtml(
-          actorName || "System"
-        )}</b>.`
-      : `تم تحديث ${requestLabel} بواسطة <b style="color:#f8fafc">${escapeHtml(
+      : `تم تحديث طلب التمويل الخاص بك بواسطة <b style="color:#f8fafc">${escapeHtml(
           actorName || "System"
         )}</b>.`;
 
-  const nextStepLabel =
-    stepToName && stepToName.trim() !== ""
-      ? escapeHtml(stepToName)
-      : `رقم ${waitingStepNum}`;
-
+  // ✅ تحويل/ارجاع + ننتظر موافقتك/رفضك
   const routingLine =
     action === "approve"
-      ? `تم تحويل الطلب إلى الخطوة التالية: <b style="color:#f8fafc">${nextStepLabel}</b>. <br/>ننتظر الموافقة أو الرفض على الخطوة ${waitingStepNum}.`
+      ? toUserName
+        ? `تم تحويل الطلب إلى الموظف التالي: <b style="color:#f8fafc">${escapeHtml(
+            toUserName
+          )}</b>. <br/>ننتظر الموافقة أو الرفض على الخطوة ${waitingStepNum}.`
+        : `تم تحويل الطلب إلى الموظف التالي. <br/>ننتظر الموافقة أو الرفض على الخطوة ${waitingStepNum}.`
       : action === "reject"
-      ? `تم إرجاع الطلب إلى الخطوة السابقة: <b style="color:#f8fafc">${nextStepLabel}</b>. <br/>ننتظر الموافقة أو الرفض على الخطوة ${waitingStepNum}.`
+      ? toUserName
+        ? `تم إرجاع الطلب إلى الموظف السابق: <b style="color:#f8fafc">${escapeHtml(
+            toUserName
+          )}</b>. <br/>ننتظر الموافقة أو الرفض على الخطوة ${waitingStepNum}.`
+        : `تم إرجاع الطلب إلى الموظف السابق. <br/>ننتظر الموافقة أو الرفض على الخطوة ${waitingStepNum}.`
       : "";
 
   return `
   <div style="margin:0;padding:0;background:#0b1220;direction:ltr">
     <div style="max-width:720px;margin:0 auto;padding:22px 14px">
+
+      <!-- ===== Header ===== -->
       <div style="
         position:relative;
         border-radius:22px;
@@ -168,6 +148,7 @@ function buildEmailHtml({
         <div style="position:relative;padding:16px 18px">
           <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse">
             <tr>
+              <!-- Left -->
               <td style="width:33%;vertical-align:middle">
                 <div style="font-family:Arial,sans-serif;line-height:1.15">
                   <div style="
@@ -188,6 +169,7 @@ function buildEmailHtml({
                 </div>
               </td>
 
+              <!-- Center -->
               <td style="width:34%;text-align:center;vertical-align:middle">
                 <div style="
                   font-family:Arial,sans-serif;
@@ -203,6 +185,7 @@ function buildEmailHtml({
                 </div>
               </td>
 
+              <!-- Right Badge -->
               <td style="width:33%;text-align:right;vertical-align:middle">
                 <div style="display:inline-block;text-align:right">
                   <span style="
@@ -219,8 +202,6 @@ function buildEmailHtml({
                         ? "linear-gradient(135deg,#22c55e,#16a34a)"
                         : action === "reject"
                         ? "linear-gradient(135deg,#ef4444,#b91c1c)"
-                        : action === "cancel"
-                        ? "linear-gradient(135deg,#f59e0b,#d97706)"
                         : "linear-gradient(135deg,#94a3b8,#64748b)"
                     };
                     color:#ffffff;
@@ -228,15 +209,7 @@ function buildEmailHtml({
                     text-transform:uppercase;
                     box-shadow:0 14px 28px rgba(0,0,0,.55);
                   ">
-                    ${
-                      action === "approve"
-                        ? "APPROVE"
-                        : action === "reject"
-                        ? "REJECT"
-                        : action === "cancel"
-                        ? "CANCEL"
-                        : escapeHtml(actionTxt)
-                    }
+                    ${action === "approve" ? "APPROVE" : action === "reject" ? "REJECT" : escapeHtml(actionTxt)}
                   </span>
 
                   <div style="
@@ -252,8 +225,6 @@ function buildEmailHtml({
                         ? "تم تحويل الطلب إلى الموظف التالي"
                         : action === "reject"
                         ? "تم إرجاع الطلب إلى الموظف السابق"
-                        : action === "cancel"
-                        ? "تم إلغاء الطلب"
                         : "تحديث على الطلب"
                     }
                   </div>
@@ -264,6 +235,7 @@ function buildEmailHtml({
         </div>
       </div>
 
+      <!-- ===== Main Card ===== -->
       <div style="
         margin-top:14px;
         border-radius:22px;
@@ -272,6 +244,7 @@ function buildEmailHtml({
         background:rgba(15,23,42,.88);
         box-shadow:0 12px 30px rgba(0,0,0,.60);
       ">
+        <!-- Section header -->
         <div style="
           padding:14px 16px;
           background:rgba(31,41,55,.78);
@@ -292,14 +265,14 @@ function buildEmailHtml({
               ? "linear-gradient(90deg, rgba(34,197,94,.0), rgba(34,197,94,.95), rgba(34,197,94,.0))"
               : action === "reject"
               ? "linear-gradient(90deg, rgba(239,68,68,.0), rgba(239,68,68,.95), rgba(239,68,68,.0))"
-              : action === "cancel"
-              ? "linear-gradient(90deg, rgba(245,158,11,.0), rgba(245,158,11,.95), rgba(245,158,11,.0))"
               : "linear-gradient(90deg, rgba(148,163,184,.0), rgba(148,163,184,.70), rgba(148,163,184,.0))"
           };
           opacity:.95
         "></div>
 
         <div style="padding:18px">
+
+          <!-- Greeting -->
           <div style="
             text-align:right;
             font-family:Arial,sans-serif;
@@ -308,9 +281,10 @@ function buildEmailHtml({
             color:#e5e7eb;
             margin:6px 2px 10px 2px;
           ">
-            👋 عزيزي ${escapeHtml(toUserName || requesterName || "زميلنا")}
+            👋 عزيزي ${escapeHtml(requesterName || "زميلنا")}
           </div>
 
+          <!-- Main message -->
           <div style="
             text-align:right;
             font-family:Arial,sans-serif;
@@ -326,6 +300,7 @@ function buildEmailHtml({
             يمكنك مراجعة طلب التمويل من خلال الزر التالي:
           </div>
 
+          <!-- Details Button (ONLY, no text link) -->
           <div style="text-align:center;margin:18px 0 8px 0">
             <a href="${escapeHtml(computedUrl || "#")}" style="
               display:inline-block;
@@ -358,6 +333,7 @@ function buildEmailHtml({
             </a>
           </div>
 
+          <!-- Compact info row -->
           <table width="100%" cellpadding="0" cellspacing="0"
                  style="border-collapse:separate;border-spacing:14px 14px;margin-top:10px">
             <tr>
@@ -403,6 +379,7 @@ function buildEmailHtml({
             </tr>
           </table>
 
+          <!-- Note -->
           ${
             note
               ? `
@@ -438,6 +415,7 @@ function buildEmailHtml({
         </div>
       </div>
 
+      <!-- Footer -->
       <div style="
         margin-top:12px;
         text-align:center;
@@ -483,37 +461,47 @@ export async function GET(req, { params }) {
     if (!company) {
       return NextResponse.json({ success: false, error: "Company is required" }, { status: 400 });
     }
-
+    
     // ✅ Auth
-    const cookieStore = cookies();
+    const cookieStore = cookies(); // بدون await
     const userId = cookieStore.get("userId")?.value;
-
+    
     if (!userId) {
       return NextResponse.json({ success: false, error: "Not authenticated" }, { status: 401 });
     }
-
+    
     // ✅ Company access check
     const allowedCompany = await hasCompanyAccess(userId, company);
     if (!allowedCompany) {
       return NextResponse.json({ success: false, error: "No access to this company" }, { status: 403 });
     }
 
+    if (!company) {
+      return NextResponse.json(
+        { success: false, error: "Company is required" },
+        { status: 400 }
+      );
+    }
+
     const Model = getModelForCompany(company);
 
     const request = await Model.findById(id)
-      .populate({
-        path: "workflow.steps.users",
-        model: "User",
-        strictPopulate: false,
-      })
-      .populate({
-        path: "workflow.steps.actedBy",
-        model: "User",
-        strictPopulate: false,
-      });
+    .populate({
+      path: "workflow.steps.users",
+      model: "User",
+      strictPopulate: false,
+    })
+    .populate({
+      path: "workflow.steps.actedBy",
+      model: "User",
+      strictPopulate: false,
+    });
 
     if (!request) {
-      return NextResponse.json({ success: false, error: "Request not found" }, { status: 404 });
+      return NextResponse.json(
+        { success: false, error: "Request not found" },
+        { status: 404 }
+      );
     }
 
     // ✅ S3 Client (مرة وحدة)
@@ -547,6 +535,7 @@ export async function GET(req, { params }) {
           Key: st.attachment.key,
         });
 
+        // نخلي url حتى الواجهة تعرضه بالـ view
         st.attachment.url = await getSignedUrl(s3, command, { expiresIn: 3600 });
       }
     }
@@ -554,7 +543,10 @@ export async function GET(req, { params }) {
     return NextResponse.json({ success: true, data: request });
   } catch (err) {
     console.error("❌ GET Error:", err.message);
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    return NextResponse.json(
+      { success: false, error: err.message },
+      { status: 500 }
+    );
   }
 }
 
@@ -572,44 +564,45 @@ export async function PUT(req, { params }) {
       action,
       note,
       attachmentMeta,
-      stepIndex: bodyStepIndex, // حماية من stale UI
+      stepIndex: bodyStepIndex, // نخليه فقط للتأكد/حماية
       clearTag,
-
-      // ✅ للاتاج إذا تحب تستخدمه من الفرونت:
-      tag, // string (اختياري)
     } = body;
 
     if (!company) company = body.company;
     if (!company) {
-      return NextResponse.json({ success: false, error: "Company is required" }, { status: 400 });
+      return NextResponse.json(
+        { success: false, error: "Company is required" },
+        { status: 400 }
+      );
     }
 
-    // ✅ actions allowed (أضفنا update/tag/comment)
-    const ALLOWED_ACTIONS = new Set(["approve", "reject", "cancel", "update", "tag", "comment"]);
-    if (!ALLOWED_ACTIONS.has(action)) {
-      return NextResponse.json({ success: false, error: "Invalid action" }, { status: 400 });
-    }
+    
+    
 
     // ✅ Auth
     const cookieStore = cookies();
-    const userId = cookieStore.get("userId")?.value;
+        const userId = cookieStore.get("userId")?.value;
 
     if (!userId) {
-      return NextResponse.json({ success: false, error: "Not authenticated" }, { status: 401 });
+      return NextResponse.json(
+        { success: false, error: "Not authenticated" },
+        { status: 401 }
+      );
     }
 
     const Model = getModelForCompany(company);
     const request = await Model.findById(id);
 
     if (!request) {
-      return NextResponse.json({ success: false, error: "Request not found" }, { status: 404 });
+      return NextResponse.json(
+        { success: false, error: "Request not found" },
+        { status: 404 }
+      );
     }
-
     const allowedCompany = await hasCompanyAccess(userId, company);
     if (!allowedCompany) {
       return NextResponse.json({ success: false, error: "No access to this company" }, { status: 403 });
     }
-
     /* ================= CANCEL ================= */
     if (action === "cancel") {
       request.status = "Cancelled";
@@ -629,62 +622,14 @@ export async function PUT(req, { params }) {
       });
 
       await request.save();
-
-      // ✅ Email to requester (ALWAYS)
-      try {
-        let requesterUser = null;
-
-        if (request?.createdBy && Types.ObjectId.isValid(request.createdBy)) {
-          requesterUser = await User.findById(request.createdBy).select("email username").lean();
-        }
-
-        if (!requesterUser && request?.createdBy) {
-          requesterUser = await User.findOne({ username: String(request.createdBy) })
-            .select("email username")
-            .lean();
-        }
-
-        const requesterEmail = requesterUser?.email || request?.createdByEmail || "";
-        const requesterName =
-          request?.createdByName ||
-          request?.createdByUsername ||
-          requesterUser?.username ||
-          String(request?.createdBy || "");
-
-        const actor = await User.findById(userId).select("username").lean();
-        const actorName = actor?.username || "";
-
-        const subject = `[Workflow] ${String(action).toUpperCase()} | ${company}`;
-
-        if (requesterEmail) {
-          const htmlRequester = buildEmailHtml({
-            action,
-            requestId: id,
-            company,
-            stepFrom: 0,
-            stepTo: 0,
-            stepFromName: "إلغاء الطلب",
-            stepToName: "إلغاء الطلب",
-            note,
-            actorName,
-            requesterName,
-            toUserName: requesterName,
-            baseDomain: "https://main.d2fatueaza47h3.amplifyapp.com",
-          });
-
-          await sendWorkflowEmail({ toEmails: [requesterEmail], subject, html: htmlRequester });
-        }
-      } catch (e) {
-        console.error("❌ Requester email failed:", e.message);
-      }
-
       return NextResponse.json({ success: true, data: request });
     }
 
     /* ================= CURRENT STEP ================= */
+    // ✅ مهم جداً: الأكشن دائماً على currentStep الحقيقي بالسيرفر
     const stepIndex = request.currentStep;
 
-    // ✅ حماية stale UI
+    // ✅ حماية: إذا الفرونت مرسل stepIndex مختلف نرفض (اختياري بس مفيد)
     if (Number.isInteger(bodyStepIndex) && bodyStepIndex !== stepIndex) {
       return NextResponse.json(
         {
@@ -698,13 +643,27 @@ export async function PUT(req, { params }) {
     }
 
     const step = request.workflow?.steps?.[stepIndex];
+
     if (!step) {
-      return NextResponse.json({ success: false, error: "Invalid workflow step" }, { status: 400 });
+      return NextResponse.json(
+        { success: false, error: "Invalid workflow step" },
+        { status: 400 }
+      );
     }
 
     // إذا الطلب ملغي لا تقبل أكشن
     if (String(request.status || "").toLowerCase() === "cancelled") {
-      return NextResponse.json({ success: false, error: "Request is cancelled" }, { status: 400 });
+      return NextResponse.json(
+        { success: false, error: "Request is cancelled" },
+        { status: 400 }
+      );
+    }
+
+    if (step.status !== "Pending") {
+      return NextResponse.json(
+        { success: false, error: "Step already processed" },
+        { status: 400 }
+      );
     }
 
     // 🔐 Authorization
@@ -729,49 +688,6 @@ export async function PUT(req, { params }) {
         step.attachment = null;
       }
     };
-
-    /* ================= UPDATE/TAG/COMMENT ================= */
-    // ✅ هذا يخلي الكومنت/التاغ يشتغل بدون ما يصير approve/reject
-    // ✅ وبدون ايميل
-    if (action === "update" || action === "tag" || action === "comment") {
-      // comment
-      if (typeof note === "string") {
-        step.comment = note;
-      }
-
-      // tag
-      if (typeof tag === "string") {
-        // لازم يكون عندك step.tag بالسكيمة (إذا موجود)
-        step.tag = tag;
-      }
-
-      // attachment (optional)
-      applyStepAttachment();
-
-      // clearTag logic
-      if (clearTag) {
-        if (typeof step.tag !== "undefined") step.tag = "";
-        if (Array.isArray(step.tagAttachments)) step.tagAttachments = [];
-        step.attachment = null;
-      }
-
-      // history (اختياري)
-      request.approvalHistory.push({
-        user: userId,
-        action,
-        note: note || "",
-        date: new Date(),
-      });
-
-      await request.save();
-
-      return NextResponse.json({ success: true, data: request });
-    }
-
-    // ✅ من هنا فوك: approve/reject فقط، لذلك نخلي شرط Pending هنا
-    if (step.status !== "Pending") {
-      return NextResponse.json({ success: false, error: "Step already processed" }, { status: 400 });
-    }
 
     // ✅ helper: تصفير ستِب (حتى ما تبقى آثار)
     const resetStepToPendingClean = (st) => {
@@ -800,15 +716,18 @@ export async function PUT(req, { params }) {
       const lastIdx = request.workflow.steps.length - 1;
 
       if (stepIndex === lastIdx) {
+        // ✅ آخر خطوة => الطلب Approved
         request.status = "Approved";
         stepTo = stepIndex;
       } else {
+        // ✅ انتقال للخطوة الجاية + تصفيرها Pending نظيف
         const nextIndex = stepIndex + 1;
         request.currentStep = nextIndex;
 
         const nextStep = request.workflow.steps[nextIndex];
         resetStepToPendingClean(nextStep);
 
+        // ✅ لأن بعده ما خلص
         request.status = "Pending";
         stepTo = nextIndex;
       }
@@ -821,21 +740,30 @@ export async function PUT(req, { params }) {
       step.actedAt = new Date();
       step.comment = note || "";
       applyStepAttachment();
-
+    
       if (stepIndex > 0) {
         const backIndex = stepIndex - 1;
         request.currentStep = backIndex;
-
+    
         const backStep = request.workflow.steps[backIndex];
         resetStepToPendingClean(backStep);
-
+    
         request.status = "Rejected";
         stepTo = backIndex;
       } else {
+        // ✅ أول خطوة: نخلي الطلب Rejected ونبقى currentStep = 0
         request.status = "Rejected";
         request.currentStep = 0;
         stepTo = 0;
       }
+    }
+
+    // ✅ إذا action مو approve/reject/cancel
+    if (action !== "approve" && action !== "reject" && action !== "cancel") {
+      return NextResponse.json(
+        { success: false, error: "Invalid action" },
+        { status: 400 }
+      );
     }
 
     request.approvalHistory.push({
@@ -856,50 +784,43 @@ export async function PUT(req, { params }) {
       try {
         const targetUsersIds = request.workflow?.steps?.[stepTo]?.users || [];
 
-        // ✅ 1) Users of next step
-        let nextUsers = [];
         if (Array.isArray(targetUsersIds) && targetUsersIds.length > 0) {
-          nextUsers = await User.find({ _id: { $in: targetUsersIds } })
+          const users = await User.find({ _id: { $in: targetUsersIds } })
             .select("email username")
             .lean();
-        }
-        const nextEmails = nextUsers.map((u) => u.email).filter(Boolean);
 
-        // ✅ 2) Requester user (صاحب الطلب)
-        let requesterUser = null;
+          const emails = users.map((u) => u.email).filter(Boolean);
 
-        if (request?.createdBy && Types.ObjectId.isValid(request.createdBy)) {
-          requesterUser = await User.findById(request.createdBy).select("email username").lean();
-        }
+          // 🔹 جيب ايميل صاحب الطلب
+const requesterUser = await User.findOne({
+  username: String(request.createdBy),
+})
+  .select("email")
+  .lean();
 
-        if (!requesterUser && request?.createdBy) {
-          requesterUser = await User.findOne({ username: String(request.createdBy) })
-            .select("email username")
-            .lean();
-        }
+if (requesterUser?.email) {
+  emails.push(requesterUser.email);
+}
 
-        const requesterEmail = requesterUser?.email || request?.createdByEmail || "";
-        const requesterName =
-          request?.createdByName ||
-          request?.createdByUsername ||
-          requesterUser?.username ||
-          String(request?.createdBy || "");
+// حذف التكرار
+const uniqueEmails = [...new Set(emails)];
 
-        // ✅ actor name
-        const actor = await User.findById(userId).select("username").lean();
-        const actorName = actor?.username || "";
+          const actor = await User.findById(userId).select("username").lean();
+          const actorName = actor?.username || "";
 
-        // ✅ step names
-        const stepFromName = request?.workflow?.steps?.[stepFrom]?.name || "";
-        const stepToName = request?.workflow?.steps?.[stepTo]?.name || "";
 
-        const subject = `[Workflow] ${action.toUpperCase()} → Step ${Number(stepTo) + 1} | ${company}`;
 
-        // ✅ Email A: to next approvers (بدون await)
-        if (nextEmails.length > 0) {
-          const toUserName = nextUsers.length === 1 ? nextUsers[0]?.username || "" : "";
+          const requesterName =
+            request?.createdByName ||
+            request?.createdByUsername ||
+            request?.createdBy?.username ||
+            "";
 
-          const htmlNext = buildEmailHtml({
+          const toUserName = users.length === 1 ? (users[0]?.username || "") : "";
+
+          const subject = `[Workflow] ${action.toUpperCase()} → Step ${Number(stepTo) + 1} | ${company}`;
+
+          const html = buildEmailHtml({
             action,
             requestId: id,
             company,
@@ -910,36 +831,9 @@ export async function PUT(req, { params }) {
             requesterName,
             toUserName,
             baseDomain: "https://main.d2fatueaza47h3.amplifyapp.com",
-            stepFromName,
-            stepToName,
           });
 
-          sendWorkflowEmail({ toEmails: nextEmails, subject, html: htmlNext }).catch((e) =>
-            console.error("❌ Email next failed:", e.message)
-          );
-        }
-
-        // ✅ Email B: to requester (always) (بدون await)
-        if (requesterEmail) {
-          const htmlRequester = buildEmailHtml({
-            action,
-            requestId: id,
-            company,
-            stepFrom,
-            stepTo,
-            note,
-            actorName,
-            requesterName,
-            toUserName: requesterName, // ✅ حتى يطلع "طلب التمويل الخاص بك"
-            baseDomain: "https://main.d2fatueaza47h3.amplifyapp.com",
-            stepFromName,
-            stepToName,
-          });
-
-          sendWorkflowEmail({ toEmails: [requesterEmail], subject, html: htmlRequester }).catch((e) =>
-            console.error("❌ Email requester failed:", e.message)
-          );
-        }
+          await sendWorkflowEmail({ toEmails: uniqueEmails, subject, html });        }
       } catch (e) {
         console.error("❌ Email notify failed:", e.message);
       }
@@ -948,6 +842,9 @@ export async function PUT(req, { params }) {
     return NextResponse.json({ success: true, data: request });
   } catch (err) {
     console.error("❌ PUT Error:", err);
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    return NextResponse.json(
+      { success: false, error: err.message },
+      { status: 500 }
+    );
   }
 }

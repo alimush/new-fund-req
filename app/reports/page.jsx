@@ -374,44 +374,91 @@ const canViewReports =
     r.value ??
     null;
 
-  const handleExportExcel = () => {
-    const rows = (requests || []).map((r) => ({
-      "الشركة": r.companyKey || "-",
-      "الكود": r.requestCode || "-",
-      "النوع": r.requestType || "-",
-      "الطالب": r.createdBy || "-",
-      "الحالة": r.status || "-",
-      "قيد الانتظار عند": Array.isArray(r.pendingWithNames) ? r.pendingWithNames.join(", ") : "-",
-      "القسم": r.department || "-",
-      "العملة": r.currency || "-",
-      "المبلغ": (() => {
-        const v = getAmount(r);
-        const n = Number(v);
-        return Number.isFinite(n) ? n : "";
-      })(),
-      "الوصف": r.description || "-",
-      "التاريخ": r.createdAt ? new Date(r.createdAt).toLocaleDateString("ar-IQ") : "-",
-    }));
-
-    const ws = XLSX.utils.json_to_sheet(rows);
-
-    // تنسيق آلاف لعمود المبلغ (اختياري)
-    // نخلي فورمات رقم
-    const amountCol = Object.keys(rows[0] || {}).indexOf("المبلغ");
-    if (amountCol >= 0) {
-      const range = XLSX.utils.decode_range(ws["!ref"] || "A1:A1");
-      for (let R = range.s.r + 1; R <= range.e.r; R++) {
-        const cellAddr = XLSX.utils.encode_cell({ r: R, c: amountCol });
-        if (ws[cellAddr] && typeof ws[cellAddr].v === "number") {
-          ws[cellAddr].z = "#,##0";
+    const handleExportExcel = async () => {
+      try {
+        setLoading(true);
+    
+        // لازم يكون بحث أولاً
+        if (!hasSearchedRef.current) {
+          alert("اضغط بحث أولاً");
+          return;
         }
+    
+        const allData = [];
+        let currentPage = 1;
+        let totalPages = 1;
+    
+        do {
+          const params = buildParams(currentPage);
+    
+          const res = await fetch(`/api/reports?${params.toString()}`);
+          const json = await res.json();
+    
+          if (!json?.success) break;
+    
+          const pageData = json.data || [];
+          allData.push(...pageData);
+    
+          totalPages = json.meta?.totalPages || 1;
+          currentPage++;
+    
+        } while (currentPage <= totalPages);
+    
+        if (allData.length === 0) {
+          alert("لا يوجد بيانات للتصدير");
+          return;
+        }
+    
+        const rows = allData.map((r) => ({
+          "الشركة": r.companyKey || "-",
+          "الكود": r.requestCode || "-",
+          "النوع": r.requestType || "-",
+          "مقدم الطلب": r.createdBy || "-",
+          "الحالة": r.status || "-",
+          "قيد الانتظار عند": Array.isArray(r.pendingWithNames)
+            ? r.pendingWithNames.join(", ")
+            : "-",
+          "القسم": r.department || "-",
+          "العملة": r.currency || "-",
+          "المبلغ": (() => {
+            const v = getAmount(r);
+            const n = Number(v);
+            return Number.isFinite(n) ? n : "";
+          })(),
+          "الوصف": r.description || "-",
+          "التاريخ": r.createdAt
+            ? new Date(r.createdAt).toLocaleDateString("ar-IQ")
+            : "-",
+        }));
+    
+        const ws = XLSX.utils.json_to_sheet(rows);
+    
+        const amountCol = Object.keys(rows[0]).indexOf("المبلغ");
+        if (amountCol >= 0) {
+          const range = XLSX.utils.decode_range(ws["!ref"]);
+          for (let R = range.s.r + 1; R <= range.e.r; R++) {
+            const cellAddr = XLSX.utils.encode_cell({ r: R, c: amountCol });
+            if (ws[cellAddr] && typeof ws[cellAddr].v === "number") {
+              ws[cellAddr].z = "#,##0";
+            }
+          }
+        }
+    
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "التقارير");
+    
+        XLSX.writeFile(
+          wb,
+          `تقارير_الطلبات_${new Date().toISOString().slice(0, 10)}.xlsx`
+        );
+    
+      } catch (e) {
+        console.error(e);
+        alert("صار خطأ أثناء تصدير الاكسل");
+      } finally {
+        setLoading(false);
       }
-    }
-
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "التقارير");
-    XLSX.writeFile(wb, `تقارير_الطلبات_${new Date().toISOString().slice(0, 10)}.xlsx`);
-  };
+    };
 
   const Card = ({ icon: Icon, title, value }) => (
     <motion.div

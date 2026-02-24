@@ -264,6 +264,102 @@ const amountParam = amountParamRaw ? Number(amountParamRaw) : null;
     };
 
     const queryBase = buildQuery();
+    // ✅ pending filter لازم يكون قبل pagination (حتى ما تطلع صفحات ناقصة/فاضية)
+if (pendingParam !== "all") {
+  // 1) اجلب كل النتائج المطابقة للـ queryBase من كل الشركات (بدون pagination)
+  const allDocsByCompany = await Promise.all(
+    companyList.map(async (companyKey) => {
+      const Model = getModelForCompany(companyKey);
+      const docs = await Model.find(queryBase).sort({ createdAt: -1 }).lean();
+      return (docs || []).map((d) => ({ ...d, companyKey }));
+    })
+  );
+
+  let mergedAll = allDocsByCompany.flat();
+
+  // 2) compute pendingWithIds
+  for (const d of mergedAll) {
+    d.pendingWithIds = computePendingWithIds(d);
+  }
+
+  // 3) طبّق فلتر pending
+  const p = String(pendingParam);
+  mergedAll = mergedAll.filter((d) => (d.pendingWithIds || []).includes(p));
+
+  // 4) sort global
+  mergedAll.sort((a, b) => {
+    const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+    const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+    return tb - ta;
+  });
+
+  // 5) pagination AFTER filter ✅
+  const totalPending = mergedAll.length;
+  const totalPagesPending = totalPending ? Math.ceil(totalPending / pageSize) : 0;
+
+  const start = (page - 1) * pageSize;
+  const pageDocs = mergedAll.slice(start, start + pageSize);
+
+  // 6) pendingWithNames (للواجهة)
+  const allPendingIds = new Set();
+  for (const d of pageDocs) {
+    (d.pendingWithIds || []).forEach((id) => allPendingIds.add(String(id)));
+  }
+
+  let pendingNameMap = new Map();
+  if (allPendingIds.size > 0) {
+    const users = await User.find({ _id: { $in: Array.from(allPendingIds) } })
+      .select("_id username")
+      .lean();
+    pendingNameMap = new Map(users.map((u) => [String(u._id), u.username]));
+  }
+
+  // ✅ نفس حساب المبلغ + pendingWithNames مثل كودك
+  const finalData = pageDocs.map((d) => {
+    let totalAmount = 0;
+    if (Array.isArray(d.items)) {
+      totalAmount = d.items.reduce((sum, it) => {
+        const q = Number(it.qty || 0);
+        const pr = Number(it.price || 0);
+        return sum + q * pr;
+      }, 0);
+    }
+
+    return {
+      ...d,
+      totalAmount,
+      pendingWithNames: (d.pendingWithIds || [])
+        .map((id) => pendingNameMap.get(String(id)))
+        .filter(Boolean),
+    };
+  });
+
+  // light filters (اختياري)
+  const pageUsers = new Set();
+  const pageCurrencies = new Set();
+  const pageStatuses = new Set();
+
+  for (const d of finalData) {
+    if (d.createdBy) pageUsers.add(d.createdBy);
+    if (d.currency) pageCurrencies.add(d.currency);
+    if (d.status) pageStatuses.add(d.status);
+  }
+
+  const pendingUsers = await User.find({}).select("_id username").lean();
+
+  return NextResponse.json({
+    success: true,
+    filters: {
+      companies: companyList,
+      users: Array.from(pageUsers),
+      currencies: Array.from(pageCurrencies),
+      statuses: Array.from(pageStatuses),
+      pendingUsers: pendingUsers.map((u) => ({ value: String(u._id), label: u.username })),
+    },
+    data: finalData,
+    meta: { total: totalPending, totalPages: totalPagesPending, page, pageSize },
+  });
+}
 
     // ====== total count (per company) ======
     const countsByCompany = await Promise.all(
