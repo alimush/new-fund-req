@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   FiPlus,
   FiArrowLeft,
@@ -10,24 +10,67 @@ import {
   FiFileText,
   FiSearch,
   FiXCircle,
+  FiFilter,
 } from "react-icons/fi";
 import { useRouter } from "next/navigation";
 import { usePermissions } from "@/context/PermissionContext";
 import { PERMISSIONS } from "@/lib/permission";
 import StatusBadge from "@/components/StatusBadge";
-import Pagination from "@/components/Pagination";
-import { paginate } from "@/lib/paginate";
 import CreateRequestModal from "@/components/CreateRequestModal";
+
+const norm = (v) => String(v ?? "").trim().toLowerCase();
+
+function paginate(items, page, pageSize) {
+  const list = Array.isArray(items) ? items : [];
+  const total = list.length;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const p = Math.min(Math.max(1, page), totalPages);
+  const start = (p - 1) * pageSize;
+  return { page: p, totalPages, total, items: list.slice(start, start + pageSize) };
+}
+
+function Pager({ page, totalPages, onPage }) {
+  return (
+    <div className="mt-4 flex items-center justify-between gap-2">
+      <button
+        type="button"
+        onClick={() => onPage(page - 1)}
+        disabled={page <= 1}
+        className={[
+          "px-3 py-2 rounded-2xl text-[13px] font-extrabold ring-1",
+          page <= 1
+            ? "bg-gray-200/60 ring-gray-200 text-gray-500 cursor-not-allowed"
+            : "bg-white/55 ring-white/30 hover:bg-white/70",
+        ].join(" ")}
+      >
+        Prev
+      </button>
+
+      <div className="text-[13px] font-extrabold text-gray-800/80">
+        Page <span className="text-gray-900">{page}</span> /{" "}
+        <span className="text-gray-900">{totalPages}</span>
+      </div>
+
+      <button
+        type="button"
+        onClick={() => onPage(page + 1)}
+        disabled={page >= totalPages}
+        className={[
+          "px-3 py-2 rounded-2xl text-[13px] font-extrabold ring-1",
+          page >= totalPages
+            ? "bg-gray-200/60 ring-gray-200 text-gray-500 cursor-not-allowed"
+            : "bg-white/55 ring-white/30 hover:bg-white/70",
+        ].join(" ")}
+      >
+        Next
+      </button>
+    </div>
+  );
+}
 
 export default function RequestsPage({ companyKey }) {
   const router = useRouter();
-
-  // ✅ استخدم نفس مصدر الصلاحيات مثل صفحة الشركات (companies)
   const { permissions, companies } = usePermissions();
-
-  const canViewAll =
-    Array.isArray(permissions) &&
-    permissions.includes(PERMISSIONS.VIEW_REPORTS);
 
   const canCreate =
     Array.isArray(permissions) &&
@@ -35,70 +78,16 @@ export default function RequestsPage({ companyKey }) {
 
   const PAGE_SIZE = 20;
 
-  // ✅ لازم يكون q فوق لأن نستخدمه بكذا مكان
-  const [q, setQ] = useState("");
-  const [mounted, setMounted] = useState(false);
-
-  const [requests, setRequests] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [isCreateOpen, setIsCreateOpen] = useState(false);
-
-  // ✅ Access Guard (مثل RequestDetails)
+  // ===== Access Guard =====
   const [accessChecked, setAccessChecked] = useState(false);
   const [accessDenied, setAccessDenied] = useState(false);
 
-  // ✅ صفحات لكل سكشن
-  const [pageMy, setPageMy] = useState(1);
-  const [pagePending, setPagePending] = useState(1);
-  const [pageCancelled, setPageCancelled] = useState(1);
-  const [pageArchived, setPageArchived] = useState(1);
-
-  useEffect(() => setMounted(true), []);
-
-  // =========================
-  // Motion Variants
-  // =========================
-  const pageV = {
-    hidden: { opacity: 0, y: 10 },
-    show: { opacity: 1, y: 0, transition: { duration: 0.35, ease: "easeOut" } },
-  };
-
-  const staggerV = {
-    hidden: { opacity: 1 },
-    show: {
-      opacity: 1,
-      transition: { staggerChildren: 0.06, delayChildren: 0.05 },
-    },
-  };
-
-  const sectionV = {
-    hidden: { opacity: 0, y: 10, scale: 0.995 },
-    show: {
-      opacity: 1,
-      y: 0,
-      scale: 1,
-      transition: { duration: 0.28, ease: "easeOut" },
-    },
-  };
-
-  const cardV = {
-    hidden: { opacity: 0, y: 8 },
-    show: { opacity: 1, y: 0, transition: { duration: 0.22 } },
-    exit: { opacity: 0, y: 8, transition: { duration: 0.15 } },
-  };
-
-  // =========================
-  // ACCESS GUARD (اعتمد companies مثل HomePage)
-  // =========================
   useEffect(() => {
     if (!companyKey) return;
-
-    // ننتظر لحد ما context يجيب الشركات
     if (!Array.isArray(companies)) return;
 
-    const ok = companies
-      .map((x) => String(x || "").trim().toLowerCase())
-      .includes(String(companyKey || "").trim().toLowerCase());
+    // إذا الشركات عندك تختلف كـ case، نخلي مقارنة lower
+    const ok = companies.map((x) => norm(x)).includes(norm(companyKey));
 
     if (!ok) {
       setAccessDenied(true);
@@ -110,342 +99,352 @@ export default function RequestsPage({ companyKey }) {
     setAccessChecked(true);
   }, [companyKey, companies, router]);
 
-  // =========================
-  // Fetch Requests
-  // =========================
-  const fetchRequests = useCallback(async () => {
-    if (!companyKey) return;
-  
-    const userId = localStorage.getItem("userId"); // ✅ من localStorage
-  
-    // إذا ماكو userId يعني مو ملوغن
+  const getUserIdOrRedirect = () => {
+    const userId =
+      typeof window !== "undefined" ? localStorage.getItem("userId") : null;
     if (!userId) {
       router.replace("/login");
-      return;
+      return null;
     }
-  
-    try {
-      setLoading(true);
-  
-      const res = await fetch(`/api/requests?company=${companyKey}`, {
-        cache: "no-store",
-        headers: {
-          "x-user-id": userId, // ✅ المهم
-        },
-      });
-  
-      // إذا ما عنده صلاحية/ماكو هيدر
-      if (res.status === 401 || res.status === 403) {
-        router.replace("/home");
-        return;
-      }
-  
-      const data = await res.json();
-      if (data?.success && Array.isArray(data?.data)) setRequests(data.data);
-      else setRequests([]);
-    } catch {
-      setRequests([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [companyKey, router]);
-
-  useEffect(() => {
-    if (!accessChecked || accessDenied) return;
-    fetchRequests();
-  }, [fetchRequests, accessChecked, accessDenied]);
+    return userId;
+  };
 
   const currentUsername = useMemo(() => {
     if (typeof window === "undefined") return "";
     return localStorage.getItem("username") || "";
   }, []);
 
-  // =========================
-  // Normalize + Sort
-  // =========================
-  const normalized = useMemo(() => {
-    const list = (requests || []).map((r) => {
-      const status = String(r.status || "").toLowerCase();
-      const createdBy = String(r.createdBy || "");
-      const isMine =
-        currentUsername &&
-        createdBy.toLowerCase() === String(currentUsername).toLowerCase();
+  // ===== Search (controlled) =====
+  const [searchText, setSearchText] = useState("");
+  const [appliedSearch, setAppliedSearch] = useState("");
 
-      const createdAtTs = r.createdAt ? new Date(r.createdAt).getTime() : 0;
+  // ===== My status filter (ONLY on My Requests) =====
+  const [myStatus, setMyStatus] = useState("all"); // all|approved|pending|rejected|cancelled
 
-      return {
-        ...r,
-        _status: status,
-        _isMine: isMine,
-        _isPending: status === "pending",
-        _isCancelled: status === "cancelled",
-        _isApproved: status === "approved",
-        _isRejected: status === "rejected",
-        _createdAtTs: createdAtTs,
-      };
-    });
+  // ===== Data =====
+  const [myRequests, setMyRequests] = useState([]);
+  const [pendingApprovals, setPendingApprovals] = useState([]);
+  const [loading, setLoading] = useState(false);
 
-    return list.sort((a, b) => b._createdAtTs - a._createdAtTs);
-  }, [requests, currentUsername]);
+  // ===== Pagination =====
+  const [pageMy, setPageMy] = useState(1);
+  const [pagePending, setPagePending] = useState(1);
 
-  // =========================
-  // Stats + Sections
-  // =========================
-  const myRequests = useMemo(() => {
-    // ✅ لا تسوي slice هنا حتى الـ pagination يشتغل
-    return normalized.filter((r) => r._isMine);
-  }, [normalized]);
+  // ===== Modal =====
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
 
+  // ===== Suggestions =====
+  const [mounted, setMounted] = useState(false);
+  const searchBoxRef = useRef(null);
+
+  const [showSuggest, setShowSuggest] = useState(false);
+  const [suggestions, setSuggestions] = useState([]);
+  const [activeIdx, setActiveIdx] = useState(-1);
+  const [suggestPos, setSuggestPos] = useState({ open: false, top: 0, left: 0, width: 0 });
+
+  useEffect(() => setMounted(true), []);
+
+  const updateSuggestPosition = useCallback(() => {
+    const el = searchBoxRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    setSuggestPos({ open: true, top: r.bottom + 8, left: r.left, width: r.width });
+  }, []);
+
+  // ✅ نخفي الاقتراحات عند scroll حتى ما يصير “هزّة”
+  useEffect(() => {
+    const onScroll = () => {
+      if (!showSuggest) return;
+      setShowSuggest(false);
+      setActiveIdx(-1);
+      setSuggestPos((p) => ({ ...p, open: false }));
+    };
+    const onResize = () => {
+      if (!showSuggest) return;
+      updateSuggestPosition();
+    };
+
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onResize);
+
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onResize);
+    };
+  }, [showSuggest, updateSuggestPosition]);
+
+  const suggestWrapRef = useRef(null);
+
+  const closeSuggest = useCallback(() => {
+    setShowSuggest(false);
+    setActiveIdx(-1);
+    setSuggestions([]);
+    setSuggestPos((p) => ({ ...p, open: false }));
+  }, []);
+  
+  useEffect(() => {
+    const handler = (e) => {
+      const inSearch = searchBoxRef.current?.contains(e.target);
+      const inSuggest = suggestWrapRef.current?.contains(e.target);
+      if (inSearch || inSuggest) return;
+      if (showSuggest) closeSuggest();
+    };
+  
+    // ✅ capture: ما يخرب ضغطات السيليكت والازرار
+    document.addEventListener("pointerdown", handler, true);
+    return () => document.removeEventListener("pointerdown", handler, true);
+  }, [showSuggest, closeSuggest]);
+
+  const suggestionPool = useMemo(() => {
+    const all = [...(pendingApprovals || []), ...(myRequests || [])];
+    const set = new Set();
+    const out = [];
+    for (const r of all) {
+      const items = [
+        r.requestCode,
+        r.requestType,
+        r.description,
+        r.department,
+        r.currency,
+        r.createdBy,
+      ]
+        .filter(Boolean)
+        .map((x) => String(x).trim());
+
+      for (const s of items) {
+        const key = s.toLowerCase();
+        if (!key) continue;
+        if (set.has(key)) continue;
+        set.add(key);
+        out.push(s);
+      }
+    }
+    return out;
+  }, [pendingApprovals, myRequests]);
+
+  const computeSuggestions = useCallback(
+    (text) => {
+      const t = String(text || "").trim().toLowerCase();
+      if (!t) return [];
+      return suggestionPool
+        .filter((x) => String(x).toLowerCase().includes(t))
+        .slice(0, 8);
+    },
+    [suggestionPool]
+  );
+
+  const pickSuggestion = (val) => {
+    setSearchText(val); // ✅ يبقى بالانبت
+    setAppliedSearch(String(val || "").trim()); // ✅ يفلتر
+    setShowSuggest(false);
+    setSuggestions([]);
+    setActiveIdx(-1);
+    setSuggestPos((p) => ({ ...p, open: false }));
+    setPageMy(1);
+    setPagePending(1);
+  };
+
+  // ===== Fetch =====
+  const fetchAll = useCallback(async () => {
+    if (!companyKey) return;
+    const userId = getUserIdOrRedirect();
+    if (!userId) return;
+
+    setLoading(true);
+    try {
+      const base = `/api/requests?company=${encodeURIComponent(companyKey)}`;
+
+      const q = String(appliedSearch || "").trim();
+      const qPart = q ? `&q=${encodeURIComponent(q)}` : "";
+
+      // ✅ status فقط على mine
+      const st = String(myStatus || "all").toLowerCase();
+      const stPart = st && st !== "all" ? `&status=${encodeURIComponent(st)}` : `&status=all`;
+
+      const mineUrl = `${base}&scope=mine${stPart}${qPart}`;
+      const pendingUrl = `${base}&scope=pending${qPart}`;
+
+      const [resMine, resPending] = await Promise.all([
+        fetch(mineUrl, { cache: "no-store", headers: { "x-user-id": userId } }),
+        fetch(pendingUrl, { cache: "no-store", headers: { "x-user-id": userId } }),
+      ]);
+
+      if ([401, 403].includes(resMine.status) || [401, 403].includes(resPending.status)) {
+        router.replace("/home");
+        return;
+      }
+
+      const jMine = await resMine.json();
+      const jPending = await resPending.json();
+
+      setMyRequests(jMine?.success && Array.isArray(jMine?.data) ? jMine.data : []);
+      setPendingApprovals(jPending?.success && Array.isArray(jPending?.data) ? jPending.data : []);
+    } catch {
+      setMyRequests([]);
+      setPendingApprovals([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [companyKey, router, appliedSearch, myStatus]);
+
+  // initial load
+  useEffect(() => {
+    if (!accessChecked || accessDenied) return;
+    fetchAll();
+  }, [accessChecked, accessDenied, fetchAll]);
+
+  // fetch only when applied search OR myStatus changes
+  useEffect(() => {
+    if (!accessChecked || accessDenied) return;
+    setPageMy(1);
+    setPagePending(1);
+    fetchAll();
+  }, [appliedSearch, myStatus]); // eslint-disable-line
+
+  // ===== Pagination computed + clamp =====
+  const myPaged = useMemo(() => paginate(myRequests, pageMy, PAGE_SIZE), [myRequests, pageMy]);
+  const pendingPaged = useMemo(() => paginate(pendingApprovals, pagePending, PAGE_SIZE), [pendingApprovals, pagePending]);
+
+  useEffect(() => {
+    if (pageMy > myPaged.totalPages) setPageMy(myPaged.totalPages);
+  }, [pageMy, myPaged.totalPages]);
+
+  useEffect(() => {
+    if (pagePending > pendingPaged.totalPages) setPagePending(pendingPaged.totalPages);
+  }, [pagePending, pendingPaged.totalPages]);
+
+  // ===== Stats (من طلباتي الحالية بعد فلتر السيرفر) =====
   const stats = useMemo(() => {
     const total = myRequests.length;
-    const approved = myRequests.filter((r) => r._isApproved).length;
-    const pending = myRequests.filter((r) => r._isPending).length;
+    const approved = myRequests.filter((r) => norm(r.status) === "approved").length;
+    const pending = myRequests.filter((r) => norm(r.status) === "pending").length;
     return { total, approved, pending };
   }, [myRequests]);
 
-  const buildHaystack = useCallback((r) => {
-    return [
-      r.requestCode,
-      r.company,
-      r.requestType,
-      r.description,
-      r.currency,
-      r.department,
-      r.createdBy,
-      r._id,
-    ]
-      .filter(Boolean)
-      .join(" ")
-      .toLowerCase();
-  }, []);
-
-  const pendingOthers = useMemo(() => {
-    if (!canViewAll) return [];
-    // ✅ لا slice
-    return normalized.filter((r) => r._isPending && !r._isMine);
-  }, [normalized, canViewAll]);
-
-  const cancelled = useMemo(() => {
-    const text = q.trim().toLowerCase();
-    const base = canViewAll
-      ? normalized.filter((r) => r._isCancelled)
-      : myRequests.filter((r) => r._isCancelled);
-
-    if (!text) return base;
-    return base.filter((r) => buildHaystack(r).includes(text));
-  }, [normalized, myRequests, q, buildHaystack, canViewAll]);
-
-  const archivedOther = useMemo(() => {
-    const text = q.trim().toLowerCase();
-    const base = canViewAll
-      ? normalized.filter((r) => r._isApproved || r._isRejected)
-      : myRequests.filter((r) => r._isApproved || r._isRejected);
-
-    if (!text) return base;
-    return base.filter((r) => buildHaystack(r).includes(text));
-  }, [normalized, myRequests, q, buildHaystack, canViewAll]);
-
-  // ✅ Reset pages when search changes
-  useEffect(() => {
-    setPageCancelled(1);
-    setPageArchived(1);
-  }, [q]);
-
-  // ✅ Reset pages when company changes (حتى لا تبقى على صفحة بعيدة)
-  useEffect(() => {
-    setPageMy(1);
-    setPagePending(1);
-    setPageCancelled(1);
-    setPageArchived(1);
-  }, [companyKey]);
-
-  // ✅ Paged lists
-  const myPaged = useMemo(
-    () => paginate(myRequests, pageMy, PAGE_SIZE),
-    [myRequests, pageMy, PAGE_SIZE]
-  );
-  const pendingPaged = useMemo(
-    () => paginate(pendingOthers, pagePending, PAGE_SIZE),
-    [pendingOthers, pagePending, PAGE_SIZE]
-  );
-  const cancelledPaged = useMemo(
-    () => paginate(cancelled, pageCancelled, PAGE_SIZE),
-    [cancelled, pageCancelled, PAGE_SIZE]
-  );
-  const archivedPaged = useMemo(
-    () => paginate(archivedOther, pageArchived, PAGE_SIZE),
-    [archivedOther, pageArchived, PAGE_SIZE]
-  );
-
-  // =========================
-  // Guards
-  // =========================
   if (!accessChecked) return null;
   if (accessDenied) return null;
 
-  // =========================
-  // UI Components
-  // =========================
-  const SoftSpinner = ({ label }) => (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      className="flex items-center justify-center py-14"
-    >
-      <div className="flex items-center gap-3 rounded-2xl bg-white/35 ring-1 ring-white/25 px-4 py-3">
-        <div className="w-6 h-6 rounded-full border-4 border-white/70 border-t-transparent animate-spin" />
-        <div className="text-sm font-bold text-gray-900">
-          {label || "Loading..."}
-        </div>
-      </div>
-    </motion.div>
-  );
-
-  const EmptyState = ({ icon: Icon, title, subtitle }) => (
-    <motion.div
-      variants={sectionV}
-      className="rounded-3xl bg-white/30 ring-1 ring-white/25 p-10 text-center"
-    >
-      <motion.div
-        initial={{ scale: 0.9, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        transition={{ duration: 0.25 }}
-        className="mx-auto mb-3 h-12 w-12 rounded-2xl bg-white/40 ring-1 ring-white/25 flex items-center justify-center text-gray-700"
+  const SuggestionsPortal = () => {
+    if (!mounted) return null;
+    if (!showSuggest) return null;
+    if (!suggestPos.open) return null;
+    if (!suggestions.length) return null;
+  
+    return createPortal(
+      <div
+        ref={suggestWrapRef}
+        style={{
+          position: "fixed",
+          top: suggestPos.top,
+          left: suggestPos.left,
+          width: suggestPos.width,
+          zIndex: 9999,
+        }}
+        className="pointer-events-auto"
       >
-        {Icon ? <Icon /> : <FiFileText />}
-      </motion.div>
-      <div className="text-sm font-black text-gray-900">{title}</div>
-      {subtitle && (
-        <div className="text-xs text-gray-800/70 mt-1">{subtitle}</div>
-      )}
-    </motion.div>
-  );
+        <div className="w-full rounded-2xl bg-white/95 backdrop-blur ring-1 ring-black/10 shadow-2xl overflow-hidden">
+          <div className="max-h-56 overflow-auto">
+            {suggestions.map((s, idx) => (
+              <button
+                key={`${s}-${idx}`}
+                type="button"
+                onMouseDown={(e) => e.preventDefault()} // ✅ يمنع blur قبل click
+                onClick={() => pickSuggestion(s)}
+                className={[
+                  "w-full text-left px-4 py-2.5 text-[14px] font-bold",
+                  "hover:bg-slate-100",
+                  idx === activeIdx ? "bg-slate-100" : "bg-transparent",
+                ].join(" ")}
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>,
+      document.body
+    );
+  };
 
-  const RequestCard = ({ r, compact = false, index = 0 }) => {
-    const dateText = r.createdAt
-      ? new Date(r.createdAt).toLocaleDateString()
-      : "-";
+  const RequestCard = ({ r }) => {
+    const dateText = r.createdAt ? new Date(r.createdAt).toLocaleDateString() : "-";
     return (
-      <motion.div
-        layout
-        variants={cardV}
-        custom={index}
-        whileHover={{ y: -3 }}
-        whileTap={{ scale: 0.995 }}
-        className={[
-          "relative cursor-pointer rounded-2xl",
-          "bg-white/45 backdrop-blur-xl",
-          "ring-1 ring-white/30",
-          "shadow-[0_10px_30px_-15px_rgba(0,0,0,0.25)]",
-          "hover:bg-white/60 hover:ring-white/45",
-          "transition-colors",
-          compact ? "p-4" : "p-5",
-        ].join(" ")}
+      <div
+        className="relative cursor-pointer rounded-2xl bg-white/55 backdrop-blur-xl ring-1 ring-white/40 shadow-[0_14px_40px_-18px_rgba(0,0,0,0.28)] hover:bg-white/75 hover:ring-white/60 transition-colors p-5"
         onClick={() => router.push(`/requests/${companyKey}/${r._id}`)}
       >
-        <div className="pointer-events-none absolute inset-0 rounded-2xl bg-gradient-to-br from-white/25 via-transparent to-transparent opacity-80" />
+        <div className="pointer-events-none absolute inset-0 rounded-2xl bg-gradient-to-br from-white/30 via-transparent to-transparent opacity-90" />
 
-        <div className="relative flex items-start justify-between gap-3">
-          <div className="min-w-0">
+        <div className="relative flex items-start justify-between gap-4">
+          <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <StatusBadge status={r.status} />
-              <span className="text-xs text-gray-600/80">{dateText}</span>
+              <span className="text-[13px] font-bold text-gray-700/80">{dateText}</span>
             </div>
-            <div className="mt-2 text-sm font-extrabold text-gray-900 line-clamp-1">
+
+            <div className="mt-2 text-[18px] font-black text-gray-900 line-clamp-1">
               {r.requestType || "Request"}
             </div>
-            <div className="mt-1 text-xs text-gray-700/80 line-clamp-2">
+
+            <div className="mt-2 text-[14px] font-semibold text-gray-800/90 leading-relaxed line-clamp-2">
               {r.description || "-"}
             </div>
-            <div className="mt-2 text-[11px] font-mono text-gray-700/80">
+
+            <div className="mt-3 text-[12px] font-extrabold font-mono text-gray-700/85">
               {r.requestCode || r._id}
             </div>
           </div>
 
           <div className="shrink-0 text-right">
-            <div className="text-[11px] text-gray-600/80">Currency</div>
-            <div className="text-sm font-black text-gray-900">
-              {r.currency || "-"}
-            </div>
+            <div className="text-[12px] font-bold text-gray-600/80">Currency</div>
+            <div className="mt-1 text-[16px] font-black text-gray-900">{r.currency || "-"}</div>
           </div>
         </div>
 
-        <div className="relative mt-3 flex items-center justify-between text-xs text-gray-700/80">
-          <span className="inline-flex items-center gap-1">
-            <FiFileText />
-            {r.company || companyKey}
+        <div className="relative mt-4 flex items-center justify-between gap-3 text-[13px] font-bold text-gray-700/85">
+          <span className="inline-flex items-center gap-2">
+            <FiFileText className="text-[16px]" />
+            <span className="truncate max-w-[240px]">{r.company || companyKey}</span>
           </span>
+
           <span className="truncate max-w-[55%]">
-            By: {r.createdBy || "Unknown"}
+            By: <span className="font-extrabold text-gray-900">{r.createdBy || "Unknown"}</span>
           </span>
         </div>
-      </motion.div>
+      </div>
     );
   };
 
-  const SectionShell = ({ title, subtitle, icon: Icon, children, right }) => (
-    <motion.div
-      variants={sectionV}
-      className="rounded-3xl bg-white/35 backdrop-blur-2xl ring-1 ring-white/25 shadow-[0_18px_45px_-25px_rgba(0,0,0,0.35)] overflow-hidden"
-    >
-      <div className="px-5 py-4 bg-white/20">
+  const SectionShell = ({ title, subtitle, icon: Icon, right, children }) => (
+    <div className="rounded-3xl bg-white/40 backdrop-blur-2xl ring-1 ring-white/30 shadow-[0_18px_45px_-25px_rgba(0,0,0,0.35)] overflow-hidden">
+      <div className="px-5 py-4 bg-white/25">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-start gap-3">
             {Icon && (
-              <div className="mt-0.5 h-10 w-10 rounded-2xl bg-white/35 ring-1 ring-white/30 backdrop-blur flex items-center justify-center text-gray-800">
-                <Icon />
+              <div className="mt-0.5 h-10 w-10 rounded-2xl bg-white/45 ring-1 ring-white/30 backdrop-blur flex items-center justify-center text-gray-800">
+                <Icon className="text-xl" />
               </div>
             )}
             <div>
-              <div className="text-sm font-black text-gray-900">{title}</div>
-              {subtitle && (
-                <div className="text-xs text-gray-700/80">{subtitle}</div>
-              )}
+              <div className="text-[16px] font-black text-gray-900">{title}</div>
+              {subtitle && <div className="text-[13px] font-bold text-gray-700/80">{subtitle}</div>}
             </div>
           </div>
           {right}
         </div>
       </div>
       <div className="p-5">{children}</div>
-    </motion.div>
+    </div>
   );
 
-  const ScrollBox = ({ children, height = "max-h-[520px]" }) => (
-    <div
-      className={[
-        height,
-        "overflow-y-auto pr-1",
-        "scrollbar-thin",
-        "scrollbar-thumb-gray-300/60 scrollbar-track-transparent",
-      ].join(" ")}
-    >
+  const ScrollBox = ({ children }) => (
+    <div className="max-h-[520px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-gray-300/60 scrollbar-track-transparent">
       {children}
     </div>
   );
 
-  const StatCard = ({ title, value, icon: Icon, iconClass }) => (
-    <motion.div
-      variants={sectionV}
-      whileHover={{ y: -2 }}
-      className="rounded-3xl bg-white/35 backdrop-blur-2xl ring-1 ring-white/25 p-4 shadow-[0_16px_45px_-30px_rgba(0,0,0,0.45)]"
-    >
-      <div className="text-xs text-gray-700/80">{title}</div>
-      <div className="mt-2 flex items-center justify-between">
-        <div className="text-3xl font-black text-gray-900">{value}</div>
-        <div className="h-11 w-11 rounded-2xl bg-white/45 ring-1 ring-white/25 flex items-center justify-center">
-          <Icon className={iconClass} />
-        </div>
-      </div>
-    </motion.div>
-  );
-
   return (
-    <motion.div
-      variants={pageV}
-      initial="hidden"
-      animate="show"
-      className="min-h-screen w-full"
-    >
+    <div className="min-h-screen w-full text-[15px] font-bold text-slate-900">
       <div className="fixed inset-0 -z-10 bg-gradient-to-br from-slate-50 via-slate-100 to-slate-200" />
       <div className="fixed inset-0 -z-10 opacity-70">
         <div className="absolute -top-24 -left-24 h-96 w-96 rounded-full bg-blue-200/40 blur-3xl" />
@@ -453,302 +452,274 @@ export default function RequestsPage({ companyKey }) {
         <div className="absolute bottom-10 left-1/3 h-80 w-80 rounded-full bg-amber-200/30 blur-3xl" />
       </div>
 
-      <div className="mx-auto max-w-6xl px-6 py-6">
-        {/* ===== Top Bar ===== */}
-        <motion.div
-          variants={staggerV}
-          initial="hidden"
-          animate="show"
-          className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
-        >
-          <motion.div variants={sectionV} className="flex items-center gap-3">
-            <motion.button
+      <div className="mx-auto max-w-6xl px-6 py-6 space-y-6">
+        {/* Header */}
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-3">
+            <button
               type="button"
               onClick={() => router.push("/home")}
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-              className="inline-flex items-center gap-2 px-3 py-2 rounded-2xl bg-white/40 backdrop-blur-xl ring-1 ring-white/30 text-gray-800 shadow-sm hover:bg-white/55"
-              title="Back to Dashboard"
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-2xl bg-white/45 backdrop-blur-xl ring-1 ring-white/35 text-gray-900 shadow-sm hover:bg-white/60"
             >
               <FiArrowLeft /> Back
-            </motion.button>
+            </button>
 
             <div className="flex flex-col gap-1">
-              <h1 className="text-xl sm:text-2xl font-black text-gray-900 tracking-tight">
-                Fund Requests Management
+              <h1 className="text-2xl sm:text-3xl font-black text-gray-900 tracking-tight">
+                Fund Requests
               </h1>
               <div className="flex items-center gap-2 text-sm text-gray-800/80">
                 <span className="font-semibold">الشركة:</span>
-                <span className="px-2.5 py-1 rounded-xl bg-white/45 backdrop-blur ring-1 ring-white/25 text-gray-900 font-extrabold">
+                <span className="px-2.5 py-1 rounded-xl bg-white/55 backdrop-blur ring-1 ring-white/30 text-gray-900 font-extrabold">
                   {companyKey}
                 </span>
               </div>
             </div>
-          </motion.div>
+          </div>
 
-          <motion.div variants={sectionV} className="flex items-center gap-2">
-            {canCreate && (
-              <motion.button
-                onClick={() => setIsCreateOpen(true)}
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-gray-900/85 backdrop-blur text-white shadow hover:bg-gray-900"
+          {canCreate && (
+            <button
+              onClick={() => setIsCreateOpen(true)}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-gray-900/90 backdrop-blur text-white shadow hover:bg-gray-900"
+            >
+              <FiPlus /> Create Request
+            </button>
+          )}
+        </div>
+
+        {/* Search */}
+        <div className="rounded-3xl bg-white/40 backdrop-blur-2xl ring-1 ring-white/30 shadow-sm p-4 sm:p-5">
+          <div className="flex flex-col sm:flex-row gap-3 sm:items-center">
+            <div className="relative w-full sm:flex-1" ref={searchBoxRef}>
+              <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-600/70" />
+              <input
+                value={searchText}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setSearchText(v);
+
+                  const list = computeSuggestions(v);
+                  setSuggestions(list);
+                  setShowSuggest(true);
+                  setActiveIdx(-1);
+                  updateSuggestPosition();
+                  setSuggestPos((p) => ({ ...p, open: true }));
+                }}
+                onFocus={() => {
+                  const list = computeSuggestions(searchText);
+                  setSuggestions(list);
+                  setShowSuggest(true);
+                  setActiveIdx(-1);
+                  updateSuggestPosition();
+                  setSuggestPos((p) => ({ ...p, open: true }));
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    if (showSuggest && suggestions.length && activeIdx >= 0) {
+                      pickSuggestion(suggestions[activeIdx]);
+                    } else {
+                      setAppliedSearch(searchText.trim());
+                      setShowSuggest(false);
+                    }
+                    return;
+                  }
+
+                  if (!showSuggest || !suggestions.length) return;
+
+                  if (e.key === "ArrowDown") {
+                    e.preventDefault();
+                    setActiveIdx((p) => Math.min(p + 1, suggestions.length - 1));
+                  } else if (e.key === "ArrowUp") {
+                    e.preventDefault();
+                    setActiveIdx((p) => Math.max(p - 1, 0));
+                  } else if (e.key === "Escape") {
+                    setShowSuggest(false);
+                    setActiveIdx(-1);
+                    setSuggestPos((p) => ({ ...p, open: false }));
+                  }
+                }}
+                placeholder="اكتب كود / وصف / نوع الطلب..."
+                className="w-full pl-10 pr-3 py-2.5 rounded-2xl bg-white/55 backdrop-blur ring-1 ring-white/30 text-[15px] text-gray-900 placeholder:text-gray-600/70 outline-none focus:ring-2 focus:ring-white/45"
+              />
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                onClick={() => setAppliedSearch(searchText.trim())}
+                disabled={loading}
+                className={[
+                  "inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl font-extrabold shadow-sm ring-1",
+                  loading
+                    ? "bg-gray-200 text-gray-500 ring-gray-200 cursor-not-allowed"
+                    : "bg-gray-900 text-white ring-gray-900 hover:bg-black",
+                ].join(" ")}
               >
-                <FiPlus /> Create Request
-              </motion.button>
-            )}
-          </motion.div>
-        </motion.div>
+                <FiSearch /> بحث
+              </button>
 
-        {/* ===== Stats ===== */}
-        <motion.div
-          variants={staggerV}
-          initial="hidden"
-          animate="show"
-          className="mt-6 grid grid-cols-1 sm:grid-cols-3 gap-4"
-        >
-          <StatCard
-            title="طلباتي الموافق عليها"
-            value={stats.approved}
-            icon={FiCheckCircle}
-            iconClass="text-green-700"
-          />
-          <StatCard
-            title="طلباتي قيد الانتظار"
-            value={stats.pending}
-            icon={FiClock}
-            iconClass="text-amber-700"
-          />
-          <StatCard
-            title="مجموع طلباتي"
-            value={stats.total}
-            icon={FiFileText}
-            iconClass="text-blue-700"
-          />
-        </motion.div>
+              <button
+                onClick={() => {
+                  setSearchText("");
+                  setAppliedSearch("");
+                  setMyStatus("all");
+                  setPageMy(1);
+                  setPagePending(1);
+                  setShowSuggest(false);
+                  setSuggestions([]);
+                  setActiveIdx(-1);
+                  setSuggestPos((p) => ({ ...p, open: false }));
+                }}
+                disabled={loading}
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-white/55 ring-1 ring-white/30 text-gray-900 font-extrabold shadow-sm hover:bg-white/70"
+              >
+                <FiXCircle /> مسح
+              </button>
+            </div>
+          </div>
 
-        {/* ===== Two columns ===== */}
-        <motion.div
-          variants={staggerV}
-          initial="hidden"
-          animate="show"
-          className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6"
-        >
-          {/* Pending Others */}
+          <div className="mt-3 text-[12px] font-bold text-gray-700/70">
+            
+          </div>
+        </div>
+
+        {/* Suggestions Portal */}
+        {mounted && showSuggest && suggestPos.open && suggestions.length > 0 ? (
+          <SuggestionsPortal />
+        ) : null}
+
+        {/* Stats */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="rounded-3xl bg-white/40 backdrop-blur-2xl ring-1 ring-white/30 p-4 shadow-[0_16px_45px_-30px_rgba(0,0,0,0.45)]">
+            <div className="text-[13px] font-bold text-gray-700/80">طلباتي الموافق عليها</div>
+            <div className="mt-2 flex items-center justify-between">
+              <div className="text-3xl font-black text-gray-900">{stats.approved}</div>
+              <div className="h-11 w-11 rounded-2xl bg-white/55 ring-1 ring-white/30 flex items-center justify-center">
+                <FiCheckCircle className="text-green-700 text-xl" />
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-3xl bg-white/40 backdrop-blur-2xl ring-1 ring-white/30 p-4 shadow-[0_16px_45px_-30px_rgba(0,0,0,0.45)]">
+            <div className="text-[13px] font-bold text-gray-700/80">طلباتي قيد الانتظار</div>
+            <div className="mt-2 flex items-center justify-between">
+              <div className="text-3xl font-black text-gray-900">{stats.pending}</div>
+              <div className="h-11 w-11 rounded-2xl bg-white/55 ring-1 ring-white/30 flex items-center justify-center">
+                <FiClock className="text-amber-700 text-xl" />
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-3xl bg-white/40 backdrop-blur-2xl ring-1 ring-white/30 p-4 shadow-[0_16px_45px_-30px_rgba(0,0,0,0.45)]">
+            <div className="text-[13px] font-bold text-gray-700/80">مجموع طلباتي</div>
+            <div className="mt-2 flex items-center justify-between">
+              <div className="text-3xl font-black text-gray-900">{stats.total}</div>
+              <div className="h-11 w-11 rounded-2xl bg-white/55 ring-1 ring-white/30 flex items-center justify-center">
+                <FiFileText className="text-blue-700 text-xl" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Two columns */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Pending */}
           <SectionShell
-            title="طلبات قيد الانتظار"
-            subtitle="Pending requests created by other users"
+            title="قيد الانتظار للموافقة"
+            subtitle="Requests that are pending with you"
             icon={FiClock}
-            right={
-              <motion.button
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                onClick={fetchRequests}
-                className="text-xs font-bold px-3 py-2 rounded-2xl bg-white/35 ring-1 ring-white/25 hover:bg-white/50"
-                title="Refresh"
-              >
-                Refresh
-              </motion.button>
-            }
+            right={<span className="text-[13px] font-extrabold text-gray-800/70">{pendingPaged.total} items</span>}
           >
             {loading ? (
-              <SoftSpinner label="Loading pending approvals..." />
-            ) : pendingOthers.length === 0 ? (
-              <EmptyState
-                icon={FiClock}
-                title="No Pending Requests"
-                subtitle="There are no pending requests from other users"
-              />
+              <div className="py-10 text-center font-extrabold text-gray-800/70">Loading...</div>
+            ) : pendingApprovals.length === 0 ? (
+              <div className="py-10 text-center font-extrabold text-gray-800/70">لايوجد قيد الانتظار للموافقة</div>
             ) : (
               <>
-                <ScrollBox height="max-h-[520px]">
-                  <motion.div variants={staggerV} initial="hidden" animate="show">
-                    <div className="space-y-3">
-                      <AnimatePresence initial={false}>
-                        {pendingPaged.items.map((r, idx) => (
-                          <RequestCard key={r._id} r={r} compact index={idx} />
-                        ))}
-                      </AnimatePresence>
-                    </div>
-                  </motion.div>
+                <ScrollBox>
+                  <div className="space-y-3">
+                    {pendingPaged.items.map((r) => (
+                      <RequestCard key={r._id} r={r} />
+                    ))}
+                  </div>
                 </ScrollBox>
 
-                <Pagination
-                  page={pendingPaged.page}
-                  totalPages={pendingPaged.totalPages}
-                  onPage={setPagePending}
-                />
+                <Pager page={pendingPaged.page} totalPages={pendingPaged.totalPages} onPage={setPagePending} />
               </>
             )}
           </SectionShell>
 
-          {/* My Requests */}
+          {/* My Requests + Status Filter هنا فقط */}
           <SectionShell
-            title="جميع طلباتي"
-            subtitle={
-              mounted && currentUsername
-                ? `Requests created by: ${currentUsername}`
-                : "Requests created by:"
-            }
+            title="طلباتي"
+            subtitle={currentUsername ? `Requests created by: ${currentUsername}` : "Requests created by:"}
             icon={FiFileText}
-          >
-            {loading ? (
-              <SoftSpinner label="Loading my requests..." />
-            ) : myRequests.length === 0 ? (
-              <EmptyState
-                icon={FiFileText}
-                title="لا يوجد طلبات"
-                subtitle="لم تنشئ اي طلب لحد الان"
-              />
-            ) : (
-              <>
-                <ScrollBox height="max-h-[520px]">
-                  <motion.div variants={staggerV} initial="hidden" animate="show">
-                    <div className="space-y-3">
-                      <AnimatePresence initial={false}>
-                        {myPaged.items.map((r, idx) => (
-                          <RequestCard key={r._id} r={r} compact index={idx} />
-                        ))}
-                      </AnimatePresence>
-                    </div>
-                  </motion.div>
-                </ScrollBox>
-
-                <Pagination
-                  page={myPaged.page}
-                  totalPages={myPaged.totalPages}
-                  onPage={setPageMy}
-                />
-              </>
-            )}
-          </SectionShell>
-        </motion.div>
-
-        {/* ===== Archive + Search ===== */}
-        <motion.div
-          variants={staggerV}
-          initial="hidden"
-          animate="show"
-          className="mt-6"
-        >
-          <SectionShell
-            title="Archive"
-            subtitle="Cancelled requests + Approved/Rejected requests"
-            icon={FiSearch}
             right={
-              <div className="relative w-full sm:w-96">
-                <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-600/70" />
-                <input
-                  value={q}
-                  onChange={(e) => setQ(e.target.value)}
-                  placeholder="Search by code / description / user / type..."
-                  className="w-full pl-9 pr-3 py-2 rounded-2xl bg-white/40 backdrop-blur-xl ring-1 ring-white/25 text-sm text-gray-900 placeholder:text-gray-600/70 outline-none focus:ring-2 focus:ring-white/40"
-                />
+              <div className="flex items-center gap-2">
+                <div className="hidden sm:flex items-center gap-2 px-3 py-2 rounded-2xl bg-white/45 ring-1 ring-white/30">
+                  <FiFilter className="text-gray-700" />
+                  <select
+                    value={myStatus}
+                    onChange={(e) => setMyStatus(e.target.value)}
+                    className="bg-transparent outline-none text-[13px] font-extrabold text-gray-900"
+                  >
+                    <option value="all">All</option>
+                    <option value="approved">Approved</option>
+                    <option value="pending">Pending</option>
+                    <option value="rejected">Rejected</option>
+                    <option value="cancelled">Cancelled</option>
+                  </select>
+                </div>
               </div>
             }
           >
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Cancelled */}
-              <SectionShell
-                title="الطلبات الملغية"
-                subtitle="All cancelled requests"
-                icon={FiXCircle}
+            <div className="sm:hidden mb-3 flex items-center gap-2 px-3 py-2 rounded-2xl bg-white/45 ring-1 ring-white/30">
+              <FiFilter className="text-gray-700" />
+              <select
+                value={myStatus}
+                onChange={(e) => setMyStatus(e.target.value)}
+                className="bg-transparent outline-none w-full text-[13px] font-extrabold text-gray-900"
               >
-                {loading ? (
-                  <SoftSpinner label="Loading cancelled..." />
-                ) : cancelled.length === 0 ? (
-                  <motion.div variants={sectionV} className="text-center py-6">
-                    <div className="text-sm font-black text-gray-900">
-                      No cancelled requests
-                    </div>
-                    {q?.trim() ? (
-                      <div className="text-xs text-gray-800/70 mt-1">
-                        Try another keyword
-                      </div>
-                    ) : null}
-                  </motion.div>
-                ) : (
-                  <>
-                    <ScrollBox height="max-h-[620px]">
-                      <motion.div variants={staggerV} initial="hidden" animate="show">
-                        <div className="grid grid-cols-1 gap-4">
-                          <AnimatePresence initial={false}>
-                            {cancelledPaged.items.map((r, idx) => (
-                              <RequestCard key={r._id} r={r} index={idx} />
-                            ))}
-                          </AnimatePresence>
-                        </div>
-                      </motion.div>
-                    </ScrollBox>
-
-                    <Pagination
-                      page={cancelledPaged.page}
-                      totalPages={cancelledPaged.totalPages}
-                      onPage={setPageCancelled}
-                    />
-                  </>
-                )}
-              </SectionShell>
-
-              {/* Approved + Rejected */}
-              <SectionShell
-                title="الطلبات الموافق عليها & المرفوضة"
-                subtitle="All approved and rejected requests"
-                icon={FiCheckCircle}
-              >
-                {loading ? (
-                  <SoftSpinner label="Loading approved & rejected..." />
-                ) : archivedOther.length === 0 ? (
-                  <motion.div variants={sectionV} className="text-center py-6">
-                    <div className="text-sm font-black text-gray-900">
-                      No approved/rejected requests
-                    </div>
-                    {q?.trim() ? (
-                      <div className="text-xs text-gray-800/70 mt-1">
-                        Try another keyword
-                      </div>
-                    ) : null}
-                  </motion.div>
-                ) : (
-                  <>
-                    <ScrollBox height="max-h-[620px]">
-                      <motion.div variants={staggerV} initial="hidden" animate="show">
-                        <div className="grid grid-cols-1 gap-4">
-                          <AnimatePresence initial={false}>
-                            {archivedPaged.items.map((r, idx) => (
-                              <RequestCard key={r._id} r={r} index={idx} />
-                            ))}
-                          </AnimatePresence>
-                        </div>
-                      </motion.div>
-                    </ScrollBox>
-
-                    <Pagination
-                      page={archivedPaged.page}
-                      totalPages={archivedPaged.totalPages}
-                      onPage={setPageArchived}
-                    />
-                  </>
-                )}
-              </SectionShell>
+                <option value="all">All</option>
+                <option value="approved">Approved</option>
+                <option value="pending">Pending</option>
+                <option value="rejected">Rejected</option>
+                <option value="cancelled">Cancelled</option>
+              </select>
             </div>
+
+            {loading ? (
+              <div className="py-10 text-center font-extrabold text-gray-800/70">Loading...</div>
+            ) : myRequests.length === 0 ? (
+              <div className="py-10 text-center font-extrabold text-gray-800/70">لا يوجد طلبات حسب الفلتر</div>
+            ) : (
+              <>
+                <ScrollBox>
+                  <div className="space-y-3">
+                    {myPaged.items.map((r) => (
+                      <RequestCard key={r._id} r={r} />
+                    ))}
+                  </div>
+                </ScrollBox>
+
+                <Pager page={myPaged.page} totalPages={myPaged.totalPages} onPage={setPageMy} />
+              </>
+            )}
           </SectionShell>
-        </motion.div>
+        </div>
       </div>
 
-      {/* Modal */}
       {canCreate && (
         <CreateRequestModal
           open={isCreateOpen}
           onClose={() => setIsCreateOpen(false)}
           companyKey={companyKey}
-          userId={typeof window !== "undefined" ? localStorage.getItem("userId") : null} // ✅ جديد
-
+          userId={typeof window !== "undefined" ? localStorage.getItem("userId") : null}
           onCreated={async () => {
-            await fetchRequests();
+            await fetchAll();
           }}
         />
       )}
-    </motion.div>
+    </div>
   );
 }

@@ -68,7 +68,7 @@ function buildEmailHtml({
   requestUrl = "", // اختياري
 
   // ✅ دومين امبليفاير (ثابت)
-  baseDomain = "https://main.d2fatueaza47h3.amplifyapp.com",
+  baseDomain = "https://funds-gdr.spc-it.com.iq",
 }) {
   const actionTxt =
     action === "approve"
