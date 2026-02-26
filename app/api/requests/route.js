@@ -247,14 +247,21 @@ export async function POST(req) {
         
           if (Array.isArray(step0Ids) && step0Ids.length > 0) {
             const step0Users = await User.find({ _id: { $in: step0Ids } })
-              .select("email username")
-              .lean();
-        
-            const step0Emails = [...new Set(step0Users.map((u) => u.email).filter(Boolean))];
-        
-            // Greeting for step user (اذا واحد)
-            const stepUserName =
-              step0Users.length === 1 ? String(step0Users[0]?.username || "") : "";
+  .select("email username")
+  .lean();
+
+// ✅ لا نرسل ايميل للشخص اللي سوّى الكريت إذا هو موجود بالستيب الأول
+const filteredUsers = step0Users.filter(
+  (u) => String(u.username || "").trim() !== String(username || "").trim()
+);
+
+const step0Emails = [
+  ...new Set(filteredUsers.map((u) => u.email).filter(Boolean)),
+];
+
+// Greeting (إذا بقى شخص واحد بعد الفلترة)
+const stepUserName =
+  filteredUsers.length === 1 ? String(filteredUsers[0]?.username || "") : "";
         
             if (step0Emails.length > 0) {
               const html = buildRequestCreatedEmailHtml({
