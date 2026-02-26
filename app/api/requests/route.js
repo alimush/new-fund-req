@@ -7,7 +7,10 @@ import { getModelForCompany } from "@/models/Request";
 import User from "@/models/User";
 import Permissions from "@/models/Permissions";
 import mongoose from "mongoose";
-
+import {
+  buildRequestCreatedEmailHtml,
+  sendWorkflowEmail,
+} from "@/lib/email/workflowEmail";
 export const runtime = "nodejs";
 
 // =========================
@@ -234,6 +237,51 @@ export async function POST(req) {
       try {
         const newRequest = new Model({ ...baseData, requestCode });
         await newRequest.save();
+        
+        /* =========================================================
+           ✅ AFTER CREATE: Email to Step 1 users (always)
+        ========================================================= */
+        try {
+          // Step 0 users (first step)
+          const step0Ids = newRequest?.workflow?.steps?.[0]?.users || [];
+        
+          if (Array.isArray(step0Ids) && step0Ids.length > 0) {
+            const step0Users = await User.find({ _id: { $in: step0Ids } })
+              .select("email username")
+              .lean();
+        
+            const step0Emails = [...new Set(step0Users.map((u) => u.email).filter(Boolean))];
+        
+            // Greeting for step user (اذا واحد)
+            const stepUserName =
+              step0Users.length === 1 ? String(step0Users[0]?.username || "") : "";
+        
+            if (step0Emails.length > 0) {
+              const html = buildRequestCreatedEmailHtml({
+                requestId: newRequest._id.toString(),
+                company,
+                createdBy: username || newRequest.createdBy || "System", // اللي سوّى الكريت
+                greetingName: stepUserName || "زميلنا",                  // عزيزي stepuser
+                requestCode: newRequest.requestCode || requestCode,
+                requestType: newRequest.requestType || "",
+                currency: newRequest.currency || "",
+                department: newRequest.department || "",
+                description: newRequest.description || "",
+                totalAmount: newRequest.totalAmount || "",
+                baseDomain: "https://funds-gdr.spc-it.com.iq",
+              });
+        
+              await sendWorkflowEmail({
+                toEmails: step0Emails,
+                subject: `[Workflow] CREATED → Step 1 | ${company}`,
+                html,
+              });
+            }
+          }
+        } catch (e) {
+          console.error("❌ Create email notify failed:", e?.message || e);
+        }
+        
         return NextResponse.json({ success: true, data: newRequest });
       } catch (e) {
         if (e?.code === 11000 && String(e?.message || "").includes("requestCode")) continue;
