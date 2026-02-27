@@ -55,21 +55,24 @@ useEffect(() => {
 }, [id, companyKey]);
 
 useEffect(() => {
-  // ننتظر لحد ما تجي كل البيانات
-  if (!request || !currentUser || !Array.isArray(permissions)) return;
+  if (!request || !currentUser) return;
+
+  // اذا permissions ما جاهزة بعد، نخلي accessChecked false ونخلي اللودر يشتغل
+  const permsArr = Array.isArray(permissions) ? permissions : [];
 
   const isOwner = String(request.createdBy) === String(currentUser.username);
-  const allowed = isOwner || canViewAll;
+  const allowed = isOwner || permsArr.includes(PERMISSIONS.VIEW_REPORTS);
 
   if (!allowed) {
     setAccessDenied(true);
-    router.replace("/home"); // او "/403"
+    setAccessChecked(true); // ✅ مهم: حتى ما تبقى بيضة
+    router.replace("/403");
     return;
   }
 
+  setAccessDenied(false);
   setAccessChecked(true);
-}, [request, currentUser, permissions, canViewAll, router]);
-
+}, [request, currentUser, permissions, router]);
 
 const base =
   "inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-semibold border";
@@ -251,6 +254,21 @@ const base =
   }
   if (accessDenied) return null;
   if (!accessChecked) return null;
+  if (accessDenied) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-gray-700 font-bold">
+        Access Denied
+      </div>
+    );
+  }
+  
+  if (!accessChecked) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="w-12 h-12 border-4 border-gray-300 border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    );
+  }
   if (!request) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen text-gray-600">

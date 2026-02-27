@@ -10,10 +10,7 @@ import User from "@/models/User";
 import Permissions from "@/models/Permissions";
 import { getModelForCompany } from "@/models/Request";
 
-import {
-  buildWorkflowActionEmailHtml,
-  sendWorkflowEmail,
-} from "@/lib/email/workflowEmail";
+import { buildWorkflowActionEmailHtml, sendWorkflowEmail } from "@/lib/email/workflowEmail";
 
 /* ======================= HELPERS ======================= */
 async function hasCompanyAccess(userId, company) {
@@ -60,15 +57,17 @@ export async function GET(req, { params }) {
   try {
     await dbConnect();
 
-    const id = params.id;
+    const { id } = await params;
     const { searchParams } = new URL(req.url);
     const company = searchParams.get("company");
+
     if (!company) {
       return NextResponse.json({ success: false, error: "Company is required" }, { status: 400 });
     }
 
-    const cookieStore = cookies();
+    const cookieStore = await cookies();
     const userId = cookieStore.get("userId")?.value;
+
     if (!userId) {
       return NextResponse.json({ success: false, error: "Not authenticated" }, { status: 401 });
     }
@@ -130,8 +129,9 @@ export async function PUT(req, { params }) {
       return NextResponse.json({ success: false, error: "Company is required" }, { status: 400 });
     }
 
-    const cookieStore = cookies();
+    const cookieStore = await cookies();
     const userId = cookieStore.get("userId")?.value;
+
     if (!userId) {
       return NextResponse.json({ success: false, error: "Not authenticated" }, { status: 401 });
     }
@@ -167,8 +167,6 @@ export async function PUT(req, { params }) {
       });
 
       await request.save();
-      
-      
       return NextResponse.json({ success: true, data: request });
     }
 
@@ -206,8 +204,8 @@ export async function PUT(req, { params }) {
       return NextResponse.json({ success: false, error: "Step already processed" }, { status: 400 });
     }
 
-    // authorization
-    const isAuthorized = step.users.some((u) => String(u) === String(userId));
+    // authorization (هنا step.users عادة ObjectId)
+    const isAuthorized = (step.users || []).some((u) => String(u) === String(userId));
     if (!isAuthorized) {
       return NextResponse.json(
         { success: false, error: "You are not authorized to act on this step" },
@@ -304,22 +302,18 @@ export async function PUT(req, { params }) {
             .select("email username")
             .lean();
         }
-        
-        // ✅ ايميلات الستيب
+
         const stepEmails = [...new Set(stepUsers.map((u) => u.email).filter(Boolean))];
-        
-        // ✅ صاحب الطلب (createdBy = username)
+
         const requesterUser = await User.findOne({ username: String(request.createdBy) })
           .select("email username")
           .lean();
-        
+
         const requesterEmail = requesterUser?.email ? [requesterUser.email] : [];
-        
-        // ✅ اسم الاكتر
+
         const actor = await User.findById(userId).select("username").lean();
         const actorName = actor?.username || "";
-        
-        // ✅ اسم صاحب الطلب للـ greeting
+
         const createdByName =
           request?.createdByName ||
           request?.createdByUsername ||
@@ -327,15 +321,12 @@ export async function PUT(req, { params }) {
           request?.createdBy ||
           requesterUser?.username ||
           "";
-        
-        // ✅ اسم الستيب يوزر (اذا واحد)
+
         const stepUserName = stepUsers.length === 1 ? (stepUsers[0]?.username || "") : "";
-        
+
         const subject = `[Workflow] ${action.toUpperCase()} → Step ${Number(stepTo) + 1} | ${company}`;
-        
-        // =========================================================
-        // A) ايميل للـ Step Users (يظهر routingLine)
-        // =========================================================
+
+        // A) Step Users
         if (stepEmails.length > 0) {
           const htmlStep = buildWorkflowActionEmailHtml({
             action,
@@ -345,20 +336,18 @@ export async function PUT(req, { params }) {
             stepTo,
             note,
             actorName,
-        
+
             greetingName: stepUserName || "زميلنا",
             toUserName: stepUserName || "",
             showRoutingLine: true,
-        
+
             baseDomain: "https://funds-gdr.spc-it.com.iq",
           });
-        
+
           await sendWorkflowEmail({ toEmails: stepEmails, subject, html: htmlStep });
         }
-        
-        // =========================================================
-        // B) ايميل للـ Requester (createdBy) (بدون routingLine)
-        // =========================================================
+
+        // B) Requester
         if (requesterEmail.length > 0) {
           const htmlRequester = buildWorkflowActionEmailHtml({
             action,
@@ -368,14 +357,14 @@ export async function PUT(req, { params }) {
             stepTo,
             note,
             actorName,
-        
+
             greetingName: createdByName || "زميلنا",
             toUserName: stepUserName || "",
             showRoutingLine: false,
-        
+
             baseDomain: "https://funds-gdr.spc-it.com.iq",
           });
-        
+
           await sendWorkflowEmail({ toEmails: requesterEmail, subject, html: htmlRequester });
         }
       } catch (e) {

@@ -28,12 +28,15 @@ export async function GET(req) {
   try {
     await dbConnect();
 
-    // ✅ Auth
-    const cookieStore = cookies();
+    // ✅ Auth (FIX: لازم await)
+    const cookieStore = await cookies();
     const userId = cookieStore.get("userId")?.value;
 
     if (!userId) {
-      return NextResponse.json({ success: false, error: "Not authenticated" }, { status: 401 });
+      return NextResponse.json(
+        { success: false, error: "Not authenticated" },
+        { status: 401 }
+      );
     }
 
     const { searchParams } = new URL(req.url);
@@ -89,6 +92,9 @@ export async function GET(req) {
     return NextResponse.json({ success: true, counts });
   } catch (err) {
     console.error("❌ notifications/counts error:", err);
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    return NextResponse.json(
+      { success: false, error: err?.message || "Server error" },
+      { status: 500 }
+    );
   }
 }
