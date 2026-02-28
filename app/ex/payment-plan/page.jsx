@@ -1,783 +1,560 @@
 "use client";
 
-import { useRef, useState } from "react";
-import { toPng } from "html-to-image";
-import { FiPrinter } from "react-icons/fi";
-import { Cairo } from "next/font/google";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import {
+  FiPlus,
+  FiArrowLeft,
+  FiFileText,
+  FiSearch,
+  FiXCircle,
+  FiChevronLeft,
+  FiChevronRight,
+} from "react-icons/fi";
+import { useRouter } from "next/navigation";
+import PaymentPlanA4_Generator from "@/components/ex/payment-plan";
 
-const cairo = Cairo({ subsets: ["arabic"], weight: ["400", "600", "700", "800"] });
+const norm = (v) => String(v ?? "").trim().toLowerCase();
 
-// ✅ صورة A4
-const TEMPLATE_IMG = "/payment-plan-a4.jpg";
+function paginate(items, page, pageSize) {
+  const list = Array.isArray(items) ? items : [];
+  const total = list.length;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const p = Math.min(Math.max(1, page), totalPages);
+  const start = (p - 1) * pageSize;
+  return { page: p, totalPages, total, items: list.slice(start, start + pageSize) };
+}
 
-// ✅ Helpers
-const pct = (p) => ({ top: `${p.top}%`, left: `${p.left}%` });
+function Pager({ page, totalPages, onPage }) {
+  return (
+    <div className="mt-4 flex items-center justify-between gap-2">
+      <button
+        type="button"
+        onClick={() => onPage(page - 1)}
+        disabled={page <= 1}
+        className={[
+          "px-3 py-2 rounded-2xl text-[13px] font-extrabold ring-1 inline-flex items-center gap-2",
+          page <= 1
+            ? "bg-gray-200/60 ring-gray-200 text-gray-500 cursor-not-allowed"
+            : "bg-white/55 ring-white/30 hover:bg-white/70",
+        ].join(" ")}
+      >
+        <FiChevronLeft /> Prev
+      </button>
 
-async function waitForImages(node) {
-  const imgs = Array.from(node.querySelectorAll("img"));
-  await Promise.all(
-    imgs.map((img) => {
-      if (img.complete && img.naturalWidth > 0) return Promise.resolve();
-      return new Promise((resolve) => {
-        img.addEventListener("load", resolve, { once: true });
-        img.addEventListener("error", resolve, { once: true });
-      });
-    })
+      <div className="text-[13px] font-extrabold text-gray-800/80">
+        Page <span className="text-gray-900">{page}</span> /{" "}
+        <span className="text-gray-900">{totalPages}</span>
+      </div>
+
+      <button
+        type="button"
+        onClick={() => onPage(page + 1)}
+        disabled={page >= totalPages}
+        className={[
+          "px-3 py-2 rounded-2xl text-[13px] font-extrabold ring-1 inline-flex items-center gap-2",
+          page >= totalPages
+            ? "bg-gray-200/60 ring-gray-200 text-gray-500 cursor-not-allowed"
+            : "bg-white/55 ring-white/30 hover:bg-white/70",
+        ].join(" ")}
+      >
+        Next <FiChevronRight />
+      </button>
+    </div>
   );
 }
 
-function todayStr() {
-  const d = new Date();
-  const dd = String(d.getDate()).padStart(2, "0");
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const yyyy = d.getFullYear();
-  return `${dd}/${mm}/${yyyy}`;
-}
+export default function PaymentPlansPage() {
+  const router = useRouter();
 
-export default function PaymentPlanA4() {
-  const paperRef = useRef(null);
+  // ===== Data =====
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(false);
 
-  // ✅ Default date = today
-  const [form, setForm] = useState(() => ({
-    salesEmp: "",
-    customer: "",
-    unitNo: "",
-    date: todayStr(),
-    discount: "",
-    signature: "",
-    // 15 rows * 3 fields
-    rows: Array.from({ length: 15 }).map(() => ({
-      payDate: "",
-      amount: "",
-      payType: "",
-    })),
-  }));
+  // ===== Create Modal =====
+  const [openCreate, setOpenCreate] = useState(false);
+  const [createKey, setCreateKey] = useState(0);
 
-  // ✅ show inputs boxes (for positioning) + auto hide when field empty
-  const [showBoxes, setShowBoxes] = useState(true);
+  // ===== Search (controlled + applied) =====
+  const [searchText, setSearchText] = useState("");
+  const [appliedSearch, setAppliedSearch] = useState("");
 
-  // ✅ FOCUS helper
-  const refs = useRef({});
-  const setRef = (key) => (el) => {
-    if (el) refs.current[key] = el;
-  };
-  const focus = (key) => refs.current[key]?.focus();
+  // ===== Pagination =====
+  const PAGE_SIZE = 20;
+  const [page, setPage] = useState(1);
 
-  // ✅ Editable positions (start values) — ظبطها على صورتك
-  const POS = {
-    // Header
-    salesEmp: { top: 10.5, left: 2.5, width: 28, height: 3.8 },
-    date: { top: 10.5, left: 48, width: 18, height: 3.8 },
-    customer: { top: 13.6, left: 3, width: 28, height: 3.8 },
-    unitNo: { top: 13.6, left: 47.5, width: 18, height: 3.8 },
+  // ===== Suggestions =====
+  const [mounted, setMounted] = useState(false);
+  const searchBoxRef = useRef(null);
+  const suggestWrapRef = useRef(null);
 
-    // Table geometry
-    table: {
-      startTop: 30,
-      rowH: 3.20,
-      // columns order in your template: نوع الدفعه | القيمه الماليه | التاريخ | (اسم الدفعة موجود بالصورة)
-      colPayType: { left: 9.5, width: 22, height: 1 },
-      colAmount: { left: 33.0, width: 18, height: 1 },
-      colDate: { left: 52.5, width: 15, height: 1},
-      // ✅ no colName: because "اسم الدفعة" is already printed in the image
-    },
+  const [showSuggest, setShowSuggest] = useState(false);
+  const [suggestions, setSuggestions] = useState([]);
+  const [activeIdx, setActiveIdx] = useState(-1);
+  const [suggestPos, setSuggestPos] = useState({ open: false, top: 0, left: 0, width: 0 });
 
-    // Footer fields
-    discount: { top: 79, left: 7, width: 39, height: 3.6 },
-    signature: { top: 88.8, left: 30.0, width: 40, height: 3.8 },
-  };
+  useEffect(() => setMounted(true), []);
 
-  const rowTop = (i) => POS.table.startTop + i * POS.table.rowH;
+  const updateSuggestPosition = useCallback(() => {
+    const el = searchBoxRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    setSuggestPos({ open: true, top: r.bottom + 8, left: r.left, width: r.width });
+  }, []);
 
-  // ✅ Generic field setter
-  const setField = (key, value) => {
-    setForm((prev) => ({ ...prev, [key]: value }));
-  };
+  const closeSuggest = useCallback(() => {
+    setShowSuggest(false);
+    setActiveIdx(-1);
+    setSuggestions([]);
+    setSuggestPos((p) => ({ ...p, open: false }));
+  }, []);
 
-  // ✅ Row field setter
-  const setRowField = (i, key, value) => {
-    setForm((prev) => {
-      const rows = [...prev.rows];
-      rows[i] = { ...rows[i], [key]: value };
-      return { ...prev, rows };
-    });
-  };
-
-  // ✅ Print A4 Portrait
-  const printA4 = async () => {
-    if (!paperRef.current) return;
-    await waitForImages(paperRef.current);
-
-    const dataUrl = await toPng(paperRef.current, {
-      cacheBust: true,
-      pixelRatio: 3,
-      backgroundColor: "#ffffff",
-    });
-
-    const iframe = document.createElement("iframe");
-    iframe.style.position = "fixed";
-    iframe.style.right = "0";
-    iframe.style.bottom = "0";
-    iframe.style.width = "0";
-    iframe.style.height = "0";
-    iframe.style.border = "0";
-    document.body.appendChild(iframe);
-
-    const doc = iframe.contentWindow?.document;
-    if (!doc) return;
-
-    doc.open();
-    doc.write(`
-      <!doctype html>
-      <html>
-        <head>
-          <meta charset="utf-8" />
-          <style>
-            @page { size: A4 portrait; margin: 0; }
-            html, body {
-              margin: 0; padding: 0;
-              width: 210mm; height: 297mm;
-              background: #fff; overflow: hidden;
-            }
-            * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-            img { width: 210mm; height: 297mm; display: block; object-fit: cover; }
-          </style>
-        </head>
-        <body>
-          <img id="p" />
-          <script>
-            const img = document.getElementById("p");
-            img.src = ${JSON.stringify(dataUrl)};
-            img.onload = () => setTimeout(() => { window.focus(); window.print(); }, 60);
-            window.onafterprint = () => { try { parent.postMessage({ type: "A4_DONE" }, "*"); } catch(e){} };
-          </script>
-        </body>
-      </html>
-    `);
-    doc.close();
-
-    const onMsg = (ev) => {
-      if (ev?.data?.type !== "A4_DONE") return;
-      window.removeEventListener("message", onMsg);
-      try {
-        iframe.remove();
-      } catch {}
+  // ✅ hide suggestions on scroll/resize (مثل صفحتك)
+  useEffect(() => {
+    const onScroll = () => {
+      if (!showSuggest) return;
+      closeSuggest();
     };
-    window.addEventListener("message", onMsg);
+    const onResize = () => {
+      if (!showSuggest) return;
+      updateSuggestPosition();
+    };
+
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onResize);
+
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onResize);
+    };
+  }, [showSuggest, closeSuggest, updateSuggestPosition]);
+
+  // ✅ close suggestions when clicking outside
+  useEffect(() => {
+    const handler = (e) => {
+      const inSearch = searchBoxRef.current?.contains(e.target);
+      const inSuggest = suggestWrapRef.current?.contains(e.target);
+      if (inSearch || inSuggest) return;
+      if (showSuggest) closeSuggest();
+    };
+
+    document.addEventListener("pointerdown", handler, true);
+    return () => document.removeEventListener("pointerdown", handler, true);
+  }, [showSuggest, closeSuggest]);
+
+  // ===== Fetch =====
+  const fetchAll = useCallback(async () => {
+    setLoading(true);
+    try {
+      // إذا تحب يصير فلترة سيرفر سايد: زيد q=...
+      const q = String(appliedSearch || "").trim();
+      const url = q ? `/api/ex/payment-plans?q=${encodeURIComponent(q)}` : `/api/ex/payment-plans`;
+
+      const res = await fetch(url, { cache: "no-store" });
+      const j = await res.json();
+      setItems(j?.success && Array.isArray(j.data) ? j.data : []);
+    } catch {
+      setItems([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [appliedSearch]);
+
+  useEffect(() => {
+    fetchAll();
+  }, [fetchAll]);
+
+  // ===== Suggestions pool (من الداتا الحالية) =====
+  const suggestionPool = useMemo(() => {
+    const set = new Set();
+    const out = [];
+    for (const r of items || []) {
+      const parts = [r.customer, r.unitNo, r.createdBy, r._id].filter(Boolean).map((x) => String(x).trim());
+      for (const s of parts) {
+        const k = s.toLowerCase();
+        if (!k) continue;
+        if (set.has(k)) continue;
+        set.add(k);
+        out.push(s);
+      }
+    }
+    return out;
+  }, [items]);
+
+  const computeSuggestions = useCallback(
+    (text) => {
+      const t = String(text || "").trim().toLowerCase();
+      if (!t) return [];
+      return suggestionPool.filter((x) => String(x).toLowerCase().includes(t)).slice(0, 8);
+    },
+    [suggestionPool]
+  );
+
+  const pickSuggestion = (val) => {
+    setSearchText(val);
+    setAppliedSearch(String(val || "").trim());
+    closeSuggest();
+    setPage(1);
   };
 
-  // ✅ “Box visible now, but hides when you clear a single field”
-  // rule: box visible if showBoxes is ON OR field has value
-  const showBox = (val) => showBoxes || String(val || "").trim().length > 0;
+  const appliedFiltered = useMemo(() => {
+    // إذا سويت فلترة سيرفر سايد، هذا يبقى يشتغل عادي بدون ضرر
+    const q = norm(appliedSearch);
+    if (!q) return items;
+    return (items || []).filter((r) => {
+      const hay = [
+        r.customer,
+        r.unitNo,
+        r.createdBy,
+        r._id,
+        r.pageKey,
+      ]
+        .filter(Boolean)
+        .join(" | ");
+      return norm(hay).includes(q);
+    });
+  }, [items, appliedSearch]);
 
-  const Box = ({ style, visible }) => {
-    if (!visible) return null;
+  const paged = useMemo(() => paginate(appliedFiltered, page, PAGE_SIZE), [appliedFiltered, page]);
+
+  useEffect(() => {
+    if (page > paged.totalPages) setPage(paged.totalPages);
+  }, [page, paged.totalPages]);
+
+  const currentUsername = useMemo(() => {
+    if (typeof window === "undefined") return "";
+    return localStorage.getItem("username") || "";
+  }, []);
+
+  const totalItems = appliedFiltered.length;
+
+  const SuggestionsPortal = () => {
+    if (!mounted) return null;
+    if (!showSuggest) return null;
+    if (!suggestPos.open) return null;
+    if (!suggestions.length) return null;
+
+    return createPortal(
+      <div
+        ref={suggestWrapRef}
+        style={{
+          position: "fixed",
+          top: suggestPos.top,
+          left: suggestPos.left,
+          width: suggestPos.width,
+          zIndex: 9999,
+        }}
+        className="pointer-events-auto"
+      >
+        <div className="w-full rounded-2xl bg-white/95 backdrop-blur ring-1 ring-black/10 shadow-2xl overflow-hidden">
+          <div className="max-h-56 overflow-auto">
+            {suggestions.map((s, idx) => (
+              <button
+                key={`${s}-${idx}`}
+                type="button"
+                onMouseDown={(e) => e.preventDefault()} // ✅ يمنع blur قبل click
+                onClick={() => pickSuggestion(s)}
+                className={[
+                  "w-full text-left px-4 py-2.5 text-[14px] font-bold",
+                  "hover:bg-slate-100",
+                  idx === activeIdx ? "bg-slate-100" : "bg-transparent",
+                ].join(" ")}
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>,
+      document.body
+    );
+  };
+
+  const Card = ({ r }) => {
+    const d = r?.createdAt ? new Date(r.createdAt).toLocaleDateString() : "-";
+    const createdBy = r?.createdBy || "-";
     return (
       <div
-        className="absolute pointer-events-none"
-        style={{ ...style, zIndex: 60 }}
+        className="relative cursor-pointer rounded-2xl bg-white/55 backdrop-blur-xl ring-1 ring-white/40 shadow-[0_14px_40px_-18px_rgba(0,0,0,0.28)] hover:bg-white/75 hover:ring-white/60 transition-colors p-5"
+        onClick={() => router.push(`/ex/payment-plan/${r._id}`)}
       >
-        <div
-          style={{
-            position: "absolute",
-            inset: 0,
-            border: "2px dashed rgba(220,38,38,0.95)", // red dashed
-            borderRadius: 10,
-            boxShadow: "0 0 0 2px rgba(255,255,255,0.8) inset",
-          }}
-        />
+        <div className="pointer-events-none absolute inset-0 rounded-2xl bg-gradient-to-br from-white/30 via-transparent to-transparent opacity-90" />
+
+        <div className="relative flex items-start justify-between gap-4">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <span className="text-[13px] font-bold text-gray-700/80">{d}</span>
+            </div>
+
+            <div className="mt-2 text-[18px] font-black text-gray-900 line-clamp-1">
+              {r.customer || "Payment Plan"}
+            </div>
+
+            <div className="mt-2 text-[14px] font-semibold text-gray-800/90 leading-relaxed line-clamp-2">
+              {r.unitNo ? `Unit: ${r.unitNo}` : "-"}
+            </div>
+
+            <div className="mt-3 text-[12px] font-extrabold font-mono text-gray-700/85 break-all">
+              {r._id}
+            </div>
+          </div>
+
+          <div className="shrink-0 text-right">
+            <div className="text-[12px] font-bold text-gray-600/80">Page Key</div>
+            <div className="mt-1 text-[16px] font-black text-gray-900">{r.pageKey || "-"}</div>
+          </div>
+        </div>
+
+        <div className="relative mt-4 flex items-center justify-between gap-3 text-[13px] font-bold text-gray-700/85">
+          <span className="inline-flex items-center gap-2">
+            <FiFileText className="text-[16px]" />
+            <span className="truncate max-w-[240px]">{createdBy}</span>
+          </span>
+
+          <span className="truncate max-w-[55%]">
+            By: <span className="font-extrabold text-gray-900">{createdBy}</span>
+          </span>
+        </div>
       </div>
     );
   };
 
+  const SectionShell = ({ title, subtitle, icon: Icon, right, children }) => (
+    <div className="rounded-3xl bg-white/40 backdrop-blur-2xl ring-1 ring-white/30 shadow-[0_18px_45px_-25px_rgba(0,0,0,0.35)] overflow-hidden">
+      <div className="px-5 py-4 bg-white/25">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-start gap-3">
+            {Icon && (
+              <div className="mt-0.5 h-10 w-10 rounded-2xl bg-white/45 ring-1 ring-white/30 backdrop-blur flex items-center justify-center text-gray-800">
+                <Icon className="text-xl" />
+              </div>
+            )}
+            <div>
+              <div className="text-[16px] font-black text-gray-900">{title}</div>
+              {subtitle && <div className="text-[13px] font-bold text-gray-700/80">{subtitle}</div>}
+            </div>
+          </div>
+          {right}
+        </div>
+      </div>
+      <div className="p-5">{children}</div>
+    </div>
+  );
+
+  const ScrollBox = ({ children }) => (
+    <div className="max-h-[640px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-gray-300/60 scrollbar-track-transparent">
+      {children}
+    </div>
+  );
+
   return (
-    <div className={`min-h-screen p-6 ${cairo.className}`}>
-      <div className="mx-auto max-w-6xl">
-        <div className="flex items-center justify-between mb-4 gap-3">
-          <div className="text-right">
-            <div className="text-2xl font-extrabold">نموذج خطة الدفعات (A4)</div>
-            <div className="text-sm font-bold text-gray-600 mt-1">
-              حالياً مربعات الإدخال مرئية حتى تظبط أماكنها — وإذا تمسح قيمة حقل واحد يرجع مربعها غير مرئي
-            </div>
-          </div>
+    <div className="min-h-screen w-full text-[15px] font-bold text-slate-900">
+      {/* Background مثل Requests */}
+      <div className="fixed inset-0 -z-10 bg-gradient-to-br from-slate-50 via-slate-100 to-slate-200" />
+      <div className="fixed inset-0 -z-10 opacity-70">
+        <div className="absolute -top-24 -left-24 h-96 w-96 rounded-full bg-blue-200/40 blur-3xl" />
+        <div className="absolute top-28 right-10 h-80 w-80 rounded-full bg-purple-200/35 blur-3xl" />
+        <div className="absolute bottom-10 left-1/3 h-80 w-80 rounded-full bg-amber-200/30 blur-3xl" />
+      </div>
 
-          <div className="flex items-center gap-2">
+      <div className="mx-auto max-w-6xl px-6 py-6 space-y-6">
+        {/* Header */}
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-3">
             <button
-              onClick={() => setShowBoxes((v) => !v)}
-              className="px-4 py-2 rounded-2xl bg-white ring-1 ring-black/10 shadow-sm font-extrabold"
+              type="button"
+              onClick={() => router.push("/home")}
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-2xl bg-white/45 backdrop-blur-xl ring-1 ring-white/35 text-gray-900 shadow-sm hover:bg-white/60"
             >
-              {showBoxes ? "إخفاء كل المربعات" : "إظهار كل المربعات"}
+              <FiArrowLeft /> Back
             </button>
 
-            <button
-              onClick={printA4}
-              className="flex items-center gap-2 px-5 py-2 rounded-2xl bg-white ring-1 ring-black/10 shadow-sm font-extrabold"
-            >
-              <FiPrinter /> طباعة A4
-            </button>
-          </div>
-        </div>
-
-        {/* ✅ A4 preview */}
-        <div className="w-full overflow-auto">
-          <div
-            ref={paperRef}
-            className="relative bg-white ring-1 ring-black/10 rounded-2xl overflow-hidden"
-            style={{
-              width: "100%",
-              maxWidth: 900,
-              aspectRatio: "210/297", // A4 portrait
-            }}
-          >
-            {/* Background */}
-            <img
-              src={TEMPLATE_IMG}
-              alt="template"
-              className="absolute inset-0 w-full h-full object-contain"
-              draggable={false}
-            />
-
-            {/* ======================
-                ✅ Overlay (text)
-               ====================== */}
-            <div className="absolute inset-0 pointer-events-none text-gray-900">
-              {/* Header */}
-              {form.salesEmp && (
-                <div
-                  className="absolute font-extrabold"
-                  style={{
-                    ...pct(POS.salesEmp),
-                    width: `${POS.salesEmp.width}%`,
-                    fontSize: 16,
-                    direction: "rtl",
-                    textAlign: "right",
-                  }}
-                >
-                  {form.salesEmp}
+            <div className="flex flex-col gap-1">
+              <h1 className="text-2xl sm:text-3xl font-black text-gray-900 tracking-tight">
+                Payment Plans
+              </h1>
+              <div className="flex items-center gap-2 text-sm text-gray-800/80">
+                <span className="font-semibold">Showing newest → oldest</span>
+                <span className="px-2.5 py-1 rounded-xl bg-white/55 backdrop-blur ring-1 ring-white/30 text-gray-900 font-extrabold">
+                  Total: {totalItems}
+                </span>
+              </div>
+              {currentUsername ? (
+                <div className="text-[12px] font-bold text-gray-700/70">
+                  User: <span className="font-extrabold text-gray-900">{currentUsername}</span>
                 </div>
-              )}
-
-              {/* Date default today */}
-              {form.date && (
-                <div
-                  className="absolute font-extrabold"
-                  style={{
-                    ...pct(POS.date),
-                    width: `${POS.date.width}%`,
-                    fontSize: 16,
-                    direction: "rtl",
-                    textAlign: "right",
-                  }}
-                >
-                  {form.date}
-                </div>
-              )}
-
-              {form.customer && (
-                <div
-                  className="absolute font-extrabold"
-                  style={{
-                    ...pct(POS.customer),
-                    width: `${POS.customer.width}%`,
-                    fontSize: 16,
-                    direction: "rtl",
-                    textAlign: "right",
-                  }}
-                >
-                  {form.customer}
-                </div>
-              )}
-
-              {form.unitNo && (
-                <div
-                  className="absolute font-extrabold"
-                  style={{
-                    ...pct(POS.unitNo),
-                    width: `${POS.unitNo.width}%`,
-                    fontSize: 16,
-                    direction: "rtl",
-                    textAlign: "right",
-                  }}
-                >
-                  {form.unitNo}
-                </div>
-              )}
-
-              {/* Rows */}
-              {form.rows.map((r, i) => (
-                <div key={i}>
-                  {/* Type */}
-                  {r.payType && (
-                    <div
-                      className="absolute font-bold"
-                      style={{
-                        top: `${rowTop(i)}%`,
-                        left: `${POS.table.colPayType.left}%`,
-                        width: `${POS.table.colPayType.width}%`,
-                        fontSize: 14,
-                        direction: "rtl",
-                        textAlign: "center",
-                      }}
-                    >
-                      {r.payType}
-                    </div>
-                  )}
-
-                  {/* Amount */}
-                  {r.amount && (
-                    <div
-                      className="absolute font-bold"
-                      style={{
-                        top: `${rowTop(i)}%`,
-                        left: `${POS.table.colAmount.left}%`,
-                        width: `${POS.table.colAmount.width}%`,
-                        fontSize: 14,
-                        direction: "ltr",
-                        textAlign: "center",
-                      }}
-                    >
-                      {Number(String(r.amount).replace(/,/g, "") || 0).toLocaleString("en-US")}
-                    </div>
-                  )}
-
-                  {/* Date */}
-                  {r.payDate && (
-                    <div
-                      className="absolute font-bold"
-                      style={{
-                        top: `${rowTop(i)}%`,
-                        left: `${POS.table.colDate.left}%`,
-                        width: `${POS.table.colDate.width}%`,
-                        fontSize: 14,
-                        direction: "rtl",
-                        textAlign: "center",
-                      }}
-                    >
-                      {r.payDate}
-                    </div>
-                  )}
-                </div>
-              ))}
-
-              {/* Footer */}
-              {form.discount && (
-                <div
-                  className="absolute font-extrabold"
-                  style={{
-                    ...pct(POS.discount),
-                    width: `${POS.discount.width}%`,
-                    fontSize: 15,
-                    direction: "rtl",
-                    textAlign: "center",
-                  }}
-                >
-                  {form.discount}
-                </div>
-              )}
-
-              {form.signature && (
-                <div
-                  className="absolute font-extrabold"
-                  style={{
-                    ...pct(POS.signature),
-                    width: `${POS.signature.width}%`,
-                    fontSize: 15,
-                    direction: "rtl",
-                    textAlign: "center",
-                  }}
-                >
-                  {form.signature}
-                </div>
-              )}
-            </div>
-
-            {/* ======================
-                ✅ Inputs (VISIBLE BOXES now)
-               ====================== */}
-            <div className="absolute inset-0">
-              {/* Header boxes + inputs */}
-              <Box
-                visible={showBox(form.salesEmp)}
-                style={{
-                  ...pct(POS.salesEmp),
-                  width: `${POS.salesEmp.width}%`,
-                  height: `${POS.salesEmp.height}%`,
-                  position: "absolute",
-                }}
-              />
-              <input
-                ref={setRef("salesEmp")}
-                value={form.salesEmp}
-                onChange={(e) => setField("salesEmp", e.target.value)}
-                onFocus={() => setShowBoxes(true)}
-                className="absolute"
-                style={{
-                  ...pct(POS.salesEmp),
-                  width: `${POS.salesEmp.width}%`,
-                  height: `${POS.salesEmp.height}%`,
-                  background: "transparent",
-                  border: "none",
-                  outline: "none",
-                  direction: "rtl",
-                  textAlign: "right",
-                  padding: "0 8px",
-                  fontWeight: 800,
-                  fontSize: 16,
-                  opacity: 0, // ✅ input hidden, box visible
-                  position: "absolute",
-                }}
-              />
-
-              <Box
-                visible={showBox(form.date)}
-                style={{
-                  ...pct(POS.date),
-                  width: `${POS.date.width}%`,
-                  height: `${POS.date.height}%`,
-                  position: "absolute",
-                }}
-              />
-              <input
-                ref={setRef("date")}
-                value={form.date}
-                onChange={(e) => setField("date", e.target.value)}
-                className="absolute"
-                style={{
-                  ...pct(POS.date),
-                  width: `${POS.date.width}%`,
-                  height: `${POS.date.height}%`,
-                  background: "transparent",
-                  border: "none",
-                  outline: "none",
-                  direction: "rtl",
-                  textAlign: "right",
-                  padding: "0 8px",
-                  fontWeight: 800,
-                  fontSize: 16,
-                  opacity: 0,
-                  position: "absolute",
-                }}
-              />
-
-              <Box
-                visible={showBox(form.customer)}
-                style={{
-                  ...pct(POS.customer),
-                  width: `${POS.customer.width}%`,
-                  height: `${POS.customer.height}%`,
-                  position: "absolute",
-                }}
-              />
-              <input
-                ref={setRef("customer")}
-                value={form.customer}
-                onChange={(e) => setField("customer", e.target.value)}
-                className="absolute"
-                style={{
-                  ...pct(POS.customer),
-                  width: `${POS.customer.width}%`,
-                  height: `${POS.customer.height}%`,
-                  background: "transparent",
-                  border: "none",
-                  outline: "none",
-                  direction: "rtl",
-                  textAlign: "right",
-                  padding: "0 8px",
-                  fontWeight: 800,
-                  fontSize: 16,
-                  opacity: 0,
-                  position: "absolute",
-                }}
-              />
-
-              <Box
-                visible={showBox(form.unitNo)}
-                style={{
-                  ...pct(POS.unitNo),
-                  width: `${POS.unitNo.width}%`,
-                  height: `${POS.unitNo.height}%`,
-                  position: "absolute",
-                }}
-              />
-              <input
-                ref={setRef("unitNo")}
-                value={form.unitNo}
-                onChange={(e) => setField("unitNo", e.target.value)}
-                className="absolute"
-                style={{
-                  ...pct(POS.unitNo),
-                  width: `${POS.unitNo.width}%`,
-                  height: `${POS.unitNo.height}%`,
-                  background: "transparent",
-                  border: "none",
-                  outline: "none",
-                  direction: "rtl",
-                  textAlign: "right",
-                  padding: "0 8px",
-                  fontWeight: 800,
-                  fontSize: 16,
-                  opacity: 0,
-                  position: "absolute",
-                }}
-              />
-
-              {/* Rows: each مربع موجود خليله input */}
-              {form.rows.map((r, i) => {
-                const top = rowTop(i);
-
-                const typeBox = {
-                  top,
-                  left: POS.table.colPayType.left,
-                  width: POS.table.colPayType.width,
-                  height: POS.table.colPayType.height,
-                };
-                const amtBox = {
-                  top,
-                  left: POS.table.colAmount.left,
-                  width: POS.table.colAmount.width,
-                  height: POS.table.colAmount.height,
-                };
-                const dateBox = {
-                  top,
-                  left: POS.table.colDate.left,
-                  width: POS.table.colDate.width,
-                  height: POS.table.colDate.height,
-                };
-
-                return (
-                  <div key={i}>
-                    {/* payType */}
-                    <Box
-                      visible={showBox(r.payType)}
-                      style={{
-                        top: `${typeBox.top}%`,
-                        left: `${typeBox.left}%`,
-                        width: `${typeBox.width}%`,
-                        height: `${typeBox.height}%`,
-                        position: "absolute",
-                      }}
-                    />
-                    <input
-                      ref={setRef(`row_${i}_payType`)}
-                      value={r.payType}
-                      onChange={(e) => setRowField(i, "payType", e.target.value)}
-                      className="absolute"
-                      style={{
-                        top: `${typeBox.top}%`,
-                        left: `${typeBox.left}%`,
-                        width: `${typeBox.width}%`,
-                        height: `${typeBox.height}%`,
-                        background: "transparent",
-                        border: "none",
-                        outline: "none",
-                        direction: "rtl",
-                        textAlign: "center",
-                        fontWeight: 700,
-                        fontSize: 14,
-                        opacity: 0,
-                        position: "absolute",
-                      }}
-                    />
-
-                    {/* amount */}
-                    <Box
-                      visible={showBox(r.amount)}
-                      style={{
-                        top: `${amtBox.top}%`,
-                        left: `${amtBox.left}%`,
-                        width: `${amtBox.width}%`,
-                        height: `${amtBox.height}%`,
-                        position: "absolute",
-                      }}
-                    />
-                    <input
-                      ref={setRef(`row_${i}_amount`)}
-                      value={r.amount}
-                      onChange={(e) => setRowField(i, "amount", e.target.value)}
-                      className="absolute"
-                      style={{
-                        top: `${amtBox.top}%`,
-                        left: `${amtBox.left}%`,
-                        width: `${amtBox.width}%`,
-                        height: `${amtBox.height}%`,
-                        background: "transparent",
-                        border: "none",
-                        outline: "none",
-                        direction: "ltr",
-                        textAlign: "center",
-                        fontWeight: 700,
-                        fontSize: 14,
-                        opacity: 0,
-                        position: "absolute",
-                      }}
-                    />
-
-                    {/* payDate */}
-                    <Box
-                      visible={showBox(r.payDate)}
-                      style={{
-                        top: `${dateBox.top}%`,
-                        left: `${dateBox.left}%`,
-                        width: `${dateBox.width}%`,
-                        height: `${dateBox.height}%`,
-                        position: "absolute",
-                      }}
-                    />
-                    <input
-                      ref={setRef(`row_${i}_payDate`)}
-                      value={r.payDate}
-                      type="date"   // ✅ هذا المهم
-
-                      onChange={(e) => setRowField(i, "payDate", e.target.value)}
-                      className="absolute"
-                      style={{
-                        top: `${dateBox.top}%`,
-                        left: `${dateBox.left}%`,
-                        width: `${dateBox.width}%`,
-                        height: `${dateBox.height}%`,
-                        background: "transparent",
-                        border: "none",
-                        outline: "none",
-                        direction: "rtl",
-                        textAlign: "center",
-                        fontWeight: 700,
-                        fontSize: 14,
-                        opacity: 0,
-                        position: "absolute",
-                      }}
-                    />
-                  </div>
-                );
-              })}
-
-              {/* Discount */}
-              <Box
-                visible={showBox(form.discount)}
-                style={{
-                  ...pct(POS.discount),
-                  width: `${POS.discount.width}%`,
-                  height: `${POS.discount.height}%`,
-                  position: "absolute",
-                }}
-              />
-              <input
-                ref={setRef("discount")}
-                value={form.discount}
-                onChange={(e) => setField("discount", e.target.value)}
-                className="absolute"
-                style={{
-                  ...pct(POS.discount),
-                  width: `${POS.discount.width}%`,
-                  height: `${POS.discount.height}%`,
-                  background: "transparent",
-                  border: "none",
-                  outline: "none",
-                  direction: "rtl",
-                  textAlign: "center",
-                  fontWeight: 800,
-                  fontSize: 15,
-                  opacity: 0,
-                  position: "absolute",
-                }}
-              />
-
-              {/* Signature */}
-              <Box
-                visible={showBox(form.signature)}
-                style={{
-                  ...pct(POS.signature),
-                  width: `${POS.signature.width}%`,
-                  height: `${POS.signature.height}%`,
-                  position: "absolute",
-                }}
-              />
-              <input
-                ref={setRef("signature")}
-                value={form.signature}
-                onChange={(e) => setField("signature", e.target.value)}
-                className="absolute"
-                style={{
-                  ...pct(POS.signature),
-                  width: `${POS.signature.width}%`,
-                  height: `${POS.signature.height}%`,
-                  background: "transparent",
-                  border: "none",
-                  outline: "none",
-                  direction: "rtl",
-                  textAlign: "center",
-                  fontWeight: 800,
-                  fontSize: 15,
-                  opacity: 0,
-                  position: "absolute",
-                }}
-              />
+              ) : null}
             </div>
           </div>
-        </div>
-
-        {/* ✅ Quick focus buttons + clear one field => its box hides */}
-        <div className="mt-4 flex flex-wrap gap-2">
-          <button
-            onClick={() => focus("salesEmp")}
-            className="px-4 py-2 rounded-2xl bg-white ring-1 ring-black/10 font-extrabold"
-          >
-            اسم موظف المبيعات
-          </button>
-          <button
-            onClick={() => focus("customer")}
-            className="px-4 py-2 rounded-2xl bg-white ring-1 ring-black/10 font-extrabold"
-          >
-            اسم الزبون
-          </button>
-          <button
-            onClick={() => focus("unitNo")}
-            className="px-4 py-2 rounded-2xl bg-white ring-1 ring-black/10 font-extrabold"
-          >
-            رقم الوحدة
-          </button>
-          <button
-            onClick={() => focus("discount")}
-            className="px-4 py-2 rounded-2xl bg-white ring-1 ring-black/10 font-extrabold"
-          >
-            الخصم
-          </button>
-          <button
-            onClick={() => focus("signature")}
-            className="px-4 py-2 rounded-2xl bg-white ring-1 ring-black/10 font-extrabold"
-          >
-            التوقيع
-          </button>
 
           <button
             onClick={() => {
-              // ✅ keep date default today
-              setForm((prev) => ({
-                ...prev,
-                salesEmp: "",
-                customer: "",
-                unitNo: "",
-                date: todayStr(),
-                discount: "",
-                signature: "",
-                rows: Array.from({ length: 15 }).map(() => ({
-                  payDate: "",
-                  amount: "",
-                  payType: "",
-                })),
-              }));
-              // after full clear, keep boxes visible so you can align
-              setShowBoxes(true);
+              setCreateKey((k) => k + 1);
+              setOpenCreate(true);
             }}
-            className="px-5 py-2 rounded-2xl bg-red-50 text-red-600 ring-1 ring-red-200 font-extrabold"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-gray-900/90 backdrop-blur text-white shadow hover:bg-gray-900"
           >
-            🗑️ مسح الكل
+            <FiPlus /> Create
           </button>
         </div>
 
-        <div className="mt-2 text-xs text-gray-600 font-bold text-right">
-          ✅ ملاحظة: إذا تمسح قيمة حقل واحد (تخليه فارغ)، مربع هذا الحقل يصير غير مرئي تلقائياً (إذا زر “إظهار كل المربعات” مطفي).
+        {/* Search (نفس ستايل Requests) */}
+        <div className="rounded-3xl bg-white/40 backdrop-blur-2xl ring-1 ring-white/30 shadow-sm p-4 sm:p-5">
+          <div className="flex flex-col sm:flex-row gap-3 sm:items-center">
+            <div className="relative w-full sm:flex-1" ref={searchBoxRef}>
+              <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-600/70" />
+              <input
+                value={searchText}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setSearchText(v);
+
+                  const list = computeSuggestions(v);
+                  setSuggestions(list);
+                  setShowSuggest(true);
+                  setActiveIdx(-1);
+                  updateSuggestPosition();
+                  setSuggestPos((p) => ({ ...p, open: true }));
+                }}
+                onFocus={() => {
+                  const list = computeSuggestions(searchText);
+                  setSuggestions(list);
+                  setShowSuggest(true);
+                  setActiveIdx(-1);
+                  updateSuggestPosition();
+                  setSuggestPos((p) => ({ ...p, open: true }));
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    if (showSuggest && suggestions.length && activeIdx >= 0) {
+                      pickSuggestion(suggestions[activeIdx]);
+                    } else {
+                      setAppliedSearch(searchText.trim());
+                      closeSuggest();
+                      setPage(1);
+                      fetchAll();
+                    }
+                    return;
+                  }
+
+                  if (!showSuggest || !suggestions.length) return;
+
+                  if (e.key === "ArrowDown") {
+                    e.preventDefault();
+                    setActiveIdx((p) => Math.min(p + 1, suggestions.length - 1));
+                  } else if (e.key === "ArrowUp") {
+                    e.preventDefault();
+                    setActiveIdx((p) => Math.max(p - 1, 0));
+                  } else if (e.key === "Escape") {
+                    closeSuggest();
+                  }
+                }}
+                placeholder="اكتب اسم الزبون / رقم الوحدة / المستخدم..."
+                className="w-full pl-10 pr-3 py-2.5 rounded-2xl bg-white/55 backdrop-blur ring-1 ring-white/30 text-[15px] text-gray-900 placeholder:text-gray-600/70 outline-none focus:ring-2 focus:ring-white/45"
+              />
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  setAppliedSearch(searchText.trim());
+                  closeSuggest();
+                  setPage(1);
+                  fetchAll();
+                }}
+                disabled={loading}
+                className={[
+                  "inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl font-extrabold shadow-sm ring-1",
+                  loading
+                    ? "bg-gray-200 text-gray-500 ring-gray-200 cursor-not-allowed"
+                    : "bg-gray-900 text-white ring-gray-900 hover:bg-black",
+                ].join(" ")}
+              >
+                <FiSearch /> بحث
+              </button>
+
+              {/* ✅ مسح فقط (بدون كانسل) */}
+              <button
+                onClick={() => {
+                  setSearchText("");
+                  setAppliedSearch("");
+                  setPage(1);
+                  closeSuggest();
+                  fetchAll();
+                }}
+                disabled={loading}
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-white/55 ring-1 ring-white/30 text-gray-900 font-extrabold shadow-sm hover:bg-white/70"
+              >
+                <FiXCircle /> مسح
+              </button>
+            </div>
+          </div>
         </div>
+
+        {/* Suggestions Portal */}
+        {mounted && showSuggest && suggestPos.open && suggestions.length > 0 ? (
+          <SuggestionsPortal />
+        ) : null}
+
+        {/* List Section */}
+        <SectionShell
+          title="Payment Plans List"
+          subtitle="Browse and open plan details"
+          icon={FiFileText}
+          right={<span className="text-[13px] font-extrabold text-gray-800/70">{paged.total} items</span>}
+        >
+          {loading ? (
+            <div className="py-10 text-center font-extrabold text-gray-800/70">Loading...</div>
+          ) : appliedFiltered.length === 0 ? (
+            <div className="py-10 text-center font-extrabold text-gray-800/70">لا يوجد بيانات حسب الفلتر</div>
+          ) : (
+            <>
+              <ScrollBox>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-4">
+                  {paged.items.map((r) => (
+                    <Card key={r._id} r={r} />
+                  ))}
+                </div>
+              </ScrollBox>
+
+              <Pager page={paged.page} totalPages={paged.totalPages} onPage={setPage} />
+            </>
+          )}
+        </SectionShell>
       </div>
+
+      {/* Create Modal */}
+      <PaymentPlanA4_Generator
+        key={createKey}
+        open={openCreate}
+        onClose={() => setOpenCreate(false)}
+        onCreate={async (form) => {
+          const username = typeof window !== "undefined" ? localStorage.getItem("username") : "";
+          const userId = typeof window !== "undefined" ? localStorage.getItem("userId") : "";
+
+          const res = await fetch("/api/ex/payment-plans", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              ...form,
+              pageKey: "exceptions",
+              createdBy: username || "User",
+              createdById: userId || "",
+            }),
+          });
+
+          const j = await res.json();
+
+          if (j?.success) {
+            setOpenCreate(false);
+            await fetchAll();
+            setPage(1);
+          } else {
+            throw new Error(j?.error || "Create failed");
+          }
+        }}
+      />
     </div>
   );
 }

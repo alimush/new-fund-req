@@ -60,7 +60,7 @@ export async function POST(req) {
       sameSite: "lax",
       secure: isProd,          // بالـ prod لازم https
       path: "/",
-      maxAge: 60 * 60 * 24 * 30, // 30 يوم
+      maxAge: 60 * 60 * 24 * 365, // سنة
     };
 
     // ✅ نخلي domain فقط إذا الدومين فعلاً spc-it.com.iq

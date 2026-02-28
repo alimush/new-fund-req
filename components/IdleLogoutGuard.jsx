@@ -15,7 +15,7 @@ export default function IdleLogoutGuard() {
     // ✅ لا تشتغل على صفحة اللوجن
     if (pathname?.startsWith("/login")) return;
 
-    const idleMs = 30 * 60 * 1000; // ⏳ 30 minutes
+   const idleMs = 30 * 60 * 1000; // ⏳ 30 minutes
     loggedOutRef.current = false;
 
     const touch = () => {

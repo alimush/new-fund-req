@@ -7,8 +7,8 @@ import { useEffect, useMemo, useState } from "react";
 
 const cards = [
   { key: "Al-Ghadeer", name: "طلبات الغدير", logo: "/الغدير.png" },
-  { key: "Al-Rida", name: "طلبات الرضا", logo: "/الرضا.png" },
-  { key: "Al-Mezan", name: "طلبات الميزان", logo: "/الميزان.png" },
+  // { key: "Al-Rida", name: "طلبات الرضا", logo: "/الرضا.png" },
+  // { key: "Al-Mezan", name: "طلبات الميزان", logo: "/الميزان.png" },
   { key: "Badur-Baghdad", name: "طلبات بدور بغداد", logo: "/بدور_بغداد.png" },
   { key: "Ghadeer-Karbala", name: "طلبات غدير كربلاء", logo: "/غدير_كربلاء.png" },
   { key: "Tiba-Al-najaf", name: "طلبات طيبة النجف", logo: "/طيبة_النجف.png" },

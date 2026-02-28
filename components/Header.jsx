@@ -10,6 +10,7 @@ import { FaSquarePollVertical } from "react-icons/fa6";
 import { usePermissions } from "@/context/PermissionContext";
 import { PERMISSIONS } from "@/lib/permission";
 import { IoReceipt } from "react-icons/io5";
+import { FaFileInvoice } from "react-icons/fa";
 
 const poppins = Poppins({
   subsets: ["latin"],
@@ -194,6 +195,7 @@ export default function Header({ onLogout }) {
                         />)}
 
 
+
                       {permissions?.includes(PERMISSIONS.MANAGE_PERMISSIONS) && (
   <MenuItem
     onClick={() => {
@@ -214,6 +216,17 @@ export default function Header({ onLogout }) {
     label="وصل صرف وقبض"
   />
 )}
+
+{permissions?.includes(PERMISSIONS.MANAGE_PERMISSIONS) && (
+                        <MenuItem
+                          onClick={() => {
+                            setMenuOpen(false);
+                            router.push("/ex/ex-home");
+                          }}
+                          icon={<FaFileInvoice className="text-gray-200" />}
+                          label="الاستثنائات"
+                        />)}
+
                       {canViewReports && (
   <MenuItem
     onClick={() => {

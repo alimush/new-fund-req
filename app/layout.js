@@ -4,7 +4,7 @@ import HeaderWrapper from "../components/Header";
 import { PermissionProvider } from "@/context/PermissionContext";
 import { UserProvider } from "@/context/UserContext";
 import AuthGate from "@/components/AuthGate";
-import IdleLogoutGuard from "@/components/IdleLogoutGuard";
+
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -39,7 +39,7 @@ export default function RootLayout({ children }) {
           <PermissionProvider>
             <AuthGate>
               <HeaderWrapper />
-              <IdleLogoutGuard idleMs={20 * 60 * 1000} /> {/* 20 دقيقة */}
+
 
               <main className="p-6">{children}</main>
             </AuthGate>
