@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
-import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import {
+  S3Client,
+  PutObjectCommand,
+  GetObjectCommand,
+} from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { cookies } from "next/headers";
 
@@ -9,6 +13,7 @@ export async function POST(req) {
   try {
     const cookieStore = await cookies();
     const userId = cookieStore.get("userId")?.value;
+
     if (!userId) {
       return NextResponse.json(
         { success: false, error: "Not authenticated" },
@@ -27,40 +32,61 @@ export async function POST(req) {
 
     const bucket = process.env.S3_BUCKET_NAME;
     const region = process.env.S3_REGION;
-console.log("S3_BUCKET_NAME:", bucket);
-console.log("S3_REGION:", region); 
+    const accessKeyId = process.env.S3_ACCESS_KEY_ID;
+    const secretAccessKey = process.env.S3_SECRET_ACCESS_KEY;
+
     if (!bucket || !region) {
       return NextResponse.json(
         { success: false, error: "Missing S3 env", bucket, region },
         { status: 500 }
       );
     }
+    if (!accessKeyId || !secretAccessKey) {
+      return NextResponse.json(
+        { success: false, error: "Missing S3 credentials" },
+        { status: 500 }
+      );
+    }
 
     const safeName = String(fileName).replace(/[^\w.\-() ]+/g, "_");
     const folder = prefix || "uploads";
-    const key = `${folder}/${Date.now()}-${Math.random().toString(16).slice(2)}-${safeName}`;
+    const key = `${folder}/${Date.now()}-${Math.random()
+      .toString(16)
+      .slice(2)}-${safeName}`;
 
     const s3 = new S3Client({
       region,
-      credentials: {
-        accessKeyId: process.env.S3_ACCESS_KEY_ID,
-        secretAccessKey: process.env.S3_SECRET_ACCESS_KEY,
-      },
+      credentials: { accessKeyId, secretAccessKey },
     });
 
-    const command = new PutObjectCommand({
-      Bucket: bucket,
-      Key: key,
-      ContentType: fileType || "application/octet-stream",
-    });
+    // ✅ Signed PUT (رفع)
+    const putUrl = await getSignedUrl(
+      s3,
+      new PutObjectCommand({
+        Bucket: bucket,
+        Key: key,
+        ContentType: fileType || "application/octet-stream",
+      }),
+      { expiresIn: 600 }
+    );
 
-    const url = await getSignedUrl(s3, command, { expiresIn: 600 });
+    // ✅ Signed GET (فتح/تحميل) — هذا يحل AccessDenied
+    const getUrl = await getSignedUrl(
+      s3,
+      new GetObjectCommand({
+        Bucket: bucket,
+        Key: key,
+        // اختياري: يخلي المتصفح يفتح الملف بدل ما ينزله
+        ResponseContentDisposition: "inline",
+      }),
+      { expiresIn: 3600 }
+    );
 
-    return NextResponse.json({ success: true, url, key });
+    return NextResponse.json({ success: true, url: putUrl, key, getUrl });
   } catch (err) {
     console.error("presign error:", err);
     return NextResponse.json(
-      { success: false, error: err.message || "Presign failed" },
+      { success: false, error: err?.message || "Presign failed" },
       { status: 500 }
     );
   }

@@ -30,6 +30,16 @@ const WorkflowSchema = new Schema(
   },
   { _id: false }
 );
+const AttachmentSchema = new Schema(
+  {
+    key: { type: String, default: "" },
+    name: { type: String, default: "" },
+    type: { type: String, default: "" },
+    size: { type: Number, default: 0 },
+    url: { type: String, default: "" }, // اختياري للـ signed url وقت الجلب
+  },
+  { _id: false }
+);
 
 const PaymentPlanSchema = new Schema(
   {
@@ -42,6 +52,7 @@ const PaymentPlanSchema = new Schema(
     dateDMY: { type: String, default: "" },
     discount: { type: String, default: "" },
     signature: { type: String, default: "" },
+    
 
     rows: { type: [RowSchema], default: [] },
 
@@ -50,7 +61,16 @@ const PaymentPlanSchema = new Schema(
     workflow: { type: WorkflowSchema, default: () => ({}) },
     status: { type: String, default: "Pending" }, // Pending | Approved | Rejected | Cancelled
     currentStep: { type: Number, default: -1 }, // 0..n-1 أو -1 = مغلق
-  },
+    attachments: {
+      type: [
+        {
+          key: { type: String, default: "" },
+          name: { type: String, default: "" },
+          url: { type: String, default: "" },
+        },
+      ],
+      default: [],
+    },  },
   { timestamps: true }
 );
 

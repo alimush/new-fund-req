@@ -5,6 +5,9 @@ import { toPng } from "html-to-image";
 import { motion, AnimatePresence } from "framer-motion";
 import { FiX, FiPlus, FiTrash2, FiImage, FiCheck } from "react-icons/fi";
 import { Cairo } from "next/font/google";
+import { useEffect } from "react";
+import { FiPaperclip, FiFileText } from "react-icons/fi"; // فوق بالimports
+
 
 const cairo = Cairo({ subsets: ["arabic"], weight: ["400", "600", "700", "800"] });
 
@@ -23,6 +26,8 @@ async function waitForImages(node) {
     })
   );
 }
+
+
 
 function todayStrDMY() {
   const d = new Date();
@@ -69,15 +74,67 @@ export default function PaymentPlanGenerator({
     onCreate,
   }) {  const close = () => onClose?.();
 
+    const getCurrentUsername = () =>
+      (typeof window !== "undefined" && (localStorage.getItem("username") || "")) || "";
+
+    const AR_ORDINALS = [
+      "الأولى",
+      "الثانية",
+      "الثالثة",
+      "الرابعة",
+      "الخامسة",
+      "السادسة",
+      "السابعة",
+      "الثامنة",
+      "التاسعة",
+      "العاشرة",
+    ];
+    
+    function defaultPayType(index) {
+      const n = index + 1;
+      const ord = AR_ORDINALS[index] || String(n); // بعد العاشرة يكتب رقم
+      return `الدفعة ${ord}`;
+    }
+
   const [activeTab, setActiveTab] = useState("Header");
   const [submitting, setSubmitting] = useState(false);
   const [serverMsg, setServerMsg] = useState("");
+
+const [attachment, setAttachment] = useState([]);     // ملفات فعلية قبل الرفع
+const [dragOver, setDragOver] = useState(false);
+
+const addFiles = (filesArr) => {
+  if (!filesArr?.length) return;
+
+  setAttachment((prev) => {
+    const current = prev || [];
+    const map = new Map(current.map((f) => [`${f.name}_${f.size}`, f]));
+    for (const f of filesArr) map.set(`${f.name}_${f.size}`, f);
+    return Array.from(map.values());
+  });
+};
+
+const openAttachment = (file) => {
+  if (!file) return;
+
+  // ✅ إذا جاي من السيرفر (signed url)
+  if (file.url) {
+    window.open(file.url, "_blank", "noopener,noreferrer");
+    return;
+  }
+
+  // ✅ إذا ملف محلي قبل الرفع (File)
+  const url = URL.createObjectURL(file);
+  window.open(url, "_blank", "noopener,noreferrer");
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+};
 
   const steps = useMemo(
     () => [
       { key: "Header", label: "Header" },
       { key: "Table", label: "Table" },
       { key: "Footer", label: "Footer" },
+      { key: "Attachment", label: "Attachment" }, 
       { key: "Review", label: "Review" },
     ],
     []
@@ -85,7 +142,7 @@ export default function PaymentPlanGenerator({
 
   // ✅ حذفنا signature من الفورم
   const [form, setForm] = useState(() => ({
-    salesEmp: initialForm?.salesEmp || "",
+    salesEmp: initialForm?.salesEmp || getCurrentUsername(), // ✅ هنا
     customer: initialForm?.customer || "",
     unitNo: initialForm?.unitNo || "",
     dateDMY: initialForm?.dateDMY || todayStrDMY(),
@@ -93,7 +150,7 @@ export default function PaymentPlanGenerator({
     rows:
       Array.isArray(initialForm?.rows) && initialForm.rows.length
         ? initialForm.rows
-        : [{ payType: "", amount: "", payDateYMD: "" }],
+       : [{ payType: defaultPayType(0), amount: "", payDateYMD: "" }],
   }));
 
   const setField = (key, val) => setForm((p) => ({ ...p, [key]: val }));
@@ -107,17 +164,32 @@ export default function PaymentPlanGenerator({
   };
 
   const addRow = () => {
-    setForm((p) => ({
-      ...p,
-      rows: [...p.rows, { payType: "", amount: "", payDateYMD: "" }],
-    }));
+    setForm((p) => {
+      const nextIndex = (p.rows?.length || 0);
+      return {
+        ...p,
+        rows: [
+          ...(p.rows || []),
+          { payType: defaultPayType(nextIndex), amount: "", payDateYMD: "" },
+        ],
+      };
+    });
   };
 
   const removeRow = (idx) => {
-    setForm((p) => ({
-      ...p,
-      rows: p.rows.filter((_, i) => i !== idx),
-    }));
+    setForm((p) => {
+      const rows = (p.rows || [])
+        .filter((_, i) => i !== idx)
+        .map((r, i) => ({
+          ...r,
+          payType: r.payType?.trim() ? r.payType : defaultPayType(i), // إذا فارغ فقط
+        }));
+  
+      // أو إذا تريد تفرض إعادة الترقيم دائمًا:
+      // .map((r, i) => ({ ...r, payType: defaultPayType(i) }))
+  
+      return { ...p, rows };
+    });
   };
 
   const resetAll = () => {
@@ -244,6 +316,37 @@ export default function PaymentPlanGenerator({
     setSubmitting(true);
   
     try {
+      // 1) upload attachments to S3 (presigned)
+      const uploadedAttachments = [];
+  
+      if (attachment?.length > 0) {
+        for (const file of attachment) {
+          const presignRes = await fetch("/api/upload/presign", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              fileName: file.name,
+              fileType: file.type,
+              prefix: `payment-plans`, // تقدر تخلي companyKey إذا عندك
+            }),
+          });
+  
+          if (!presignRes.ok) throw new Error("Failed to get upload URL");
+          const { url, key, getUrl } = await presignRes.json();
+
+          const uploadRes = await fetch(url, {
+            method: "PUT",
+            body: file,
+            headers: { "Content-Type": file.type || "application/octet-stream" },
+          });
+          
+          if (!uploadRes.ok) throw new Error("Failed to upload file");
+          
+          uploadedAttachments.push({ key, name: file.name, url: getUrl || "" });
+        }
+      }
+  
+      // 2) create payment plan payload
       const payload = {
         salesEmp: form.salesEmp,
         customer: form.customer,
@@ -251,16 +354,13 @@ export default function PaymentPlanGenerator({
         dateDMY: form.dateDMY,
         discount: form.discount,
         rows: cleanedRows,
+        attachments: uploadedAttachments, // ✅ مهم
       };
   
-      // ✅ نخلي الصفحة الأم تسوي الحفظ + تغلق + تحدث الليست
       await onCreate?.(payload);
-  
-      // (اختياري) رسالة نجاح داخل المودال لو تحب
-      // setServerMsg("✅ تم الإنشاء");
     } catch (e) {
       console.error(e);
-      setServerMsg("صار خطأ أثناء الإنشاء.");
+      setServerMsg(e?.message || "صار خطأ أثناء الإنشاء.");
     } finally {
       setSubmitting(false);
     }
@@ -510,13 +610,13 @@ export default function PaymentPlanGenerator({
               >
                 {activeTab === "Header" && (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <input
-                      type="text"
-                      placeholder="اسم موظف المبيعات"
-                      value={form.salesEmp}
-                      onChange={(e) => setField("salesEmp", e.target.value)}
-                      className="border border-gray-300 rounded-lg p-2 bg-white text-gray-800"
-                    />
+                   <input
+  type="text"
+  value={form.salesEmp}
+  readOnly
+  disabled
+  className="border border-gray-300 rounded-lg p-2 bg-gray-100 text-gray-800 cursor-not-allowed"
+/>
 
                     <input
                       type="date"
@@ -624,11 +724,103 @@ export default function PaymentPlanGenerator({
                       </div>
                     </div>
 
-                    <div className="text-right text-xs text-gray-500 font-bold">
-                      ✅ للطباعة/الصور: كل صفحة بيها حد أقصى {MAX_ROWS_PER_PAGE} سطر (Multi-page تلقائياً).
-                    </div>
+                  
                   </div>
                 )}
+
+{activeTab === "Attachment" && (
+  <div className="space-y-4">
+    <div className="flex items-center justify-between">
+      <div>
+        <div className="text-sm font-semibold text-gray-800">المرفقات</div>
+        <div className="text-xs text-gray-500">تقدر ترفع صور / PDF / Excel</div>
+      </div>
+
+      {attachment?.length > 0 && (
+        <span className="text-xs px-2.5 py-1 rounded-full border border-black/10 bg-white/60 text-gray-700">
+          {attachment.length} file(s)
+        </span>
+      )}
+    </div>
+
+    <div
+      className={`rounded-2xl border border-black/10 bg-white/55 shadow-sm p-4 transition
+        ${dragOver ? "ring-2 ring-blue-300 bg-white/75" : ""}`}
+      onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDragOver(true); }}
+      onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setDragOver(false); }}
+      onDrop={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setDragOver(false);
+        addFiles(Array.from(e.dataTransfer.files || []));
+      }}
+    >
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="h-11 w-11 rounded-2xl border border-black/10 bg-white/70 flex items-center justify-center text-gray-600">
+            <FiPaperclip className="text-lg" />
+          </div>
+          <div>
+            <div className="text-sm font-medium text-gray-800">رفع مرفق</div>
+            <div className="text-xs text-gray-500">اختار أو Drag & Drop</div>
+          </div>
+        </div>
+
+        <label className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-gray-800 text-white text-sm cursor-pointer hover:bg-gray-900 transition">
+          <FiPlus className="text-base" />
+          Add Files
+          <input
+            type="file"
+            className="hidden"
+            multiple
+            onChange={(e) => {
+              addFiles(Array.from(e.target.files || []));
+              e.target.value = "";
+            }}
+          />
+        </label>
+      </div>
+
+      {attachment?.length > 0 ? (
+        <div className="mt-4 space-y-2">
+          {attachment.map((file, i) => (
+            <div
+              key={i}
+              onClick={() => openAttachment(file)}
+              className="flex items-center justify-between gap-3 px-3 py-2 rounded-xl border border-black/10 bg-white/65 hover:bg-white/80 transition cursor-pointer"
+            >
+              <div className="min-w-0 flex items-center gap-2">
+                <div className="h-9 w-9 rounded-xl border border-black/10 bg-white/70 flex items-center justify-center text-gray-600">
+                  <FiFileText />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-sm font-medium text-gray-800 truncate">{file.name}</div>
+                  <div className="text-xs text-gray-500">{(file.size / 1024 / 1024).toFixed(2)} MB</div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setAttachment((prev) => (prev || []).filter((_, idx) => idx !== i));
+                }}
+                className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-xl border border-black/10 bg-white/70 text-gray-700 hover:bg-red-50 hover:text-red-600 transition"
+              >
+                <FiTrash2 className="text-[14px]" />
+                Remove
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="mt-4 rounded-xl border border-black/10 bg-white/60 p-5 text-center text-xs text-gray-600">
+          ماكو مرفقات بعد
+        </div>
+      )}
+    </div>
+  </div>
+)}
 
                 {activeTab === "Footer" && (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

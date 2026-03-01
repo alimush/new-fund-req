@@ -5,9 +5,7 @@ import { Types } from "mongoose";
 
 import User from "@/models/User";
 
-// ✅ عدّل هذا حسب اسم موديلك الحقيقي
-// مثال: import ExPaymentPlan from "@/models/ExPaymentPlan";
-import ExPaymentPlan from "@/models/ExPaymentPlan";
+
 
 import {
   buildWorkflowActionEmailHtml,

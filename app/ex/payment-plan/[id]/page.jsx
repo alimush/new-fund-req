@@ -19,6 +19,7 @@ import {
   FiXCircle,
   FiSend,
   FiMessageSquare,
+  FiPaperclip, FiFileText, FiDownload 
 } from "react-icons/fi";
 import { useRouter, useParams } from "next/navigation";
 
@@ -237,7 +238,40 @@ function CommentModal({ open, title, subtitle, submitLabel, onClose, onSubmit, l
     </AnimatePresence>
   );
 }
+const isImageFile = (file) => {
+  const name = String(file?.name || "").toLowerCase();
+  const type = String(file?.type || "").toLowerCase();
+  return (
+    type.startsWith("image/") ||
+    /\.(png|jpg|jpeg|gif|webp|bmp|svg)$/i.test(name)
+  );
+};
 
+const isPdfFile = (file) => {
+  const name = String(file?.name || "").toLowerCase();
+  const type = String(file?.type || "").toLowerCase();
+  return type === "application/pdf" || name.endsWith(".pdf");
+};
+
+const fileExt = (name = "") => {
+  const s = String(name).toLowerCase();
+  const i = s.lastIndexOf(".");
+  return i >= 0 ? s.slice(i + 1) : "";
+};
+
+const downloadFile = async (file) => {
+  if (!file?.url) return;
+  // طريقة تحفظ باسم الملف حتى لو signed
+  const res = await fetch(file.url);
+  const blob = await res.blob();
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = file.name || `file.${fileExt(file.name) || "bin"}`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2500);
+};
 export default function PaymentPlanDetailsPage() {
   const router = useRouter();
   const params = useParams();
@@ -435,7 +469,14 @@ export default function PaymentPlanDetailsPage() {
       </div>
     );
   }
+  const lastIdx = Math.max(0, workflowSteps.length - 1);
 
+  const isLastStepUser =
+    !!currentUser &&
+    workflowSteps.length > 0 &&
+    (workflowSteps[lastIdx]?.users || []).some(
+      (u) => String(u?._id) === String(currentUser?._id)
+    );
   return (
     <motion.div
       className="min-h-screen bg-transparent p-6 md:p-10"
@@ -533,27 +574,29 @@ export default function PaymentPlanDetailsPage() {
           </div>
 
           {/* Action Buttons */}
-          <div className="mt-4 flex flex-wrap items-center gap-3">
-            <button
-              onClick={openPreview}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 text-white hover:bg-blue-700 transition shadow disabled:opacity-60"
-              disabled={building}
-            >
-              <FiImage />
-              <span className="text-sm font-semibold">Preview</span>
-            </button>
+          {!isLastStepUser && (
+  <div className="mt-4 flex flex-wrap items-center gap-3">
+    <button
+      onClick={openPreview}
+      className="flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 text-white hover:bg-blue-700 transition shadow disabled:opacity-60"
+      disabled={building}
+    >
+      <FiImage />
+      <span className="text-sm font-semibold">Preview</span>
+    </button>
 
-            <button
-              onClick={doPrint}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gray-900 text-white hover:bg-black transition shadow disabled:opacity-60"
-              disabled={building}
-            >
-              <FiPrinter />
-              <span className="text-sm font-semibold">Print</span>
-            </button>
+    <button
+      onClick={doPrint}
+      className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gray-900 text-white hover:bg-black transition shadow disabled:opacity-60"
+      disabled={building}
+    >
+      <FiPrinter />
+      <span className="text-sm font-semibold">Print</span>
+    </button>
 
-            {(building || acting) && <div className="text-sm text-gray-600">جارِ التنفيذ…</div>}
-          </div>
+    {(building || acting) && <div className="text-sm text-gray-600">جارِ التنفيذ…</div>}
+  </div>
+)}
         </div>
 
         {/* =================== SUMMARY (نفس الستايل) =================== */}
@@ -693,6 +736,83 @@ export default function PaymentPlanDetailsPage() {
             </div>
           </div>
         </Section>
+
+        {Array.isArray(plan?.attachments) && plan.attachments.length > 0 && (
+  <Section title="Attachments" icon={<FiPaperclip />}>
+    <div className="flex flex-wrap gap-6">
+      {plan.attachments.map((file, idx) => {
+        const img = isImageFile(file);
+        const pdf = isPdfFile(file);
+
+        return (
+          <div key={idx} className="group w-40">
+            {/* preview box */}
+            <a
+              href={file.url || "#"}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block"
+              onClick={(e) => {
+                if (!file?.url) e.preventDefault();
+              }}
+            >
+              <div className="w-40 h-40 rounded-2xl overflow-hidden border border-gray-200 bg-white shadow-sm transition-transform transform group-hover:scale-[1.03] group-hover:shadow-lg flex items-center justify-center">
+                {img && file?.url ? (
+                  <img
+                    src={file.url}
+                    alt={file.name}
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <div className="flex flex-col items-center justify-center text-gray-600">
+                    {pdf ? (
+                      <FiFileText className="text-3xl" />
+                    ) : (
+                      <FiFileText className="text-3xl" />
+                    )}
+                    <div className="mt-2 text-[11px] font-bold uppercase opacity-70">
+                      {fileExt(file?.name) || "FILE"}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </a>
+
+            {/* filename */}
+            <p className="mt-2 text-[13px] text-center text-gray-800 font-semibold truncate group-hover:text-blue-600">
+              {file?.name || "Attachment"}
+            </p>
+
+            {/* actions */}
+            <div className="mt-2 flex items-center justify-center gap-2">
+              <a
+                href={file.url || "#"}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-3 py-1.5 rounded-xl text-xs font-bold bg-gray-900 text-white hover:bg-black disabled:opacity-60"
+                onClick={(e) => {
+                  if (!file?.url) e.preventDefault();
+                }}
+              >
+                Open
+              </a>
+
+              <button
+                type="button"
+                onClick={() => downloadFile(file)}
+                disabled={!file?.url}
+                className="px-3 py-1.5 rounded-xl text-xs font-bold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60 inline-flex items-center gap-1.5"
+              >
+                <FiDownload />
+                Download
+              </button>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  </Section>
+)}
 
         {/* ================= WORKFLOW (نفس تصميمك تماماً) ================= */}
         {workflow && (
