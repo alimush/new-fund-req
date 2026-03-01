@@ -368,47 +368,101 @@ export default function RequestsPage({ companyKey }) {
 
   const RequestCard = ({ r }) => {
     const dateText = r.createdAt ? new Date(r.createdAt).toLocaleDateString() : "-";
+  
+    const fmt = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
+    const totalAmount =
+      typeof r.totalAmount === "number"
+        ? r.totalAmount
+        : Array.isArray(r.items)
+        ? r.items.reduce(
+            (sum, it) => sum + (Number(it.qty) || 0) * (Number(it.price) || 0),
+            0
+          )
+        : 0;
+  
     return (
       <div
-        className="relative cursor-pointer rounded-2xl bg-white/55 backdrop-blur-xl ring-1 ring-white/40 shadow-[0_14px_40px_-18px_rgba(0,0,0,0.28)] hover:bg-white/75 hover:ring-white/60 transition-colors p-5"
+        className="
+          relative cursor-pointer rounded-2xl
+          bg-white/55 backdrop-blur-xl
+          ring-1 ring-white/40
+          shadow-[0_14px_40px_-18px_rgba(0,0,0,0.28)]
+          hover:bg-white/75 hover:ring-white/60
+          transition-colors
+          p-5
+        "
         onClick={() => router.push(`/requests/${companyKey}/${r._id}`)}
       >
-        <div className="pointer-events-none absolute inset-0 rounded-2xl bg-gradient-to-br from-white/30 via-transparent to-transparent opacity-90" />
-
+        {/* soft glow */}
+        <div className="pointer-events-none absolute inset-0 rounded-2xl bg-gradient-to-br from-white/35 via-transparent to-transparent opacity-90" />
+  
         <div className="relative flex items-start justify-between gap-4">
+          {/* LEFT */}
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <StatusBadge status={r.status} />
-              <span className="text-[13px] font-bold text-gray-700/80">{dateText}</span>
+              <span className="text-[12px] font-semibold text-gray-600">
+                {dateText}
+              </span>
             </div>
-
-            <div className="mt-2 text-[18px] font-black text-gray-900 line-clamp-1">
+  
+            <div className="mt-2 text-[18px] font-extrabold text-gray-900 line-clamp-1">
               {r.requestType || "Request"}
             </div>
-
-            <div className="mt-2 text-[14px] font-semibold text-gray-800/90 leading-relaxed line-clamp-2">
+  
+            <div className="mt-2 text-[14px] text-gray-800/90 leading-relaxed line-clamp-2">
               {r.description || "-"}
             </div>
-
-            <div className="mt-3 text-[12px] font-extrabold font-mono text-gray-700/85">
+  
+            <div className="mt-3 text-[12px] font-mono font-semibold text-gray-700/85">
               {r.requestCode || r._id}
             </div>
           </div>
-
-          <div className="shrink-0 text-right">
-            <div className="text-[12px] font-bold text-gray-600/80">Currency</div>
-            <div className="mt-1 text-[16px] font-black text-gray-900">{r.currency || "-"}</div>
+  
+          {/* RIGHT (Glass Amount Card) */}
+          <div className="shrink-0">
+            <div
+              className="
+                inline-flex flex-col items-end
+                rounded-xl
+                bg-white/30
+                backdrop-blur-2xl
+                ring-1 ring-white/40
+                shadow-[0_8px_25px_-12px_rgba(0,0,0,0.35)]
+                px-3 py-2
+                transition-colors
+              "
+            >
+              <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
+                Amount
+              </div>
+  
+              <div className="text-[16px] font-black text-gray-900 tabular-nums leading-tight">
+                {fmt.format(totalAmount)}
+                {r.currency ? (
+                  <span className="ml-1 text-[12px] font-bold text-gray-600">
+                    {r.currency}
+                  </span>
+                ) : null}
+              </div>
+            </div>
           </div>
         </div>
-
-        <div className="relative mt-4 flex items-center justify-between gap-3 text-[13px] font-bold text-gray-700/85">
-          <span className="inline-flex items-center gap-2">
+  
+        {/* Bottom Row */}
+        <div className="relative mt-4 flex items-center justify-between gap-3 text-[13px] text-gray-700/85">
+          <span className="inline-flex items-center gap-2 min-w-0">
             <FiFileText className="text-[16px]" />
-            <span className="truncate max-w-[240px]">{r.company || companyKey}</span>
+            <span className="truncate max-w-[240px] font-semibold">
+              {r.company || companyKey}
+            </span>
           </span>
-
+  
           <span className="truncate max-w-[55%]">
-            By: <span className="font-extrabold text-gray-900">{r.createdBy || "Unknown"}</span>
+            By:{" "}
+            <span className="font-extrabold text-gray-900">
+              {r.createdBy || "Unknown"}
+            </span>
           </span>
         </div>
       </div>

@@ -106,6 +106,7 @@ function buildSearchFilter(q) {
       { currency: rx },
       { department: rx },
       { createdBy: rx },
+      { projectName: rx },
       // _id as string search (fallback): we can't regex ObjectId directly reliably, so ignore
     ],
   };
@@ -211,6 +212,7 @@ export async function POST(req) {
       company,
       requestType: body.requestType,
       description: body.description,
+      projectName: body.projectName,
       currency: body.currency,
       department: body.department,
       createdBy: username || "", // ✅ safe

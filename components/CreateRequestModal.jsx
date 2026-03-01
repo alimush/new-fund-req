@@ -51,9 +51,47 @@ export default function CreateRequestModal({
 
   const [items, setItems] = useState([]);
   const [newItem, setNewItem] = useState({ desc: "", qty: "", price: "" });
-
+  const [projectName, setProjectName] = useState("");
   const [attachment, setAttachment] = useState(null);
-  
+  // فوق داخل الكمبوننت (قبل return) خلي هاي الستايت:
+const [dragOver, setDragOver] = useState(false);
+
+// دالة تضيف ملفات (تمنع التكرار بالاسم+الحجم):
+const addFiles = (filesArr) => {
+  if (!filesArr?.length) return;
+
+  setAttachment((prev) => {
+    const current = prev || [];
+    const map = new Map(current.map((f) => [`${f.name}_${f.size}`, f]));
+    for (const f of filesArr) map.set(`${f.name}_${f.size}`, f);
+    return Array.from(map.values());
+  });
+};
+   const openAttachment = (file) => {
+      if (!file) return;
+      const url = URL.createObjectURL(file);
+      window.open(url, "_blank", "noopener,noreferrer");
+      // تنظيف الذاكرة بعد شوي
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+    };
+  const nfInt = new Intl.NumberFormat("en-US");
+const nf2 = new Intl.NumberFormat("en-US", {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
+const stripNumber = (v) => String(v || "").replace(/,/g, "").replace(/[^\d.]/g, "");
+
+const formatInputMoney = (v) => {
+  const clean = stripNumber(v);
+  if (!clean) return "";
+
+  const [i, d] = clean.split(".");
+  const intPart = nfInt.format(Number(i || 0));
+
+  if (d === undefined) return intPart;
+  return `${intPart}.${d.slice(0, 2)}`; // نخلي حد اقصى 2 decimals
+};
 
   // إجمالي العناصر
   const itemsTotal = useMemo(() => {
@@ -68,6 +106,7 @@ export default function CreateRequestModal({
     setRequestType("");
     setDescription("");
     setCurrency("");
+    setProjectName("");
     setDepartment("");
     setItems([]);
     setNewItem({ desc: "", qty: "", price: "" });
@@ -89,7 +128,11 @@ export default function CreateRequestModal({
     if (!newItem.desc || !newItem.qty || !newItem.price) return;
     setItems((prev) => [
       ...prev,
-      { desc: newItem.desc, qty: Number(newItem.qty), price: Number(newItem.price) },
+      {
+        desc: newItem.desc,
+        qty: Number(stripNumber(newItem.qty)) || 0,
+        price: Number(stripNumber(newItem.price)) || 0,
+      },
     ]);
     setNewItem({ desc: "", qty: "", price: "" });
   };
@@ -137,6 +180,8 @@ export default function CreateRequestModal({
       }
     }
 
+   
+
     // 2) Create request with attachment metadata (no files in body)
     const userId = localStorage.getItem("userId");
 
@@ -150,6 +195,7 @@ export default function CreateRequestModal({
       body: JSON.stringify({
         company: companyKey,
         requestType,
+        projectName,
         description,
         currency,
         department,
@@ -297,6 +343,13 @@ export default function CreateRequestModal({
   <option value="قرض شخصي">قرض شخصي</option>
   <option value="سلفة">سلفة</option>
 </select>
+<input
+  type="text"
+  placeholder="Project Name"
+  value={projectName}
+  onChange={(e) => setProjectName(e.target.value)}
+  className="sm:col-span-2 border border-gray-300 rounded-lg p-2 bg-white text-gray-800"
+/>
 
                   <textarea
                     placeholder="الوصف"
@@ -305,7 +358,9 @@ export default function CreateRequestModal({
                     className="sm:col-span-2 border border-gray-300 rounded-lg p-3 bg-white text-gray-800"
                     rows={3}
                   />
+                  
                 </div>
+                
               )}
 
               {/* Financial */}
@@ -361,13 +416,19 @@ export default function CreateRequestModal({
                       onChange={(e) => setNewItem({ ...newItem, qty: e.target.value })}
                       className="sm:col-span-2 border border-gray-300 rounded-lg p-2 bg-white text-gray-800"
                     />
-                    <input
-                      type="number"
-                      placeholder="المبلغ"
-                      value={newItem.price}
-                      onChange={(e) => setNewItem({ ...newItem, price: e.target.value })}
-                      className="sm:col-span-2 border border-gray-300 rounded-lg p-2 bg-white text-gray-800"
-                    />
+                   <input
+  type="text"
+  inputMode="decimal"
+  placeholder="المبلغ"
+  value={newItem.price}
+  onChange={(e) =>
+    setNewItem((prev) => ({
+      ...prev,
+      price: formatInputMoney(e.target.value),
+    }))
+  }
+  className="sm:col-span-2 border border-gray-300 rounded-lg p-2 bg-white text-gray-800"
+/>
                     <button
                       type="button"
                       onClick={addItem}
@@ -468,14 +529,14 @@ export default function CreateRequestModal({
               )}
 
             {/* Attachment */}
-{activeTab === "Attachment" && (
+            {activeTab === "Attachment" && (
   <div className="space-y-4">
     {/* Header */}
     <div className="flex items-center justify-between">
       <div>
         <div className="text-sm font-semibold text-gray-800">المرفقات</div>
         <div className="text-xs text-gray-500">
-        pdf  يمكنك إرفاق ملفات مثل اكسل أو صور او  
+          pdf يمكنك إرفاق ملفات مثل اكسل أو صور او
         </div>
       </div>
 
@@ -487,85 +548,124 @@ export default function CreateRequestModal({
     </div>
 
     {/* Upload Card */}
-    <div className="rounded-2xl border border-black/10 bg-white/55 backdrop-blur-xl shadow-sm p-4">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="h-11 w-11 rounded-2xl border border-black/10 bg-white/70 backdrop-blur flex items-center justify-center text-gray-600">
-            <FiPaperclip className="text-lg" />
-          </div>
-          <div>
-            <div className="text-sm font-medium text-gray-800">رفع مرفق</div>
-            <div className="text-xs text-gray-500">
-            "Add Files" لاختيار الملفات من جهازك اضغط على
-            </div>
-          </div>
-        </div>
+   {/* Upload Card + Drop Zone */}
+<div
+  className={`rounded-2xl border border-black/10 bg-white/55 backdrop-blur-xl shadow-sm p-4
+              transition
+              ${dragOver ? "ring-2 ring-blue-300 bg-white/75" : ""}`}
+  onDragOver={(e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOver(true);
+  }}
+  onDragLeave={(e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOver(false);
+  }}
+  onDrop={(e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOver(false);
 
-        <label className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-gray-800 text-white text-sm shadow-sm cursor-pointer hover:bg-gray-900 active:scale-[0.99] transition">
-          <FiPlus className="text-base" />
-          Add Files
-          <input
-            type="file"
-            className="hidden"
-            multiple
-            onChange={(e) => {
-              const files = Array.from(e.target.files || []);
-              setAttachment((prev) => [...(prev || []), ...files]);
-              e.target.value = ""; // مهم حتى تقدر تختار نفس الملف مرة ثانية
-            }}
-          />
-        </label>
+    const files = Array.from(e.dataTransfer.files || []);
+    addFiles(files);
+  }}
+>
+  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+    <div className="flex items-center gap-3">
+      <div className="h-11 w-11 rounded-2xl border border-black/10 bg-white/70 backdrop-blur flex items-center justify-center text-gray-600">
+        <FiPaperclip className="text-lg" />
       </div>
 
-      {/* Files List */}
-      {attachment?.length > 0 ? (
-        <div className="mt-4 space-y-2">
-          {attachment.map((file, i) => (
-            <div
-              key={i}
-              className="flex items-center justify-between gap-3 px-3 py-2 rounded-xl border border-black/10 bg-white/65 backdrop-blur shadow-sm hover:bg-white/80 transition"
-            >
-              <div className="min-w-0 flex items-center gap-2">
-                <div className="h-9 w-9 rounded-xl border border-black/10 bg-white/70 flex items-center justify-center text-gray-600">
-                  <FiFileText />
-                </div>
-
-                <div className="min-w-0">
-                  <div className="text-sm font-medium text-gray-800 truncate">
-                    {file.name}
-                  </div>
-                  <div className="text-xs text-gray-500">
-                    {(file.size / 1024 / 1024).toFixed(2)} MB
-                  </div>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={() =>
-                  setAttachment((prev) => prev.filter((_, idx) => idx !== i))
-                }
-                className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-xl border border-black/10 bg-white/70 text-gray-700 hover:bg-red-50 hover:text-red-600 transition"
-                title="Remove file"
-              >
-                <FiTrash2 className="text-[14px]" />
-                Remove
-              </button>
-            </div>
-          ))}
+      <div>
+        <div className="text-sm font-medium text-gray-800">رفع مرفق</div>
+        <div className="text-xs text-gray-500">
+          تقدر تختار ملفات أو تسحبها وتفلتها هنا
         </div>
-      ) : (
-        <div className="mt-4 rounded-xl border border-black/10 bg-white/60 backdrop-blur p-5 text-center">
-          <div className="mx-auto mb-2 h-10 w-10 rounded-2xl border border-black/10 bg-white/70 flex items-center justify-center text-gray-400">
-            <FiPaperclip />
-          </div>
-          <div className="text-sm font-medium text-gray-700">No files added yet</div>
-          <div className="text-xs text-gray-500 mt-1">
-            Use “Add Files” to attach documents
-          </div>
-        </div>
-      )}
+      </div>
     </div>
+
+    <label className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-gray-800 text-white text-sm shadow-sm cursor-pointer hover:bg-gray-900 active:scale-[0.99] transition">
+      <FiPlus className="text-base" />
+      Add Files
+      <input
+        type="file"
+        className="hidden"
+        multiple
+        onChange={(e) => {
+          const files = Array.from(e.target.files || []);
+          addFiles(files);
+          e.target.value = "";
+        }}
+      />
+    </label>
+  </div>
+
+  {/* Hint line */}
+  <div className="mt-3 rounded-xl border border-dashed border-black/15 bg-white/50 p-3 text-center text-xs text-gray-600">
+    اسحب الملفات من الديسكتوب وافلتها هنا (Drag & Drop)
+  </div>
+
+  {/* Files List */}
+  {attachment?.length > 0 ? (
+    <div className="mt-4 space-y-2">
+      {attachment.map((file, i) => (
+        <div
+          key={i}
+          onClick={() => openAttachment(file)}
+          title="Open attachment"
+          className="flex items-center justify-between gap-3 px-3 py-2 rounded-xl
+                     border border-black/10 bg-white/65 backdrop-blur shadow-sm
+                     hover:bg-white/80 transition cursor-pointer"
+        >
+          <div className="min-w-0 flex items-center gap-2">
+            <div className="h-9 w-9 rounded-xl border border-black/10 bg-white/70 flex items-center justify-center text-gray-600">
+              <FiFileText />
+            </div>
+
+            <div className="min-w-0">
+              <div className="text-sm font-medium text-gray-800 truncate">
+                {file.name}
+              </div>
+              <div className="text-xs text-gray-500">
+                {(file.size / 1024 / 1024).toFixed(2)} MB
+              </div>
+              <div className="text-[11px] font-bold text-blue-700 mt-0.5">
+                Open attachment
+              </div>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setAttachment((prev) => (prev || []).filter((_, idx) => idx !== i));
+            }}
+            className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-xl
+                       border border-black/10 bg-white/70 text-gray-700
+                       hover:bg-red-50 hover:text-red-600 transition"
+            title="Remove file"
+          >
+            <FiTrash2 className="text-[14px]" />
+            Remove
+          </button>
+        </div>
+      ))}
+    </div>
+  ) : (
+    <div className="mt-4 rounded-xl border border-black/10 bg-white/60 backdrop-blur p-5 text-center">
+      <div className="mx-auto mb-2 h-10 w-10 rounded-2xl border border-black/10 bg-white/70 flex items-center justify-center text-gray-400">
+        <FiPaperclip />
+      </div>
+      <div className="text-sm font-medium text-gray-700">No files added yet</div>
+      <div className="text-xs text-gray-500 mt-1">
+        Use “Add Files” أو اسحب الملف وافلته هنا
+      </div>
+    </div>
+  )}
+</div>
   </div>
 )}
             {/* Review */}
@@ -580,158 +680,205 @@ export default function CreateRequestModal({
 
     {/* ================= Summary Cards ================= */}
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-
-      {[
-        { icon: FiBriefcase, label: "الشركة", value: companyKey || "-" },
-        { icon: FiTag, label: "نوع الطلب", value: requestType || "-" },
-        { icon: FiDollarSign, label: "العملة", value: currency || "-" },
-        { icon: FiLayers, label: "القسم", value: department || "-" },
-      ].map((c, i) => (
-        <div
-          key={i}
-          className="group relative flex items-center gap-3 p-3 rounded-xl
-                     border border-white/40
-                     bg-white/70 backdrop-blur-xl
-                     shadow-sm hover:shadow-md transition"
-        >
-          {/* Icon */}
-          <div
-            className="h-9 w-9 rounded-lg
-                       bg-white/90 border border-gray-200
-                       flex items-center justify-center
-                       text-gray-700 group-hover:text-gray-900 transition"
-          >
-            <c.icon size={16} />
-          </div>
-
-          {/* Text */}
-          <div className="flex flex-col">
-            <span className="text-[10px] uppercase tracking-wide text-gray-500">
-              {c.label}
-            </span>
-            <span className="text-sm font-semibold text-gray-800">
-              {c.value}
-            </span>
-          </div>
-
-          {/* subtle glow */}
-          <div className="pointer-events-none absolute inset-0 rounded-xl
-                          opacity-0 group-hover:opacity-100 transition
-                          bg-gradient-to-br from-white/40 to-transparent" />
-        </div>
-      ))}
-
-      {/* ================= Description ================= */}
+  {/* ====== Summary Cards ====== */}
+  {[
+    { icon: FiBriefcase, label: "الشركة", value: companyKey || "-" },
+    { icon: FiTag, label: "نوع الطلب", value: requestType || "-" },
+    { icon: FiDollarSign, label: "العملة", value: currency || "-" },
+    { icon: FiLayers, label: "القسم", value: department || "-" },
+  ].map((c, i) => (
+    <div
+      key={i}
+      className="group relative flex items-center gap-3 p-3 rounded-xl
+                 border border-white/40
+                 bg-white/70 backdrop-blur-xl
+                 shadow-sm hover:shadow-md transition"
+    >
+      {/* Icon */}
       <div
-        className="sm:col-span-2 relative flex gap-3 p-3 rounded-xl
-                   border border-white/40
-                   bg-white/70 backdrop-blur-xl
-                   shadow-sm
-                   transition-all duration-200
-                   hover:bg-white/80
-                   hover:shadow-md
-                   hover:-translate-y-[1px]
-                   group"
+        className="h-9 w-9 rounded-lg
+                   bg-white/90 border border-gray-200
+                   flex items-center justify-center
+                   text-gray-700 group-hover:text-gray-900 transition"
       >
-        {/* Icon */}
-        <div
-          className="h-9 w-9 rounded-lg
-                     bg-white/90 border border-gray-200
-                     flex items-center justify-center
-                     text-gray-700
-                     transition
-                     group-hover:bg-white
-                     group-hover:shadow"
-        >
-          <FiFileText size={16} />
-        </div>
-
-        {/* Content */}
-        <div className="flex-1 relative">
-          <div className="text-[10px] uppercase tracking-wide text-gray-500 mb-0.5">
-            الوصف
-          </div>
-
-          <div className="text-sm text-gray-700 leading-relaxed whitespace-pre-line">
-            {description || "-"}
-          </div>
-
-          <div
-            className="pointer-events-none absolute inset-0 rounded-lg
-                       opacity-0 group-hover:opacity-100 transition
-                       bg-gradient-to-br from-white/40 to-transparent"
-          />
-        </div>
+        <c.icon size={16} />
       </div>
 
-      {/* ================= Attachments ================= */}
+      {/* Text */}
+      <div className="flex flex-col min-w-0">
+        <span className="text-[10px] uppercase tracking-wide text-gray-500">
+          {c.label}
+        </span>
+        <span className="text-sm font-semibold text-gray-800 truncate">
+          {c.value}
+        </span>
+      </div>
+
+      {/* subtle glow */}
       <div
-        className="sm:col-span-2 rounded-2xl p-4
-                   border border-white/40
-                   bg-white/70 backdrop-blur-xl
-                   shadow-sm space-y-3"
-      >
-        {/* Header */}
-        <div className="flex items-center gap-3">
-          <div
-            className="h-9 w-9 rounded-lg
-                       bg-white/90 border border-gray-200
-                       flex items-center justify-center
-                       text-gray-700 shadow-sm"
-          >
-            <FiPaperclip size={16} />
-          </div>
+        className="pointer-events-none absolute inset-0 rounded-xl
+                   opacity-0 group-hover:opacity-100 transition
+                   bg-gradient-to-br from-white/40 to-transparent"
+      />
+    </div>
+  ))}
 
-          <div>
-            <div className="text-sm font-semibold text-gray-800">
-              المرفقات
-            </div>
-            <div className="text-xs text-gray-500">
-              {attachment?.length
-                ? `${attachment.length} file(s) attached`
-                : "No attachments added"}
-            </div>
-          </div>
-        </div>
+  {/* ====== Project Name (Full width) ====== */}
+  <div
+    className="sm:col-span-2 group relative flex gap-3 p-3 rounded-xl
+               border border-white/40
+               bg-white/70 backdrop-blur-xl
+               shadow-sm
+               transition-all duration-200
+               hover:bg-white/80
+               hover:shadow-md
+               hover:-translate-y-[1px]"
+  >
+    {/* Icon */}
+    <div
+      className="h-9 w-9 rounded-lg
+                 bg-white/90 border border-gray-200
+                 flex items-center justify-center
+                 text-gray-700
+                 transition
+                 group-hover:bg-white
+                 group-hover:shadow"
+    >
+      <FiLayers size={16} />
+    </div>
 
-        {/* List */}
-        {attachment?.length > 0 ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-            {attachment.map((file, i) => (
-              <div
-                key={i}
-                className="group flex items-center gap-2 p-2 rounded-xl
-                           border border-gray-200
-                           bg-white/90
-                           shadow-sm hover:shadow-md transition"
-              >
-                <div
-                  className="h-8 w-8 rounded-lg
-                             bg-gray-100 border
-                             flex items-center justify-center
-                             text-gray-600"
-                >
-                  <FiFileText size={14} />
-                </div>
-
-                <div className="min-w-0 flex-1">
-                  <div className="text-xs font-semibold text-gray-800 truncate">
-                    {file.name}
-                  </div>
-                  <div className="text-[11px] text-gray-500">
-                    {(file.size / 1024).toFixed(1)} KB
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="text-xs text-gray-500 text-center py-3 border border-dashed rounded-xl">
-          لا توجد مرفقات
-          </div>
-        )}
+    {/* Content */}
+    <div className="flex-1 min-w-0">
+      <div className="text-[10px] uppercase tracking-wide text-gray-500 mb-0.5">
+        Project Name
+      </div>
+      <div className="text-sm font-semibold text-gray-800 truncate">
+        {projectName || "-"}
       </div>
     </div>
+
+    <div
+      className="pointer-events-none absolute inset-0 rounded-xl
+                 opacity-0 group-hover:opacity-100 transition
+                 bg-gradient-to-br from-white/40 to-transparent"
+    />
+  </div>
+
+  {/* ================= Description ================= */}
+  <div
+    className="sm:col-span-2 relative flex gap-3 p-3 rounded-xl
+               border border-white/40
+               bg-white/70 backdrop-blur-xl
+               shadow-sm
+               transition-all duration-200
+               hover:bg-white/80
+               hover:shadow-md
+               hover:-translate-y-[1px]
+               group"
+  >
+    {/* Icon */}
+    <div
+      className="h-9 w-9 rounded-lg
+                 bg-white/90 border border-gray-200
+                 flex items-center justify-center
+                 text-gray-700
+                 transition
+                 group-hover:bg-white
+                 group-hover:shadow"
+    >
+      <FiFileText size={16} />
+    </div>
+
+    {/* Content */}
+    <div className="flex-1 relative">
+      <div className="text-[10px] uppercase tracking-wide text-gray-500 mb-0.5">
+        الوصف
+      </div>
+
+      <div className="text-sm text-gray-700 leading-relaxed whitespace-pre-line">
+        {description || "-"}
+      </div>
+
+      <div
+        className="pointer-events-none absolute inset-0 rounded-lg
+                   opacity-0 group-hover:opacity-100 transition
+                   bg-gradient-to-br from-white/40 to-transparent"
+      />
+    </div>
+  </div>
+
+  {/* ================= Attachments ================= */}
+  <div
+  className="sm:col-span-2 rounded-2xl p-4
+             border border-white/40
+             bg-white/70 backdrop-blur-xl
+             shadow-sm space-y-3"
+>
+  {/* Header */}
+  <div className="flex items-center gap-3">
+    <div
+      className="h-9 w-9 rounded-lg
+                 bg-white/90 border border-gray-200
+                 flex items-center justify-center
+                 text-gray-700 shadow-sm"
+    >
+      <FiPaperclip size={16} />
+    </div>
+
+    <div>
+      <div className="text-sm font-semibold text-gray-800">المرفقات</div>
+      <div className="text-xs text-gray-500">
+        {attachment?.length ? `${attachment.length} file(s) attached` : "No attachments added"}
+      </div>
+    </div>
+  </div>
+
+  {/* List */}
+  {attachment?.length > 0 ? (
+    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+      {attachment.map((file, i) => (
+        <div
+          key={i}
+          onClick={() => openAttachment(file)} // ✅ الكارد تنفتح
+          title="Open attachment"
+          className="cursor-pointer group flex items-center gap-2 p-2 rounded-xl
+                     border border-gray-200
+                     bg-white/85 backdrop-blur
+                     shadow-sm
+                     hover:shadow-md hover:border-blue-300 hover:bg-white/95
+                     transition-all duration-200"
+        >
+          <div
+            className="h-8 w-8 rounded-lg
+                       bg-gray-100 border
+                       flex items-center justify-center
+                       text-gray-600 shrink-0"
+          >
+            <FiFileText size={14} />
+          </div>
+
+          <div className="min-w-0 flex-1">
+            <div className="text-[11px] font-bold text-gray-900 truncate">
+              {file.name}
+            </div>
+            <div className="text-[10px] text-gray-500">
+              {(file.size / 1024).toFixed(1)} KB
+            </div>
+
+            <div className="text-[10px] font-bold text-blue-700 opacity-0 group-hover:opacity-100 transition">
+              Open
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  ) : (
+    <div className="text-xs text-gray-500 text-center py-3 border border-dashed rounded-xl">
+      لا توجد مرفقات
+    </div>
+  )}
+</div>
+</div>
 
     {/* ================= Items Summary ================= */}
     <div

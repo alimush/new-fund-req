@@ -72,7 +72,7 @@ const RequestSchema = new mongoose.Schema(
       createdBy: String,
       createdAt: Date
     },
-    
+    projectName: { type: String, default: "", trim: true },
 
     cancelledAt: { type: Date, default: null },
     cancelledNote: { type: String, default: "" },
