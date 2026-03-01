@@ -169,20 +169,81 @@ export async function POST(req) {
     const { userId, username, permissions } = auth;
 
     // ✅ تحديد هل عنده MARKETING
-    const userHasMarketing = permissions.includes("MARKETING");
+  // ✅ helper: هل اليوزر يحقق شروط هذا الوركفلو؟
+function matchesWorkflowByPerms(workflow, userPerms) {
+  const required = workflow?.rules?.requiredPermissions;
+  if (!Array.isArray(required) || required.length === 0) return true; // العام ينطبق على الكل
+  const set = new Set((userPerms || []).map(String));
+  return required.every((p) => set.has(String(p)));
+}
 
-    // ✅ اختيار الـ workflow
-    let workflow = null;
+// ✅ helper: هل هذا workflow "عام"؟
+function isGeneralWorkflow(workflow) {
+  const required = workflow?.rules?.requiredPermissions;
+  return !Array.isArray(required) || required.length === 0;
+}
 
-    // 🔥 خاص بالغدير + ماركتنك
-    if (company === "Al-Ghadeer" && userHasMarketing) {
-      workflow = await Workflow.findOne({ company, code: "ALGHDEER-2" }).populate("steps.users");
-    }
+// ✅ helper: ترتيب لاختيار الأفضل
+function workflowScore(workflow) {
+  const pri = Number(workflow?.rules?.priority);
+  const priority = Number.isFinite(pri) ? pri : 1;
+  const requiredCount = Array.isArray(workflow?.rules?.requiredPermissions)
+    ? workflow.rules.requiredPermissions.length
+    : 0;
 
-    // الافتراضي
-    if (!workflow) {
-      workflow = await Workflow.findOne({ company }).populate("steps.users");
-    }
+  return { priority, requiredCount };
+}
+
+// ======================
+// ✅ اختيار workflow حسب الصلاحيات
+// ======================
+let workflow = null;
+
+// 1) جيب كل workflows للشركة
+const workflows = await Workflow.find({ company })
+  .populate("steps.users")
+  .lean();
+
+// 2) فلتر اللي ينطبق على صلاحيات المستخدم
+const matched = workflows.filter((wf) => matchesWorkflowByPerms(wf, permissions));
+
+// 3) إذا أكو مطابقين: اختار الأفضل (priority أعلى، وبعدين الأكثر تخصيصًا)
+if (matched.length > 0) {
+  matched.sort((a, b) => {
+    const A = workflowScore(a);
+    const B = workflowScore(b);
+
+    // priority desc
+    if (B.priority !== A.priority) return B.priority - A.priority;
+
+    // الأكثر شروطًا أولاً (أكثر تخصيص)
+    if (B.requiredCount !== A.requiredCount) return B.requiredCount - A.requiredCount;
+
+    // الأحدث أولاً (اختياري)
+    const at = new Date(a.updatedAt || a.createdAt || 0).getTime();
+    const bt = new Date(b.updatedAt || b.createdAt || 0).getTime();
+    return bt - at;
+  });
+
+  // إذا موجود workflow متخصص ينطبق -> خذه
+  // وإذا كله عام -> هم راح يختار العام
+  workflow = matched[0];
+}
+
+// 4) إذا ماكو أي workflow ينطبق (يعني المستخدم ما عنده الصلاحيات لأي متخصص)
+if (!workflow) {
+  // جيب العام (rules.requiredPermissions = [])
+  workflow =
+    workflows.find((wf) => isGeneralWorkflow(wf)) ||
+    null;
+}
+
+if (!workflow) {
+  return NextResponse.json(
+    { success: false, error: "No workflow defined for this company" },
+    { status: 400 }
+  );
+}
 
     if (!workflow) {
       return NextResponse.json(
@@ -195,7 +256,7 @@ export async function POST(req) {
       name: workflow.name,
       steps: workflow.steps.map((s) => ({
         name: s.name || s.title || s.stepName || "",
-        users: (s.users || []).map((u) => u._id), // ObjectId[]
+        users: (s.users || []).map((u) => u?._id || u),
         status: "Pending",
         actedBy: null,
         actedAt: null,

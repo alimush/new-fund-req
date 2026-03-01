@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import {
   FiPlus,
@@ -10,9 +10,13 @@ import {
   FiTrash2,
   FiX,
   FiHash,
+  FiShield,
 } from "react-icons/fi";
 import Select from "react-select";
 import { useRouter } from "next/navigation";
+
+// ✅ هذني حسب الكود اللي انت كاتبه
+import { PERMISSIONS, PERMISSION_LABELS } from "@/lib/permission";
 
 export default function WorkflowPage() {
   const router = useRouter();
@@ -27,9 +31,10 @@ export default function WorkflowPage() {
   const [openModal, setOpenModal] = useState(false);
   const [name, setName] = useState("");
   const [company, setCompany] = useState("");
-
-  // ✅ NEW
   const [code, setCode] = useState("");
+
+  // ✅ NEW: required permissions
+  const [requiredPerms, setRequiredPerms] = useState([]);
 
   // ✅ helper: userId + headers
   const getUserId = () => localStorage.getItem("userId") || "";
@@ -38,6 +43,14 @@ export default function WorkflowPage() {
     ...extra,
     "x-user-id": getUserId(),
   });
+
+  // ✅ options for permissions select
+  const PERM_OPTIONS = useMemo(() => {
+    return Object.values(PERMISSIONS).map((p) => ({
+      value: p,
+      label: PERMISSION_LABELS[p] || p,
+    }));
+  }, []);
 
   // =========================
   // ✅ Auth Guard
@@ -110,7 +123,7 @@ export default function WorkflowPage() {
     }
   };
 
-  // ✅ Load companies (بدون فلترة لأن نسمح بأكثر من Workflow لنفس الشركة)
+  // ✅ Load companies
   const loadCompanies = async (wfList) => {
     try {
       if (!Array.isArray(wfList)) wfList = [];
@@ -152,14 +165,22 @@ export default function WorkflowPage() {
     if (!name.trim()) return alert("اكتب اسم الـ Workflow");
     if (!company) return alert("اختر الشركة");
 
-    // ✅ NEW: code required
     const normCode = normalizeCode(code);
     if (!normCode) return alert("اكتب كود للـ Workflow (مثلاً: ALGHDEER-1 أو ALGHDEER-2)");
 
     const res = await fetch("/api/workflow", {
       method: "POST",
       headers: authHeaders({ "Content-Type": "application/json" }),
-      body: JSON.stringify({ name, company, code: normCode }), // ✅ NEW
+      body: JSON.stringify({
+        name,
+        company,
+        code: normCode,
+        steps: [],
+        rules: {
+          requiredPermissions: requiredPerms, // ✅ هنا المهم
+          priority: 1,
+        },
+      }),
     });
 
     if (res.status === 401) return router.replace("/login");
@@ -171,7 +192,8 @@ export default function WorkflowPage() {
       setOpenModal(false);
       setName("");
       setCompany("");
-      setCode(""); // ✅ NEW
+      setCode("");
+      setRequiredPerms([]);
 
       router.push(`/workflow/${data.workflow._id}`);
     } else {
@@ -199,6 +221,12 @@ export default function WorkflowPage() {
     } else {
       alert(data.error || "فشل حذف Workflow");
     }
+  };
+
+  const renderRulesText = (wf) => {
+    const req = wf?.rules?.requiredPermissions || [];
+    if (!Array.isArray(req) || req.length === 0) return "عام (بدون شروط)";
+    return req.join(", ");
   };
 
   if (!authorized) return null;
@@ -248,10 +276,15 @@ export default function WorkflowPage() {
                   Company: <span className="font-semibold">{wf.company}</span>
                 </p>
 
-                {/* ✅ NEW: show code */}
                 <p className="text-gray-600 mt-1 flex items-center gap-2">
                   <FiHash className="text-gray-500" />
                   Code: <span className="font-semibold">{wf.code || "-"}</span>
+                </p>
+
+                {/* ✅ NEW: show rules */}
+                <p className="text-gray-600 mt-2 flex items-center gap-2">
+                  <FiShield className="text-gray-500" />
+                  Rules: <span className="font-semibold">{renderRulesText(wf)}</span>
                 </p>
 
                 <div className="mt-4 flex items-center gap-3">
@@ -294,7 +327,6 @@ export default function WorkflowPage() {
               className="w-full p-3 border rounded-xl mb-4"
             />
 
-            {/* ✅ NEW: code input */}
             <input
               type="text"
               placeholder="Workflow code (مثلاً: ALGHDEER-1)"
@@ -305,13 +337,35 @@ export default function WorkflowPage() {
 
             <Select
               options={availableCompanies.map((c) => ({ value: c, label: c }))}
-              onChange={(val) => setCompany(val?.value)}
+              onChange={(val) => setCompany(val?.value || "")}
               placeholder="Select Company"
               className="mb-4"
             />
 
+            {/* ✅ NEW: Permissions Select */}
+            <Select
+              isMulti
+              options={PERM_OPTIONS}
+              value={PERM_OPTIONS.filter((o) => requiredPerms.includes(o.value))}
+              onChange={(vals) => setRequiredPerms((vals || []).map((v) => v.value))}
+              placeholder="اختر الصلاحيات المطلوبة لهذا الـ Workflow (اختياري)"
+              className="mb-2"
+              styles={{
+                menu: (base) => ({ ...base, zIndex: 9999 }),
+              }}
+            />
+
+            <div className="text-xs text-gray-500 mb-4">
+              إذا خليتها فارغة → Workflow عام.  
+              إذا اخترت مثلاً MARKETING → بس مستخدمين الماركتنك ينطبق عليهم هذا الـ Workflow.
+            </div>
+
             <button
-              onClick={createWorkflow}
+              onClick={() => {
+                // نخزن normalized code قبل الإرسال حتى ما يصير لخبطة
+                setCode((prev) => normalizeCode(prev));
+                createWorkflow();
+              }}
               className="w-full p-3 rounded-xl bg-blue-600 text-white hover:bg-blue-700 shadow"
             >
               Create Workflow

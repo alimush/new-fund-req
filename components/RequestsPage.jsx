@@ -367,34 +367,44 @@ export default function RequestsPage({ companyKey }) {
   };
 
   const RequestCard = ({ r }) => {
-    const dateText = r.createdAt ? new Date(r.createdAt).toLocaleDateString() : "-";
+    const dateText = r.createdAt
+      ? new Date(r.createdAt).toLocaleDateString()
+      : "-";
   
-    const fmt = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
+    const fmt = useMemo(
+      () => new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }),
+      []
+    );
+  
     const totalAmount =
       typeof r.totalAmount === "number"
         ? r.totalAmount
         : Array.isArray(r.items)
         ? r.items.reduce(
-            (sum, it) => sum + (Number(it.qty) || 0) * (Number(it.price) || 0),
+            (sum, it) =>
+              sum + (Number(it.qty) || 0) * (Number(it.price) || 0),
             0
           )
         : 0;
   
     return (
       <div
-        className="
-          relative cursor-pointer rounded-2xl
-          bg-white/55 backdrop-blur-xl
-          ring-1 ring-white/40
-          shadow-[0_14px_40px_-18px_rgba(0,0,0,0.28)]
-          hover:bg-white/75 hover:ring-white/60
-          transition-colors
-          p-5
-        "
         onClick={() => router.push(`/requests/${companyKey}/${r._id}`)}
+        className="
+          group relative cursor-pointer rounded-2xl
+          bg-white/60 backdrop-blur-xl
+          ring-1 ring-black/5
+          shadow-[0_12px_35px_-18px_rgba(0,0,0,0.28)]
+          p-5
+          transition-all duration-300
+          hover:-translate-y-[2px]
+          hover:bg-white/75
+          hover:ring-black/10
+          hover:shadow-[0_18px_55px_-22px_rgba(0,0,0,0.38)]
+        "
       >
-        {/* soft glow */}
-        <div className="pointer-events-none absolute inset-0 rounded-2xl bg-gradient-to-br from-white/35 via-transparent to-transparent opacity-90" />
+        {/* glow */}
+        <div className="pointer-events-none absolute inset-0 rounded-2xl opacity-0 transition-opacity duration-300 group-hover:opacity-100 bg-gradient-to-br from-white/45 via-transparent to-transparent" />
   
         <div className="relative flex items-start justify-between gap-4">
           {/* LEFT */}
@@ -419,33 +429,46 @@ export default function RequestsPage({ companyKey }) {
             </div>
           </div>
   
-          {/* RIGHT (Glass Amount Card) */}
-          <div className="shrink-0">
+          {/* RIGHT SIDE */}
+          <div className="shrink-0 flex flex-col items-end gap-2">
+            
+            {/* Amount Card */}
             <div
               className="
-                inline-flex flex-col items-end
-                rounded-xl
-                bg-white/30
-                backdrop-blur-2xl
-                ring-1 ring-white/40
-                shadow-[0_8px_25px_-12px_rgba(0,0,0,0.35)]
-                px-3 py-2
-                transition-colors
+                rounded-xl px-4 py-3
+                bg-white/35 backdrop-blur-2xl
+                ring-1 ring-white/60
+                shadow-[0_10px_26px_-16px_rgba(0,0,0,0.35)]
+                transition-all duration-300
+                group-hover:bg-white/45
               "
             >
               <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
                 Amount
               </div>
   
-              <div className="text-[16px] font-black text-gray-900 tabular-nums leading-tight">
+              <div className="mt-1 text-[18px] font-black text-gray-900 tabular-nums break-words">
                 {fmt.format(totalAmount)}
-                {r.currency ? (
-                  <span className="ml-1 text-[12px] font-bold text-gray-600">
-                    {r.currency}
-                  </span>
-                ) : null}
               </div>
             </div>
+  
+            {/* Currency Card (منفصل تماما) */}
+            {r.currency && (
+              <div
+                className="
+                  rounded-lg px-3 py-1.5
+                  bg-white/55 backdrop-blur-xl
+                  ring-1 ring-black/10
+                  shadow-sm
+                  text-[12px] font-bold text-gray-700
+                  transition-all duration-300
+                  group-hover:bg-white/70
+                "
+              >
+                {r.currency}
+              </div>
+            )}
+  
           </div>
         </div>
   
