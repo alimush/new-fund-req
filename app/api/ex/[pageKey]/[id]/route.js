@@ -12,7 +12,7 @@ import WaiverReservation from "@/models/WaiverReservation";
 import CancelBookingUnit from "@/models/CancelBookingUnit";
 import UnitTransfer from "@/models/UnitTransfer";
 import { sendWorkflowEmail, buildExWorkflowActionEmailHtml } from "@/lib/email/exWorkflowEmail";
-
+import { getExForm } from "@/lib/exForms/registry";
 export const runtime = "nodejs";
 
 /* ================= Helpers (مثل payment-plan) ================= */
@@ -279,6 +279,9 @@ export async function PUT(req, ctx) {
     const actorName = currentUser?.username || currentUser?.name || currentUser?.email || "System";
     const baseDomain = process.env.EX_BASE_DOMAIN || "https://funds-gdr.spc-it.com.iq";
     const pageKey = doc.pageKey || forcedKey || pageKeyParam;
+    const cfg = getExForm(pageKey);
+const docTitle = cfg?.title || pageKey;   // هذا يطلع بدل Document
+const docTypeAr = cfg?.title || "المستند";
 
     const docUrl = `${String(baseDomain).replace(/\/+$/, "")}/ex/${encodeURIComponent(pageKey)}/${encodeURIComponent(
       String(doc._id)
@@ -315,6 +318,8 @@ export async function PUT(req, ctx) {
           toUserName: "",
           planUrl: docUrl,
           showRoutingLine: false,
+          docTitle,   
+          docTypeAr,
         });
 
         try {
@@ -356,6 +361,8 @@ export async function PUT(req, ctx) {
           toUserName: toUserName || "",
           planUrl: docUrl,
           showRoutingLine: true,
+          docTitle,
+  docTypeAr,
         });
 
         try {
@@ -396,6 +403,8 @@ export async function PUT(req, ctx) {
         toUserName: "",
         planUrl: docUrl,
         showRoutingLine: false,
+        docTitle,
+  docTypeAr,
       });
 
       try {
