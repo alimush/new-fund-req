@@ -24,7 +24,7 @@ import {
 } from "react-icons/fi";
 import { useRouter, useParams } from "next/navigation";
 import { getExForm } from "@/lib/exForms/registry";
-
+import StatusBadge from "@/components/StatusBadge";
 const pct = (p) => ({ top: `${p.top}%`, left: `${p.left}%` });
 
 async function waitForImages(node) {
@@ -100,27 +100,7 @@ function printAllPngs(pngs) {
   }, 2500);
 }
 
-function StatusBadge({ status }) {
-  const s = String(status || "Pending").toLowerCase();
-  let text = status || "Pending";
-  let cls = "bg-amber-50 text-amber-800 border-amber-200";
-  if (s === "approved") {
-    cls = "bg-green-50 text-green-800 border-green-200";
-    text = "Approved";
-  } else if (s === "rejected") {
-    cls = "bg-red-50 text-red-800 border-red-200";
-    text = "Rejected";
-  } else if (s === "cancelled" || s === "canceled") {
-    cls = "bg-gray-100 text-gray-700 border-gray-200";
-    text = "Cancelled";
-  }
-  return (
-    <span className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-semibold border ${cls}`}>
-      <span className="h-2 w-2 rounded-full bg-current opacity-60" />
-      {text}
-    </span>
-  );
-}
+
 
 function Info({ label, value, icon }) {
   return (

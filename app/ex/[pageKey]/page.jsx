@@ -5,25 +5,26 @@ import { createPortal } from "react-dom";
 import {
   FiPlus,
   FiArrowLeft,
+  FiClock,
+  FiCheckCircle,
   FiFileText,
   FiSearch,
   FiXCircle,
-  FiChevronLeft,
-  FiChevronRight,
+  FiFilter,
   FiRefreshCcw,
-  FiTag,
-  FiUser,
-  FiHome,
-  FiHash,
-  FiPaperclip,
 } from "react-icons/fi";
 import { useRouter, useParams } from "next/navigation";
 import { getExForm } from "@/lib/exForms/registry";
-import ReplaceBookingTransferGenerator from "@/components/ex/ReplaceBookingTransferGenerator";
 
-// ✅ Permissions مثل صفحة Requests
+// ✅ Permissions
 import { usePermissions } from "@/context/PermissionContext";
 import { PERMISSIONS } from "@/lib/permission";
+
+// ✅ نفس اللي تستخدمه بصفحة Requests
+import StatusBadge from "@/components/StatusBadge";
+
+// ✅ Create Modal / Generator (مثل ما عندك)
+import ReplaceBookingTransferGenerator from "@/components/ex/ReplaceBookingTransferGenerator";
 
 const norm = (v) => String(v ?? "").trim().toLowerCase();
 
@@ -38,19 +39,19 @@ function paginate(items, page, pageSize) {
 
 function Pager({ page, totalPages, onPage }) {
   return (
-    <div className="mt-5 flex items-center justify-between gap-2">
+    <div className="mt-4 flex items-center justify-between gap-2">
       <button
         type="button"
         onClick={() => onPage(page - 1)}
         disabled={page <= 1}
         className={[
-          "px-3 py-2 rounded-2xl text-[13px] font-extrabold ring-1 inline-flex items-center gap-2",
+          "px-3 py-2 rounded-2xl text-[13px] font-extrabold ring-1",
           page <= 1
             ? "bg-gray-200/60 ring-gray-200 text-gray-500 cursor-not-allowed"
-            : "bg-white/65 ring-black/10 hover:bg-white/85",
+            : "bg-white/55 ring-white/30 hover:bg-white/70",
         ].join(" ")}
       >
-        <FiChevronLeft /> Prev
+        Prev
       </button>
 
       <div className="text-[13px] font-extrabold text-gray-800/80">
@@ -63,13 +64,13 @@ function Pager({ page, totalPages, onPage }) {
         onClick={() => onPage(page + 1)}
         disabled={page >= totalPages}
         className={[
-          "px-3 py-2 rounded-2xl text-[13px] font-extrabold ring-1 inline-flex items-center gap-2",
+          "px-3 py-2 rounded-2xl text-[13px] font-extrabold ring-1",
           page >= totalPages
             ? "bg-gray-200/60 ring-gray-200 text-gray-500 cursor-not-allowed"
-            : "bg-white/65 ring-black/10 hover:bg-white/85",
+            : "bg-white/55 ring-white/30 hover:bg-white/70",
         ].join(" ")}
       >
-        Next <FiChevronRight />
+        Next
       </button>
     </div>
   );
@@ -103,39 +104,99 @@ function buildCardLines(r, cfg) {
     "fullName",
     "clientName",
     "createdBy",
+    "createdById",
     "attachments",
     "_id",
     "pageKey",
+    "workflow",
+    "currentStep",
+    "status",
+    "__v",
+    "updatedAt",
+    "createdAt",
   ]);
 
+  // ✅ formatter بسيط للقيم
+  const formatValue = (val) => {
+    if (val === undefined || val === null) return "";
+
+    // Date object
+    if (val instanceof Date) return formatDate(val);
+
+    // arrays
+    if (Array.isArray(val)) {
+      if (!val.length) return "";
+      // إذا array نصوص/أرقام
+      if (val.every((x) => ["string", "number", "boolean"].includes(typeof x))) {
+        const s = val.join(", ");
+        return s.length > 60 ? s.slice(0, 60) + "…" : s;
+      }
+      // array objects -> تجاهل حتى لا يخرب الكارد
+      return "";
+    }
+
+    // objects
+    if (typeof val === "object") {
+      // إذا object بسيط مثل {label,value} أو {name}
+      const maybe =
+        val?.label ??
+        val?.name ??
+        val?.title ??
+        val?.value ??
+        val?.text ??
+        "";
+      if (maybe) return String(maybe);
+      return "";
+    }
+
+    // primitives
+    const s = String(val).trim();
+    if (!s) return "";
+
+    // إذا القيمة تبدو تاريخ
+    if (/^\d{4}-\d{2}-\d{2}/.test(s) || /^\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(s)) {
+      return formatDate(s);
+    }
+
+    return s;
+  };
+
   const candidates = fields
-    .map((f) => ({ name: f?.name, label: f?.label || f?.name }))
+    .map((f) => ({
+      name: f?.name,
+      label: f?.label || f?.name,
+      type: f?.type,
+    }))
     .filter((f) => f.name && !ignore.has(f.name));
 
   const lines = [];
-  for (const c of candidates) {
-    const val = r?.[c.name];
-    if (val === undefined || val === null || String(val).trim() === "") continue;
 
-    const s = String(val);
-    lines.push({ label: c.label, value: s.length > 40 ? s.slice(0, 40) + "…" : s });
-    if (lines.length >= 4) break;
+  for (const c of candidates) {
+    const raw = r?.[c.name];
+    let v = formatValue(raw);
+    if (!v) continue;
+
+    // ✅ قص أطول من 60
+    v = v.length > 60 ? v.slice(0, 60) + "…" : v;
+
+    lines.push({ label: c.label, value: v });
+    if (lines.length >= 3) break;
   }
 
+  // ✅ fallback إذا ماكو شي ينعرض
   if (!lines.length) {
     const fallbackPairs = [
       { label: "الوحدة القديمة", value: r?.oldUnitNo },
       { label: "الوحدة الجديدة", value: r?.newUnitNo },
       { label: "المبلغ", value: r?.amountNumber },
       { label: "التاريخ", value: r?.dateDMY || r?.createdAt },
-    ].filter((x) => x.value);
+    ];
 
     for (const x of fallbackPairs) {
-      lines.push({
-        label: x.label,
-        value: x.label === "التاريخ" ? formatDate(x.value) : String(x.value),
-      });
-      if (lines.length >= 4) break;
+      const v = formatValue(x.value);
+      if (!v) continue;
+      lines.push({ label: x.label, value: v.length > 60 ? v.slice(0, 60) + "…" : v });
+      if (lines.length >= 3) break;
     }
   }
 
@@ -149,31 +210,43 @@ export default function ExListPage() {
   const pageKey = String(params?.pageKey || "").trim();
   const cfg = useMemo(() => getExForm(pageKey), [pageKey]);
 
-  // ✅ صلاحية Create مثل صفحة Requests
+  // ✅ صلاحية Create
   const { permissions } = usePermissions();
   const canCreate =
     Array.isArray(permissions) && permissions.includes(PERMISSIONS.CREATE_REQUEST);
 
-  if (!pageKey) {
-    return (
-      <div className="min-h-screen flex items-center justify-center p-10 font-black text-gray-800">
-        Missing pageKey in route.
-      </div>
-    );
-  }
+  // ===== User (localStorage) =====
+  const currentUsername = useMemo(() => {
+    if (typeof window === "undefined") return "";
+    return localStorage.getItem("username") || "";
+  }, []);
 
+  const currentUserId = useMemo(() => {
+    if (typeof window === "undefined") return "";
+    return localStorage.getItem("userId") || "";
+  }, []);
+
+  // ===== Data =====
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
 
+  // ===== Create Modal =====
   const [openCreate, setOpenCreate] = useState(false);
   const [createKey, setCreateKey] = useState(0);
 
+  // ===== Search =====
   const [searchText, setSearchText] = useState("");
   const [appliedSearch, setAppliedSearch] = useState("");
 
-  const PAGE_SIZE = 18;
-  const [page, setPage] = useState(1);
+  // ===== My status filter (ONLY on My Requests) =====
+  const [myStatus, setMyStatus] = useState("all"); // all|approved|pending|rejected|cancelled
 
+  // ===== Pagination =====
+  const PAGE_SIZE = 20;
+  const [pageMy, setPageMy] = useState(1);
+  const [pagePending, setPagePending] = useState(1);
+
+  // ===== Suggestions =====
   const [mounted, setMounted] = useState(false);
   const searchBoxRef = useRef(null);
   const suggestWrapRef = useRef(null);
@@ -192,21 +265,17 @@ export default function ExListPage() {
     setSuggestPos({ open: true, top: r.bottom + 8, left: r.left, width: r.width });
   }, []);
 
-  const closeSuggest = useCallback(() => {
-    setShowSuggest(false);
-    setActiveIdx(-1);
-    setSuggestions([]);
-    setSuggestPos((p) => ({ ...p, open: false }));
-  }, []);
-
+  // ✅ نخفي الاقتراحات عند scroll حتى ما يصير “هزّة”
   useEffect(() => {
     const onScroll = () => {
       if (!showSuggest) return;
-      requestAnimationFrame(updateSuggestPosition);
+      setShowSuggest(false);
+      setActiveIdx(-1);
+      setSuggestPos((p) => ({ ...p, open: false }));
     };
     const onResize = () => {
       if (!showSuggest) return;
-      requestAnimationFrame(updateSuggestPosition);
+      updateSuggestPosition();
     };
 
     window.addEventListener("scroll", onScroll, { passive: true });
@@ -218,18 +287,27 @@ export default function ExListPage() {
     };
   }, [showSuggest, updateSuggestPosition]);
 
+  const closeSuggest = useCallback(() => {
+    setShowSuggest(false);
+    setActiveIdx(-1);
+    setSuggestions([]);
+    setSuggestPos((p) => ({ ...p, open: false }));
+  }, []);
+
   useEffect(() => {
     const handler = (e) => {
       const inSearch = searchBoxRef.current?.contains(e.target);
       const inSuggest = suggestWrapRef.current?.contains(e.target);
       if (inSearch || inSuggest) return;
-      showSuggest && closeSuggest();
+      if (showSuggest) closeSuggest();
     };
 
+    // ✅ capture: ما يخرب ضغطات السيليكت والازرار
     document.addEventListener("pointerdown", handler, true);
     return () => document.removeEventListener("pointerdown", handler, true);
   }, [showSuggest, closeSuggest]);
 
+  // ===== Fetch =====
   const fetchAll = useCallback(async () => {
     if (!pageKey) return;
     setLoading(true);
@@ -248,15 +326,30 @@ export default function ExListPage() {
   }, [pageKey]);
 
   useEffect(() => {
+    if (!pageKey) return;
     fetchAll();
-  }, [fetchAll]);
+  }, [pageKey, fetchAll]);
 
+  // ===== Suggestion Pool =====
   const suggestionPool = useMemo(() => {
     const set = new Set();
     const out = [];
-    const fields = Array.isArray(cfg?.fields) ? cfg.fields.map((f) => f?.name).filter(Boolean) : [];
 
-    const baseKeys = ["customerName", "oldUnitNo", "newUnitNo", "amountNumber", "createdBy", "_id", "pageKey", "dateDMY"];
+    const fields = Array.isArray(cfg?.fields) ? cfg.fields.map((f) => f?.name).filter(Boolean) : [];
+    const baseKeys = [
+      "customerName",
+      "oldUnitNo",
+      "newUnitNo",
+      "amountNumber",
+      "amountWords",
+      "createdBy",
+      "createdById",
+      "_id",
+      "pageKey",
+      "dateDMY",
+      "createdAt",
+      "status",
+    ];
     const keys = Array.from(new Set([...fields, ...baseKeys]));
 
     for (const r of items || []) {
@@ -287,15 +380,69 @@ export default function ExListPage() {
     setSearchText(val);
     setAppliedSearch(String(val || "").trim());
     closeSuggest();
-    setPage(1);
+    setPageMy(1);
+    setPagePending(1);
   };
 
+  // ===== Helpers: isMine / isPendingWithMe =====
+  const isMine = useCallback(
+    (r) => {
+      const byId = String(r?.createdById || "").trim();
+      if (byId && currentUserId && byId === String(currentUserId)) return true;
+
+      const byName = String(r?.createdBy || "").trim().toLowerCase();
+      if (byName && currentUsername) {
+        const u = String(currentUsername).trim().toLowerCase();
+        if (byName === u) return true;
+      }
+      return false;
+    },
+    [currentUserId, currentUsername]
+  );
+
+  const isPendingWithMe = useCallback(
+    (r) => {
+      const cs = Number.isInteger(r?.currentStep) ? r.currentStep : -1;
+      if (cs < 0) return false;
+
+      const step = r?.workflow?.steps?.[cs];
+      const stepStatus = norm(step?.status || "pending");
+      if (stepStatus !== "pending") return false;
+
+      const users = Array.isArray(step?.users) ? step.users : [];
+      const me = String(currentUserId || "");
+      if (!me) return false;
+
+      return users.some((u) => {
+        if (!u) return false;
+        if (typeof u === "string" || typeof u === "number") return String(u) === me;
+        if (typeof u === "object" && u._id) return String(u._id) === me;
+        return String(u) === me;
+      });
+    },
+    [currentUserId]
+  );
+
+  // ===== Apply Search (client-side) =====
   const appliedFiltered = useMemo(() => {
     const q = norm(appliedSearch);
     if (!q) return items;
 
     const fields = Array.isArray(cfg?.fields) ? cfg.fields.map((f) => f?.name).filter(Boolean) : [];
-    const baseKeys = ["customerName", "oldUnitNo", "newUnitNo", "amountNumber", "amountWords", "createdBy", "_id", "pageKey", "dateDMY", "createdAt"];
+    const baseKeys = [
+      "customerName",
+      "oldUnitNo",
+      "newUnitNo",
+      "amountNumber",
+      "amountWords",
+      "createdBy",
+      "createdById",
+      "_id",
+      "pageKey",
+      "dateDMY",
+      "createdAt",
+      "status",
+    ];
     const keys = Array.from(new Set([...fields, ...baseKeys]));
 
     return (items || []).filter((r) => {
@@ -304,26 +451,55 @@ export default function ExListPage() {
     });
   }, [items, appliedSearch, cfg]);
 
-  const paged = useMemo(() => paginate(appliedFiltered, page, PAGE_SIZE), [appliedFiltered, page]);
+  // ===== Split: Pending / Mine =====
+  const pendingApprovals = useMemo(() => {
+    return (appliedFiltered || []).filter(isPendingWithMe);
+  }, [appliedFiltered, isPendingWithMe]);
+
+  const myRequestsAll = useMemo(() => {
+    return (appliedFiltered || []).filter(isMine);
+  }, [appliedFiltered, isMine]);
+
+  // ===== My status filter only on My Requests =====
+  const myRequests = useMemo(() => {
+    const st = norm(myStatus || "all");
+    if (!st || st === "all") return myRequestsAll;
+
+    return (myRequestsAll || []).filter((r) => {
+      const rs = norm(r?.status);
+      return rs === st;
+    });
+  }, [myRequestsAll, myStatus]);
+
+  // ===== Stats (من طلباتي الحالية بعد الفلتر) =====
+  const stats = useMemo(() => {
+    const total = myRequestsAll.length;
+    const approved = myRequestsAll.filter((r) => norm(r.status) === "approved").length;
+    const pending = myRequestsAll.filter((r) => norm(r.status) === "pending").length;
+    return { total, approved, pending };
+  }, [myRequestsAll]);
+
+  // ===== Pagination computed + clamp =====
+  const myPaged = useMemo(() => paginate(myRequests, pageMy, PAGE_SIZE), [myRequests, pageMy]);
+  const pendingPaged = useMemo(
+    () => paginate(pendingApprovals, pagePending, PAGE_SIZE),
+    [pendingApprovals, pagePending]
+  );
 
   useEffect(() => {
-    if (page > paged.totalPages) setPage(paged.totalPages);
-  }, [page, paged.totalPages]);
+    if (pageMy > myPaged.totalPages) setPageMy(myPaged.totalPages);
+  }, [pageMy, myPaged.totalPages]);
 
-  const currentUsername = useMemo(() => {
-    if (typeof window === "undefined") return "";
-    return localStorage.getItem("username") || "";
-  }, []);
+  useEffect(() => {
+    if (pagePending > pendingPaged.totalPages) setPagePending(pendingPaged.totalPages);
+  }, [pagePending, pendingPaged.totalPages]);
 
-  const currentUserId = useMemo(() => {
-    if (typeof window === "undefined") return "";
-    return localStorage.getItem("userId") || "";
-  }, []);
-
-  const totalItems = appliedFiltered.length;
-
+  // ===== Suggestions Portal =====
   const SuggestionsPortal = () => {
-    if (!mounted || !showSuggest || !suggestPos.open || !suggestions.length) return null;
+    if (!mounted) return null;
+    if (!showSuggest) return null;
+    if (!suggestPos.open) return null;
+    if (!suggestions.length) return null;
 
     return createPortal(
       <div
@@ -343,7 +519,7 @@ export default function ExListPage() {
               <button
                 key={`${s}-${idx}`}
                 type="button"
-                onMouseDown={(e) => e.preventDefault()}
+                onMouseDown={(e) => e.preventDefault()} // ✅ يمنع blur قبل click
                 onClick={() => pickSuggestion(s)}
                 className={[
                   "w-full text-left px-4 py-2.5 text-[14px] font-bold",
@@ -361,82 +537,124 @@ export default function ExListPage() {
     );
   };
 
-  const Card = ({ r }) => {
-    const k = r?.pageKey || pageKey;
-
+  // ===== Cards / Shells (نفس ستايل Requests) =====
+  const ExCard = ({ r }) => {
+    const dateText = formatDate(r?.dateDMY || r?.createdAt);
     const title =
       pickFirst(r, ["customerName", "clientName", "fullName", "name", "transfereeName"]) ||
       cfg?.title ||
-      k;
-
-    const d = formatDate(r?.dateDMY || r?.createdAt);
-    const createdBy = pickFirst(r, ["createdBy", "createdByName", "ownerName", "username"]) || "-";
-    const attachmentsCount = Array.isArray(r?.attachments) ? r.attachments.length : 0;
+      (r?.pageKey || pageKey) ||
+      "Document";
 
     const lines = buildCardLines(r, cfg);
 
     return (
       <div
-        className="relative cursor-pointer rounded-3xl bg-white/60 backdrop-blur-xl ring-1 ring-white/35 shadow-[0_18px_50px_-28px_rgba(0,0,0,0.35)] hover:bg-white/80 hover:ring-white/60 transition-colors p-5"
-        onClick={() => router.push(`/ex/${encodeURIComponent(k)}/${r._id}`)}
+        onClick={() => router.push(`/ex/${encodeURIComponent(r?.pageKey || pageKey)}/${r._id}`)}
+        className="
+          group relative cursor-pointer rounded-2xl
+          bg-white/60 backdrop-blur-xl
+          ring-1 ring-black/5
+          shadow-[0_12px_35px_-18px_rgba(0,0,0,0.28)]
+          p-5
+          transition-all duration-300
+          hover:-translate-y-[2px]
+          hover:bg-white/75
+          hover:ring-black/10
+          hover:shadow-[0_18px_55px_-22px_rgba(0,0,0,0.38)]
+        "
       >
-        <div className="pointer-events-none absolute inset-0 rounded-3xl bg-gradient-to-br from-white/25 via-transparent to-transparent opacity-90" />
+        <div className="pointer-events-none absolute inset-0 rounded-2xl opacity-0 transition-opacity duration-300 group-hover:opacity-100 bg-gradient-to-br from-white/45 via-transparent to-transparent" />
 
         <div className="relative flex items-start justify-between gap-4">
+          {/* LEFT */}
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2 text-[13px] font-bold text-gray-700/80">
-              <span className="inline-flex items-center gap-2">
-                <FiTag /> {k}
-              </span>
-              <span className="mx-1 text-gray-400">•</span>
-              <span>{d}</span>
+            <div className="flex items-center gap-2">
+              <StatusBadge status={r?.status || "pending"} />
+              <span className="text-[12px] font-semibold text-gray-600">{dateText}</span>
             </div>
 
-            <div className="mt-2 text-[18px] font-black text-gray-900 line-clamp-1">{title}</div>
+            <div className="mt-2 text-[18px] font-extrabold text-gray-900 line-clamp-1">{title}</div>
 
-            <div className="mt-2 grid grid-cols-2 gap-2 text-[13px] font-extrabold text-gray-800/90">
-              {lines.map((ln, i) => (
-                <div
-                  key={i}
-                  className={[
-                    "rounded-2xl bg-white/60 ring-1 ring-black/5 px-3 py-2",
-                    i === 2 ? "col-span-2" : "",
-                    i === 3 ? "col-span-2" : "",
-                  ].join(" ")}
-                >
-                  {ln.label}: <span className="text-gray-950">{ln.value || "-"}</span>
+            <div className="mt-2 text-[14px] text-gray-800/90 leading-relaxed">
+              {lines?.length ? (
+                <div className="space-y-1">
+                  {lines.map((ln, i) => (
+                    <div key={i} className="line-clamp-1">
+                      <span className="font-extrabold text-gray-900">{ln.label}:</span>{" "}
+                      <span className="font-semibold">{ln.value || "-"}</span>
+                    </div>
+                  ))}
                 </div>
-              ))}
-              {!lines.length ? (
-                <div className="col-span-2 rounded-2xl bg-white/60 ring-1 ring-black/5 px-3 py-2">
-                  لا يوجد حقول لعرضها
-                </div>
-              ) : null}
+              ) : (
+                <div className="text-gray-700/80">-</div>
+              )}
             </div>
 
-            <div className="mt-3 text-[12px] font-extrabold font-mono text-gray-700/85 break-all inline-flex items-center gap-2">
-              <FiHash /> {r._id}
+            <div className="mt-3 text-[12px] font-mono font-semibold text-gray-700/85">
+              {r._id}
             </div>
           </div>
 
-          <div className="shrink-0 text-right">
-            <div className="text-[12px] font-bold text-gray-600/80">Created By</div>
-            <div className="mt-1 inline-flex items-center gap-2 text-[14px] font-black text-gray-900">
-              <FiUser /> {createdBy}
+          {/* RIGHT */}
+          <div className="shrink-0 flex flex-col items-end gap-2">
+            <div
+              className="
+                rounded-xl px-4 py-3
+                bg-white/35 backdrop-blur-2xl
+                ring-1 ring-white/60
+                shadow-[0_10px_26px_-16px_rgba(0,0,0,0.35)]
+                transition-all duration-300
+                group-hover:bg-white/45
+              "
+            >
+              <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
+                Created By
+              </div>
+              <div className="mt-1 text-[14px] font-black text-gray-900 break-words max-w-[180px] text-right">
+                {pickFirst(r, ["createdBy", "createdByName", "ownerName", "username"]) || "-"}
+              </div>
             </div>
 
-            <div className="mt-3 text-[12px] font-bold text-gray-600/80">Attachments</div>
-            <div className="mt-1 inline-flex items-center gap-2 text-[16px] font-black text-gray-900">
-              <FiPaperclip /> {attachmentsCount}
-            </div>
+            {Array.isArray(r?.attachments) ? (
+              <div
+                className="
+                  rounded-lg px-3 py-1.5
+                  bg-white/55 backdrop-blur-xl
+                  ring-1 ring-black/10
+                  shadow-sm
+                  text-[12px] font-bold text-gray-700
+                  transition-all duration-300
+                  group-hover:bg-white/70
+                "
+              >
+                Attachments: {r.attachments.length}
+              </div>
+            ) : null}
           </div>
+        </div>
+
+        <div className="relative mt-4 flex items-center justify-between gap-3 text-[13px] text-gray-700/85">
+          <span className="inline-flex items-center gap-2 min-w-0">
+            <FiFileText className="text-[16px]" />
+            <span className="truncate max-w-[240px] font-semibold">
+              {r?.pageKey || pageKey}
+            </span>
+          </span>
+
+          <span className="truncate max-w-[55%]">
+            Step:{" "}
+            <span className="font-extrabold text-gray-900">
+              {Number.isInteger(r?.currentStep) && r.currentStep >= 0 ? r.currentStep + 1 : "-"}
+            </span>
+          </span>
         </div>
       </div>
     );
   };
 
   const SectionShell = ({ title, subtitle, icon: Icon, right, children }) => (
-    <div className="rounded-[28px] bg-white/40 backdrop-blur-2xl ring-1 ring-white/30 shadow-[0_18px_45px_-25px_rgba(0,0,0,0.35)] overflow-hidden">
+    <div className="rounded-3xl bg-white/40 backdrop-blur-2xl ring-1 ring-white/30 shadow-[0_18px_45px_-25px_rgba(0,0,0,0.35)] overflow-hidden">
       <div className="px-5 py-4 bg-white/25">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-start gap-3">
@@ -458,16 +676,24 @@ export default function ExListPage() {
   );
 
   const ScrollBox = ({ children }) => (
-    <div className="max-h-[660px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-gray-300/60 scrollbar-track-transparent">
+    <div className="max-h-[520px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-gray-300/60 scrollbar-track-transparent">
       {children}
     </div>
   );
+
+  // ===== Guards =====
+  if (!pageKey) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-10 font-black text-gray-800">
+        Missing pageKey in route.
+      </div>
+    );
+  }
 
   const pageTitle = cfg?.title || pageKey || "Ex Form";
 
   return (
     <div className="min-h-screen w-full text-[15px] font-bold text-slate-900">
-      {/* Background (نفس الستايل) */}
       <div className="fixed inset-0 -z-10 bg-gradient-to-br from-slate-50 via-slate-100 to-slate-200" />
       <div className="fixed inset-0 -z-10 opacity-70">
         <div className="absolute -top-24 -left-24 h-96 w-96 rounded-full bg-blue-200/40 blur-3xl" />
@@ -476,7 +702,7 @@ export default function ExListPage() {
       </div>
 
       <div className="mx-auto max-w-6xl px-6 py-6 space-y-6">
-        {/* Header مثل Requests */}
+        {/* Header */}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
             <button
@@ -488,11 +714,13 @@ export default function ExListPage() {
             </button>
 
             <div className="flex flex-col gap-1">
-              <h1 className="text-2xl sm:text-3xl font-black text-gray-900 tracking-tight">{pageTitle}</h1>
+              <h1 className="text-2xl sm:text-3xl font-black text-gray-900 tracking-tight">
+                {pageTitle}
+              </h1>
               <div className="flex items-center gap-2 text-sm text-gray-800/80">
-                <span className="font-semibold">Newest → Oldest</span>
+                <span className="font-semibold">Key:</span>
                 <span className="px-2.5 py-1 rounded-xl bg-white/55 backdrop-blur ring-1 ring-white/30 text-gray-900 font-extrabold">
-                  Total: {totalItems}
+                  {pageKey}
                 </span>
                 {currentUsername ? (
                   <span className="px-2.5 py-1 rounded-xl bg-white/55 backdrop-blur ring-1 ring-white/30 text-gray-900 font-extrabold">
@@ -517,7 +745,6 @@ export default function ExListPage() {
               <FiRefreshCcw /> Refresh
             </button>
 
-            {/* ✅ Create يظهر فقط لمن عنده CREATE_REQUEST */}
             {canCreate && (
               <button
                 onClick={() => {
@@ -545,20 +772,18 @@ export default function ExListPage() {
 
                   const list = computeSuggestions(v);
                   setSuggestions(list);
-                  setShowSuggest(list.length > 0);
+                  setShowSuggest(true);
                   setActiveIdx(-1);
-
-                  requestAnimationFrame(updateSuggestPosition);
-                  setSuggestPos((p) => ({ ...p, open: list.length > 0 }));
+                  updateSuggestPosition();
+                  setSuggestPos((p) => ({ ...p, open: true }));
                 }}
                 onFocus={() => {
                   const list = computeSuggestions(searchText);
                   setSuggestions(list);
-                  setShowSuggest(list.length > 0);
+                  setShowSuggest(true);
                   setActiveIdx(-1);
-
-                  requestAnimationFrame(updateSuggestPosition);
-                  setSuggestPos((p) => ({ ...p, open: list.length > 0 }));
+                  updateSuggestPosition();
+                  setSuggestPos((p) => ({ ...p, open: true }));
                 }}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
@@ -567,8 +792,9 @@ export default function ExListPage() {
                       pickSuggestion(suggestions[activeIdx]);
                     } else {
                       setAppliedSearch(searchText.trim());
-                      closeSuggest();
-                      setPage(1);
+                      setShowSuggest(false);
+                      setPageMy(1);
+                      setPagePending(1);
                     }
                     return;
                   }
@@ -582,10 +808,12 @@ export default function ExListPage() {
                     e.preventDefault();
                     setActiveIdx((p) => Math.max(p - 1, 0));
                   } else if (e.key === "Escape") {
-                    closeSuggest();
+                    setShowSuggest(false);
+                    setActiveIdx(-1);
+                    setSuggestPos((p) => ({ ...p, open: false }));
                   }
                 }}
-                placeholder="اكتب اسم الزبون / أي حقل..."
+                placeholder="ابحث "
                 className="w-full pl-10 pr-3 py-2.5 rounded-2xl bg-white/55 backdrop-blur ring-1 ring-white/30 text-[15px] text-gray-900 placeholder:text-gray-600/70 outline-none focus:ring-2 focus:ring-white/45"
               />
             </div>
@@ -595,7 +823,8 @@ export default function ExListPage() {
                 onClick={() => {
                   setAppliedSearch(searchText.trim());
                   closeSuggest();
-                  setPage(1);
+                  setPageMy(1);
+                  setPagePending(1);
                 }}
                 disabled={loading}
                 className={[
@@ -612,7 +841,9 @@ export default function ExListPage() {
                 onClick={() => {
                   setSearchText("");
                   setAppliedSearch("");
-                  setPage(1);
+                  setMyStatus("all");
+                  setPageMy(1);
+                  setPagePending(1);
                   closeSuggest();
                 }}
                 disabled={loading}
@@ -622,46 +853,139 @@ export default function ExListPage() {
               </button>
             </div>
           </div>
-
-          {appliedSearch ? (
-            <div className="mt-3 flex items-center justify-between gap-2">
-              <div className="text-[13px] font-extrabold text-gray-800/80">
-                Filter: <span className="text-gray-950">{appliedSearch}</span>
-              </div>
-              <div className="text-[13px] font-extrabold text-gray-800/70">
-                Showing: <span className="text-gray-950">{totalItems}</span>
-              </div>
-            </div>
-          ) : null}
         </div>
 
-        {mounted && showSuggest && suggestPos.open && suggestions.length > 0 ? <SuggestionsPortal /> : null}
+        {/* Suggestions Portal */}
+        {mounted && showSuggest && suggestPos.open && suggestions.length > 0 ? (
+          <SuggestionsPortal />
+        ) : null}
 
-        {/* List */}
-        <SectionShell
-          title="قائمة الطلبات"
-          subtitle="افتح الطلب وشوف التفاصيل"
-          icon={FiFileText}
-          right={<span className="text-[13px] font-extrabold text-gray-800/70">{paged.total} items</span>}
-        >
-          {loading ? (
-            <div className="py-10 text-center font-extrabold text-gray-800/70">Loading...</div>
-          ) : appliedFiltered.length === 0 ? (
-            <div className="py-10 text-center font-extrabold text-gray-800/70">لا يوجد بيانات حسب الفلتر</div>
-          ) : (
-            <>
-              <ScrollBox>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {paged.items.map((r) => (
-                    <Card key={r._id} r={r} />
-                  ))}
+        {/* Stats (مثل Requests) */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="rounded-3xl bg-white/40 backdrop-blur-2xl ring-1 ring-white/30 p-4 shadow-[0_16px_45px_-30px_rgba(0,0,0,0.45)]">
+            <div className="text-[13px] font-bold text-gray-700/80">طلباتي الموافق عليها</div>
+            <div className="mt-2 flex items-center justify-between">
+              <div className="text-3xl font-black text-gray-900">{stats.approved}</div>
+              <div className="h-11 w-11 rounded-2xl bg-white/55 ring-1 ring-white/30 flex items-center justify-center">
+                <FiCheckCircle className="text-green-700 text-xl" />
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-3xl bg-white/40 backdrop-blur-2xl ring-1 ring-white/30 p-4 shadow-[0_16px_45px_-30px_rgba(0,0,0,0.45)]">
+            <div className="text-[13px] font-bold text-gray-700/80">طلباتي قيد الانتظار</div>
+            <div className="mt-2 flex items-center justify-between">
+              <div className="text-3xl font-black text-gray-900">{stats.pending}</div>
+              <div className="h-11 w-11 rounded-2xl bg-white/55 ring-1 ring-white/30 flex items-center justify-center">
+                <FiClock className="text-amber-700 text-xl" />
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-3xl bg-white/40 backdrop-blur-2xl ring-1 ring-white/30 p-4 shadow-[0_16px_45px_-30px_rgba(0,0,0,0.45)]">
+            <div className="text-[13px] font-bold text-gray-700/80">مجموع طلباتي</div>
+            <div className="mt-2 flex items-center justify-between">
+              <div className="text-3xl font-black text-gray-900">{stats.total}</div>
+              <div className="h-11 w-11 rounded-2xl bg-white/55 ring-1 ring-white/30 flex items-center justify-center">
+                <FiFileText className="text-blue-700 text-xl" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Two columns (نفس Requests) */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Pending */}
+          <SectionShell
+            title="قيد الانتظار للموافقة"
+            subtitle="Requests that are pending with you"
+            icon={FiClock}
+            right={<span className="text-[13px] font-extrabold text-gray-800/70">{pendingPaged.total} items</span>}
+          >
+            {loading ? (
+              <div className="py-10 text-center font-extrabold text-gray-800/70">Loading...</div>
+            ) : pendingApprovals.length === 0 ? (
+              <div className="py-10 text-center font-extrabold text-gray-800/70">لايوجد قيد الانتظار للموافقة</div>
+            ) : (
+              <>
+                <ScrollBox>
+                  <div className="space-y-3">
+                    {pendingPaged.items.map((r) => (
+                      <ExCard key={r._id} r={r} />
+                    ))}
+                  </div>
+                </ScrollBox>
+
+                <Pager page={pendingPaged.page} totalPages={pendingPaged.totalPages} onPage={setPagePending} />
+              </>
+            )}
+          </SectionShell>
+
+          {/* My Requests + Status Filter */}
+          <SectionShell
+            title="طلباتي"
+            subtitle={currentUsername ? `Requests created by: ${currentUsername}` : "Requests created by:"}
+            icon={FiFileText}
+            right={
+              <div className="flex items-center gap-2">
+                <div className="hidden sm:flex items-center gap-2 px-3 py-2 rounded-2xl bg-white/45 ring-1 ring-white/30">
+                  <FiFilter className="text-gray-700" />
+                  <select
+                    value={myStatus}
+                    onChange={(e) => {
+                      setMyStatus(e.target.value);
+                      setPageMy(1);
+                    }}
+                    className="bg-transparent outline-none text-[13px] font-extrabold text-gray-900"
+                  >
+                    <option value="all">All</option>
+                    <option value="approved">Approved</option>
+                    <option value="pending">Pending</option>
+                    <option value="rejected">Rejected</option>
+                    <option value="cancelled">Cancelled</option>
+                  </select>
                 </div>
-              </ScrollBox>
+              </div>
+            }
+          >
+            {/* Mobile filter */}
+            <div className="sm:hidden mb-3 flex items-center gap-2 px-3 py-2 rounded-2xl bg-white/45 ring-1 ring-white/30">
+              <FiFilter className="text-gray-700" />
+              <select
+                value={myStatus}
+                onChange={(e) => {
+                  setMyStatus(e.target.value);
+                  setPageMy(1);
+                }}
+                className="bg-transparent outline-none w-full text-[13px] font-extrabold text-gray-900"
+              >
+                <option value="all">All</option>
+                <option value="approved">Approved</option>
+                <option value="pending">Pending</option>
+                <option value="rejected">Rejected</option>
+                <option value="cancelled">Cancelled</option>
+              </select>
+            </div>
 
-              <Pager page={paged.page} totalPages={paged.totalPages} onPage={setPage} />
-            </>
-          )}
-        </SectionShell>
+            {loading ? (
+              <div className="py-10 text-center font-extrabold text-gray-800/70">Loading...</div>
+            ) : myRequests.length === 0 ? (
+              <div className="py-10 text-center font-extrabold text-gray-800/70">لا يوجد طلبات حسب الفلتر</div>
+            ) : (
+              <>
+                <ScrollBox>
+                  <div className="space-y-3">
+                    {myPaged.items.map((r) => (
+                      <ExCard key={r._id} r={r} />
+                    ))}
+                  </div>
+                </ScrollBox>
+
+                <Pager page={myPaged.page} totalPages={myPaged.totalPages} onPage={setPageMy} />
+              </>
+            )}
+          </SectionShell>
+        </div>
       </div>
 
       {/* ✅ Create Modal (فقط لمن عنده CREATE_REQUEST) */}
@@ -689,7 +1013,8 @@ export default function ExListPage() {
             if (j?.success) {
               setOpenCreate(false);
               await fetchAll();
-              setPage(1);
+              setPageMy(1);
+              setPagePending(1);
             } else {
               throw new Error(j?.error || "Create failed");
             }
