@@ -1,0 +1,34 @@
+import mongoose from "mongoose";
+
+const WaiverReservationSchema = new mongoose.Schema(
+  {
+    pageKey: { type: String, index: true },
+
+    customerName: String,
+    customerNo: String,
+    unitNo: String,
+
+    receiptNo: String,
+    receiptDateDMY: String, // dd/mm/yyyy
+
+    amountNumber: String,
+    amountWords: String,
+
+    transfereeName: String,
+
+    dateDMY: String, // dd/mm/yyyy
+
+    // workflow
+    status: { type: String, default: "Pending" },
+    currentStep: { type: Number, default: 0 },
+    workflow: { type: Object, default: null },
+
+    createdBy: String,
+    createdById: String,
+    attachments: { type: Array, default: [] },
+  },
+  { timestamps: true }
+);
+
+export default mongoose.models.WaiverReservation ||
+  mongoose.model("WaiverReservation", WaiverReservationSchema);

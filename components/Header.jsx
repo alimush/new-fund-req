@@ -193,6 +193,15 @@ export default function Header({ onLogout }) {
                           icon={<GoWorkflow className="text-gray-200" />}
                           label="الموافقات "
                         />)}
+                         {permissions?.includes(PERMISSIONS.MANAGE_PERMISSIONS) && (
+                        <MenuItem
+                          onClick={() => {
+                            setMenuOpen(false);
+                            router.push("ex/workflow");
+                          }}
+                          icon={<GoWorkflow className="text-gray-200" />}
+                          label="ex workflow "
+                        />)}
 
 
 
@@ -217,7 +226,7 @@ export default function Header({ onLogout }) {
   />
 )}
 
-{permissions?.includes(PERMISSIONS.MANAGE_PERMISSIONS) && (
+{permissions?.includes(PERMISSIONS.EX) && (
                         <MenuItem
                           onClick={() => {
                             setMenuOpen(false);

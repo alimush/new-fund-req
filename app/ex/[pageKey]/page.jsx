@@ -10,11 +10,18 @@ import {
   FiXCircle,
   FiChevronLeft,
   FiChevronRight,
+  FiRefreshCcw,
+  FiTag,
+  FiUser,
+  FiHome,
+  FiHash,
+  FiPaperclip,
 } from "react-icons/fi";
-import { useRouter } from "next/navigation";
-import PaymentPlanA4_Generator from "@/components/ex/payment-plan";
+import { useRouter, useParams } from "next/navigation";
+import { getExForm } from "@/lib/exForms/registry";
+import ReplaceBookingTransferGenerator from "@/components/ex/ReplaceBookingTransferGenerator";
 
-// ✅ نفس طريقة صلاحية Create Request
+// ✅ Permissions مثل صفحة Requests
 import { usePermissions } from "@/context/PermissionContext";
 import { PERMISSIONS } from "@/lib/permission";
 
@@ -31,7 +38,7 @@ function paginate(items, page, pageSize) {
 
 function Pager({ page, totalPages, onPage }) {
   return (
-    <div className="mt-4 flex items-center justify-between gap-2">
+    <div className="mt-5 flex items-center justify-between gap-2">
       <button
         type="button"
         onClick={() => onPage(page - 1)}
@@ -40,7 +47,7 @@ function Pager({ page, totalPages, onPage }) {
           "px-3 py-2 rounded-2xl text-[13px] font-extrabold ring-1 inline-flex items-center gap-2",
           page <= 1
             ? "bg-gray-200/60 ring-gray-200 text-gray-500 cursor-not-allowed"
-            : "bg-white/55 ring-white/30 hover:bg-white/70",
+            : "bg-white/65 ring-black/10 hover:bg-white/85",
         ].join(" ")}
       >
         <FiChevronLeft /> Prev
@@ -59,7 +66,7 @@ function Pager({ page, totalPages, onPage }) {
           "px-3 py-2 rounded-2xl text-[13px] font-extrabold ring-1 inline-flex items-center gap-2",
           page >= totalPages
             ? "bg-gray-200/60 ring-gray-200 text-gray-500 cursor-not-allowed"
-            : "bg-white/55 ring-white/30 hover:bg-white/70",
+            : "bg-white/65 ring-black/10 hover:bg-white/85",
         ].join(" ")}
       >
         Next <FiChevronRight />
@@ -68,31 +75,105 @@ function Pager({ page, totalPages, onPage }) {
   );
 }
 
-export default function PaymentPlansPage() {
-  const router = useRouter();
+function formatDate(v) {
+  try {
+    if (!v) return "-";
+    const d = typeof v === "string" || typeof v === "number" ? new Date(v) : v;
+    if (!d || isNaN(d.getTime())) return String(v);
+    return d.toLocaleDateString();
+  } catch {
+    return String(v || "-");
+  }
+}
 
-  // ✅ Permission hook
+function pickFirst(obj, keys = []) {
+  for (const k of keys) {
+    const v = obj?.[k];
+    if (v !== undefined && v !== null && String(v).trim() !== "") return v;
+  }
+  return "";
+}
+
+function buildCardLines(r, cfg) {
+  const fields = Array.isArray(cfg?.fields) ? cfg.fields : [];
+
+  const ignore = new Set([
+    "customerName",
+    "name",
+    "fullName",
+    "clientName",
+    "createdBy",
+    "attachments",
+    "_id",
+    "pageKey",
+  ]);
+
+  const candidates = fields
+    .map((f) => ({ name: f?.name, label: f?.label || f?.name }))
+    .filter((f) => f.name && !ignore.has(f.name));
+
+  const lines = [];
+  for (const c of candidates) {
+    const val = r?.[c.name];
+    if (val === undefined || val === null || String(val).trim() === "") continue;
+
+    const s = String(val);
+    lines.push({ label: c.label, value: s.length > 40 ? s.slice(0, 40) + "…" : s });
+    if (lines.length >= 4) break;
+  }
+
+  if (!lines.length) {
+    const fallbackPairs = [
+      { label: "الوحدة القديمة", value: r?.oldUnitNo },
+      { label: "الوحدة الجديدة", value: r?.newUnitNo },
+      { label: "المبلغ", value: r?.amountNumber },
+      { label: "التاريخ", value: r?.dateDMY || r?.createdAt },
+    ].filter((x) => x.value);
+
+    for (const x of fallbackPairs) {
+      lines.push({
+        label: x.label,
+        value: x.label === "التاريخ" ? formatDate(x.value) : String(x.value),
+      });
+      if (lines.length >= 4) break;
+    }
+  }
+
+  return lines;
+}
+
+export default function ExListPage() {
+  const router = useRouter();
+  const params = useParams();
+
+  const pageKey = String(params?.pageKey || "").trim();
+  const cfg = useMemo(() => getExForm(pageKey), [pageKey]);
+
+  // ✅ صلاحية Create مثل صفحة Requests
   const { permissions } = usePermissions();
   const canCreate =
     Array.isArray(permissions) && permissions.includes(PERMISSIONS.CREATE_REQUEST);
 
-  // ===== Data =====
+  if (!pageKey) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-10 font-black text-gray-800">
+        Missing pageKey in route.
+      </div>
+    );
+  }
+
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  // ===== Create Modal =====
   const [openCreate, setOpenCreate] = useState(false);
   const [createKey, setCreateKey] = useState(0);
 
-  // ===== Search (controlled + applied) =====
   const [searchText, setSearchText] = useState("");
   const [appliedSearch, setAppliedSearch] = useState("");
 
-  // ===== Pagination =====
-  const PAGE_SIZE = 20;
+  const PAGE_SIZE = 18;
   const [page, setPage] = useState(1);
 
-  // ===== Suggestions =====
   const [mounted, setMounted] = useState(false);
   const searchBoxRef = useRef(null);
   const suggestWrapRef = useRef(null);
@@ -118,15 +199,14 @@ export default function PaymentPlansPage() {
     setSuggestPos((p) => ({ ...p, open: false }));
   }, []);
 
-  // ✅ hide suggestions on scroll/resize
   useEffect(() => {
     const onScroll = () => {
       if (!showSuggest) return;
-      closeSuggest();
+      requestAnimationFrame(updateSuggestPosition);
     };
     const onResize = () => {
       if (!showSuggest) return;
-      updateSuggestPosition();
+      requestAnimationFrame(updateSuggestPosition);
     };
 
     window.addEventListener("scroll", onScroll, { passive: true });
@@ -136,62 +216,63 @@ export default function PaymentPlansPage() {
       window.removeEventListener("scroll", onScroll);
       window.removeEventListener("resize", onResize);
     };
-  }, [showSuggest, closeSuggest, updateSuggestPosition]);
+  }, [showSuggest, updateSuggestPosition]);
 
-  // ✅ close suggestions when clicking outside
   useEffect(() => {
     const handler = (e) => {
       const inSearch = searchBoxRef.current?.contains(e.target);
       const inSuggest = suggestWrapRef.current?.contains(e.target);
       if (inSearch || inSuggest) return;
-      if (showSuggest) closeSuggest();
+      showSuggest && closeSuggest();
     };
 
     document.addEventListener("pointerdown", handler, true);
     return () => document.removeEventListener("pointerdown", handler, true);
   }, [showSuggest, closeSuggest]);
 
-  // ===== Fetch =====
   const fetchAll = useCallback(async () => {
+    if (!pageKey) return;
     setLoading(true);
     try {
-      const q = String(appliedSearch || "").trim();
-      const url = q
-        ? `/api/ex/payment-plans?q=${encodeURIComponent(q)}`
-        : `/api/ex/payment-plans`;
-
-      const res = await fetch(url, { cache: "no-store" });
-      const j = await res.json();
+      const res = await fetch(`/api/ex/${encodeURIComponent(pageKey)}`, {
+        cache: "no-store",
+        credentials: "include",
+      });
+      const j = await res.json().catch(() => ({}));
       setItems(j?.success && Array.isArray(j.data) ? j.data : []);
     } catch {
       setItems([]);
     } finally {
       setLoading(false);
     }
-  }, [appliedSearch]);
+  }, [pageKey]);
 
   useEffect(() => {
     fetchAll();
   }, [fetchAll]);
 
-  // ===== Suggestions pool =====
   const suggestionPool = useMemo(() => {
     const set = new Set();
     const out = [];
+    const fields = Array.isArray(cfg?.fields) ? cfg.fields.map((f) => f?.name).filter(Boolean) : [];
+
+    const baseKeys = ["customerName", "oldUnitNo", "newUnitNo", "amountNumber", "createdBy", "_id", "pageKey", "dateDMY"];
+    const keys = Array.from(new Set([...fields, ...baseKeys]));
+
     for (const r of items || []) {
-      const parts = [r.customer, r.unitNo, r.createdBy, r._id]
-        .filter(Boolean)
-        .map((x) => String(x).trim());
-      for (const s of parts) {
-        const k = s.toLowerCase();
-        if (!k) continue;
-        if (set.has(k)) continue;
-        set.add(k);
+      for (const k of keys) {
+        const v = r?.[k];
+        if (!v) continue;
+        const s = String(v).trim();
+        if (!s) continue;
+        const key = s.toLowerCase();
+        if (set.has(key)) continue;
+        set.add(key);
         out.push(s);
       }
     }
     return out;
-  }, [items]);
+  }, [items, cfg]);
 
   const computeSuggestions = useCallback(
     (text) => {
@@ -212,13 +293,16 @@ export default function PaymentPlansPage() {
   const appliedFiltered = useMemo(() => {
     const q = norm(appliedSearch);
     if (!q) return items;
+
+    const fields = Array.isArray(cfg?.fields) ? cfg.fields.map((f) => f?.name).filter(Boolean) : [];
+    const baseKeys = ["customerName", "oldUnitNo", "newUnitNo", "amountNumber", "amountWords", "createdBy", "_id", "pageKey", "dateDMY", "createdAt"];
+    const keys = Array.from(new Set([...fields, ...baseKeys]));
+
     return (items || []).filter((r) => {
-      const hay = [r.customer, r.unitNo, r.createdBy, r._id, r.pageKey]
-        .filter(Boolean)
-        .join(" | ");
+      const hay = keys.map((k) => r?.[k]).filter(Boolean).join(" | ");
       return norm(hay).includes(q);
     });
-  }, [items, appliedSearch]);
+  }, [items, appliedSearch, cfg]);
 
   const paged = useMemo(() => paginate(appliedFiltered, page, PAGE_SIZE), [appliedFiltered, page]);
 
@@ -229,6 +313,11 @@ export default function PaymentPlansPage() {
   const currentUsername = useMemo(() => {
     if (typeof window === "undefined") return "";
     return localStorage.getItem("username") || "";
+  }, []);
+
+  const currentUserId = useMemo(() => {
+    if (typeof window === "undefined") return "";
+    return localStorage.getItem("userId") || "";
   }, []);
 
   const totalItems = appliedFiltered.length;
@@ -273,56 +362,81 @@ export default function PaymentPlansPage() {
   };
 
   const Card = ({ r }) => {
-    const d = r?.createdAt ? new Date(r.createdAt).toLocaleDateString() : "-";
-    const createdBy = r?.createdBy || "-";
+    const k = r?.pageKey || pageKey;
+
+    const title =
+      pickFirst(r, ["customerName", "clientName", "fullName", "name", "transfereeName"]) ||
+      cfg?.title ||
+      k;
+
+    const d = formatDate(r?.dateDMY || r?.createdAt);
+    const createdBy = pickFirst(r, ["createdBy", "createdByName", "ownerName", "username"]) || "-";
+    const attachmentsCount = Array.isArray(r?.attachments) ? r.attachments.length : 0;
+
+    const lines = buildCardLines(r, cfg);
+
     return (
       <div
-        className="relative cursor-pointer rounded-2xl bg-white/55 backdrop-blur-xl ring-1 ring-white/40 shadow-[0_14px_40px_-18px_rgba(0,0,0,0.28)] hover:bg-white/75 hover:ring-white/60 transition-colors p-5"
-        onClick={() => router.push(`/ex/payment-plan/${r._id}`)}
+        className="relative cursor-pointer rounded-3xl bg-white/60 backdrop-blur-xl ring-1 ring-white/35 shadow-[0_18px_50px_-28px_rgba(0,0,0,0.35)] hover:bg-white/80 hover:ring-white/60 transition-colors p-5"
+        onClick={() => router.push(`/ex/${encodeURIComponent(k)}/${r._id}`)}
       >
-        <div className="pointer-events-none absolute inset-0 rounded-2xl bg-gradient-to-br from-white/30 via-transparent to-transparent opacity-90" />
+        <div className="pointer-events-none absolute inset-0 rounded-3xl bg-gradient-to-br from-white/25 via-transparent to-transparent opacity-90" />
 
         <div className="relative flex items-start justify-between gap-4">
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <span className="text-[13px] font-bold text-gray-700/80">{d}</span>
+            <div className="flex items-center gap-2 text-[13px] font-bold text-gray-700/80">
+              <span className="inline-flex items-center gap-2">
+                <FiTag /> {k}
+              </span>
+              <span className="mx-1 text-gray-400">•</span>
+              <span>{d}</span>
             </div>
 
-            <div className="mt-2 text-[18px] font-black text-gray-900 line-clamp-1">
-              {r.customer || "Payment Plan"}
+            <div className="mt-2 text-[18px] font-black text-gray-900 line-clamp-1">{title}</div>
+
+            <div className="mt-2 grid grid-cols-2 gap-2 text-[13px] font-extrabold text-gray-800/90">
+              {lines.map((ln, i) => (
+                <div
+                  key={i}
+                  className={[
+                    "rounded-2xl bg-white/60 ring-1 ring-black/5 px-3 py-2",
+                    i === 2 ? "col-span-2" : "",
+                    i === 3 ? "col-span-2" : "",
+                  ].join(" ")}
+                >
+                  {ln.label}: <span className="text-gray-950">{ln.value || "-"}</span>
+                </div>
+              ))}
+              {!lines.length ? (
+                <div className="col-span-2 rounded-2xl bg-white/60 ring-1 ring-black/5 px-3 py-2">
+                  لا يوجد حقول لعرضها
+                </div>
+              ) : null}
             </div>
 
-            <div className="mt-2 text-[14px] font-semibold text-gray-800/90 leading-relaxed line-clamp-2">
-              {r.unitNo ? `Unit: ${r.unitNo}` : "-"}
-            </div>
-
-            <div className="mt-3 text-[12px] font-extrabold font-mono text-gray-700/85 break-all">
-              {r._id}
+            <div className="mt-3 text-[12px] font-extrabold font-mono text-gray-700/85 break-all inline-flex items-center gap-2">
+              <FiHash /> {r._id}
             </div>
           </div>
 
           <div className="shrink-0 text-right">
-            <div className="text-[12px] font-bold text-gray-600/80">Page Key</div>
-            <div className="mt-1 text-[16px] font-black text-gray-900">{r.pageKey || "-"}</div>
+            <div className="text-[12px] font-bold text-gray-600/80">Created By</div>
+            <div className="mt-1 inline-flex items-center gap-2 text-[14px] font-black text-gray-900">
+              <FiUser /> {createdBy}
+            </div>
+
+            <div className="mt-3 text-[12px] font-bold text-gray-600/80">Attachments</div>
+            <div className="mt-1 inline-flex items-center gap-2 text-[16px] font-black text-gray-900">
+              <FiPaperclip /> {attachmentsCount}
+            </div>
           </div>
-        </div>
-
-        <div className="relative mt-4 flex items-center justify-between gap-3 text-[13px] font-bold text-gray-700/85">
-          <span className="inline-flex items-center gap-2">
-            <FiFileText className="text-[16px]" />
-            <span className="truncate max-w-[240px]">{createdBy}</span>
-          </span>
-
-          <span className="truncate max-w-[55%]">
-            By: <span className="font-extrabold text-gray-900">{createdBy}</span>
-          </span>
         </div>
       </div>
     );
   };
 
   const SectionShell = ({ title, subtitle, icon: Icon, right, children }) => (
-    <div className="rounded-3xl bg-white/40 backdrop-blur-2xl ring-1 ring-white/30 shadow-[0_18px_45px_-25px_rgba(0,0,0,0.35)] overflow-hidden">
+    <div className="rounded-[28px] bg-white/40 backdrop-blur-2xl ring-1 ring-white/30 shadow-[0_18px_45px_-25px_rgba(0,0,0,0.35)] overflow-hidden">
       <div className="px-5 py-4 bg-white/25">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-start gap-3">
@@ -344,14 +458,16 @@ export default function PaymentPlansPage() {
   );
 
   const ScrollBox = ({ children }) => (
-    <div className="max-h-[640px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-gray-300/60 scrollbar-track-transparent">
+    <div className="max-h-[660px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-gray-300/60 scrollbar-track-transparent">
       {children}
     </div>
   );
 
+  const pageTitle = cfg?.title || pageKey || "Ex Form";
+
   return (
     <div className="min-h-screen w-full text-[15px] font-bold text-slate-900">
-      {/* Background */}
+      {/* Background (نفس الستايل) */}
       <div className="fixed inset-0 -z-10 bg-gradient-to-br from-slate-50 via-slate-100 to-slate-200" />
       <div className="fixed inset-0 -z-10 opacity-70">
         <div className="absolute -top-24 -left-24 h-96 w-96 rounded-full bg-blue-200/40 blur-3xl" />
@@ -360,7 +476,7 @@ export default function PaymentPlansPage() {
       </div>
 
       <div className="mx-auto max-w-6xl px-6 py-6 space-y-6">
-        {/* Header */}
+        {/* Header مثل Requests */}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
             <button
@@ -372,35 +488,48 @@ export default function PaymentPlansPage() {
             </button>
 
             <div className="flex flex-col gap-1">
-              <h1 className="text-2xl sm:text-3xl font-black text-gray-900 tracking-tight">
-                Payment Plans
-              </h1>
+              <h1 className="text-2xl sm:text-3xl font-black text-gray-900 tracking-tight">{pageTitle}</h1>
               <div className="flex items-center gap-2 text-sm text-gray-800/80">
-                <span className="font-semibold">Showing newest → oldest</span>
+                <span className="font-semibold">Newest → Oldest</span>
                 <span className="px-2.5 py-1 rounded-xl bg-white/55 backdrop-blur ring-1 ring-white/30 text-gray-900 font-extrabold">
                   Total: {totalItems}
                 </span>
+                {currentUsername ? (
+                  <span className="px-2.5 py-1 rounded-xl bg-white/55 backdrop-blur ring-1 ring-white/30 text-gray-900 font-extrabold">
+                    User: {currentUsername}
+                  </span>
+                ) : null}
               </div>
-              {currentUsername ? (
-                <div className="text-[12px] font-bold text-gray-700/70">
-                  User: <span className="font-extrabold text-gray-900">{currentUsername}</span>
-                </div>
-              ) : null}
             </div>
           </div>
 
-          {/* ✅ Create حسب الصلاحية */}
-          {canCreate && (
+          <div className="flex items-center gap-2">
             <button
-              onClick={() => {
-                setCreateKey((k) => k + 1);
-                setOpenCreate(true);
-              }}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-gray-900/90 backdrop-blur text-white shadow hover:bg-gray-900"
+              onClick={fetchAll}
+              disabled={loading}
+              className={[
+                "inline-flex items-center gap-2 px-4 py-2 rounded-2xl font-extrabold shadow-sm ring-1",
+                loading
+                  ? "bg-gray-200 text-gray-500 ring-gray-200 cursor-not-allowed"
+                  : "bg-white/55 ring-white/30 hover:bg-white/70",
+              ].join(" ")}
             >
-              <FiPlus /> Create
+              <FiRefreshCcw /> Refresh
             </button>
-          )}
+
+            {/* ✅ Create يظهر فقط لمن عنده CREATE_REQUEST */}
+            {canCreate && (
+              <button
+                onClick={() => {
+                  setCreateKey((k) => k + 1);
+                  setOpenCreate(true);
+                }}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-gray-900/90 backdrop-blur text-white shadow hover:bg-gray-900"
+              >
+                <FiPlus /> Create
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Search */}
@@ -416,18 +545,20 @@ export default function PaymentPlansPage() {
 
                   const list = computeSuggestions(v);
                   setSuggestions(list);
-                  setShowSuggest(true);
+                  setShowSuggest(list.length > 0);
                   setActiveIdx(-1);
-                  updateSuggestPosition();
-                  setSuggestPos((p) => ({ ...p, open: true }));
+
+                  requestAnimationFrame(updateSuggestPosition);
+                  setSuggestPos((p) => ({ ...p, open: list.length > 0 }));
                 }}
                 onFocus={() => {
                   const list = computeSuggestions(searchText);
                   setSuggestions(list);
-                  setShowSuggest(true);
+                  setShowSuggest(list.length > 0);
                   setActiveIdx(-1);
-                  updateSuggestPosition();
-                  setSuggestPos((p) => ({ ...p, open: true }));
+
+                  requestAnimationFrame(updateSuggestPosition);
+                  setSuggestPos((p) => ({ ...p, open: list.length > 0 }));
                 }}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
@@ -438,7 +569,6 @@ export default function PaymentPlansPage() {
                       setAppliedSearch(searchText.trim());
                       closeSuggest();
                       setPage(1);
-                      fetchAll();
                     }
                     return;
                   }
@@ -455,7 +585,7 @@ export default function PaymentPlansPage() {
                     closeSuggest();
                   }
                 }}
-                placeholder="اكتب اسم الزبون / رقم الوحدة / المستخدم..."
+                placeholder="اكتب اسم الزبون / أي حقل..."
                 className="w-full pl-10 pr-3 py-2.5 rounded-2xl bg-white/55 backdrop-blur ring-1 ring-white/30 text-[15px] text-gray-900 placeholder:text-gray-600/70 outline-none focus:ring-2 focus:ring-white/45"
               />
             </div>
@@ -466,7 +596,6 @@ export default function PaymentPlansPage() {
                   setAppliedSearch(searchText.trim());
                   closeSuggest();
                   setPage(1);
-                  fetchAll();
                 }}
                 disabled={loading}
                 className={[
@@ -485,7 +614,6 @@ export default function PaymentPlansPage() {
                   setAppliedSearch("");
                   setPage(1);
                   closeSuggest();
-                  fetchAll();
                 }}
                 disabled={loading}
                 className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-white/55 ring-1 ring-white/30 text-gray-900 font-extrabold shadow-sm hover:bg-white/70"
@@ -494,14 +622,25 @@ export default function PaymentPlansPage() {
               </button>
             </div>
           </div>
+
+          {appliedSearch ? (
+            <div className="mt-3 flex items-center justify-between gap-2">
+              <div className="text-[13px] font-extrabold text-gray-800/80">
+                Filter: <span className="text-gray-950">{appliedSearch}</span>
+              </div>
+              <div className="text-[13px] font-extrabold text-gray-800/70">
+                Showing: <span className="text-gray-950">{totalItems}</span>
+              </div>
+            </div>
+          ) : null}
         </div>
 
         {mounted && showSuggest && suggestPos.open && suggestions.length > 0 ? <SuggestionsPortal /> : null}
 
         {/* List */}
         <SectionShell
-          title="Payment Plans List"
-          subtitle="Browse and open plan details"
+          title="قائمة الطلبات"
+          subtitle="افتح الطلب وشوف التفاصيل"
           icon={FiFileText}
           right={<span className="text-[13px] font-extrabold text-gray-800/70">{paged.total} items</span>}
         >
@@ -512,7 +651,7 @@ export default function PaymentPlansPage() {
           ) : (
             <>
               <ScrollBox>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {paged.items.map((r) => (
                     <Card key={r._id} r={r} />
                   ))}
@@ -525,29 +664,28 @@ export default function PaymentPlansPage() {
         </SectionShell>
       </div>
 
-      {/* Create Modal (حسب الصلاحية) */}
+      {/* ✅ Create Modal (فقط لمن عنده CREATE_REQUEST) */}
       {canCreate && (
-        <PaymentPlanA4_Generator
-          key={createKey}
+        <ReplaceBookingTransferGenerator
+          key={`${pageKey}-${createKey}`}
           open={openCreate}
           onClose={() => setOpenCreate(false)}
-          onCreate={async (form) => {
-            const username = typeof window !== "undefined" ? localStorage.getItem("username") : "";
-            const userId = typeof window !== "undefined" ? localStorage.getItem("userId") : "";
-
-            const res = await fetch("/api/ex/payment-plans", {
+          formKey={pageKey}
+          onCreate={async (payload) => {
+            const res = await fetch(`/api/ex/${encodeURIComponent(pageKey)}`, {
               method: "POST",
+              credentials: "include",
+              cache: "no-store",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
-                ...form,
-                pageKey: "exceptions",
-                createdBy: username || "User",
-                createdById: userId || "",
+                ...payload,
+                pageKey,
+                createdBy: currentUsername || "User",
+                createdById: currentUserId || "",
               }),
             });
 
             const j = await res.json();
-
             if (j?.success) {
               setOpenCreate(false);
               await fetchAll();

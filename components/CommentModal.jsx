@@ -387,7 +387,7 @@ export default function CommentModal({
           </div>
           <div className="min-w-0">
             <p className="text-sm font-extrabold text-slate-900">لا يوجد مرفق</p>
-            <p className="text-xs text-slate-600/80 mt-1">ماكو ملف مرفوع لهذه الخطوة.</p>
+            <p className="text-xs text-slate-600/80 mt-1">لا يوجد ملف مرفوع لهذه الخطوة.</p>
           </div>
         </div>
       </div>

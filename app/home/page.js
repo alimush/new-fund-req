@@ -7,13 +7,18 @@ import { useEffect, useMemo, useState } from "react";
 
 const cards = [
   { key: "Al-Ghadeer", name: "طلبات الغدير", logo: "/الغدير.png" },
-  // { key: "Al-Rida", name: "طلبات الرضا", logo: "/الرضا.png" },
-  // { key: "Al-Mezan", name: "طلبات الميزان", logo: "/الميزان.png" },
   { key: "Badur-Baghdad", name: "طلبات بدور بغداد", logo: "/بدور_بغداد.png" },
   { key: "Ghadeer-Karbala", name: "طلبات غدير كربلاء", logo: "/غدير_كربلاء.png" },
   { key: "Tiba-Al-najaf", name: "طلبات طيبة النجف", logo: "/طيبة_النجف.png" },
   { key: "badur-Al-najaf", name: "طلبات بدور النجف", logo: "/بدور_النجف.png" },
   { key: "010", name: "test", logo: "/12.png" },
+  {
+    key: "EX",
+    name: "الاستثناءات",
+    logo: "/ex.png",
+    href: "/ex/ex-home",
+  },
+  
   { key: "RYD", name: "رياض", logo: "" },
 ];
 
@@ -110,8 +115,7 @@ export default function HomePage() {
           const n = Number(counts?.[c.key] || 0);
 
           return (
-            <Link key={idx} href={`/requests/${c.key}`} passHref>
-              <motion.div
+<Link key={idx} href={c.href || `/requests/${c.key}`} passHref>              <motion.div
                 variants={item}
                 whileHover={{ y: -4, scale: 1.015 }}
                 whileTap={{ scale: 0.995 }}

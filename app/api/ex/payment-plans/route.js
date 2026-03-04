@@ -1,13 +1,18 @@
 import { NextResponse } from "next/server";
 import dbConnect from "@/lib/mongodb";
+import { cookies } from "next/headers";
+import mongoose, { Types } from "mongoose";
+
 import PaymentPlan from "@/models/PaymentPlan";
 import ExWorkflow from "@/models/ExWorkflow";
-import { Types } from "mongoose";
 import User from "@/models/User";
+import Permissions from "@/models/Permissions";
 
 export const runtime = "nodejs";
 
 /* ================= Helpers ================= */
+
+const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
 
 function cleanStr(v) {
   return String(v ?? "").trim();
@@ -39,7 +44,6 @@ function cleanAttachments(arr) {
 
 /* ======= Public URL Helpers (بدون Signed URL) ======= */
 function encodeS3Key(key) {
-  // مهم حتى المسافات/العربي يطلع مضبوط
   return String(key || "")
     .split("/")
     .map(encodeURIComponent)
@@ -55,7 +59,6 @@ function buildPublicUrl(key) {
 
 /**
  * ✅ بدل التوقيع: نبني URL ثابت
- * ملاحظة: هذا يفتح "طبيعي" فقط إذا عندك Bucket Policy يسمح GetObject.
  */
 async function signAttachmentsForDoc(doc) {
   if (!doc) return doc;
@@ -68,10 +71,7 @@ async function signAttachmentsForDoc(doc) {
     url: x?.key ? buildPublicUrl(x.key) : cleanStr(x?.url),
   }));
 
-  return {
-    ...doc,
-    attachments,
-  };
+  return { ...doc, attachments };
 }
 
 const toObjId = (v) => {
@@ -81,6 +81,30 @@ const toObjId = (v) => {
   if (!Types.ObjectId.isValid(s)) return null;
   return new Types.ObjectId(s);
 };
+
+/* ================= AUTH (Cookie + Permission EX) ================= */
+
+async function requireExPermission() {
+  await dbConnect();
+
+  const cookieStore = await cookies();
+  const userId = cookieStore.get("userId")?.value;
+
+  if (!userId) return { ok: false, status: 401, message: "Not authenticated" };
+  if (!isValidObjectId(userId)) return { ok: false, status: 401, message: "Invalid userId" };
+
+  const user = await User.findById(userId).select("_id username name email").lean();
+  if (!user) return { ok: false, status: 401, message: "User not found" };
+
+  const groups = await Permissions.find({ users: user._id }).lean();
+  const perms = [...new Set(groups.flatMap((g) => g.permissions || []))];
+
+  if (!perms.includes("EX")) return { ok: false, status: 403, message: "Forbidden" };
+
+  return { ok: true, userId: String(user._id), user, perms };
+}
+
+/* ================= Workflow ================= */
 
 async function buildWorkflowForKey(key) {
   const wf = await ExWorkflow.findOne({ pageKey: key }).lean();
@@ -109,6 +133,11 @@ async function buildWorkflowForKey(key) {
 /* ======================= GET ======================= */
 
 export async function GET() {
+  const auth = await requireExPermission();
+  if (!auth.ok) {
+    return NextResponse.json({ success: false, error: auth.message }, { status: auth.status });
+  }
+
   try {
     await dbConnect();
 
@@ -127,22 +156,25 @@ export async function GET() {
     return NextResponse.json({ success: true, data: withPublicUrls });
   } catch (e) {
     console.error("❌ GET_FAILED:", e?.message || e);
-    return NextResponse.json(
-      { success: false, error: e?.message || "GET_FAILED" },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: e?.message || "GET_FAILED" }, { status: 500 });
   }
 }
 
 /* ======================= POST ======================= */
 
 export async function POST(req) {
+  const auth = await requireExPermission();
+  if (!auth.ok) {
+    return NextResponse.json({ success: false, error: auth.message }, { status: auth.status });
+  }
+
   try {
     await dbConnect();
-    const body = await req.json();
+    const body = await req.json().catch(() => ({}));
 
-    const createdBy = cleanStr(body?.createdBy);
-    const createdByIdObj = toObjId(body?.createdById);
+    // ✅ لا نعتمد على قيم الفرونت
+    const createdBy = auth.user?.username || auth.user?.name || "";
+    const createdByIdObj = toObjId(auth.userId);
 
     const rows = cleanRows(body?.rows);
     const attachments = cleanAttachments(body?.attachments);
@@ -153,10 +185,7 @@ export async function POST(req) {
       rows.length === 0 &&
       attachments.length === 0
     ) {
-      return NextResponse.json(
-        { success: false, error: "EMPTY_PAYLOAD" },
-        { status: 400 }
-      );
+      return NextResponse.json({ success: false, error: "EMPTY_PAYLOAD" }, { status: 400 });
     }
 
     const pageKey = cleanStr(body?.pageKey) || "exceptions";
@@ -171,8 +200,10 @@ export async function POST(req) {
       signature: cleanStr(body?.signature),
       rows,
       attachments,
-      createdBy: createdBy || "",
+
+      createdBy,
       createdById: createdByIdObj || null,
+
       pageKey,
       workflow,
       status: "Pending",
@@ -199,9 +230,6 @@ export async function POST(req) {
     });
   } catch (e) {
     console.error("❌ POST_FAILED:", e?.message || e);
-    return NextResponse.json(
-      { success: false, error: e?.message || "POST_FAILED" },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: e?.message || "POST_FAILED" }, { status: 500 });
   }
 }

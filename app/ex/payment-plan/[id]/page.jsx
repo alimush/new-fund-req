@@ -166,70 +166,70 @@ function StatusBadge({ status }) {
 
 /* =================== COMMENT MODAL (مثل تصميمك) =================== */
 function CommentModal({ open, title, subtitle, submitLabel, onClose, onSubmit, loading }) {
-  const [text, setText] = useState("");
-
-  useEffect(() => {
-    if (open) setText("");
-  }, [open]);
-
   return (
     <AnimatePresence>
       {open && (
         <motion.div
-          className="fixed inset-0 z-[60] bg-black/60 flex items-center justify-center p-4"
+          className="fixed inset-0 z-[9999] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
         >
           <motion.div
-            className="w-full max-w-lg rounded-2xl bg-white shadow-2xl overflow-hidden"
-            initial={{ y: 18, opacity: 0, scale: 0.98 }}
+            className="w-full max-w-md rounded-3xl bg-white shadow-2xl overflow-hidden"
+            initial={{ y: 20, opacity: 0, scale: 0.97 }}
             animate={{ y: 0, opacity: 1, scale: 1 }}
-            exit={{ y: 12, opacity: 0, scale: 0.98 }}
+            exit={{ y: 15, opacity: 0, scale: 0.97 }}
             transition={{ type: "spring", stiffness: 160, damping: 18 }}
           >
-            <div className="p-4 border-b flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="font-black text-gray-900 flex items-center gap-2">
-                  <FiMessageSquare /> {title}
-                </div>
-                {subtitle ? <div className="mt-1 text-xs text-gray-600">{subtitle}</div> : null}
+            {/* HEADER */}
+            <div className="p-5 border-b flex items-center justify-between">
+              <div className="flex items-center gap-2 font-bold text-gray-900">
+                <FiMessageSquare className="text-lg" />
+                {title}
               </div>
 
               <button
                 onClick={loading ? undefined : onClose}
-                className="shrink-0 px-3 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center gap-2"
+                className="p-2 rounded-lg hover:bg-gray-100"
+                disabled={loading}
               >
-                <FiX /> Close
+                <FiX />
               </button>
             </div>
 
-            <div className="p-4">
-              <label className="block text-xs font-bold text-gray-700 mb-2">Comment (اختياري)</label>
-              <textarea
-                value={text}
-                onChange={(e) => setText(e.target.value)}
-                rows={5}
-                className="w-full rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-200 p-3 text-sm"
-                placeholder="اكتب ملاحظة / سبب..."
-                disabled={loading}
-              />
+            {/* BODY */}
+            <div className="p-6 text-center">
+              <div className="text-gray-700 text-sm mb-2">
+                {subtitle || "Are you sure you want to perform this action?"}
+              </div>
             </div>
 
-            <div className="p-4 border-t bg-white flex justify-end gap-2">
+            {/* FOOTER */}
+            <div className="p-4 border-t flex justify-end gap-3">
               <button
                 onClick={loading ? undefined : onClose}
-                className="px-4 py-2 rounded-xl font-bold bg-gray-100 hover:bg-gray-200"
                 disabled={loading}
+                className="px-4 py-2 rounded-xl font-semibold bg-gray-100 hover:bg-gray-200 disabled:opacity-60"
               >
                 Cancel
               </button>
+
               <button
-                onClick={() => onSubmit(text)}
-                className="px-4 py-2 rounded-xl font-black bg-black text-white hover:bg-gray-900 flex items-center gap-2 disabled:opacity-60"
+                onClick={() => onSubmit("")}
                 disabled={loading}
+                className="px-4 py-2 rounded-xl font-bold bg-black text-white hover:bg-gray-900 flex items-center gap-2 disabled:opacity-60"
               >
-                <FiSend /> {submitLabel}
+                {loading ? (
+                  <>
+                    <span className="w-4 h-4 border-2 border-white/70 border-t-transparent rounded-full animate-spin"></span>
+                    Processing
+                  </>
+                ) : (
+                  <>
+                    <FiSend /> {submitLabel}
+                  </>
+                )}
               </button>
             </div>
           </motion.div>
@@ -1059,7 +1059,7 @@ export default function PaymentPlanDetailsPage() {
         <CommentModal
           open={!!actionModal?.open}
           title={actionModal?.action === "approve" ? "Approve Step" : "Reject Step"}
-          subtitle={actionModal?.action === "approve" ? "اكتب ملاحظة (اختياري) ثم Submit" : "اكتب سبب الرفض (اختياري) ثم Submit"}
+          subtitle={actionModal?.action === "approve" ? "Submit" :"Submit"}
           submitLabel="Submit"
           onClose={() => (acting ? null : setActionModal({ open: false, action: null, stepIndex: null }))}
           onSubmit={submitAction}

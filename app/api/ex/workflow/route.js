@@ -4,9 +4,26 @@ import Permissions from "@/models/Permissions";
 import { NextResponse } from "next/server";
 import mongoose from "mongoose";
 
+// ✅ يجيب الفورمات من registry (Server-side)
+import { EX_FORMS } from "@/lib/exForms/registry";
+
 export const runtime = "nodejs";
 
 const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
+
+// ✅ سماح pageKey من الفورمات + الاستثناءات
+function isAllowedPageKey(k) {
+  const key = String(k || "").trim();
+  if (!key) return false;
+
+  // forms الموجودة بالـ registry
+  if (EX_FORMS && EX_FORMS[key]) return true;
+
+  // صفحات خاصة مو ضمن EX_FORMS
+  if (key === "exceptions") return true;
+
+  return false;
+}
 
 // ✅ تحقق MANAGE_PERMISSIONS
 async function requireManagePermissions(req) {
@@ -35,10 +52,7 @@ const populateUser = {
 export async function GET(req) {
   const auth = await requireManagePermissions(req);
   if (!auth.ok) {
-    return NextResponse.json(
-      { success: false, error: auth.message },
-      { status: auth.status }
-    );
+    return NextResponse.json({ success: false, error: auth.message }, { status: auth.status });
   }
 
   await dbConnect();
@@ -46,17 +60,12 @@ export async function GET(req) {
 
   const id = searchParams.get("id");
   const pageKey = (searchParams.get("pageKey") || "").trim();
-
-  // ✅ نخليه param حتى لو فارغ
   const codeParam = searchParams.get("code"); // null إذا مو موجود
 
   // 1) by id
   if (id) {
     if (!isValidObjectId(id)) {
-      return NextResponse.json(
-        { success: false, error: "Invalid workflow id" },
-        { status: 400 }
-      );
+      return NextResponse.json({ success: false, error: "Invalid workflow id" }, { status: 400 });
     }
     const wf = await ExWorkflow.findById(id).populate(populateUser);
     return NextResponse.json({ success: true, workflow: wf });
@@ -65,13 +74,11 @@ export async function GET(req) {
   // 2) by pageKey + code (حتى لو code فارغ)
   if (pageKey && codeParam !== null) {
     const codeNorm = (codeParam ?? "").trim();
-    const wf = await ExWorkflow.findOne({ pageKey, code: codeNorm }).populate(
-      populateUser
-    );
+    const wf = await ExWorkflow.findOne({ pageKey, code: codeNorm }).populate(populateUser);
     return NextResponse.json({ success: true, workflow: wf });
   }
 
-  // 3) by pageKey (كل الوركفلوات للصفحة)
+  // 3) by pageKey
   if (pageKey) {
     const list = await ExWorkflow.find({ pageKey }).populate(populateUser);
     return NextResponse.json({ success: true, workflows: list });
@@ -86,10 +93,7 @@ export async function GET(req) {
 export async function POST(req) {
   const auth = await requireManagePermissions(req);
   if (!auth.ok) {
-    return NextResponse.json(
-      { success: false, error: auth.message },
-      { status: auth.status }
-    );
+    return NextResponse.json({ success: false, error: auth.message }, { status: auth.status });
   }
 
   await dbConnect();
@@ -102,6 +106,11 @@ export async function POST(req) {
   }
   if (!pageKey?.trim()) {
     return NextResponse.json({ success: false, error: "pageKey required" }, { status: 400 });
+  }
+
+  // ✅ validate pageKey موجود بالـ forms
+  if (!isAllowedPageKey(pageKey)) {
+    return NextResponse.json({ success: false, error: "Invalid pageKey (not in registry)" }, { status: 400 });
   }
 
   const codeNorm = (code ?? "").trim();
@@ -133,10 +142,7 @@ export async function POST(req) {
 export async function PUT(req) {
   const auth = await requireManagePermissions(req);
   if (!auth.ok) {
-    return NextResponse.json(
-      { success: false, error: auth.message },
-      { status: auth.status }
-    );
+    return NextResponse.json({ success: false, error: auth.message }, { status: auth.status });
   }
 
   await dbConnect();
@@ -145,25 +151,20 @@ export async function PUT(req) {
   const { id, name, code, steps = [] } = body;
 
   if (!id || !isValidObjectId(id)) {
-    return NextResponse.json(
-      { success: false, error: "Valid workflow id required" },
-      { status: 400 }
-    );
+    return NextResponse.json({ success: false, error: "Valid workflow id required" }, { status: 400 });
   }
 
   if (!name?.trim()) {
     return NextResponse.json({ success: false, error: "name required" }, { status: 400 });
   }
 
-  // ✅ code اختياري (تقدر تغيّره لفارغ أو قيمة)
+  // ✅ code اختياري
   const codeNorm = code === undefined ? undefined : (code ?? "").trim();
 
   // ✅ منع التعارض إذا code مرسل
   if (codeNorm !== undefined) {
     const current = await ExWorkflow.findById(id).lean();
-    if (!current) {
-      return NextResponse.json({ success: false, error: "Workflow not found" }, { status: 404 });
-    }
+    if (!current) return NextResponse.json({ success: false, error: "Workflow not found" }, { status: 404 });
 
     const conflict = await ExWorkflow.findOne({
       _id: { $ne: id },
@@ -186,14 +187,8 @@ export async function PUT(req) {
 
   if (codeNorm !== undefined) updateDoc.code = codeNorm;
 
-  const updated = await ExWorkflow.findByIdAndUpdate(id, updateDoc, {
-    new: true,
-    runValidators: true,
-  });
-
-  if (!updated) {
-    return NextResponse.json({ success: false, error: "Workflow not found" }, { status: 404 });
-  }
+  const updated = await ExWorkflow.findByIdAndUpdate(id, updateDoc, { new: true, runValidators: true });
+  if (!updated) return NextResponse.json({ success: false, error: "Workflow not found" }, { status: 404 });
 
   return NextResponse.json({ success: true, workflow: updated });
 }
@@ -202,10 +197,7 @@ export async function PUT(req) {
 export async function DELETE(req) {
   const auth = await requireManagePermissions(req);
   if (!auth.ok) {
-    return NextResponse.json(
-      { success: false, error: auth.message },
-      { status: auth.status }
-    );
+    return NextResponse.json({ success: false, error: auth.message }, { status: auth.status });
   }
 
   await dbConnect();
@@ -217,10 +209,7 @@ export async function DELETE(req) {
   }
 
   const wf = await ExWorkflow.findByIdAndDelete(id);
-
-  if (!wf) {
-    return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
-  }
+  if (!wf) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
 
   return NextResponse.json({ success: true });
 }

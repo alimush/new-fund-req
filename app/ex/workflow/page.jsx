@@ -2,27 +2,37 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import {
-  FiPlus,
-  FiLayers,
-  FiFileText,
-  FiUsers,
-  FiTrash2,
-  FiX,
-  FiHash,
-} from "react-icons/fi";
+import { FiPlus, FiLayers, FiFileText, FiUsers, FiTrash2, FiX, FiHash } from "react-icons/fi";
 import Select from "react-select";
 import { useRouter } from "next/navigation";
 
-/** ✅ نفس كاردات ex */
-const EX_PAGES = [
-  {
-    key: "exceptions",
-    name: "الاستثنائات",
-    href: "/ex/payment-plan",
+// ✅ يجيب الفورمات من registry (Client-side)
+import { EX_FORMS } from "@/lib/exForms/registry";
+
+/** ✅ Pages = forms from registry + exceptions manual */
+const buildExPages = () => {
+  const forms = Object.values(EX_FORMS || {}).map((f) => ({
+    key: f.key,
+    name: f.title || f.key,
+    href: `/ex/${f.key}`,
     icon: FiFileText,
-  },
-];
+  }));
+
+  // صفحة خاصة خارج EX_FORMS
+  const extras = [
+    {
+      key: "exceptions",
+      name: "الاستثنائات",
+      href: "/ex/payment-plan",
+      icon: FiFileText,
+    },
+  ];
+
+  // منع التكرار
+  const map = new Map();
+  [...forms, ...extras].forEach((x) => map.set(x.key, x));
+  return Array.from(map.values());
+};
 
 export default function ExWorkflowPage() {
   const router = useRouter();
@@ -36,6 +46,8 @@ export default function ExWorkflowPage() {
   const [name, setName] = useState("");
   const [pageKey, setPageKey] = useState("");
   const [code, setCode] = useState("");
+
+  const EX_PAGES = useMemo(() => buildExPages(), []);
 
   const getUserId = () => localStorage.getItem("userId") || "";
 
