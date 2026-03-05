@@ -105,21 +105,9 @@ export default function RequestDetails({ id, companyKey }) {
   // Access check
   useEffect(() => {
     if (!request || !currentUser) return;
-
-    const permsArr = Array.isArray(permissions) ? permissions : [];
-    const isOwner = String(request.createdBy) === String(currentUser.username);
-    const allowed = isOwner || permsArr.includes(PERMISSIONS.VIEW_REPORTS);
-
-    if (!allowed) {
-      setAccessDenied(true);
-      setAccessChecked(true);
-      router.replace("/403");
-      return;
-    }
-
     setAccessDenied(false);
     setAccessChecked(true);
-  }, [request, currentUser, permissions, router]);
+  }, [request, currentUser]);
 
   const handleDownloadPDF = async () => {
     if (!printRef.current) return;
