@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import Link from "next/link";
@@ -62,29 +62,24 @@ const item = {
   },
 };
 
+const norm = (v) => String(v ?? "").trim().toLowerCase();
+
 export default function ExDashboardPage() {
   const router = useRouter();
 
-  // ⚠️ خليت جلب أكثر من قيمة حتى يدعم أغلب الـ Contextات
   const { hasPermission, loading, permissions, user } = usePermissions();
 
-  // ✅ نحسبها بطريقة قوية (حتى لو hasPermission مو مضبوط)
   const canEX = useMemo(() => {
-    // 1) إذا hasPermission موجودة وتشتغل
     if (typeof hasPermission === "function") {
       try {
         return !!hasPermission(PERMISSIONS.EX);
-      } catch {
-        // ignore
-      }
+      } catch {}
     }
 
-    // 2) إذا عندك permissions array بالكونتكست
     if (Array.isArray(permissions)) {
       return permissions.includes(PERMISSIONS.EX);
     }
 
-    // 3) إذا عندك user.permissions
     if (Array.isArray(user?.permissions)) {
       return user.permissions.includes(PERMISSIONS.EX);
     }
@@ -94,11 +89,104 @@ export default function ExDashboardPage() {
 
   useEffect(() => {
     if (loading) return;
-
     if (!canEX) router.replace("/home");
   }, [loading, canEX, router]);
 
-  // ✅ منع الوميض + منع التقييم قبل الاستقرار
+  const [counts, setCounts] = useState({});
+  const [loadingCounts, setLoadingCounts] = useState(false);
+
+  useEffect(() => {
+    if (loading || !canEX) return;
+
+    let alive = true;
+
+    const currentUserId =
+      typeof window !== "undefined" ? localStorage.getItem("userId") || "" : "";
+
+    if (!currentUserId) {
+      setCounts({});
+      return;
+    }
+
+    const isPendingWithMe = (r) => {
+      const currentStep = Number.isInteger(r?.currentStep) ? r.currentStep : -1;
+      if (currentStep < 0) return false;
+
+      if (norm(r?.status) !== "pending") return false;
+
+      const step = r?.workflow?.steps?.[currentStep];
+      if (!step) return false;
+
+      if (norm(step?.status || "pending") !== "pending") return false;
+
+      const users = Array.isArray(step?.users) ? step.users : [];
+
+      return users.some((u) => {
+        if (!u) return false;
+        if (typeof u === "string" || typeof u === "number") {
+          return String(u) === String(currentUserId);
+        }
+        if (typeof u === "object" && u._id) {
+          return String(u._id) === String(currentUserId);
+        }
+        return false;
+      });
+    };
+
+    const fetchCounts = async () => {
+      try {
+        setLoadingCounts(true);
+
+        const results = await Promise.all(
+          cards.map(async (card) => {
+            try {
+              let url = "";
+
+              if (card.key === "exceptions") {
+                url = "/api/ex/payment-plans";
+              } else {
+                url = `/api/ex/${encodeURIComponent(card.key)}`;
+              }
+
+              const res = await fetch(url, {
+                cache: "no-store",
+                credentials: "include",
+              });
+
+              const data = await res.json().catch(() => ({}));
+              const list =
+                res.ok && data?.success && Array.isArray(data?.data) ? data.data : [];
+
+              const count = list.filter(isPendingWithMe).length;
+
+              return [card.key, count];
+            } catch {
+              return [card.key, 0];
+            }
+          })
+        );
+
+        if (!alive) return;
+
+        setCounts(Object.fromEntries(results));
+      } catch {
+        if (!alive) return;
+        setCounts({});
+      } finally {
+        if (alive) setLoadingCounts(false);
+      }
+    };
+
+    fetchCounts();
+
+    const t = setInterval(fetchCounts, 30000);
+
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, [loading, canEX]);
+
   if (loading) return null;
   if (!canEX) return null;
 
@@ -112,7 +200,7 @@ export default function ExDashboardPage() {
           transition={{ duration: 0.55, ease: "easeOut" }}
           className="text-3xl md:text-4xl font-extrabold text-gray-900"
         >
-        طلبات الحجز
+          طلبات الحجز
         </motion.h1>
 
         <motion.p
@@ -134,6 +222,7 @@ export default function ExDashboardPage() {
       >
         {cards.map((c) => {
           const Icon = c.icon;
+          const n = Number(counts?.[c.key] || 0);
 
           return (
             <Link key={c.key} href={c.href} className="block">
@@ -152,6 +241,24 @@ export default function ExDashboardPage() {
                   text-right
                 "
               >
+                {!loadingCounts && n > 0 && (
+                  <div
+                    className="
+                      absolute top-2 right-3
+                      min-w-[34px] h-[28px] px-2
+                      rounded-full
+                      bg-red-600 text-white
+                      flex items-center justify-center
+                      text-sm font-extrabold
+                      shadow-md
+                      ring-2 ring-white/70
+                    "
+                    title="طلبات تحتاج إجراء منك"
+                  >
+                    {n > 99 ? "99+" : n}
+                  </div>
+                )}
+
                 <div className="pointer-events-none absolute inset-0 rounded-3xl bg-gradient-to-br from-white/30 via-transparent to-transparent opacity-80" />
 
                 <div className="relative flex items-start gap-4">
