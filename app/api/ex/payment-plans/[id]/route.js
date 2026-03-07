@@ -1,8 +1,9 @@
-// app/api/ex/payment-plans/[id]/route.js
 import { NextResponse } from "next/server";
 import dbConnect from "@/lib/mongodb";
 import { cookies } from "next/headers";
 import { Types } from "mongoose";
+import { PERMISSIONS } from "@/lib/permission";
+import Permissions from "@/models/Permissions";
 
 import PaymentPlan from "@/models/PaymentPlan";
 import ExWorkflow from "@/models/ExWorkflow";
@@ -19,6 +20,7 @@ const awaitMaybe = async (v) => (v && typeof v.then === "function" ? await v : v
 const toObjId = (v) => {
   if (!v) return null;
   if (v instanceof Types.ObjectId) return v;
+  if (typeof v === "object" && v._id) v = v._id;
   const s = String(v);
   if (!Types.ObjectId.isValid(s)) return null;
   return new Types.ObjectId(s);
@@ -37,6 +39,8 @@ function resetStepToPendingClean(st) {
   st.actedBy = null;
   st.actedAt = null;
   st.comment = "";
+  st.tag = "";
+  st.tagAttachments = [];
 }
 
 async function buildWorkflowForKey(key) {
@@ -57,6 +61,8 @@ async function buildWorkflowForKey(key) {
         actedBy: null,
         actedAt: null,
         comment: "",
+        tag: "",
+        tagAttachments: [],
       };
     }),
   };
@@ -77,16 +83,24 @@ async function ensurePlanWorkflowStable(plan, forcedKey) {
   const hasSteps = Array.isArray(plan?.workflow?.steps) && plan.workflow.steps.length > 0;
 
   if (hasSteps) {
+    let changed = false;
+
     if (!String(plan.pageKey || "").trim()) {
       plan.pageKey = key;
-      await plan.save();
+      changed = true;
     }
 
     if (typeof plan.currentStep !== "number") {
       plan.currentStep = plan.workflow.steps.length ? 0 : -1;
-      await plan.save();
+      changed = true;
     }
 
+    if (!String(plan.status || "").trim()) {
+      plan.status = "Pending";
+      changed = true;
+    }
+
+    if (changed) await plan.save();
     return plan;
   }
 
@@ -96,11 +110,26 @@ async function ensurePlanWorkflowStable(plan, forcedKey) {
   plan.pageKey = key;
 
   if (!String(plan.status || "").trim()) plan.status = "Pending";
-
   plan.currentStep = newWorkflow.steps.length ? 0 : -1;
 
   await plan.save();
   return plan;
+}
+
+async function getUserPermissions(userId) {
+  if (!userId) return [];
+
+  const groups = await Permissions.find({ users: userId })
+    .select("permissions")
+    .lean();
+
+  const perms = new Set();
+
+  for (const g of groups) {
+    (g.permissions || []).forEach((p) => perms.add(String(p).trim()));
+  }
+
+  return Array.from(perms);
 }
 
 /* ======================= GET ======================= */
@@ -188,11 +217,18 @@ export async function PUT(req, ctx) {
     const keyFromQuery = String(searchParams.get("key") || "").trim();
 
     const body = await req.json().catch(() => ({}));
-    const { action, note, stepIndex: bodyStepIndex, key: keyFromBody } = body;
+    const {
+      action,
+      note,
+      stepIndex: bodyStepIndex,
+      key: keyFromBody,
+      attachmentMeta = null,
+      clearTag = false,
+    } = body;
 
     const forcedKey = String(keyFromQuery || keyFromBody || "").trim();
 
-    if (action !== "approve" && action !== "reject") {
+    if (action !== "approve" && action !== "reject" && action !== "operation_submit") {
       return NextResponse.json({ success: false, error: "Invalid action" }, { status: 400 });
     }
 
@@ -215,6 +251,9 @@ export async function PUT(req, ctx) {
     if (!currentUser) {
       return NextResponse.json({ success: false, error: "User not found" }, { status: 401 });
     }
+
+    const currentUserPerms = await getUserPermissions(userIdObj);
+    const isOperationUser = currentUserPerms.includes(PERMISSIONS.OPERATION);
 
     let plan = await PaymentPlan.findById(id);
     if (!plan) {
@@ -255,29 +294,72 @@ export async function PUT(req, ctx) {
       return NextResponse.json({ success: false, error: "Not authorized" }, { status: 403 });
     }
 
-    // نحاول نحدد صاحب الخطة (Creator) حتى نرسل له
-    // ✅ خليها مرنة: إذا عندك createdBy كـ ObjectId أو username
+    if (isOperationUser) {
+      if (action === "reject") {
+        return NextResponse.json(
+          { success: false, error: "Operation user cannot reject" },
+          { status: 403 }
+        );
+      }
+
+      if (action === "approve" || action === "operation_submit") {
+        if (!attachmentMeta?.key) {
+          return NextResponse.json(
+            { success: false, error: "Attachment is required for operation user" },
+            { status: 400 }
+          );
+        }
+      }
+    }
+
     let creatorUser = null;
     if (plan.createdBy && Types.ObjectId.isValid(String(plan.createdBy))) {
       creatorUser = await User.findById(plan.createdBy).select("_id username name email").lean();
     } else if (plan.createdBy) {
-      creatorUser = await User.findOne({ username: String(plan.createdBy) }).select("_id username name email").lean();
+      creatorUser = await User.findOne({ username: String(plan.createdBy) })
+        .select("_id username name email")
+        .lean();
     }
 
     const actorName = currentUser?.username || currentUser?.name || currentUser?.email || "System";
     const baseDomain = process.env.EX_BASE_DOMAIN || "https://funds-gdr.spc-it.com.iq";
+    const pageKey = plan.pageKey || forcedKey || "exceptions";
+
     const planUrl = `${String(baseDomain).replace(/\/+$/, "")}/ex/payment-plans/${encodeURIComponent(
       String(plan._id)
-    )}?key=${encodeURIComponent(plan.pageKey || forcedKey || "exceptions")}`;
+    )}?key=${encodeURIComponent(pageKey)}`;
 
     let emailResult = null;
 
-    /* ================= APPROVE ================= */
-    if (action === "approve") {
+    const attachToStepIfNeeded = () => {
+      if (clearTag) {
+        step.tag = "";
+        step.tagAttachments = [];
+      }
+
+      if (attachmentMeta?.key) {
+        step.tag = attachmentMeta.url || attachmentMeta.key || "";
+        step.tagAttachments = [
+          ...(Array.isArray(step.tagAttachments) ? step.tagAttachments : []),
+          {
+            key: attachmentMeta.key,
+            url: attachmentMeta.url || "",
+            name: attachmentMeta.name || "",
+            type: attachmentMeta.type || "",
+            size: attachmentMeta.size || 0,
+            uploadedAt: new Date(),
+          },
+        ];
+      }
+    };
+
+    /* ================= APPROVE / OPERATION SUBMIT ================= */
+    if (action === "approve" || action === "operation_submit") {
       step.status = "Approved";
       step.actedBy = userIdObj;
       step.actedAt = new Date();
       step.comment = note || "";
+      attachToStepIfNeeded();
 
       const lastIdx = plan.workflow.steps.length - 1;
 
@@ -285,14 +367,13 @@ export async function PUT(req, ctx) {
         plan.status = "Approved";
         plan.currentStep = -1;
 
-        // ✅ Email للـ Creator (إذا موجود)
         const toEmails = creatorUser?.email ? [creatorUser.email] : [];
         const greetingName = creatorUser?.name || creatorUser?.username || "زميلنا";
 
         const html = buildExWorkflowActionEmailHtml({
           action: "approve",
           planId: String(plan._id),
-          pageKey: plan.pageKey || forcedKey || "exceptions",
+          pageKey,
           stepFrom: stepIndex,
           stepTo: stepIndex,
           note,
@@ -319,9 +400,9 @@ export async function PUT(req, ctx) {
         resetStepToPendingClean(plan.workflow.steps[nextIndex]);
         plan.status = "Pending";
 
-        // ✅ Email للستيب التالي
         const nextStepUsers = plan.workflow.steps[nextIndex]?.users || [];
         const nextUserIds = nextStepUsers.map(getIdStr).filter(Boolean);
+
         const nextUsers = nextUserIds.length
           ? await User.find({ _id: { $in: nextUserIds } }).select("_id username name email").lean()
           : [];
@@ -332,7 +413,7 @@ export async function PUT(req, ctx) {
         const html = buildExWorkflowActionEmailHtml({
           action: "approve",
           planId: String(plan._id),
-          pageKey: plan.pageKey || forcedKey || "exceptions",
+          pageKey,
           stepFrom: stepIndex,
           stepTo: nextIndex,
           note,
@@ -356,7 +437,7 @@ export async function PUT(req, ctx) {
       }
     }
 
-    /* ================= REJECT (ينهي) ================= */
+    /* ================= REJECT ================= */
     if (action === "reject") {
       step.status = "Rejected";
       step.actedBy = userIdObj;
@@ -366,14 +447,13 @@ export async function PUT(req, ctx) {
       plan.status = "Rejected";
       plan.currentStep = -1;
 
-      // ✅ Email للـ Creator فقط (تم رفض + إغلاق)
       const toEmails = creatorUser?.email ? [creatorUser.email] : [];
       const greetingName = creatorUser?.name || creatorUser?.username || "زميلنا";
 
       const html = buildExWorkflowActionEmailHtml({
         action: "reject",
         planId: String(plan._id),
-        pageKey: plan.pageKey || forcedKey || "exceptions",
+        pageKey,
         stepFrom: stepIndex,
         stepTo: stepIndex,
         note,
@@ -381,7 +461,7 @@ export async function PUT(req, ctx) {
         greetingName,
         toUserName: "",
         planUrl,
-        showRoutingLine: false, // ✅ ماكو ارجاع
+        showRoutingLine: false,
       });
 
       try {
@@ -396,6 +476,9 @@ export async function PUT(req, ctx) {
       }
     }
 
+    plan.markModified("workflow");
+    plan.markModified("workflow.steps");
+    plan.markModified(`workflow.steps.${stepIndex}`);
     await plan.save();
 
     const plan2 = await PaymentPlan.findById(id)
@@ -419,7 +502,7 @@ export async function PUT(req, ctx) {
       workflow: plan2?.workflow ?? null,
       pageKey: plan2?.pageKey ?? "",
       currentUser,
-      emailResult, // ✅ حتى تشوف إذا تم الإرسال أو لا
+      emailResult,
     });
   } catch (err) {
     console.error("❌ payment-plans/[id] PUT error:", err);

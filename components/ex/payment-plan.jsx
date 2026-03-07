@@ -3,7 +3,7 @@
 import { useMemo, useRef, useState } from "react";
 import { toPng } from "html-to-image";
 import { motion, AnimatePresence } from "framer-motion";
-import { FiX, FiPlus, FiTrash2, FiImage, FiCheck } from "react-icons/fi";
+import { FiX, FiPlus, FiTrash2, FiImage, FiCheck , FiPrinter} from "react-icons/fi";
 import { Cairo } from "next/font/google";
 import { useEffect } from "react";
 import { FiPaperclip, FiFileText } from "react-icons/fi"; // فوق بالimports
@@ -262,31 +262,98 @@ const openAttachment = (file) => {
     return pngs;
   };
 
-  const generateImagesOnly = async () => {
-    const pngs = await buildPagePngs();
-    if (!pngs.length) return;
-
-    const w = window.open("", "_blank");
-    if (!w) return;
-
-    const imgs = pngs
-      .map(
-        (u) =>
-          `<div style="margin:0 0 14px 0"><img src="${u}" style="width:100%;max-width:820px;display:block" /></div>`
-      )
+  function printAllPngs(pngs) {
+    if (!pngs?.length) return;
+  
+    const iframe = document.createElement("iframe");
+    iframe.style.position = "fixed";
+    iframe.style.right = "0";
+    iframe.style.bottom = "0";
+    iframe.style.width = "0";
+    iframe.style.height = "0";
+    iframe.style.border = "0";
+    document.body.appendChild(iframe);
+  
+    const doc = iframe.contentWindow?.document;
+    if (!doc) return;
+  
+    const imgsHtml = pngs
+      .map((src) => `<div class="page"><img src="${src}" /></div>`)
       .join("");
-
-    w.document.open();
-    w.document.write(`
+  
+    doc.open();
+    doc.write(`
       <!doctype html>
       <html>
-        <head><meta charset="utf-8" /><title>A4 Preview</title></head>
-        <body style="margin:16px;font-family:Arial,sans-serif;background:#f5f5f5">
-          ${imgs}
+        <head>
+          <meta charset="utf-8" />
+          <title>Print</title>
+          <style>
+            @page { size: A4; margin: 0; }
+            html, body { margin: 0; padding: 0; background: white; }
+            .page {
+              width: 210mm;
+              height: 297mm;
+              page-break-after: always;
+              overflow: hidden;
+            }
+            .page:last-child {
+              page-break-after: auto;
+            }
+            img {
+              width: 210mm;
+              height: 297mm;
+              display: block;
+            }
+          </style>
+        </head>
+        <body>
+          ${imgsHtml}
+          <script>
+            const imgs = Array.from(document.images);
+            let loaded = 0;
+  
+            function done() {
+              window.focus();
+              window.print();
+            }
+  
+            if (!imgs.length) done();
+  
+            imgs.forEach((im) => {
+              if (im.complete) {
+                loaded++;
+                if (loaded === imgs.length) done();
+                return;
+              }
+  
+              im.onload = () => {
+                loaded++;
+                if (loaded === imgs.length) done();
+              };
+  
+              im.onerror = () => {
+                loaded++;
+                if (loaded === imgs.length) done();
+              };
+            });
+          </script>
         </body>
       </html>
     `);
-    w.document.close();
+    doc.close();
+  
+    setTimeout(() => {
+      try {
+        document.body.removeChild(iframe);
+      } catch {}
+    }, 3000);
+  }
+  
+  const doPrint = async () => {
+    const pngs = await buildPagePngs();
+    if (!pngs.length) return;
+    printAllPngs(pngs);
   };
 
   const currentStepIndex = steps.findIndex((s) => s.key === activeTab);
@@ -313,7 +380,16 @@ const openAttachment = (file) => {
   // ✅ زر الإنشاء: يدز إلى API ويخزن بالمونغو (بدون signature)
   const handleCreate = async () => {
     setServerMsg("");
+  
+    if (!attachment || attachment.length === 0) {
+      setServerMsg("يرجى إضافة مرفق واحد على الأقل.");
+      return;
+    }
+  
     setSubmitting(true);
+  
+
+
   
     try {
       // 1) upload attachments to S3 (presigned)
@@ -945,19 +1021,21 @@ const openAttachment = (file) => {
 
                   {activeTab === "Review" ? (
                     <>
+                    <button
+  onClick={doPrint}
+  disabled={submitting}
+  className="px-5 py-2.5 rounded-lg flex items-center gap-2 font-extrabold bg-gray-700 hover:bg-gray-800 text-white disabled:opacity-50"
+>
+  <FiPrinter /> طباعة
+</button>
                       <button
-                        onClick={generateImagesOnly}
-                        disabled={submitting}
-                        className="px-5 py-2.5 rounded-lg flex items-center gap-2 font-extrabold bg-gray-700 hover:bg-gray-800 text-white disabled:opacity-50"
-                      >
-                        <FiImage /> معاينة صور
-                      </button>
-
-                      <button
-                        onClick={handleCreate}
-                        disabled={submitting}
-                        className="px-5 py-2.5 rounded-lg flex items-center gap-2 font-extrabold bg-gray-900 hover:bg-black text-white disabled:opacity-60"
-                      >
+  onClick={handleCreate}
+  disabled={submitting || attachment.length === 0}
+  className={`px-5 py-2.5 rounded-lg flex items-center gap-2 font-extrabold text-white ${
+    submitting || attachment.length === 0
+      ? "bg-gray-400 cursor-not-allowed"
+      : "bg-gray-900 hover:bg-black"
+  }`}                      >
                         {submitting ? (
                           <>
                             <Spinner /> جارِ الإنشاء...

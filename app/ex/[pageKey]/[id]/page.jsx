@@ -25,6 +25,8 @@ import {
 import { useRouter, useParams } from "next/navigation";
 import { getExForm } from "@/lib/exForms/registry";
 import StatusBadge from "@/components/StatusBadge";
+import { usePermissions } from "@/context/PermissionContext";
+import { PERMISSIONS } from "@/lib/permission";
 const pct = (p) => ({ top: `${p.top}%`, left: `${p.left}%` });
 
 async function waitForImages(node) {
@@ -235,6 +237,10 @@ export default function ExDetailsPage() {
   const router = useRouter();
   const params = useParams();
   const id = params?.id;
+  const { permissions } = usePermissions();
+
+const isOperationUser =
+  Array.isArray(permissions) && permissions.includes(PERMISSIONS.OPERATION);
 
   const pageKey = String(params?.pageKey || "").trim();
   const cfg = useMemo(() => getExForm(pageKey), [pageKey]);
@@ -258,6 +264,9 @@ export default function ExDetailsPage() {
   const [actionModal, setActionModal] = useState({ open: false, action: null, stepIndex: null });
 
   const pageRef = useRef(null);
+  const [stepAttachment, setStepAttachment] = useState(null);
+const [uploadingStepFile, setUploadingStepFile] = useState(false);
+
 
   useEffect(() => {
     if (!id || !pageKey) return;
@@ -337,11 +346,74 @@ export default function ExDetailsPage() {
     }
   };
 
+  const getStepFiles = (step) => {
+    const files = [];
+  
+    if (Array.isArray(step?.tagAttachments) && step.tagAttachments.length) {
+      files.push(...step.tagAttachments.filter(Boolean));
+    }
+  
+    if (step?.tag && !files.some((f) => f?.url === step.tag)) {
+      files.push({
+        url: step.tag,
+        name: "Step Attachment",
+        type: "",
+        size: 0,
+      });
+    }
+  
+    return files;
+  };
+  const uploadStepAttachment = async (file) => {
+    if (!file) return null;
+  
+    const presignRes = await fetch("/api/upload/presign", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        fileName: file.name,
+        fileType: file.type,
+        prefix: `ex/${pageKey}/${id}`,
+      }),
+    });
+  
+    if (!presignRes.ok) throw new Error("Failed to get upload URL");
+  
+    const { url, key, getUrl } = await presignRes.json();
+  
+    const uploadRes = await fetch(url, {
+      method: "PUT",
+      body: file,
+      headers: { "Content-Type": file.type || "application/octet-stream" },
+    });
+  
+    if (!uploadRes.ok) throw new Error("Failed to upload file");
+  
+    return {
+      key,
+      url: getUrl || "",
+      name: file.name,
+      type: file.type || "",
+      size: file.size || 0,
+    };
+  };
+
   const submitAction = async (noteText) => {
     if (!actionModal?.action || actionModal?.stepIndex == null) return;
-
+  
     setActing(true);
     try {
+      let attachmentMeta = null;
+  
+      if (actionModal.action === "operation_submit") {
+        if (!stepAttachment) {
+          alert("لازم ترفع مرفق");
+          return;
+        }
+  
+        attachmentMeta = await uploadStepAttachment(stepAttachment);
+      }
+  
       const res = await fetch(`/api/ex/${encodeURIComponent(pageKey)}/${id}?key=${encodeURIComponent(pageKey)}`, {
         method: "PUT",
         credentials: "include",
@@ -351,9 +423,11 @@ export default function ExDetailsPage() {
           note: noteText || "",
           stepIndex: actionModal.stepIndex,
           key: pageKey,
+          attachmentMeta,
+          clearTag: false,
         }),
       });
-
+  
       const j = await res.json().catch(() => ({}));
       if (!res.ok || !j?.success) {
         if (res.status === 409) {
@@ -364,10 +438,13 @@ export default function ExDetailsPage() {
         alert(j?.error || "Action failed");
         return;
       }
-
+  
       setDoc(j.data);
       setWorkflow(j.workflow ?? j.data?.workflow ?? null);
       setActionModal({ open: false, action: null, stepIndex: null });
+      setStepAttachment(null);
+    } catch (e) {
+      alert(e?.message || "Upload failed");
     } finally {
       setActing(false);
     }
@@ -485,13 +562,13 @@ export default function ExDetailsPage() {
                 <FiImage /> <span className="text-sm font-semibold">Preview</span>
               </button>
 
-              <button
+              {/* <button
                 onClick={doPrint}
                 className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gray-900 text-white hover:bg-black shadow disabled:opacity-60"
                 disabled={building}
               >
                 <FiPrinter /> <span className="text-sm font-semibold">Print</span>
-              </button>
+              </button> */}
 
               {(building || acting) && <div className="text-sm text-gray-600">جارِ التنفيذ…</div>}
             </div>
@@ -623,6 +700,7 @@ export default function ExDetailsPage() {
 
         <div className="flex items-start gap-6 overflow-x-auto py-6 px-1">
           {workflowSteps.map((step, idx) => {
+            const stepFiles = getStepFiles(step);
             const planStatus = String(doc?.status || "").toLowerCase();
             const stepStatus = String(step?.status || "Pending");
             const stepStatusLower = stepStatus.toLowerCase();
@@ -631,11 +709,11 @@ export default function ExDetailsPage() {
             const isCancelled = planStatus === "cancelled" || planStatus === "canceled";
 
             const canAct =
-              planStatus === "pending" &&
-              isCurrent &&
-              stepStatusLower === "pending" &&
-              currentUser &&
-              step?.users?.some((u) => String(u?._id) === String(currentUser?._id));
+  planStatus === "pending" &&
+  isCurrent &&
+  stepStatusLower === "pending" &&
+  currentUser &&
+  step?.users?.some((u) => String(u?._id) === String(currentUser?._id));
 
             const hasComment = !!(step?.comment && String(step.comment).trim());
             const hasAttach =
@@ -667,12 +745,7 @@ export default function ExDetailsPage() {
                 >
                   <div className="pointer-events-none absolute inset-0 rounded-3xl bg-gradient-to-br from-white/45 via-transparent to-transparent opacity-80" />
 
-                  {(hasComment || hasAttach) && !isCancelled && (
-                    <div className="absolute top-3 right-3 flex items-center gap-1 text-blue-700/80">
-                      <FiMessageSquare className="text-lg" />
-                      <span className="text-xs font-medium">View</span>
-                    </div>
-                  )}
+                  
 
                   {/* HEADER */}
                   <div className="relative flex items-center justify-between mb-4">
@@ -782,26 +855,126 @@ export default function ExDetailsPage() {
                     })}
                   </div>
 
-                  {/* ACTIONS */}
-                  {canAct && !isCancelled && (
-                    <div className="mt-5 flex gap-3">
-                      <button
-                        disabled={acting}
-                        onClick={() => setActionModal({ open: true, action: "approve", stepIndex: idx })}
-                        className="flex-1 py-2.5 rounded-2xl bg-green-600 hover:bg-green-700 text-white font-semibold shadow-sm disabled:opacity-60"
-                      >
-                        Approve
-                      </button>
+                  {stepFiles.length > 0 && (
+  <div className="mt-4 space-y-2">
+    <div className="text-sm font-semibold text-gray-700">مرفقات الستيب</div>
 
-                      <button
-                        disabled={acting}
-                        onClick={() => setActionModal({ open: true, action: "reject", stepIndex: idx })}
-                        className="flex-1 py-2.5 rounded-2xl bg-red-600 hover:bg-red-700 text-white font-semibold shadow-sm disabled:opacity-60"
-                      >
-                        Reject
-                      </button>
-                    </div>
-                  )}
+    <div className="space-y-2">
+      {stepFiles.map((file, fileIdx) => {
+        const img = isImageFile(file);
+        const pdf = isPdfFile(file);
+
+        return (
+          <div
+            key={`${idx}_${fileIdx}`}
+            className="flex items-center justify-between gap-3 px-3 py-2 rounded-2xl bg-white/55 ring-1 ring-black/5"
+          >
+            <div className="min-w-0 flex items-center gap-2">
+              <div className="h-9 w-9 rounded-xl border border-black/10 bg-white/70 flex items-center justify-center text-gray-600">
+                {img ? <FiImage /> : <FiFileText />}
+              </div>
+
+              <div className="min-w-0">
+                <div className="text-sm font-semibold text-gray-800 truncate">
+                  {file?.name || (pdf ? "PDF Attachment" : "Attachment")}
+                </div>
+                <div className="text-xs text-gray-500">
+                  {pdf ? "PDF" : img ? "Image" : fileExt(file?.name) || "FILE"}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <a
+                href={file?.url || "#"}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => {
+                  if (!file?.url) e.preventDefault();
+                }}
+                className="px-3 py-1.5 rounded-xl text-xs font-bold bg-gray-900 text-white hover:bg-black"
+              >
+                Open
+              </a>
+
+              <button
+                type="button"
+                onClick={() => downloadFile(file)}
+                disabled={!file?.url}
+                className="px-3 py-1.5 rounded-xl text-xs font-bold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60 inline-flex items-center gap-1.5"
+              >
+                <FiDownload /> Download
+              </button>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  </div>
+)}
+
+                  {/* ACTIONS */}
+                  {canAct && !isCancelled && !isOperationUser && (
+  <div className="mt-5 flex gap-3">
+    <button
+      disabled={acting}
+      onClick={() => {
+        setStepAttachment(null);
+        setActionModal({ open: true, action: "approve", stepIndex: idx });
+      }}
+      className="flex-1 py-2.5 rounded-2xl bg-green-600 hover:bg-green-700 text-white font-semibold shadow-sm disabled:opacity-60"
+    >
+      Approve
+    </button>
+
+    <button
+      disabled={acting}
+      onClick={() => {
+        setStepAttachment(null);
+        setActionModal({ open: true, action: "reject", stepIndex: idx });
+      }}
+      className="flex-1 py-2.5 rounded-2xl bg-red-600 hover:bg-red-700 text-white font-semibold shadow-sm disabled:opacity-60"
+    >
+      Reject
+    </button>
+  </div>
+)}
+
+{canAct && !isCancelled && isOperationUser && (
+  <div className="mt-5 space-y-3">
+    <label className="block">
+      <div className="mb-2 text-sm font-semibold text-gray-700">رفع مرفق</div>
+      <input
+        type="file"
+        onChange={(e) => {
+          const file = e.target.files?.[0] || null;
+          setStepAttachment(file);
+        }}
+        className="block w-full text-sm text-gray-700
+                   file:mr-3 file:px-4 file:py-2
+                   file:rounded-xl file:border-0
+                   file:bg-blue-600 file:text-white
+                   hover:file:bg-blue-700"
+      />
+    </label>
+
+    {stepAttachment && (
+      <div className="text-xs text-gray-600 font-semibold">
+        {stepAttachment.name}
+      </div>
+    )}
+
+    <button
+      disabled={acting || !stepAttachment}
+      onClick={() =>
+        setActionModal({ open: true, action: "operation_submit", stepIndex: idx })
+      }
+      className="w-full py-2.5 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-semibold shadow-sm disabled:opacity-60"
+    >
+      Submit
+    </button>
+  </div>
+)}
                 </motion.div>
 
                 {idx !== workflowSteps.length - 1 && (
@@ -879,8 +1052,18 @@ export default function ExDetailsPage() {
 
         <CommentModal
           open={!!actionModal?.open}
-          title={actionModal?.action === "approve" ? "Approve Step" : "Reject Step"}
-          subtitle={actionModal?.action === "approve" ? "Submit" : "Submit"}
+          title={
+            actionModal?.action === "approve"
+              ? "Approve Step"
+              : actionModal?.action === "reject"
+              ? "Reject Step"
+              : "Submit Attachment"
+          }
+          subtitle={
+            actionModal?.action === "operation_submit"
+              ? "سيتم رفع المرفق والانتقال للخطوة التالية"
+              : "Submit"
+          }
           submitLabel="Submit"
           onClose={() => (acting ? null : setActionModal({ open: false, action: null, stepIndex: null }))}
           onSubmit={submitAction}

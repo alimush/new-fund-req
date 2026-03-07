@@ -23,6 +23,8 @@ import {
 } from "react-icons/fi";
 import { useRouter, useParams } from "next/navigation";
 import StatusBadge from "@/components/StatusBadge";
+import { usePermissions } from "@/context/PermissionContext";
+import { PERMISSIONS } from "@/lib/permission";
 /* =================== HARD KEY (مؤقتاً) =================== */
 const PAGE_KEY = "exceptions";
 
@@ -262,6 +264,12 @@ export default function PaymentPlanDetailsPage() {
   const [showPreview, setShowPreview] = useState(false);
   const [previewPngs, setPreviewPngs] = useState([]);
   const [building, setBuilding] = useState(false);
+  const { permissions } = usePermissions();
+
+const isOperationUser =
+  Array.isArray(permissions) && permissions.includes(PERMISSIONS.OPERATION);
+
+const [stepAttachment, setStepAttachment] = useState(null);
 
   const [actionModal, setActionModal] = useState({ open: false, action: null, stepIndex: null });
 
@@ -376,12 +384,91 @@ export default function PaymentPlanDetailsPage() {
   };
 
   const workflowSteps = useMemo(() => (Array.isArray(workflow?.steps) ? workflow.steps : []), [workflow]);
-
+  const uploadStepAttachment = async (file) => {
+    if (!file) return null;
+  
+    const presignRes = await fetch("/api/upload/presign", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        fileName: file.name,
+        fileType: file.type || "application/octet-stream",
+        prefix: `payment-plans/${id}`,
+      }),
+    });
+  
+    const presignJson = await presignRes.json().catch(() => ({}));
+  
+    if (!presignRes.ok) {
+      throw new Error(presignJson?.error || "Failed to get upload URL");
+    }
+  
+    const { url, key, getUrl } = presignJson || {};
+  
+    if (!url || !key) {
+      throw new Error("Presign response is missing url/key");
+    }
+  
+    const uploadRes = await fetch(url, {
+      method: "PUT",
+      body: file,
+      headers: {
+        "Content-Type": file.type || "application/octet-stream",
+      },
+    });
+  
+    if (!uploadRes.ok) {
+      const txt = await uploadRes.text().catch(() => "");
+      throw new Error(txt || "Failed to upload file to storage");
+    }
+  
+    return {
+      key,
+      url: getUrl || "",
+      name: file.name,
+      type: file.type || "",
+      size: file.size || 0,
+    };
+  };
+  const getStepFiles = (step) => {
+    const files = [];
+  
+    if (Array.isArray(step?.tagAttachments) && step.tagAttachments.length) {
+      files.push(...step.tagAttachments.filter(Boolean));
+    }
+  
+    if (step?.tag && !files.some((f) => f?.url === step.tag)) {
+      files.push({
+        url: step.tag,
+        name: "Step Attachment",
+        type: "",
+        size: 0,
+      });
+    }
+  
+    return files;
+  };
   const submitAction = async (noteText) => {
     if (!actionModal?.action || actionModal?.stepIndex == null) return;
-
+  
     setActing(true);
     try {
+      let attachmentMeta = null;
+  
+      if (actionModal.action === "operation_submit") {
+        if (!stepAttachment) {
+          alert("لازم تختار مرفق أولاً");
+          return;
+        }
+  
+        attachmentMeta = await uploadStepAttachment(stepAttachment);
+  
+        if (!attachmentMeta?.key) {
+          throw new Error("Attachment upload failed");
+        }
+      }
+  
       const res = await fetch(`/api/ex/payment-plans/${id}?key=${encodeURIComponent(PAGE_KEY)}`, {
         method: "PUT",
         credentials: "include",
@@ -391,28 +478,35 @@ export default function PaymentPlanDetailsPage() {
           note: noteText || "",
           stepIndex: actionModal.stepIndex,
           key: PAGE_KEY,
+          attachmentMeta,
+          clearTag: false,
         }),
       });
-
+  
       const j = await res.json().catch(() => ({}));
+  
       if (!res.ok || !j?.success) {
         if (res.status === 409) {
           alert("صار تحديث بالخطة، رح نسوي Refresh");
           window.location.reload();
           return;
         }
+  
         alert(j?.error || "Action failed");
         return;
       }
-
+  
       setPlan(j.data);
       setWorkflow(j.workflow ?? j.data?.workflow ?? null);
       setActionModal({ open: false, action: null, stepIndex: null });
+      setStepAttachment(null);
+    } catch (e) {
+      console.error("submitAction error:", e);
+      alert(e?.message || "Upload failed");
     } finally {
       setActing(false);
     }
   };
-
   if (status === "loading") {
     return (
       <div className="flex items-center justify-center min-h-screen bg-transparent">
@@ -559,14 +653,14 @@ export default function PaymentPlanDetailsPage() {
       <span className="text-sm font-semibold">Preview</span>
     </button>
 
-    <button
+    {/* <button
       onClick={doPrint}
       className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gray-900 text-white hover:bg-black transition shadow disabled:opacity-60"
       disabled={building}
     >
       <FiPrinter />
       <span className="text-sm font-semibold">Print</span>
-    </button>
+    </button> */}
 
     {(building || acting) && <div className="text-sm text-gray-600">جارِ التنفيذ…</div>}
   </div>
@@ -802,6 +896,7 @@ export default function PaymentPlanDetailsPage() {
 
                 <div className="flex items-start gap-6 overflow-x-auto py-6 px-1">
                   {workflowSteps.map((step, idx) => {
+                    const stepFiles = getStepFiles(step);
                     const lastIdx = workflowSteps.length - 1;
                     const planStatus = String(plan?.status || "").toLowerCase();
                     const stepStatus = String(step?.status || "Pending");
@@ -847,13 +942,7 @@ export default function PaymentPlanDetailsPage() {
                         >
                           <div className="pointer-events-none absolute inset-0 rounded-3xl bg-gradient-to-br from-white/45 via-transparent to-transparent opacity-80" />
 
-                          {(hasComment || hasAttach) && !isCancelled && (
-                            <div className="absolute top-3 right-3 flex items-center gap-1 text-blue-700/80">
-                              <FiMessageSquare className="text-lg" />
-                              <span className="text-xs font-medium">View</span>
-                            </div>
-                          )}
-
+                        
                           {/* HEADER */}
                           <div className="relative flex items-center justify-between mb-4">
                             <div className="flex items-center gap-3">
@@ -942,26 +1031,128 @@ export default function PaymentPlanDetailsPage() {
                             })}
                           </div>
 
-                          {/* ACTIONS */}
-                          {canAct && !isCancelled && (
-                            <div className="mt-5 flex gap-3">
-                              <button
-                                disabled={acting}
-                                onClick={() => setActionModal({ open: true, action: "approve", stepIndex: idx })}
-                                className="flex-1 py-2.5 rounded-2xl bg-green-600 hover:bg-green-700 text-white font-semibold shadow-sm disabled:opacity-60"
-                              >
-                                Approve
-                              </button>
 
-                              <button
-                                disabled={acting}
-                                onClick={() => setActionModal({ open: true, action: "reject", stepIndex: idx })}
-                                className="flex-1 py-2.5 rounded-2xl bg-red-600 hover:bg-red-700 text-white font-semibold shadow-sm disabled:opacity-60"
-                              >
-                                Reject
-                              </button>
-                            </div>
-                          )}
+                          {stepFiles.length > 0 && (
+  <div className="mt-4 space-y-2">
+    <div className="text-sm font-semibold text-gray-700">مرفقات الستيب</div>
+
+    <div className="space-y-2">
+      {stepFiles.map((file, fileIdx) => {
+        const img = isImageFile(file);
+        const pdf = isPdfFile(file);
+
+        return (
+          <div
+            key={`${idx}_${fileIdx}`}
+            className="flex items-center justify-between gap-3 px-3 py-2 rounded-2xl bg-white/55 ring-1 ring-black/5"
+          >
+            <div className="min-w-0 flex items-center gap-2">
+              <div className="h-9 w-9 rounded-xl border border-black/10 bg-white/70 flex items-center justify-center text-gray-600">
+                {img ? <FiImage /> : <FiFileText />}
+              </div>
+
+              <div className="min-w-0">
+                <div className="text-sm font-semibold text-gray-800 truncate">
+                  {file?.name || (pdf ? "PDF Attachment" : "Attachment")}
+                </div>
+                <div className="text-xs text-gray-500">
+                  {pdf ? "PDF" : img ? "Image" : fileExt(file?.name) || "FILE"}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <a
+                href={file?.url || "#"}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => {
+                  if (!file?.url) e.preventDefault();
+                }}
+                className="px-3 py-1.5 rounded-xl text-xs font-bold bg-gray-900 text-white hover:bg-black"
+              >
+                Open
+              </a>
+
+              <button
+                type="button"
+                onClick={() => downloadFile(file)}
+                disabled={!file?.url}
+                className="px-3 py-1.5 rounded-xl text-xs font-bold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60 inline-flex items-center gap-1.5"
+              >
+                <FiDownload /> Download
+              </button>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  </div>
+)}
+
+
+{/* ACTIONS */}
+{canAct && !isCancelled && !isOperationUser && (
+  <div className="mt-5 flex gap-3">
+    <button
+      disabled={acting}
+      onClick={() => {
+        setStepAttachment(null);
+        setActionModal({ open: true, action: "approve", stepIndex: idx });
+      }}
+      className="flex-1 py-2.5 rounded-2xl bg-green-600 hover:bg-green-700 text-white font-semibold shadow-sm disabled:opacity-60"
+    >
+      Approve
+    </button>
+
+    <button
+      disabled={acting}
+      onClick={() => {
+        setStepAttachment(null);
+        setActionModal({ open: true, action: "reject", stepIndex: idx });
+      }}
+      className="flex-1 py-2.5 rounded-2xl bg-red-600 hover:bg-red-700 text-white font-semibold shadow-sm disabled:opacity-60"
+    >
+      Reject
+    </button>
+  </div>
+)}
+
+{canAct && !isCancelled && isOperationUser && (
+  <div className="mt-5 space-y-3">
+    <label className="block">
+      <div className="mb-2 text-sm font-semibold text-gray-700">رفع مرفق</div>
+      <input
+        type="file"
+        onChange={(e) => {
+          const file = e.target.files?.[0] || null;
+          setStepAttachment(file);
+        }}
+        className="block w-full text-sm text-gray-700
+                   file:mr-3 file:px-4 file:py-2
+                   file:rounded-xl file:border-0
+                   file:bg-blue-600 file:text-white
+                   hover:file:bg-blue-700"
+      />
+    </label>
+
+    {stepAttachment && (
+      <div className="text-xs text-gray-600 font-semibold">
+        {stepAttachment.name}
+      </div>
+    )}
+
+    <button
+      disabled={acting || !stepAttachment}
+      onClick={() =>
+        setActionModal({ open: true, action: "operation_submit", stepIndex: idx })
+      }
+      className="w-full py-2.5 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-semibold shadow-sm disabled:opacity-60"
+    >
+      رفع مرفق
+    </button>
+  </div>
+)}
                         </motion.div>
 
                         {idx !== workflowSteps.length - 1 && (
@@ -1031,14 +1222,31 @@ export default function PaymentPlanDetailsPage() {
 
         {/* COMMENT MODAL FOR APPROVE/REJECT */}
         <CommentModal
-          open={!!actionModal?.open}
-          title={actionModal?.action === "approve" ? "Approve Step" : "Reject Step"}
-          subtitle={actionModal?.action === "approve" ? "Submit" :"Submit"}
-          submitLabel="Submit"
-          onClose={() => (acting ? null : setActionModal({ open: false, action: null, stepIndex: null }))}
-          onSubmit={submitAction}
-          loading={acting}
-        />
+  open={!!actionModal?.open}
+  title={
+    actionModal?.action === "approve"
+      ? "Approve Step"
+      : actionModal?.action === "reject"
+      ? "Reject Step"
+      : "Submit Attachment"
+  }
+  subtitle={
+    actionModal?.action === "operation_submit"
+      ? "سيتم رفع المرفق والانتقال للخطوة التالية"
+      : "Submit"
+  }
+  submitLabel="Submit"
+  onClose={() =>
+    acting
+      ? null
+      : (() => {
+          setActionModal({ open: false, action: null, stepIndex: null });
+          setStepAttachment(null);
+        })()
+  }
+  onSubmit={submitAction}
+  loading={acting}
+/>
       </div>
     </motion.div>
   );

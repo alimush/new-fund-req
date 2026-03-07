@@ -3,7 +3,8 @@ import { NextResponse } from "next/server";
 import dbConnect from "@/lib/mongodb";
 import { cookies } from "next/headers";
 import { Types } from "mongoose";
-
+import { PERMISSIONS } from "@/lib/permission";
+import Permissions from "@/models/Permissions";
 import ExWorkflow from "@/models/ExWorkflow";
 import User from "@/models/User";
 
@@ -189,6 +190,21 @@ export async function GET(req, ctx) {
   }
 }
 
+async function getUserPermissions(userId) {
+  if (!userId) return [];
+
+  const groups = await Permissions.find({ users: userId })
+    .select("permissions")
+    .lean();
+
+  const perms = new Set();
+
+  for (const g of groups) {
+    (g.permissions || []).forEach((p) => perms.add(String(p).trim()));
+  }
+
+  return Array.from(perms);
+}
 /* ======================= PUT (approve/reject) ======================= */
 export async function PUT(req, ctx) {
   try {
@@ -209,11 +225,18 @@ export async function PUT(req, ctx) {
     const keyFromQuery = String(searchParams.get("key") || "").trim();
 
     const body = await req.json().catch(() => ({}));
-    const { action, note, stepIndex: bodyStepIndex, key: keyFromBody } = body;
+    const {
+      action,
+      note,
+      stepIndex: bodyStepIndex,
+      key: keyFromBody,
+      attachmentMeta = null,
+      clearTag = false,
+    } = body;
 
     const forcedKey = String(keyFromQuery || keyFromBody || pageKeyParam).trim();
 
-    if (action !== "approve" && action !== "reject") {
+    if (action !== "approve" && action !== "reject" && action !== "operation_submit") {
       return NextResponse.json({ success: false, error: "Invalid action" }, { status: 400 });
     }
 
@@ -226,7 +249,8 @@ export async function PUT(req, ctx) {
 
     const currentUser = await User.findById(userIdObj).select("_id username name email").lean();
     if (!currentUser) return NextResponse.json({ success: false, error: "User not found" }, { status: 401 });
-
+    const currentUserPerms = await getUserPermissions(userIdObj);
+    const isOperationUser = currentUserPerms.includes(PERMISSIONS.OPERATION);
     // ===== Load doc =====
     let doc = await Model.findById(id);
     if (!doc) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
@@ -259,7 +283,23 @@ export async function PUT(req, ctx) {
     // ✅ Authorization (خليته robust)
     const isAuthorized = (step.users || []).some((u) => getIdStr(u) === String(userIdObj));
     if (!isAuthorized) return NextResponse.json({ success: false, error: "Not authorized" }, { status: 403 });
-
+    if (isOperationUser) {
+      if (action === "reject") {
+        return NextResponse.json(
+          { success: false, error: "Operation user cannot reject" },
+          { status: 403 }
+        );
+      }
+    
+      if (action === "operation_submit" || action === "approve") {
+        if (!attachmentMeta?.key) {
+          return NextResponse.json(
+            { success: false, error: "Attachment is required for operation user" },
+            { status: 400 }
+          );
+        }
+      }
+    }
     // ===== creator (مرن) =====
     let creatorUser = null;
 
@@ -289,12 +329,35 @@ const docTypeAr = cfg?.title || "المستند";
 
     let emailResult = null;
 
+
+    const attachToStepIfNeeded = () => {
+      if (clearTag) {
+        step.tag = "";
+        step.tagAttachments = [];
+      }
+    
+      if (attachmentMeta?.key) {
+        step.tag = attachmentMeta.url || attachmentMeta.key || "";
+        step.tagAttachments = [
+          ...(Array.isArray(step.tagAttachments) ? step.tagAttachments : []),
+          {
+            key: attachmentMeta.key,
+            url: attachmentMeta.url || "",
+            name: attachmentMeta.name || "",
+            type: attachmentMeta.type || "",
+            size: attachmentMeta.size || 0,
+            uploadedAt: new Date(),
+          },
+        ];
+      }
+    };
     /* ================= APPROVE ================= */
-    if (action === "approve") {
+    if (action === "approve" || action === "operation_submit") {
       step.status = "Approved";
       step.actedBy = userIdObj;
       step.actedAt = new Date();
       step.comment = note || "";
+      attachToStepIfNeeded();
 
       const lastIdx = doc.workflow.steps.length - 1;
 

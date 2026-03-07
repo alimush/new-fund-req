@@ -11,13 +11,29 @@ const RowSchema = new Schema(
   { _id: false }
 );
 
+const StepAttachmentSchema = new Schema(
+  {
+    key: { type: String, default: "" },
+    name: { type: String, default: "" },
+    type: { type: String, default: "" },
+    size: { type: Number, default: 0 },
+    url: { type: String, default: "" },
+    uploadedAt: { type: Date, default: Date.now },
+  },
+  { _id: false }
+);
+
 const WorkflowStepSchema = new Schema(
   {
-    users: [{ type: Schema.Types.ObjectId, ref: "User" }], // ✅
+    users: [{ type: Schema.Types.ObjectId, ref: "User" }],
     status: { type: String, default: "Pending" }, // Pending | Approved | Rejected | Cancelled
-    actedBy: { type: Schema.Types.ObjectId, ref: "User", default: null }, // ✅
+    actedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
     actedAt: { type: Date, default: null },
     comment: { type: String, default: "" },
+
+    // ✅ مهمات مرفقات الستيب
+    tag: { type: String, default: "" },
+    tagAttachments: { type: [StepAttachmentSchema], default: [] },
   },
   { _id: false }
 );
@@ -30,13 +46,14 @@ const WorkflowSchema = new Schema(
   },
   { _id: false }
 );
+
 const AttachmentSchema = new Schema(
   {
     key: { type: String, default: "" },
     name: { type: String, default: "" },
     type: { type: String, default: "" },
     size: { type: Number, default: 0 },
-    url: { type: String, default: "" }, // اختياري للـ signed url وقت الجلب
+    url: { type: String, default: "" },
   },
   { _id: false }
 );
@@ -44,7 +61,7 @@ const AttachmentSchema = new Schema(
 const PaymentPlanSchema = new Schema(
   {
     createdBy: { type: String, default: "" },
-    createdById: { type: Schema.Types.ObjectId, ref: "User", default: null }, // ✅
+    createdById: { type: Schema.Types.ObjectId, ref: "User", default: null },
 
     salesEmp: { type: String, default: "" },
     customer: { type: String, default: "" },
@@ -52,25 +69,19 @@ const PaymentPlanSchema = new Schema(
     dateDMY: { type: String, default: "" },
     discount: { type: String, default: "" },
     signature: { type: String, default: "" },
-    
 
     rows: { type: [RowSchema], default: [] },
 
-    // ✅ workflow snapshot داخل نفس الطلب
     pageKey: { type: String, default: "exceptions" },
     workflow: { type: WorkflowSchema, default: () => ({}) },
-    status: { type: String, default: "Pending" }, // Pending | Approved | Rejected | Cancelled
-    currentStep: { type: Number, default: -1 }, // 0..n-1 أو -1 = مغلق
+    status: { type: String, default: "Pending" },
+    currentStep: { type: Number, default: -1 },
+
     attachments: {
-      type: [
-        {
-          key: { type: String, default: "" },
-          name: { type: String, default: "" },
-          url: { type: String, default: "" },
-        },
-      ],
+      type: [AttachmentSchema],
       default: [],
-    },  },
+    },
+  },
   { timestamps: true }
 );
 
