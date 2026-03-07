@@ -112,7 +112,7 @@ export default function ExDashboardPage() {
           transition={{ duration: 0.55, ease: "easeOut" }}
           className="text-3xl md:text-4xl font-extrabold text-gray-900"
         >
-          لوحة الاستثناءات
+        طلبات الحجز
         </motion.h1>
 
         <motion.p

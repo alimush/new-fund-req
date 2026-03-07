@@ -233,7 +233,7 @@ export default function Header({ onLogout }) {
                             router.push("/ex/ex-home");
                           }}
                           icon={<FaFileInvoice className="text-gray-200" />}
-                          label="الاستثنائات"
+                          label="طلبات الحجز"
                         />)}
 
                       {canViewReports && (

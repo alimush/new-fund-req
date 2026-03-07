@@ -14,7 +14,7 @@ const cards = [
   { key: "010", name: "test", logo: "/12.png" },
   {
     key: "EX",
-    name: "الاستثناءات",
+    name: "طلبات الحجز",
     logo: "/ex.png",
     href: "/ex/ex-home",
   },
