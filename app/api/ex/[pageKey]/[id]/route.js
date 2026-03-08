@@ -47,7 +47,50 @@ function resetStepToPendingClean(st) {
   st.tag = "";
   st.tagAttachments = [];
 }
+function normalizeRequestAttachments(doc) {
+  const list = Array.isArray(doc?.attachments) ? doc.attachments : [];
 
+  return list
+    .filter(Boolean)
+    .map((f) => ({
+      key: f?.key || "",
+      url: f?.url || "",
+      name: f?.name || "Attachment",
+      type: f?.type || "",
+      size: Number(f?.size || 0),
+      uploadedAt: f?.uploadedAt || new Date(),
+    }))
+    .filter((f) => f.key || f.url);
+}
+
+function syncRequestAttachmentsToStep(step, doc) {
+  if (!step) return;
+
+  const reqFiles = normalizeRequestAttachments(doc);
+  if (!reqFiles.length) return;
+
+  const existing = Array.isArray(step.tagAttachments) ? step.tagAttachments : [];
+
+  const merged = [...existing];
+
+  for (const file of reqFiles) {
+    const exists = merged.some(
+      (x) =>
+        (x?.key && file?.key && String(x.key) === String(file.key)) ||
+        (x?.url && file?.url && String(x.url) === String(file.url))
+    );
+
+    if (!exists) {
+      merged.push(file);
+    }
+  }
+
+  step.tagAttachments = merged;
+
+  if (!step.tag && reqFiles[0]?.url) {
+    step.tag = reqFiles[0].url;
+  }
+}
 /* ======================= Registry ======================= */
 function getModelByPageKey(pageKey) {
   switch (pageKey) {
@@ -133,6 +176,10 @@ async function ensureDocWorkflowStable(doc, forcedKey, fallbackKey) {
 
   if (!String(doc.status || "").trim()) doc.status = "Pending";
   doc.currentStep = newWorkflow.steps.length ? 0 : -1;
+
+  if (doc.currentStep >= 0 && doc.workflow?.steps?.[doc.currentStep]) {
+    syncRequestAttachmentsToStep(doc.workflow.steps[doc.currentStep], doc);
+  }
 
   await doc.save();
   return doc;
@@ -279,7 +326,7 @@ export async function PUT(req, ctx) {
     const step = doc.workflow?.steps?.[stepIndex];
     if (!step) return NextResponse.json({ success: false, error: "Invalid workflow step" }, { status: 400 });
     if (step.status !== "Pending") return NextResponse.json({ success: false, error: "Step already processed" }, { status: 400 });
-
+    syncRequestAttachmentsToStep(step, doc);
     // ✅ Authorization (خليته robust)
     const isAuthorized = (step.users || []).some((u) => getIdStr(u) === String(userIdObj));
     if (!isAuthorized) return NextResponse.json({ success: false, error: "Not authorized" }, { status: 403 });
@@ -291,14 +338,7 @@ export async function PUT(req, ctx) {
         );
       }
     
-      if (action === "operation_submit" || action === "approve") {
-        if (!attachmentMeta?.key) {
-          return NextResponse.json(
-            { success: false, error: "Attachment is required for operation user" },
-            { status: 400 }
-          );
-        }
-      }
+    
     }
     // ===== creator (مرن) =====
     let creatorUser = null;
@@ -401,7 +441,7 @@ const docTypeAr = cfg?.title || "المستند";
         doc.currentStep = nextIndex;
         resetStepToPendingClean(doc.workflow.steps[nextIndex]);
         doc.status = "Pending";
-
+        syncRequestAttachmentsToStep(doc.workflow.steps[nextIndex], doc);
         const nextStepUsers = doc.workflow.steps[nextIndex]?.users || [];
         const nextUserIds = nextStepUsers.map(getIdStr).filter(Boolean);
 

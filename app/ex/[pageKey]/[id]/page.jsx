@@ -264,8 +264,6 @@ const isOperationUser =
   const [actionModal, setActionModal] = useState({ open: false, action: null, stepIndex: null });
 
   const pageRef = useRef(null);
-  const [stepAttachment, setStepAttachment] = useState(null);
-const [uploadingStepFile, setUploadingStepFile] = useState(false);
 
 
   useEffect(() => {
@@ -349,6 +347,7 @@ const [uploadingStepFile, setUploadingStepFile] = useState(false);
   const getStepFiles = (step) => {
     const files = [];
   
+    // مرفقات الستيب
     if (Array.isArray(step?.tagAttachments) && step.tagAttachments.length) {
       files.push(...step.tagAttachments.filter(Boolean));
     }
@@ -362,71 +361,54 @@ const [uploadingStepFile, setUploadingStepFile] = useState(false);
       });
     }
   
+    // مرفقات الطلب الأصلي
+    if (Array.isArray(doc?.attachments) && doc.attachments.length) {
+      for (const f of doc.attachments) {
+        if (!f) continue;
+  
+        const exists = files.some(
+          (x) =>
+            (x?.key && f?.key && String(x.key) === String(f.key)) ||
+            (x?.url && f?.url && String(x.url) === String(f.url))
+        );
+  
+        if (!exists) {
+          files.push({
+            key: f?.key || "",
+            url: f?.url || "",
+            name: f?.name || "Attachment",
+            type: f?.type || "",
+            size: Number(f?.size || 0),
+          });
+        }
+      }
+    }
+  
     return files;
   };
-  const uploadStepAttachment = async (file) => {
-    if (!file) return null;
-  
-    const presignRes = await fetch("/api/upload/presign", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        fileName: file.name,
-        fileType: file.type,
-        prefix: `ex/${pageKey}/${id}`,
-      }),
-    });
-  
-    if (!presignRes.ok) throw new Error("Failed to get upload URL");
-  
-    const { url, key, getUrl } = await presignRes.json();
-  
-    const uploadRes = await fetch(url, {
-      method: "PUT",
-      body: file,
-      headers: { "Content-Type": file.type || "application/octet-stream" },
-    });
-  
-    if (!uploadRes.ok) throw new Error("Failed to upload file");
-  
-    return {
-      key,
-      url: getUrl || "",
-      name: file.name,
-      type: file.type || "",
-      size: file.size || 0,
-    };
-  };
+ 
 
   const submitAction = async (noteText) => {
     if (!actionModal?.action || actionModal?.stepIndex == null) return;
   
     setActing(true);
     try {
-      let attachmentMeta = null;
-  
-      if (actionModal.action === "operation_submit") {
-        if (!stepAttachment) {
-          alert("لازم ترفع مرفق");
-          return;
+      const res = await fetch(
+        `/api/ex/${encodeURIComponent(pageKey)}/${id}?key=${encodeURIComponent(pageKey)}`,
+        {
+          method: "PUT",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: actionModal.action,
+            note: noteText || "",
+            stepIndex: actionModal.stepIndex,
+            key: pageKey,
+            attachmentMeta: null,
+            clearTag: false,
+          }),
         }
-  
-        attachmentMeta = await uploadStepAttachment(stepAttachment);
-      }
-  
-      const res = await fetch(`/api/ex/${encodeURIComponent(pageKey)}/${id}?key=${encodeURIComponent(pageKey)}`, {
-        method: "PUT",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: actionModal.action,
-          note: noteText || "",
-          stepIndex: actionModal.stepIndex,
-          key: pageKey,
-          attachmentMeta,
-          clearTag: false,
-        }),
-      });
+      );
   
       const j = await res.json().catch(() => ({}));
       if (!res.ok || !j?.success) {
@@ -442,9 +424,8 @@ const [uploadingStepFile, setUploadingStepFile] = useState(false);
       setDoc(j.data);
       setWorkflow(j.workflow ?? j.data?.workflow ?? null);
       setActionModal({ open: false, action: null, stepIndex: null });
-      setStepAttachment(null);
     } catch (e) {
-      alert(e?.message || "Upload failed");
+      alert(e?.message || "Submit failed");
     } finally {
       setActing(false);
     }
@@ -620,8 +601,8 @@ const [uploadingStepFile, setUploadingStepFile] = useState(false);
           </motion.div>
         </div>
 
-        {/* Attachments */}
-        {Array.isArray(doc?.attachments) && doc.attachments.length > 0 && (
+
+        {/* {Array.isArray(doc?.attachments) && doc.attachments.length > 0 && (
           <Section title="Attachments" icon={<FiPaperclip />}>
             <div className="flex flex-wrap gap-6">
               {doc.attachments.map((file, idx) => {
@@ -684,7 +665,7 @@ const [uploadingStepFile, setUploadingStepFile] = useState(false);
               })}
             </div>
           </Section>
-        )}
+        )} */}
 
         {/* WORKFLOW (same logic) */}
         {workflow && (
@@ -710,6 +691,12 @@ const [uploadingStepFile, setUploadingStepFile] = useState(false);
 
             const canAct =
   planStatus === "pending" &&
+  isCurrent &&
+  stepStatusLower === "pending" &&
+  currentUser &&
+  step?.users?.some((u) => String(u?._id) === String(currentUser?._id));
+
+  const canViewAttachments =
   isCurrent &&
   stepStatusLower === "pending" &&
   currentUser &&
@@ -745,7 +732,7 @@ const [uploadingStepFile, setUploadingStepFile] = useState(false);
                 >
                   <div className="pointer-events-none absolute inset-0 rounded-3xl bg-gradient-to-br from-white/45 via-transparent to-transparent opacity-80" />
 
-                  
+               
 
                   {/* HEADER */}
                   <div className="relative flex items-center justify-between mb-4">
@@ -855,8 +842,9 @@ const [uploadingStepFile, setUploadingStepFile] = useState(false);
                     })}
                   </div>
 
-                  {stepFiles.length > 0 && (
-  <div className="mt-4 space-y-2">
+                  {stepFiles.length > 0 &&
+  currentUser &&
+  step?.users?.some((u) => String(u?._id) === String(currentUser?._id)) && ( <div className="mt-4 space-y-2">
     <div className="text-sm font-semibold text-gray-700">مرفقات الستيب</div>
 
     <div className="space-y-2">
@@ -919,7 +907,6 @@ const [uploadingStepFile, setUploadingStepFile] = useState(false);
     <button
       disabled={acting}
       onClick={() => {
-        setStepAttachment(null);
         setActionModal({ open: true, action: "approve", stepIndex: idx });
       }}
       className="flex-1 py-2.5 rounded-2xl bg-green-600 hover:bg-green-700 text-white font-semibold shadow-sm disabled:opacity-60"
@@ -930,7 +917,7 @@ const [uploadingStepFile, setUploadingStepFile] = useState(false);
     <button
       disabled={acting}
       onClick={() => {
-        setStepAttachment(null);
+
         setActionModal({ open: true, action: "reject", stepIndex: idx });
       }}
       className="flex-1 py-2.5 rounded-2xl bg-red-600 hover:bg-red-700 text-white font-semibold shadow-sm disabled:opacity-60"
@@ -941,37 +928,15 @@ const [uploadingStepFile, setUploadingStepFile] = useState(false);
 )}
 
 {canAct && !isCancelled && isOperationUser && (
-  <div className="mt-5 space-y-3">
-    <label className="block">
-      <div className="mb-2 text-sm font-semibold text-gray-700">رفع مرفق</div>
-      <input
-        type="file"
-        onChange={(e) => {
-          const file = e.target.files?.[0] || null;
-          setStepAttachment(file);
-        }}
-        className="block w-full text-sm text-gray-700
-                   file:mr-3 file:px-4 file:py-2
-                   file:rounded-xl file:border-0
-                   file:bg-blue-600 file:text-white
-                   hover:file:bg-blue-700"
-      />
-    </label>
-
-    {stepAttachment && (
-      <div className="text-xs text-gray-600 font-semibold">
-        {stepAttachment.name}
-      </div>
-    )}
-
+  <div className="mt-5">
     <button
-      disabled={acting || !stepAttachment}
+      disabled={acting}
       onClick={() =>
         setActionModal({ open: true, action: "operation_submit", stepIndex: idx })
       }
       className="w-full py-2.5 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-semibold shadow-sm disabled:opacity-60"
     >
-      Submit
+تم معاينة المرفق
     </button>
   </div>
 )}
@@ -1051,24 +1016,26 @@ const [uploadingStepFile, setUploadingStepFile] = useState(false);
         </AnimatePresence>
 
         <CommentModal
-          open={!!actionModal?.open}
-          title={
-            actionModal?.action === "approve"
-              ? "Approve Step"
-              : actionModal?.action === "reject"
-              ? "Reject Step"
-              : "Submit Attachment"
-          }
-          subtitle={
-            actionModal?.action === "operation_submit"
-              ? "سيتم رفع المرفق والانتقال للخطوة التالية"
-              : "Submit"
-          }
-          submitLabel="Submit"
-          onClose={() => (acting ? null : setActionModal({ open: false, action: null, stepIndex: null }))}
-          onSubmit={submitAction}
-          loading={acting}
-        />
+  open={!!actionModal?.open}
+  title={
+    actionModal?.action === "approve"
+      ? "Approve Step"
+      : actionModal?.action === "reject"
+      ? "Reject Step"
+      : "Submit Step"
+  }
+  subtitle={
+    actionModal?.action === "operation_submit"
+      ? "سيتم إرسال الخطوة والانتقال للخطوة التالية"
+      : "Submit"
+  }
+  submitLabel="Submit"
+  onClose={() =>
+    acting ? null : setActionModal({ open: false, action: null, stepIndex: null })
+  }
+  onSubmit={submitAction}
+  loading={acting}
+/>
       </div>
     </motion.div>
   );

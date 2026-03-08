@@ -43,6 +43,50 @@ function resetStepToPendingClean(st) {
   st.tagAttachments = [];
 }
 
+function normalizeRequestAttachments(plan) {
+  const list = Array.isArray(plan?.attachments) ? plan.attachments : [];
+
+  return list
+    .filter(Boolean)
+    .map((f) => ({
+      key: f?.key || "",
+      url: f?.url || "",
+      name: f?.name || "Attachment",
+      type: f?.type || "",
+      size: Number(f?.size || 0),
+      uploadedAt: f?.uploadedAt || new Date(),
+    }))
+    .filter((f) => f.key || f.url);
+}
+
+function syncRequestAttachmentsToStep(step, plan) {
+  if (!step) return;
+
+  const reqFiles = normalizeRequestAttachments(plan);
+  if (!reqFiles.length) return;
+
+  const existing = Array.isArray(step.tagAttachments) ? step.tagAttachments : [];
+  const merged = [...existing];
+
+  for (const file of reqFiles) {
+    const exists = merged.some(
+      (x) =>
+        (x?.key && file?.key && String(x.key) === String(file.key)) ||
+        (x?.url && file?.url && String(x.url) === String(file.url))
+    );
+
+    if (!exists) {
+      merged.push(file);
+    }
+  }
+
+  step.tagAttachments = merged;
+
+  if (!step.tag && reqFiles[0]?.url) {
+    step.tag = reqFiles[0].url;
+  }
+}
+
 async function buildWorkflowForKey(key) {
   const wf = await ExWorkflow.findOne({ pageKey: key }).lean();
   if (!wf) return { key, name: "", steps: [] };
@@ -100,7 +144,31 @@ async function ensurePlanWorkflowStable(plan, forcedKey) {
       changed = true;
     }
 
-    if (changed) await plan.save();
+    if (plan.currentStep >= 0 && plan.workflow?.steps?.[plan.currentStep]) {
+      const beforeLen = Array.isArray(plan.workflow.steps[plan.currentStep].tagAttachments)
+        ? plan.workflow.steps[plan.currentStep].tagAttachments.length
+        : 0;
+
+      syncRequestAttachmentsToStep(plan.workflow.steps[plan.currentStep], plan);
+
+      const afterLen = Array.isArray(plan.workflow.steps[plan.currentStep].tagAttachments)
+        ? plan.workflow.steps[plan.currentStep].tagAttachments.length
+        : 0;
+
+      if (afterLen !== beforeLen) {
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      plan.markModified("workflow");
+      plan.markModified("workflow.steps");
+      if (plan.currentStep >= 0) {
+        plan.markModified(`workflow.steps.${plan.currentStep}`);
+      }
+      await plan.save();
+    }
+
     return plan;
   }
 
@@ -111,6 +179,16 @@ async function ensurePlanWorkflowStable(plan, forcedKey) {
 
   if (!String(plan.status || "").trim()) plan.status = "Pending";
   plan.currentStep = newWorkflow.steps.length ? 0 : -1;
+
+  if (plan.currentStep >= 0 && plan.workflow?.steps?.[plan.currentStep]) {
+    syncRequestAttachmentsToStep(plan.workflow.steps[plan.currentStep], plan);
+  }
+
+  plan.markModified("workflow");
+  plan.markModified("workflow.steps");
+  if (plan.currentStep >= 0) {
+    plan.markModified(`workflow.steps.${plan.currentStep}`);
+  }
 
   await plan.save();
   return plan;
@@ -288,7 +366,7 @@ export async function PUT(req, ctx) {
     if (step.status !== "Pending") {
       return NextResponse.json({ success: false, error: "Step already processed" }, { status: 400 });
     }
-
+    syncRequestAttachmentsToStep(step, plan);
     const isAuthorized = (step.users || []).some((u) => getIdStr(u) === String(userIdObj));
     if (!isAuthorized) {
       return NextResponse.json({ success: false, error: "Not authorized" }, { status: 403 });
@@ -300,15 +378,6 @@ export async function PUT(req, ctx) {
           { success: false, error: "Operation user cannot reject" },
           { status: 403 }
         );
-      }
-
-      if (action === "approve" || action === "operation_submit") {
-        if (!attachmentMeta?.key) {
-          return NextResponse.json(
-            { success: false, error: "Attachment is required for operation user" },
-            { status: 400 }
-          );
-        }
       }
     }
 
@@ -399,6 +468,8 @@ export async function PUT(req, ctx) {
         plan.currentStep = nextIndex;
         resetStepToPendingClean(plan.workflow.steps[nextIndex]);
         plan.status = "Pending";
+        
+        syncRequestAttachmentsToStep(plan.workflow.steps[nextIndex], plan);
 
         const nextStepUsers = plan.workflow.steps[nextIndex]?.users || [];
         const nextUserIds = nextStepUsers.map(getIdStr).filter(Boolean);
