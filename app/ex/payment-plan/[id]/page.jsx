@@ -749,7 +749,7 @@ const isOperationUser =
           </div>
         </Section>
 
-        {Array.isArray(plan?.attachments) && plan.attachments.length > 0 && (
+        {/* {Array.isArray(plan?.attachments) && plan.attachments.length > 0 && (
   <Section title="Attachments" icon={<FiPaperclip />}>
     <div className="flex flex-wrap gap-6">
       {plan.attachments.map((file, idx) => {
@@ -758,7 +758,7 @@ const isOperationUser =
 
         return (
           <div key={idx} className="group w-40">
-            {/* preview box */}
+
             <a
               href={file.url || "#"}
               target="_blank"
@@ -790,12 +790,12 @@ const isOperationUser =
               </div>
             </a>
 
-            {/* filename */}
+
             <p className="mt-2 text-[13px] text-center text-gray-800 font-semibold truncate group-hover:text-blue-600">
               {file?.name || "Attachment"}
             </p>
 
-            {/* actions */}
+
             <div className="mt-2 flex items-center justify-center gap-2">
               <a
                 href={file.url || "#"}
@@ -824,7 +824,7 @@ const isOperationUser =
       })}
     </div>
   </Section>
-)}
+)} */}
 
         {/* ================= WORKFLOW (نفس تصميمك تماماً) ================= */}
         {workflow && (
