@@ -87,6 +87,8 @@ export async function GET(req, { params }) {
       return NextResponse.json({ success: false, error: "Request not found" }, { status: 404 });
     }
 
+   
+
     const s3 = getS3();
 
     // request attachments
@@ -122,7 +124,21 @@ export async function PUT(req, { params }) {
     let company = searchParams.get("company");
 
     const body = await req.json();
-    const { action, note, attachmentMeta, stepIndex: bodyStepIndex, clearTag } = body;
+    const {
+      action,
+      note,
+      attachmentMeta,
+      stepIndex: bodyStepIndex,
+      clearTag,
+    
+      description,
+      items,
+      requestType,
+      department,
+      currency,
+      projectName,
+      attachments,
+    } = body;
 
     if (!company) company = body.company;
     if (!company) {
@@ -143,6 +159,21 @@ export async function PUT(req, { params }) {
 
     const Model = getModelForCompany(company);
     const request = await Model.findById(id);
+    
+    if (!request) {
+      return NextResponse.json({ success: false, error: "Request not found" }, { status: 404 });
+    }
+    
+    const currentUser = await User.findById(userId).select("username").lean();
+    const currentUsername = currentUser?.username || "";
+    
+    const isOwner = String(request.createdBy || "") === String(currentUsername);
+    
+    const hasAnyApproval =
+      Array.isArray(request?.approvalHistory) &&
+      request.approvalHistory.some(
+        (h) => String(h?.action || "").toLowerCase() === "approve"
+      );
 
     if (!request) {
       return NextResponse.json({ success: false, error: "Request not found" }, { status: 404 });
@@ -169,7 +200,47 @@ export async function PUT(req, { params }) {
       await request.save();
       return NextResponse.json({ success: true, data: request });
     }
+/* ================= UPDATE REQUEST ================= */
+if (action === "update") {
+  if (!isOwner) {
+    return NextResponse.json(
+      { success: false, error: "Only request owner can edit this request" },
+      { status: 403 }
+    );
+  }
 
+  if (String(request.status || "").toLowerCase() !== "pending") {
+    return NextResponse.json(
+      { success: false, error: "Only pending requests can be edited" },
+      { status: 400 }
+    );
+  }
+
+  if (hasAnyApproval) {
+    return NextResponse.json(
+      { success: false, error: "Request can no longer be edited because approval already happened" },
+      { status: 400 }
+    );
+  }
+
+  if (typeof description !== "undefined") request.description = description;
+  if (typeof requestType !== "undefined") request.requestType = requestType;
+  if (typeof department !== "undefined") request.department = department;
+  if (typeof currency !== "undefined") request.currency = currency;
+  if (typeof projectName !== "undefined") request.projectName = projectName;
+
+  if (Array.isArray(items)) {
+    request.items = items;
+  }
+
+  if (Array.isArray(attachments)) {
+    request.attachments = attachments;
+  }
+
+  await request.save();
+
+  return NextResponse.json({ success: true, data: request });
+}
     /* ================= VALID ACTION ================= */
     if (action !== "approve" && action !== "reject") {
       return NextResponse.json({ success: false, error: "Invalid action" }, { status: 400 });

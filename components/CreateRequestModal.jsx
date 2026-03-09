@@ -24,12 +24,12 @@ export default function CreateRequestModal({
   open,
   onClose,
   companyKey,
-
-  // permissions (حتى تتحكم اذا تريد)
   canCreate = true,
-
-  // بعد النجاح
   onCreated,
+
+  mode = "create",       // create | edit
+  initialData = null,    // بيانات الريكويست
+  requestId = null,      // id عند التعديل
 }) {
   // تبويبات نموذج الإنشاء + الأيقونات
   const steps = [
@@ -52,7 +52,7 @@ export default function CreateRequestModal({
   const [items, setItems] = useState([]);
   const [newItem, setNewItem] = useState({ desc: "", qty: "", price: "" });
   const [projectName, setProjectName] = useState("");
-  const [attachment, setAttachment] = useState(null);
+  const [attachment, setAttachment] = useState([]);
   // فوق داخل الكمبوننت (قبل return) خلي هاي الستايت:
 const [dragOver, setDragOver] = useState(false);
 
@@ -67,13 +67,20 @@ const addFiles = (filesArr) => {
     return Array.from(map.values());
   });
 };
-   const openAttachment = (file) => {
-      if (!file) return;
-      const url = URL.createObjectURL(file);
-      window.open(url, "_blank", "noopener,noreferrer");
-      // تنظيف الذاكرة بعد شوي
-      setTimeout(() => URL.revokeObjectURL(url), 5000);
-    };
+const openAttachment = (file) => {
+  if (!file) return;
+
+  if (isExistingAttachment(file) && file.url) {
+    window.open(file.url, "_blank", "noopener,noreferrer");
+    return;
+  }
+
+  if (file instanceof File) {
+    const url = URL.createObjectURL(file);
+    window.open(url, "_blank", "noopener,noreferrer");
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  }
+};
   const nfInt = new Intl.NumberFormat("en-US");
 const nf2 = new Intl.NumberFormat("en-US", {
   minimumFractionDigits: 2,
@@ -82,6 +89,9 @@ const nf2 = new Intl.NumberFormat("en-US", {
 
 const stripNumber = (v) => String(v || "").replace(/,/g, "").replace(/[^\d.]/g, "");
 
+const isExistingAttachment = (file) => {
+  return file && typeof file === "object" && !!file.key && !(file instanceof File);
+};
 const formatInputMoney = (v) => {
   const clean = stripNumber(v);
   if (!clean) return "";
@@ -110,10 +120,36 @@ const formatInputMoney = (v) => {
     setDepartment("");
     setItems([]);
     setNewItem({ desc: "", qty: "", price: "" });
-    setAttachment(null);
+    setAttachment([]);
     setActiveTab(steps[0].key);
   };
-
+  useEffect(() => {
+    if (!open) return;
+  
+    if (mode === "edit" && initialData) {
+      setRequestType(initialData.requestType || "");
+      setDescription(initialData.description || "");
+      setCurrency(initialData.currency || "");
+      setProjectName(
+        initialData.projectName || initialData._oldProjectName || ""
+      );
+      setDepartment(initialData.department || "");
+      setItems(Array.isArray(initialData.items) ? initialData.items : []);
+      setNewItem({ desc: "", qty: "", price: "" });
+  
+      // بالمود edit نخلّي المرفقات القديمة كـ metadata objects
+      setAttachment(
+        Array.isArray(initialData.attachments) ? initialData.attachments : []
+      );
+  
+      setActiveTab(steps[0].key);
+    }
+  
+    if (mode === "create" && open) {
+      resetForm();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, mode, initialData]);
   // ✅ لما ينغلق المودال يرجّع فورم نظيف
   useEffect(() => {
     if (!open) {
@@ -143,12 +179,14 @@ const formatInputMoney = (v) => {
 
   // ✅ POST create request (presigned URL upload)
   const handleCreate = async () => {
-    // 1) Upload files directly to S3 via presigned URLs
     const uploadedAttachments = [];
-
-    if (attachment?.length > 0) {
-      for (const file of attachment) {
-        // Get presigned URL from API
+  
+    // نرفع فقط الملفات الجديدة
+    const newFiles = (attachment || []).filter((f) => f instanceof File);
+    const existingAttachments = (attachment || []).filter((f) => isExistingAttachment(f));
+  
+    if (newFiles.length > 0) {
+      for (const file of newFiles) {
         const presignRes = await fetch("/api/upload/presign", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -158,19 +196,18 @@ const formatInputMoney = (v) => {
             prefix: `requests/${companyKey}`,
           }),
         });
-
+  
         if (!presignRes.ok) throw new Error("Failed to get upload URL");
         const { url, key } = await presignRes.json();
-
-        // Upload file directly to S3
+  
         const uploadRes = await fetch(url, {
           method: "PUT",
           body: file,
           headers: { "Content-Type": file.type || "application/octet-stream" },
         });
-
+  
         if (!uploadRes.ok) throw new Error("Failed to upload file");
-
+  
         uploadedAttachments.push({
           key,
           name: file.name,
@@ -179,35 +216,71 @@ const formatInputMoney = (v) => {
         });
       }
     }
-
-   
-
-    // 2) Create request with attachment metadata (no files in body)
-    const userId = localStorage.getItem("userId");
-
-    const res = await fetch(`/api/requests?company=${companyKey}`, {
-      method: "POST",
-      cache: "no-store",
-      headers: {
-        "Content-Type": "application/json",
-        "x-user-id": userId || "",   // ✅ هذا المهم حتى يشتغل MARKETING
-      },
-      body: JSON.stringify({
-        company: companyKey,
-        requestType,
-        projectName,
-        description,
-        currency,
-        department,
-        createdBy: localStorage.getItem("username"),
-        items,
-        attachments: uploadedAttachments,
-      }),
-    });
-
-    if (!res.ok) throw new Error("Create failed");
-
-    return true;
+  
+    const finalAttachments = [
+      ...existingAttachments.map((f) => ({
+        key: f.key,
+        name: f.name || "",
+        type: f.type || "",
+        size: f.size || 0,
+      })),
+      ...uploadedAttachments,
+    ];
+  
+    const payload = {
+      company: companyKey,
+      requestType,
+      projectName,
+      description,
+      currency,
+      department,
+      createdBy: localStorage.getItem("username"),
+      items,
+      attachments: finalAttachments,
+    };
+  
+    // CREATE
+    if (mode === "create") {
+      const userId = localStorage.getItem("userId");
+  
+      const res = await fetch(`/api/requests?company=${companyKey}`, {
+        method: "POST",
+        cache: "no-store",
+        headers: {
+          "Content-Type": "application/json",
+          "x-user-id": userId || "",
+        },
+        body: JSON.stringify(payload),
+      });
+  
+      if (!res.ok) throw new Error("Create failed");
+      return true;
+    }
+  
+    // EDIT
+    if (mode === "edit") {
+      const res = await fetch(`/api/requests/${requestId}?company=${companyKey}`, {
+        method: "PUT",
+        cache: "no-store",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "update",
+          ...payload,
+        }),
+      });
+  
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err?.error || "Update failed");
+      }
+  
+      return true;
+    }
+  
+    throw new Error("Invalid mode");
   };
 
   const currentStepIndex = steps.findIndex((s) => s.key === activeTab);
@@ -233,7 +306,9 @@ const formatInputMoney = (v) => {
           >
             {/* Header */}
             <div className="flex items-center justify-between p-4 border-b bg-gradient-to-r from-gray-800 via-gray-700 to-gray-600 text-white">
-              <h2 className="text-base sm:text-lg font-semibold">Create Request</h2>
+            <h2 className="text-base sm:text-lg font-semibold">
+  {mode === "edit" ? "Edit Request" : "Create Request"}
+</h2>
               <button
                 onClick={() => {
                   if (isCreating) return;
@@ -999,7 +1074,8 @@ const formatInputMoney = (v) => {
                       onClose?.();
                       onCreated?.(); // ✅ يرجّع يجلب البيانات بالصفحة
                     } catch (e) {
-                      alert("❌ فشل إنشاء الريكويست");
+                      console.error(e);
+                      alert(mode === "edit" ? "❌ فشل تعديل الريكويست" : "❌ فشل إنشاء الريكويست");
                     } finally {
                       setIsCreating(false);
                     }
@@ -1016,10 +1092,10 @@ const formatInputMoney = (v) => {
                   {isCreating ? (
                     <>
                       <motion.div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      إنشاء طلب...
+                      {mode === "edit" ? "Saving..." : "Creating..."}
                     </>
                   ) : (
-                    "Create"
+                   mode === "edit" ? "Save Changes" : "Create"
                   )}
                 </motion.button>
               ) : (

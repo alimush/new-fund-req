@@ -16,6 +16,7 @@ import {
   FiMessageSquare,
   FiDownload,
   FiLayers,
+FiEdit,
 } from "react-icons/fi";
 import { useRouter } from "next/navigation";
 import CommentModal from "@/components/CommentModal";
@@ -26,7 +27,7 @@ import VoucherModal from "@/components/VoucherModal";
 import html2canvas from "html2canvas";
 import { PDFDocument } from "pdf-lib";
 import PrintableRequestPDF from "@/components/PrintableRequestPDF";
-
+import CreateRequestModal from "@/components/CreateRequestModal";
 export default function RequestDetails({ id, companyKey }) {
   const router = useRouter();
 
@@ -58,6 +59,7 @@ export default function RequestDetails({ id, companyKey }) {
 
   const [accessChecked, setAccessChecked] = useState(false);
   const [accessDenied, setAccessDenied] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
 
   // 🟢 ---------------- FETCH DATA FUNCTION (خارج useEffect) ----------------
   const fetchData = async () => {
@@ -239,10 +241,21 @@ export default function RequestDetails({ id, companyKey }) {
   const companyLabel =
     request?.company || request?._oldProjectName || companyKey || "-";
 
-  const isOwner =
+    const isOwner =
     currentUser && String(request.createdBy) === String(currentUser.username);
-
+  
+  const hasAnyApproval =
+    Array.isArray(request?.approvalHistory) &&
+    request.approvalHistory.some(
+      (h) => String(h?.action || "").toLowerCase() === "approve"
+    );
+  
   const canCancel = request.status === "Pending" && isOwner;
+  
+  const canEdit =
+    request.status === "Pending" &&
+    isOwner &&
+    !hasAnyApproval;
 
   const projectName =
     request?.projectName || request?._oldProjectName || request?.project || "-";
@@ -274,45 +287,57 @@ export default function RequestDetails({ id, companyKey }) {
 
         {/* 🔽 Action Buttons */}
         <div className="mt-4 flex flex-wrap items-center gap-3">
-          {canCancel && (
-            <button
-              onClick={async () => {
-                const ok = window.confirm("هل أنت متأكد من إلغاء الطلب؟");
-                if (!ok) return;
+  {canCancel && (
+    <button
+      onClick={async () => {
+        const ok = window.confirm("هل أنت متأكد من إلغاء الطلب؟");
+        if (!ok) return;
 
-                try {
-                  setLoading(true);
-                  await fetch(`/api/requests/cancel`, {
-                    method: "PUT",
-                    headers: { "Content-Type": "application/json" },
-                    credentials: "include",
-                    body: JSON.stringify({ id, company: companyKey }),
-                  });
-                  await fetchData();
-                } finally {
-                  setLoading(false);
-                }
-              }}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl
-                         bg-gray-900 text-white
-                         hover:bg-black transition shadow"
-            >
-              <FiMinusCircle />
-              <span className="text-sm font-bold">Cancel</span>
-            </button>
-          )}
+        try {
+          setLoading(true);
+          await fetch(`/api/requests/cancel`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({ id, company: companyKey }),
+          });
+          await fetchData();
+        } finally {
+          setLoading(false);
+        }
+      }}
+      className="flex items-center gap-2 px-4 py-2 rounded-xl
+                 bg-gray-900 text-white
+                 hover:bg-black transition shadow"
+    >
+      <FiMinusCircle />
+      <span className="text-sm font-bold">Cancel</span>
+    </button>
+  )}
 
-          <button
-            data-no-pdf="1"
-            onClick={handleDownloadPDF}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl
-                       bg-blue-600 text-white
-                       hover:bg-blue-700 transition shadow"
-          >
-            <FiDownload />
-            <span className="text-sm font-bold">PDF</span>
-          </button>
-        </div>
+{canEdit && (
+  <button
+    onClick={() => setShowEditModal(true)}
+    className="flex items-center gap-2 px-4 py-2 rounded-xl
+               bg-amber-500 text-white
+               hover:bg-amber-600 transition shadow"
+  >
+    <FiEdit />
+    <span className="text-sm font-bold">Edit</span>
+  </button>
+)}
+
+  <button
+    data-no-pdf="1"
+    onClick={handleDownloadPDF}
+    className="flex items-center gap-2 px-4 py-2 rounded-xl
+               bg-blue-600 text-white
+               hover:bg-blue-700 transition shadow"
+  >
+    <FiDownload />
+    <span className="text-sm font-bold">PDF</span>
+  </button>
+</div>
       </div>
 
       {/* =================== SUMMARY =================== */}
@@ -931,7 +956,20 @@ export default function RequestDetails({ id, companyKey }) {
           await fetchData();
         }}
       />
-
+<CreateRequestModal
+  open={showEditModal}
+  onClose={() => setShowEditModal(false)}
+  companyKey={companyKey}
+  canCreate={true}
+  mode="edit"
+  initialData={request}
+  requestId={id}
+  onCreated={async () => {
+    setShowEditModal(false);
+    await fetchData();
+    router.refresh();
+  }}
+/>
       {/* ================= PRINTABLE (Hidden) ================= */}
       <div
         ref={printRef}
