@@ -886,65 +886,61 @@ export default function RequestDetails({ id, companyKey }) {
 
       {/* ================= MODALS ================= */}
       <CommentModal
-        open={showCommentModal}
-        action={commentAction}
-        value={commentText}
-        onChange={setCommentText}
-        loading={loading}
-        stepStatus={
-          activeStep !== null ? workflowSteps?.[activeStep]?.status : "Pending"
+  open={showCommentModal}
+  action={commentAction}
+  value={commentText}
+  onChange={setCommentText}
+  loading={loading}
+  stepStatus={
+    activeStep !== null ? workflowSteps?.[activeStep]?.status : "Pending"
+  }
+  attachment={stepAttachment}
+  attachments={
+    activeStep !== null ? workflowSteps?.[activeStep]?.tagAttachments || [] : []
+  }
+  companyKey={companyKey}
+  requestId={id}
+  tagUrl={activeStep !== null ? workflowSteps?.[activeStep]?.tag : ""}
+  stepIndex={activeStep}
+  onClose={() => {
+    setShowCommentModal(false);
+    setActiveStep(null);
+    setCommentAction(null);
+    setCommentText("");
+    setStepAttachment(null);
+  }}
+  onSubmit={
+    commentAction === "view"
+      ? null
+      : async () => {
+          setLoading(true);
+          try {
+            await fetch(`/api/requests/${id}?company=${companyKey}`, {
+              method: "PUT",
+              credentials: "include",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                action: commentAction,
+                note: commentText,
+                stepIndex: Number.isInteger(activeStep) ? activeStep : null,
+              }),
+            });
+
+            await fetchData();
+
+            setShowCommentModal(false);
+            setActiveStep(null);
+            setCommentAction(null);
+            setCommentText("");
+            setStepAttachment(null);
+
+            router.refresh();
+          } finally {
+            setLoading(false);
+          }
         }
-        attachment={stepAttachment}
-        onAttachmentChange={setStepAttachment}
-        companyKey={companyKey}
-        requestId={id}
-        tagUrl={activeStep !== null ? workflowSteps?.[activeStep]?.tag : ""}
-        stepIndex={activeStep}
-        onClose={() => {
-          setShowCommentModal(false);
-          setActiveStep(null);
-          setCommentAction(null);
-          setCommentText("");
-          setStepAttachment(null);
-        }}
-        onSubmit={
-          commentAction === "view"
-            ? null
-            : async ({ attachmentMeta = null, clearTag = false, stepIndex } = {}) => {
-                setLoading(true);
-                try {
-                  await fetch(`/api/requests/${id}?company=${companyKey}`, {
-                    method: "PUT",
-                    credentials: "include",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                      action: commentAction,
-                      note: commentText,
-                      stepIndex: Number.isInteger(stepIndex)
-                        ? stepIndex
-                        : Number.isInteger(activeStep)
-                        ? activeStep
-                        : null,
-                      clearTag: Boolean(clearTag),
-                      attachmentMeta: attachmentMeta?.key ? attachmentMeta : null,
-                    }),
-                  });
-
-                  await fetchData();
-
-                  setShowCommentModal(false);
-                  setActiveStep(null);
-                  setCommentAction(null);
-                  setCommentText("");
-                  setStepAttachment(null);
-
-                  router.refresh();
-                } finally {
-                  setLoading(false);
-                }
-              }
-        }
-      />
+  }
+/>
 
       <VoucherModal
         open={showVoucherModal}

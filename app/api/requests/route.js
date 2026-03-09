@@ -262,6 +262,8 @@ if (!workflow) {
         actedAt: null,
         comment: "",
         attachment: null,
+        tag: "",
+        tagAttachments: [],
       })),
     };
 

@@ -1,4 +1,5 @@
 "use client";
+
 import { useMemo, useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -17,6 +18,7 @@ import {
 
 /* ======================= helpers ======================= */
 const isImageUrl = (u) => /(\.jpg|\.jpeg|\.png|\.gif|\.webp)(\?|$)/i.test(u || "");
+
 const fmtSize = (bytes) => {
   const n = Number(bytes || 0);
   if (!n) return "";
@@ -31,7 +33,6 @@ const getFileKind = ({ url = "", type = "", name = "" } = {}) => {
   const u = (url || "").toLowerCase();
 
   const isImg = t.startsWith("image/") || isImageUrl(url);
-
   const isPdf = t === "application/pdf" || n.endsWith(".pdf") || u.includes(".pdf");
   const isWord =
     t.includes("word") || n.endsWith(".doc") || n.endsWith(".docx") || u.includes(".doc");
@@ -75,10 +76,9 @@ export default function CommentModal({
   onSubmit,
   loading,
   stepStatus,
-
-  attachment, // {url,name,type,size} | string url | null
-  tagUrl,     // url string
-
+  attachment,   // fallback single attachment object or string
+  attachments,  // preferred array for multi attachments
+  tagUrl,       // fallback url string
   companyKey,
   requestId,
   stepIndex,
@@ -87,11 +87,8 @@ export default function CommentModal({
   const [localStatus, setLocalStatus] = useState(stepStatus || "Pending");
   const [submitting, setSubmitting] = useState(false);
 
-  // attachments
-  const [file, setFile] = useState(null); // File selected
-  const [uploadedMeta, setUploadedMeta] = useState(null); // {url,name,type,size}
-  const [previewUrl, setPreviewUrl] = useState(null);
-  const [imgFailed, setImgFailed] = useState(false);
+  const [files, setFiles] = useState([]);
+  const [uploadedFiles, setUploadedFiles] = useState([]);
 
   const inputRef = useRef(null);
 
@@ -100,20 +97,22 @@ export default function CommentModal({
   const isReject = mode === "reject";
   const disableAll = submitting || loading;
 
-  // ---------- INIT ON OPEN (sync props -> local state) ----------
+  /* ======================= INIT ON OPEN ======================= */
   useEffect(() => {
     if (!open) return;
 
     setMode(action);
     setLocalStatus(stepStatus || "Pending");
     setSubmitting(false);
+    setFiles([]);
 
-    // reset edit stuff
-    setFile(null);
-    setPreviewUrl(null);
-    setImgFailed(false);
+    const attArray = Array.isArray(attachments) ? attachments.filter(Boolean) : [];
 
-    // sync attachment for view
+    if (attArray.length > 0) {
+      setUploadedFiles(attArray);
+      return;
+    }
+
     const attObj =
       attachment && typeof attachment === "object" && !(attachment instanceof File)
         ? attachment
@@ -123,48 +122,35 @@ export default function CommentModal({
     const finalUrl = (attUrl || tagUrl || "").trim();
 
     if (finalUrl) {
-      setUploadedMeta({
-        url: finalUrl,
-        name: attObj?.name || "",
-        type: attObj?.type || "",
-        size: Number(attObj?.size || 0),
-      });
+      setUploadedFiles([
+        {
+          url: finalUrl,
+          name: attObj?.name || "",
+          type: attObj?.type || "",
+          size: Number(attObj?.size || 0),
+        },
+      ]);
     } else {
-      setUploadedMeta(null);
+      setUploadedFiles([]);
     }
-  }, [open, action, stepStatus, tagUrl, attachment]);
+  }, [open, action, stepStatus, attachment, attachments, tagUrl]);
 
-  // ---------- PREVIEW FOR SELECTED FILE ----------
-  useEffect(() => {
-    if (!open) return;
-
-    if (!file || isView) {
-      setPreviewUrl(null);
-      return;
-    }
-
-    if (!file.type?.startsWith("image/")) {
-      setPreviewUrl(null);
-      return;
-    }
-
-    const url = URL.createObjectURL(file);
-    setPreviewUrl(url);
-    return () => URL.revokeObjectURL(url);
-  }, [open, file, isView]);
-
-  // ---------- UI BITS ----------
+  /* ======================= UI BITS ======================= */
   const statusUI = useMemo(() => {
-    if (isView)
+    if (isView) {
       return {
         label: "VIEW",
         cls: "bg-white/40 text-slate-900 border-white/25",
       };
-    if (isApprove)
+    }
+
+    if (isApprove) {
       return {
         label: "APPROVE",
         cls: "bg-green-500/15 text-green-900 border-green-500/20",
       };
+    }
+
     return {
       label: "REJECT",
       cls: "bg-red-500/15 text-red-900 border-red-500/20",
@@ -173,43 +159,49 @@ export default function CommentModal({
 
   const topInfo = useMemo(() => {
     if (isView) {
-      if (localStatus === "Approved")
+      if (localStatus === "Approved") {
         return {
           title: "موافق",
-          subtitle: " هذه الخطوة تم الموافقة عليها",
+          subtitle: "هذه الخطوة تم الموافقة عليها",
           icon: <FiCheckCircle className="text-green-600" />,
           bubble: "bg-green-500/10 border-green-500/15",
         };
-      if (localStatus === "Rejected")
+      }
+
+      if (localStatus === "Rejected") {
         return {
           title: "مرفوض",
-          subtitle: " هذه الخطوة تم رفضها",
+          subtitle: "هذه الخطوة تم رفضها",
           icon: <FiXCircle className="text-red-600" />,
           bubble: "bg-red-500/10 border-red-500/15",
         };
-      if (localStatus === "Cancelled")
+      }
+
+      if (localStatus === "Cancelled") {
         return {
-          title: " ملغي",
-          subtitle: " هذه الخطوة تم إلغاؤها",
+          title: "ملغي",
+          subtitle: "هذه الخطوة تم إلغاؤها",
           icon: <FiSlash className="text-slate-700" />,
           bubble: "bg-slate-500/10 border-slate-500/15",
         };
+      }
 
       return {
-        title: " قيد الانتظار",
-        subtitle: " هذه الخطوة لم يتم اتخاذ إجراء عليها بعد",
+        title: "قيد الانتظار",
+        subtitle: "هذه الخطوة لم يتم اتخاذ إجراء عليها بعد",
         icon: <FiClock className="text-amber-600" />,
         bubble: "bg-amber-500/10 border-amber-500/15",
       };
     }
 
-    if (isApprove)
+    if (isApprove) {
       return {
         title: "Ready to approve",
         subtitle: "Add comment & attachment then submit",
         icon: <FiCheckCircle className="text-green-600" />,
         bubble: "bg-green-500/10 border-green-500/15",
       };
+    }
 
     return {
       title: "Ready to reject",
@@ -219,15 +211,8 @@ export default function CommentModal({
     };
   }, [isView, isApprove, localStatus]);
 
-  // ---------- Upload ----------
-  const uploadToS3 = async (pickedFile) => {
-    if (!(pickedFile instanceof File)) return null;
-
-    if (!companyKey || !requestId || stepIndex === null || stepIndex === undefined) {
-      throw new Error("Missing companyKey/requestId/stepIndex");
-    }
-
-    // 1) Get presigned URL
+  /* ======================= UPLOAD HELPERS ======================= */
+  const uploadOneToS3 = async (pickedFile) => {
     const presignRes = await fetch("/api/upload/presign", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -244,38 +229,19 @@ export default function CommentModal({
       throw new Error(presignData?.error || "Failed to get upload URL");
     }
 
-    // 2) Upload directly to S3
     const uploadRes = await fetch(presignData.url, {
       method: "PUT",
       body: pickedFile,
-      headers: { "Content-Type": pickedFile.type || "application/octet-stream" },
+      headers: {
+        "Content-Type": pickedFile.type || "application/octet-stream",
+      },
     });
 
-    if (!uploadRes.ok) throw new Error("Failed to upload file to S3");
-
-    // 3) Save the key to the workflow step
-    const saveRes = await fetch("/api/workflow/workflow_attach", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({
-        companyKey,
-        requestId,
-        stepIndex,
-        key: presignData.key,
-        name: pickedFile.name,
-        type: pickedFile.type,
-        size: pickedFile.size,
-      }),
-    });
-
-    const saveData = await saveRes.json().catch(() => ({}));
-    if (!saveRes.ok || !saveData?.success) {
-      throw new Error(saveData?.error || "Failed to save attachment");
+    if (!uploadRes.ok) {
+      throw new Error("Failed to upload file to S3");
     }
 
     return {
-      url: saveData.tagUrl,
       key: presignData.key,
       name: pickedFile.name || "",
       type: pickedFile.type || "",
@@ -284,9 +250,7 @@ export default function CommentModal({
   };
 
   const clearStepAttachment = async () => {
-    // عندك route PUT /api/workflow/workflow_attach
-    // هذا يمسح Tag/Attachment للستيب
-    await fetch("/api/workflow/workflow_attach", {
+    const res = await fetch("/api/workflow/workflow_attach", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
@@ -297,75 +261,118 @@ export default function CommentModal({
         clearTag: true,
       }),
     });
-  };
 
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data?.success === false) {
+      throw new Error(data?.error || "Failed to clear attachments");
+    }
+  };
+  const openSelectedFile = (file) => {
+    if (!file) return;
+  
+    const url = URL.createObjectURL(file);
+    window.open(url, "_blank", "noopener,noreferrer");
+  
+    // تنظيف لاحقاً
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  };
+  /* ======================= SUBMIT ======================= */
   const handleSubmit = async () => {
     if (!onSubmit) return;
 
     setSubmitting(true);
     try {
-      let meta = null;
+      let uploadedAttachments = [];
 
-      if (file) {
-        meta = await uploadToS3(file);
-        if (meta?.url) {
-          setUploadedMeta(meta);
-          setImgFailed(false);
+      if (files.length > 0) {
+        uploadedAttachments = await Promise.all(files.map((f) => uploadOneToS3(f)));
+
+        const attachRes = await fetch("/api/workflow/workflow_attach", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({
+            companyKey,
+            requestId,
+            stepIndex,
+            attachments: uploadedAttachments,
+          }),
+        });
+
+        const attachData = await attachRes.json().catch(() => ({}));
+
+        if (!attachRes.ok || !attachData?.success) {
+          throw new Error(attachData?.error || "Failed to save attachments");
+        }
+
+        if (Array.isArray(attachData.tagAttachments)) {
+          setUploadedFiles(attachData.tagAttachments);
+        } else {
+          setUploadedFiles([]);
         }
       } else {
-        // ماكو ملف — اذا تريد “يمسح القديم” خلّي هذا
         await clearStepAttachment();
-        setUploadedMeta(null);
-        setImgFailed(false);
+        setUploadedFiles([]);
       }
 
-      const result = await onSubmit({ attachmentMeta: meta });
+      const result = await onSubmit({
+        attachments: uploadedAttachments,
+      });
 
-      // لا تعتمد على result دائماً
       const nextStatus =
         result?.stepStatus ||
         (typeof result === "string" ? result : isApprove ? "Approved" : "Rejected");
 
       setLocalStatus(nextStatus);
       setMode("view");
-      setFile(null);
-      setPreviewUrl(null);
+      setFiles([]);
     } finally {
       setSubmitting(false);
     }
   };
 
-  // ---------- Pick file ----------
-  const onPickFile = (f) => {
-    if (!f) return;
+  /* ======================= PICK FILES ======================= */
+  const onPickFiles = (picked) => {
+    const arr = Array.from(picked || []);
+    if (!arr.length) return;
 
-    const name = (f.name || "").toLowerCase();
-    const ok =
-      f.type?.startsWith("image/") ||
-      f.type === "application/pdf" ||
-      name.endsWith(".pdf") ||
-      name.endsWith(".doc") ||
-      name.endsWith(".docx") ||
-      name.endsWith(".xls") ||
-      name.endsWith(".xlsx") ||
-      name.endsWith(".csv");
+    const valid = arr.filter((f) => {
+      const name = (f.name || "").toLowerCase();
+      return (
+        f.type?.startsWith("image/") ||
+        f.type === "application/pdf" ||
+        name.endsWith(".pdf") ||
+        name.endsWith(".doc") ||
+        name.endsWith(".docx") ||
+        name.endsWith(".xls") ||
+        name.endsWith(".xlsx") ||
+        name.endsWith(".csv")
+      );
+    });
 
-    if (!ok) return;
+    if (!valid.length) return;
 
-    setFile(f);
+    setFiles((prev) => {
+      const merged = [...prev, ...valid];
+      return merged.filter(
+        (file, index, self) =>
+          index === self.findIndex(
+            (f) =>
+              f.name === file.name &&
+              f.size === file.size &&
+              f.lastModified === file.lastModified
+          )
+      );
+    });
   };
 
   const openFileDialog = () => inputRef.current?.click();
 
   if (!open) return null;
 
-  // ---------- Derived for view card ----------
-  const viewUrl = uploadedMeta?.url || "";
-  const viewName = uploadedMeta?.name || "";
-  const viewType = uploadedMeta?.type || "";
-  const viewSize = uploadedMeta?.size || 0;
+  const hasUploadedFiles = uploadedFiles.length > 0;
 
-  /* ======================= Cards ======================= */
+  /* ======================= UI CARDS ======================= */
   const ShellCard = ({ children }) => (
     <div
       className="
@@ -395,148 +402,149 @@ export default function CommentModal({
   );
 
   const SelectedFileCard = () => {
-    if (!file) return null;
-    const kind = getFileKind({ type: file.type, name: file.name });
-    const isImg = kind === "image";
-
+    if (!files.length) return null;
+  
     return (
       <ShellCard>
-        <div className="p-4">
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex items-start gap-3 min-w-0">
-              <div className="w-10 h-10 rounded-2xl bg-white/50 border border-white/25 flex items-center justify-center">
-                {kindIcon(kind)}
-              </div>
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <p className="text-sm font-extrabold text-slate-900 truncate">{file.name}</p>
-                  <span className="text-[10px] px-2 py-1 rounded-full bg-white/50 border border-white/25 text-slate-700 font-bold">
-                    {kindLabel(kind)}
-                  </span>
+        <div className="p-4 flex flex-col gap-2">
+          {files.map((file, index) => {
+            const kind = getFileKind({ type: file.type, name: file.name });
+  
+            return (
+              <div
+                key={`${file.name}-${file.size}-${index}`}
+                className="rounded-2xl border border-white/25 bg-white/25 p-3"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-10 h-10 rounded-2xl bg-white/50 border border-white/25 flex items-center justify-center shrink-0">
+                      {kindIcon(kind)}
+                    </div>
+  
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="text-sm font-extrabold text-slate-900 truncate">
+                          {file.name}
+                        </p>
+                        <span className="text-[10px] px-2 py-1 rounded-full bg-white/50 border border-white/25 text-slate-700 font-bold">
+                          {kindLabel(kind)}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-600/80 mt-1">{fmtSize(file.size)}</p>
+                    </div>
+                  </div>
+  
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      disabled={disableAll}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openSelectedFile(file);
+                      }}
+                      className="
+                        inline-flex items-center gap-2 text-xs px-3 py-2 rounded-2xl
+                        bg-slate-900 text-white font-bold hover:bg-slate-800
+                        disabled:opacity-60
+                      "
+                    >
+                      <FiExternalLink /> Open
+                    </button>
+  
+                    <button
+                      type="button"
+                      disabled={disableAll}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setFiles((prev) => prev.filter((_, i) => i !== index));
+                      }}
+                      className="
+                        inline-flex items-center gap-2 text-xs px-3 py-2 rounded-2xl
+                        border border-white/25 bg-white/35 hover:bg-white/45
+                        text-slate-900 font-bold disabled:opacity-60
+                      "
+                    >
+                      <FiTrash2 /> Remove
+                    </button>
+                  </div>
                 </div>
-                <p className="text-xs text-slate-600/80 mt-1">{fmtSize(file.size)}</p>
               </div>
-            </div>
-
-            <button
-              type="button"
-              disabled={disableAll}
-              onClick={(e) => {
-                e.stopPropagation();
-                setFile(null);
-                setPreviewUrl(null);
-              }}
-              className="
-                inline-flex items-center gap-2 text-xs px-3 py-2 rounded-2xl
-                border border-white/25 bg-white/35 hover:bg-white/45
-                text-slate-900 font-bold disabled:opacity-60
-              "
-            >
-              <FiTrash2 /> Remove
-            </button>
-          </div>
-
-          {isImg && previewUrl && (
-            <div className="mt-3">
-              <img
-                src={previewUrl}
-                alt="preview"
-                className="max-h-60 w-full object-contain rounded-2xl border border-white/25 bg-white/40"
-              />
-            </div>
-          )}
+            );
+          })}
         </div>
       </ShellCard>
     );
   };
-
   const UploadedAttachmentCard = () => {
-    if (!viewUrl) return <EmptyAttachmentCard />;
-
-    const name = viewName?.trim() || `attachment-step-${stepIndex ?? ""}`;
-    const kind = getFileKind({ url: viewUrl, type: viewType, name });
-    const canPreviewImage = kind === "image" && !imgFailed;
+    if (!uploadedFiles.length) return <EmptyAttachmentCard />;
 
     return (
       <ShellCard>
-        <div className="p-4">
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex items-start gap-3 min-w-0">
-              <div className="w-10 h-10 rounded-2xl bg-white/50 border border-white/25 flex items-center justify-center">
-                {kindIcon(kind)}
+        <div className="p-4 flex flex-col gap-2">
+          {uploadedFiles.map((file, index) => {
+            const name = file?.name?.trim() || `attachment-step-${stepIndex ?? ""}-${index + 1}`;
+            const kind = getFileKind({
+              url: file?.url,
+              type: file?.type,
+              name,
+            });
+
+            const fileUrl = file?.url || "";
+
+            return (
+              <div
+                key={`${file?.key || file?.url || name}-${index}`}
+                className="rounded-2xl border border-white/25 bg-white/25 p-3"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-10 h-10 rounded-2xl bg-white/50 border border-white/25 flex items-center justify-center shrink-0">
+                      {kindIcon(kind)}
+                    </div>
+
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="text-sm font-extrabold text-slate-900 truncate">{name}</p>
+                        <span className="text-[10px] px-2 py-1 rounded-full bg-white/50 border border-white/25 text-slate-700 font-bold">
+                          {kindLabel(kind)}
+                        </span>
+                      </div>
+
+                      <div className="mt-1 flex items-center gap-2 text-xs text-slate-600/80 flex-wrap">
+                        {!!file?.size && <span>{fmtSize(file.size)}</span>}
+                        {!!file?.type && <span className="opacity-70">•</span>}
+                        {!!file?.type && <span className="truncate">{file.type}</span>}
+                      </div>
+                    </div>
+                  </div>
+
+                  <a
+                    href={fileUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="
+                      shrink-0 inline-flex items-center gap-2 px-3 py-2 rounded-2xl
+                      bg-slate-900 text-white font-bold text-xs
+                      hover:bg-slate-800
+                    "
+                    onClick={(e) => e.stopPropagation()}
+                    title="Open attachment"
+                  >
+                    فتح <FiExternalLink />
+                  </a>
+                </div>
               </div>
-
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <p className="text-sm font-extrabold text-slate-900 truncate">{name}</p>
-                  <span className="text-[10px] px-2 py-1 rounded-full bg-white/50 border border-white/25 text-slate-700 font-bold">
-                    {kindLabel(kind)}
-                  </span>
-                </div>
-
-                <div className="mt-1 flex items-center gap-2 text-xs text-slate-600/80">
-                  {!!viewSize && <span>{fmtSize(viewSize)}</span>}
-                  {!!viewType && <span className="opacity-70">•</span>}
-                  {!!viewType && <span className="truncate">{viewType}</span>}
-                </div>
-              </div>
-            </div>
-
-            <a
-              href={viewUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="
-                shrink-0 inline-flex items-center gap-2 px-3 py-2 rounded-2xl
-                bg-slate-900 text-white font-bold text-xs
-                hover:bg-slate-800
-              "
-              onClick={(e) => e.stopPropagation()}
-              title="Open attachment"
-            >
-              فتح <FiExternalLink />
-            </a>
-          </div>
-
-          {/* Preview */}
-          {kind === "image" && (
-            <div className="mt-3">
-              {canPreviewImage ? (
-                <img
-                  src={viewUrl}
-                  alt={name}
-                  onError={() => setImgFailed(true)}
-                  className="max-h-60 w-full object-contain rounded-2xl border border-white/25 bg-white/40"
-                />
-              ) : (
-                <div className="rounded-2xl border border-white/25 bg-white/35 p-4">
-                  <p className="text-sm font-extrabold text-slate-900">المعاينة غير متاحة</p>
-                  <p className="text-xs text-slate-600/80 mt-1">
-                    ماكدرنا نعرض الصورة داخل المودال. افتحها من زر (فتح).
-                  </p>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Non-image friendly note */}
-          {kind !== "image" && (
-            <div className="mt-3 rounded-2xl border border-white/25 bg-white/35 p-4">
-              <p className="text-xs text-slate-600/90">
-                هذا الملف نوعه <b>{kindLabel(kind)}</b>. إذا ما ينفتح هنا، استخدم زر <b>فتح</b>.
-              </p>
-            </div>
-          )}
+            );
+          })}
         </div>
       </ShellCard>
     );
   };
 
-  /* ======================= render ======================= */
+  /* ======================= RENDER ======================= */
   return (
     <AnimatePresence>
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-        {/* Backdrop */}
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -547,7 +555,6 @@ export default function CommentModal({
           }}
         />
 
-        {/* Modal */}
         <motion.div
           initial={{ scale: 0.98, opacity: 0, y: 12 }}
           animate={{ scale: 1, opacity: 1, y: 0 }}
@@ -560,10 +567,8 @@ export default function CommentModal({
           "
           onClick={(e) => e.stopPropagation()}
         >
-          {/* Soft glow */}
           <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-white/40 via-white/10 to-transparent opacity-80" />
 
-          {/* Header */}
           <div className="relative p-5 border-b border-white/20 bg-white/30">
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-3 min-w-0">
@@ -574,7 +579,7 @@ export default function CommentModal({
                 <div className="min-w-0">
                   <p className="text-base font-extrabold text-slate-900 truncate">Step Review</p>
                   <p className="text-xs text-slate-600/80">
-                    {isView ? "View details" : "Write comment & attach a file"}
+                    {isView ? "View details" : "Write comment & attach file(s)"}
                   </p>
                 </div>
               </div>
@@ -589,9 +594,7 @@ export default function CommentModal({
             </div>
           </div>
 
-          {/* Body */}
           <div className="relative p-5">
-            {/* Top Info */}
             <div
               className={`
                 mb-4 flex items-center gap-3 rounded-3xl border border-white/20
@@ -608,9 +611,7 @@ export default function CommentModal({
               </div>
             </div>
 
-            {/* Main Card */}
             <div className="rounded-3xl border border-white/20 bg-white/25 backdrop-blur-xl p-4">
-              {/* Comment */}
               <div className="mb-4">
                 <p className="text-xs text-slate-600/80 mb-2 font-bold">تعليق</p>
 
@@ -623,7 +624,7 @@ export default function CommentModal({
                     rows={4}
                     value={value}
                     disabled={disableAll}
-                    onChange={(e) => onChange(e.target.value)}
+                    onChange={(e) => onChange?.(e.target.value)}
                     placeholder="اكتب الكومنت هنا..."
                     className="
                       w-full bg-white/35 border border-white/25 rounded-3xl p-3
@@ -635,7 +636,6 @@ export default function CommentModal({
                 )}
               </div>
 
-              {/* Attachment */}
               <div>
                 <p className="text-xs text-slate-600/80 mb-2 font-bold flex items-center gap-2">
                   <FiPaperclip /> Attachment
@@ -645,61 +645,65 @@ export default function CommentModal({
                   <UploadedAttachmentCard />
                 ) : (
                   <>
-                    {/* Dropzone */}
-                    {!file ? (
-                      <div
-                        onDragOver={(e) => e.preventDefault()}
-                        onDrop={(e) => {
-                          e.preventDefault();
-                          if (disableAll) return;
-                          const f = e.dataTransfer?.files?.[0];
-                          onPickFile(f);
+                    <div
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        if (disableAll) return;
+                        onPickFiles(e.dataTransfer?.files);
+                      }}
+                      className={`
+                        rounded-3xl border border-dashed border-white/35
+                        bg-white/30 backdrop-blur-xl p-4 transition
+                        ${disableAll ? "opacity-60 pointer-events-none" : "hover:bg-white/40"}
+                      `}
+                    >
+                      <input
+                        ref={inputRef}
+                        type="file"
+                        hidden
+                        multiple
+                        accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv"
+                        onChange={(e) => {
+                          onPickFiles(e.target.files);
+                          e.target.value = "";
                         }}
-                        className={`
-                          rounded-3xl border border-dashed border-white/35
-                          bg-white/30 backdrop-blur-xl p-4
-                          transition
-                          ${disableAll ? "opacity-60 pointer-events-none" : "hover:bg-white/40"}
-                        `}
-                      >
-                        <input
-                          ref={inputRef}
-                          type="file"
-                          hidden
-                          accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv"
-                          onChange={(e) => onPickFile(e.target.files?.[0] || null)}
-                        />
+                      />
 
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="text-sm font-extrabold text-slate-900">ارفع مرفق</p>
-                            <p className="text-xs text-slate-600/80 mt-1">
-                              اسحب الملف هنا أو اضغط زر (صورة / PDF / Word / Excel)
-                            </p>
-                          </div>
-
-                          <button
-                            type="button"
-                            onClick={openFileDialog}
-                            className="
-                              shrink-0 inline-flex items-center gap-2 px-3 py-2 rounded-2xl
-                              bg-slate-900 text-white font-extrabold text-xs
-                              hover:bg-slate-800
-                            "
-                          >
-                            <FiUploadCloud /> Choose
-                          </button>
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-sm font-extrabold text-slate-900">
+                            {files.length > 0 ? "إضافة مرفقات أخرى" : "ارفع مرفقات"}
+                          </p>
+                          <p className="text-xs text-slate-600/80 mt-1">
+                            اسحب الملفات هنا أو اضغط زر (صورة / PDF / Word / Excel)
+                          </p>
                         </div>
+
+                        <button
+                          type="button"
+                          onClick={openFileDialog}
+                          className="
+                            shrink-0 inline-flex items-center gap-2 px-3 py-2 rounded-2xl
+                            bg-slate-900 text-white font-extrabold text-xs
+                            hover:bg-slate-800
+                          "
+                        >
+                          <FiUploadCloud /> {files.length > 0 ? "Add more" : "Choose"}
+                        </button>
                       </div>
-                    ) : (
-                      <SelectedFileCard />
+                    </div>
+
+                    {files.length > 0 && (
+                      <div className="mt-3">
+                        <SelectedFileCard />
+                      </div>
                     )}
 
-                    {/* إذا اكو مرفق قديم وتريد تبينه حتى بالـ edit (اختياري) */}
-                    {!!viewUrl && (
+                    {hasUploadedFiles && (
                       <div className="mt-3">
                         <p className="text-[11px] text-slate-600/70 font-bold mb-2">
-                          المرفق الحالي (قبل التعديل)
+                          المرفقات الحالية (قبل التعديل)
                         </p>
                         <UploadedAttachmentCard />
                       </div>
@@ -709,7 +713,6 @@ export default function CommentModal({
               </div>
             </div>
 
-            {/* Footer */}
             <div className="mt-5 flex justify-end gap-3">
               <button
                 disabled={disableAll}

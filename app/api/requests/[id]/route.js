@@ -99,13 +99,22 @@ export async function GET(req, { params }) {
       }
     }
 
-    // step attachments
-    if (Array.isArray(request?.workflow?.steps) && request.workflow.steps.length > 0) {
-      for (const st of request.workflow.steps) {
-        if (!st?.attachment?.key) continue;
-        st.attachment.url = await signS3Url(s3, st.attachment.key);
+
+  // step attachments
+if (Array.isArray(request?.workflow?.steps) && request.workflow.steps.length > 0) {
+  for (const st of request.workflow.steps) {
+    if (st?.attachment?.key) {
+      st.attachment.url = await signS3Url(s3, st.attachment.key);
+    }
+
+    if (Array.isArray(st?.tagAttachments) && st.tagAttachments.length > 0) {
+      for (const file of st.tagAttachments) {
+        if (!file?.key) continue;
+        file.url = await signS3Url(s3, file.key);
       }
     }
+  }
+}
 
     return NextResponse.json({ success: true, data: request });
   } catch (err) {

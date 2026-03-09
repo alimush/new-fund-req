@@ -10,7 +10,6 @@ export const runtime = "nodejs";
 
 export async function POST(req) {
   try {
-    /* ================= Auth ================= */
     const cookieStore = await cookies();
     const userId = cookieStore.get("userId")?.value;
     if (!userId) {
@@ -20,9 +19,8 @@ export async function POST(req) {
       );
     }
 
-    /* ================= Body (JSON) ================= */
     const body = await req.json();
-    const { companyKey, requestId, stepIndex, key, name, type, size } = body;
+    const { companyKey, requestId, stepIndex, attachments } = body;
 
     if (!companyKey || !requestId || stepIndex === null || stepIndex === undefined) {
       return NextResponse.json(
@@ -31,9 +29,9 @@ export async function POST(req) {
       );
     }
 
-    if (!key) {
+    if (!Array.isArray(attachments) || attachments.length === 0) {
       return NextResponse.json(
-        { success: false, error: "S3 key is required" },
+        { success: false, error: "attachments are required" },
         { status: 400 }
       );
     }
@@ -46,7 +44,6 @@ export async function POST(req) {
       );
     }
 
-    /* ================= Generate Signed URL ================= */
     const bucket = process.env.S3_BUCKET_NAME;
     const region = process.env.S3_REGION;
 
@@ -65,13 +62,27 @@ export async function POST(req) {
       },
     });
 
-    const signedUrl = await getSignedUrl(
-      s3,
-      new GetObjectCommand({ Bucket: bucket, Key: key }),
-      { expiresIn: 3600 }
-    );
+    const finalAttachments = [];
 
-    /* ================= Save to DB ================= */
+    for (const att of attachments) {
+      const signedUrl = await getSignedUrl(
+        s3,
+        new GetObjectCommand({
+          Bucket: bucket,
+          Key: att.key,
+        }),
+        { expiresIn: 3600 }
+      );
+
+      finalAttachments.push({
+        key: att.key,
+        name: att.name || "",
+        type: att.type || "",
+        size: att.size || 0,
+        url: signedUrl,
+      });
+    }
+
     await dbConnect();
     const RequestModel = getModelForCompany(companyKey);
 
@@ -79,21 +90,23 @@ export async function POST(req) {
       { _id: requestId, companyKey },
       {
         $set: {
-          [`workflow.steps.${idx}.tag`]: signedUrl,
+          [`workflow.steps.${idx}.tagAttachments`]: finalAttachments,
+          [`workflow.steps.${idx}.tag`]: finalAttachments[0]?.url || "",
         },
       }
     );
 
     if (!updateRes.modifiedCount) {
       return NextResponse.json(
-        { success: false, error: "Tag not updated" },
+        { success: false, error: "Attachments not updated" },
         { status: 404 }
       );
     }
 
     return NextResponse.json({
       success: true,
-      tagUrl: signedUrl,
+      tagAttachments: finalAttachments,
+      tagUrl: finalAttachments[0]?.url || "",
     });
   } catch (err) {
     console.error("workflow_attach error:", err);
@@ -142,12 +155,13 @@ export async function PUT(req) {
       {
         $set: {
           [`workflow.steps.${idx}.tag`]: "",
+          [`workflow.steps.${idx}.tagAttachments`]: [],
         },
       }
     );
 
     if (!updateRes.modifiedCount) {
-      return NextResponse.json({ success: false, error: "Tag not cleared" }, { status: 404 });
+      return NextResponse.json({ success: false, error: "Attachments not cleared" }, { status: 404 });
     }
 
     return NextResponse.json({ success: true });
