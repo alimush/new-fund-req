@@ -184,8 +184,10 @@ export default function ReplaceBookingTransferGenerator({
   const steps = useMemo(
     () => [
       { key: "Header", label: "Header" },
-      { key: "Attachment", label: "Attachment" },
+     
       { key: "Review", label: "Review" },
+
+      { key: "Attachment", label: "Attachment" },
     ],
     []
   );
@@ -791,57 +793,57 @@ export default function ReplaceBookingTransferGenerator({
                 </button>
 
                 <div className="flex items-center gap-2">
-                  <button
-                    onClick={resetAll}
-                    disabled={submitting}
-                    className="px-4 py-2 rounded-lg border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 font-extrabold disabled:opacity-50"
-                  >
-                    مسح الكل
-                  </button>
+  <button
+    onClick={resetAll}
+    disabled={submitting}
+    className="px-4 py-2 rounded-lg border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 font-extrabold disabled:opacity-50"
+  >
+    مسح الكل
+  </button>
 
-                  {activeTab === "Review" ? (
-                    <>
-                    <button
-  onClick={doPrint}
-  disabled={submitting}
-  className="px-5 py-2.5 rounded-lg flex items-center gap-2 font-extrabold bg-gray-700 hover:bg-gray-800 text-white disabled:opacity-50"
->
-  <FiPrinter /> طباعة
-</button>
+  {activeTab === "Review" && (
+    <button
+      onClick={doPrint}
+      disabled={submitting}
+      className="px-5 py-2.5 rounded-lg flex items-center gap-2 font-extrabold bg-gray-700 hover:bg-gray-800 text-white disabled:opacity-50"
+    >
+      <FiPrinter /> طباعة
+    </button>
+  )}
 
-                      <button
-  onClick={handleCreate}
-  disabled={submitting || attachment.length === 0}
-  className={`px-5 py-2.5 rounded-lg flex items-center gap-2 font-extrabold text-white
-    ${
-      submitting || attachment.length === 0
-        ? "bg-gray-400 cursor-not-allowed"
-        : "bg-gray-900 hover:bg-black"
-    }`}                      >
-                        {submitting ? (
-                          <>
-                            <Spinner /> جارِ الإنشاء...
-                          </>
-                        ) : (
-                          <>
-                            <FiCheck /> إنشاء
-                          </>
-                        )}
-                      </button>
-                    </>
-                  ) : (
-                    <motion.button
-                      onClick={() => {
-                        const idx = steps.findIndex((s) => s.key === activeTab);
-                        setActiveTab(steps[Math.min(idx + 1, steps.length - 1)].key);
-                      }}
-                      whileHover={{ scale: 1.03 }}
-                      className="px-5 py-2.5 rounded-lg bg-gray-700 text-white hover:bg-gray-800 font-extrabold"
-                    >
-                      التالي →
-                    </motion.button>
-                  )}
-                </div>
+  {activeTab === "Attachment" ? (
+    <button
+      onClick={handleCreate}
+      disabled={submitting || (attachment?.length || 0) === 0}
+      className={`px-5 py-2.5 rounded-lg flex items-center gap-2 font-extrabold text-white ${
+        submitting || (attachment?.length || 0) === 0
+          ? "bg-gray-400 cursor-not-allowed"
+          : "bg-gray-900 hover:bg-black"
+      }`}
+    >
+      {submitting ? (
+        <>
+          <Spinner /> جارِ الإنشاء...
+        </>
+      ) : (
+        <>
+          <FiCheck /> إنشاء
+        </>
+      )}
+    </button>
+  ) : (
+    <motion.button
+      onClick={() => {
+        const idx = steps.findIndex((s) => s.key === activeTab);
+        setActiveTab(steps[Math.min(idx + 1, steps.length - 1)].key);
+      }}
+      whileHover={{ scale: 1.03 }}
+      className="px-5 py-2.5 rounded-lg bg-gray-700 text-white hover:bg-gray-800 font-extrabold"
+    >
+      التالي →
+    </motion.button>
+  )}
+</div>
               </div>
             </motion.div>
           </motion.div>

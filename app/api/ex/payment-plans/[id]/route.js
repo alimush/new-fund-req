@@ -43,49 +43,8 @@ function resetStepToPendingClean(st) {
   st.tagAttachments = [];
 }
 
-function normalizeRequestAttachments(plan) {
-  const list = Array.isArray(plan?.attachments) ? plan.attachments : [];
 
-  return list
-    .filter(Boolean)
-    .map((f) => ({
-      key: f?.key || "",
-      url: f?.url || "",
-      name: f?.name || "Attachment",
-      type: f?.type || "",
-      size: Number(f?.size || 0),
-      uploadedAt: f?.uploadedAt || new Date(),
-    }))
-    .filter((f) => f.key || f.url);
-}
 
-function syncRequestAttachmentsToStep(step, plan) {
-  if (!step) return;
-
-  const reqFiles = normalizeRequestAttachments(plan);
-  if (!reqFiles.length) return;
-
-  const existing = Array.isArray(step.tagAttachments) ? step.tagAttachments : [];
-  const merged = [...existing];
-
-  for (const file of reqFiles) {
-    const exists = merged.some(
-      (x) =>
-        (x?.key && file?.key && String(x.key) === String(file.key)) ||
-        (x?.url && file?.url && String(x.url) === String(file.url))
-    );
-
-    if (!exists) {
-      merged.push(file);
-    }
-  }
-
-  step.tagAttachments = merged;
-
-  if (!step.tag && reqFiles[0]?.url) {
-    step.tag = reqFiles[0].url;
-  }
-}
 
 async function buildWorkflowForKey(key) {
   const wf = await ExWorkflow.findOne({ pageKey: key }).lean();
@@ -144,21 +103,7 @@ async function ensurePlanWorkflowStable(plan, forcedKey) {
       changed = true;
     }
 
-    if (plan.currentStep >= 0 && plan.workflow?.steps?.[plan.currentStep]) {
-      const beforeLen = Array.isArray(plan.workflow.steps[plan.currentStep].tagAttachments)
-        ? plan.workflow.steps[plan.currentStep].tagAttachments.length
-        : 0;
-
-      syncRequestAttachmentsToStep(plan.workflow.steps[plan.currentStep], plan);
-
-      const afterLen = Array.isArray(plan.workflow.steps[plan.currentStep].tagAttachments)
-        ? plan.workflow.steps[plan.currentStep].tagAttachments.length
-        : 0;
-
-      if (afterLen !== beforeLen) {
-        changed = true;
-      }
-    }
+ 
 
     if (changed) {
       plan.markModified("workflow");
@@ -180,9 +125,6 @@ async function ensurePlanWorkflowStable(plan, forcedKey) {
   if (!String(plan.status || "").trim()) plan.status = "Pending";
   plan.currentStep = newWorkflow.steps.length ? 0 : -1;
 
-  if (plan.currentStep >= 0 && plan.workflow?.steps?.[plan.currentStep]) {
-    syncRequestAttachmentsToStep(plan.workflow.steps[plan.currentStep], plan);
-  }
 
   plan.markModified("workflow");
   plan.markModified("workflow.steps");
@@ -366,7 +308,7 @@ export async function PUT(req, ctx) {
     if (step.status !== "Pending") {
       return NextResponse.json({ success: false, error: "Step already processed" }, { status: 400 });
     }
-    syncRequestAttachmentsToStep(step, plan);
+
     const isAuthorized = (step.users || []).some((u) => getIdStr(u) === String(userIdObj));
     if (!isAuthorized) {
       return NextResponse.json({ success: false, error: "Not authorized" }, { status: 403 });
@@ -379,6 +321,13 @@ export async function PUT(req, ctx) {
           { status: 403 }
         );
       }
+    }
+
+    if (isOperationUser && action === "operation_submit" && !attachmentMeta?.key) {
+      return NextResponse.json(
+        { success: false, error: "Operation attachment is required" },
+        { status: 400 }
+      );
     }
 
     let creatorUser = null;
@@ -405,11 +354,10 @@ export async function PUT(req, ctx) {
         step.tag = "";
         step.tagAttachments = [];
       }
-
+    
       if (attachmentMeta?.key) {
         step.tag = attachmentMeta.url || attachmentMeta.key || "";
         step.tagAttachments = [
-          ...(Array.isArray(step.tagAttachments) ? step.tagAttachments : []),
           {
             key: attachmentMeta.key,
             url: attachmentMeta.url || "",
@@ -428,17 +376,29 @@ export async function PUT(req, ctx) {
       step.actedBy = userIdObj;
       step.actedAt = new Date();
       step.comment = note || "";
-      attachToStepIfNeeded();
-
+    
+      // approve العادي ممكن يبقي attachment على نفس الستيب إذا تريد
+      if (action === "approve") {
+        attachToStepIfNeeded();
+      }
+    
+      // operation submit: لا نخلي attachment على نفس الستيب
+      if (action === "operation_submit") {
+        if (clearTag) {
+          step.tag = "";
+          step.tagAttachments = [];
+        }
+      }
+    
       const lastIdx = plan.workflow.steps.length - 1;
-
+    
       if (stepIndex === lastIdx) {
         plan.status = "Approved";
         plan.currentStep = -1;
-
+    
         const toEmails = creatorUser?.email ? [creatorUser.email] : [];
         const greetingName = creatorUser?.name || creatorUser?.username || "زميلنا";
-
+    
         const html = buildExWorkflowActionEmailHtml({
           action: "approve",
           planId: String(plan._id),
@@ -452,7 +412,7 @@ export async function PUT(req, ctx) {
           planUrl,
           showRoutingLine: false,
         });
-
+    
         try {
           emailResult = await sendWorkflowEmail({
             toEmails,
@@ -468,19 +428,35 @@ export async function PUT(req, ctx) {
         plan.currentStep = nextIndex;
         resetStepToPendingClean(plan.workflow.steps[nextIndex]);
         plan.status = "Pending";
-        
-        syncRequestAttachmentsToStep(plan.workflow.steps[nextIndex], plan);
-
+    
+        // ✅ فقط مرفق الأوبريشن يروح للستيب الجاي
+        if (action === "operation_submit" && attachmentMeta?.key) {
+          plan.workflow.steps[nextIndex].tag = attachmentMeta.url || attachmentMeta.key || "";
+          plan.workflow.steps[nextIndex].tagAttachments = [
+            {
+              key: attachmentMeta.key,
+              url: attachmentMeta.url || "",
+              name: attachmentMeta.name || "",
+              type: attachmentMeta.type || "",
+              size: attachmentMeta.size || 0,
+              uploadedAt: new Date(),
+            },
+          ];
+        } else {
+          plan.workflow.steps[nextIndex].tag = "";
+          plan.workflow.steps[nextIndex].tagAttachments = [];
+        }
+    
         const nextStepUsers = plan.workflow.steps[nextIndex]?.users || [];
         const nextUserIds = nextStepUsers.map(getIdStr).filter(Boolean);
-
+    
         const nextUsers = nextUserIds.length
           ? await User.find({ _id: { $in: nextUserIds } }).select("_id username name email").lean()
           : [];
-
+    
         const toEmails = nextUsers.map((u) => u.email).filter(Boolean);
         const toUserName = nextUsers?.[0]?.name || nextUsers?.[0]?.username || "";
-
+    
         const html = buildExWorkflowActionEmailHtml({
           action: "approve",
           planId: String(plan._id),
@@ -494,7 +470,7 @@ export async function PUT(req, ctx) {
           planUrl,
           showRoutingLine: true,
         });
-
+    
         try {
           emailResult = await sendWorkflowEmail({
             toEmails,

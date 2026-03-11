@@ -325,13 +325,14 @@ const todayDD = String(today.getDate()).padStart(2, "0");
     if (which === "dd" && !vDateDD) mmRef.current?.focus();
   };
 
-  const printCurrentPreviewA5 = async () => {
+  const printCurrentPreviewA4 = async () => {
     if (!paperRef.current) return;
   
     try {
-      await new Promise((r) => requestAnimationFrame(r));
-      await new Promise((r) => requestAnimationFrame(r));
+      setIsPrinting(true);
   
+      await new Promise((r) => requestAnimationFrame(r));
+      await new Promise((r) => requestAnimationFrame(r));
       await waitForImages(paperRef.current);
   
       const dataUrl = await toPng(paperRef.current, {
@@ -361,27 +362,54 @@ const todayDD = String(today.getDate()).padStart(2, "0");
         <html>
           <head>
             <meta charset="utf-8" />
+            <title>Print Voucher</title>
             <style>
-              @page { size: A5 landscape; margin: 0; }
+              @page {
+                size: A4 portrait;
+                margin: 0;
+              }
+  
               html, body {
                 margin: 0 !important;
                 padding: 0 !important;
                 width: 210mm;
-                height: 148mm;
+                height: 297mm;
                 overflow: hidden;
                 background: #fff;
               }
-              * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  
+              * {
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+                box-sizing: border-box;
+              }
+  
+            .page {
+  width: 210mm;
+  height: 297mm;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  overflow: hidden;
+  background: #fff;
+  padding-top: 5mm;   /* ينزل الوصل لتحت */
+}
+  
               img {
-                width: 210mm;
-                height: 148mm;
+                width: 210mm;              /* بعدالة بعرض الصفحة */
+                height: auto;
+                max-height: 297mm;
                 display: block;
-                object-fit: cover;
+                object-fit: contain;
+                object-position: top center; /* فوك */
               }
             </style>
           </head>
           <body>
-            <img id="p" />
+            <div class="page">
+              <img id="p" />
+            </div>
+  
             <script>
               const img = document.getElementById("p");
               img.src = ${JSON.stringify(dataUrl)};
@@ -390,11 +418,13 @@ const todayDD = String(today.getDate()).padStart(2, "0");
                 setTimeout(() => {
                   window.focus();
                   window.print();
-                }, 80);
+                }, 100);
               };
   
               window.onafterprint = () => {
-                try { parent.postMessage({ type: "IFRAME_PRINT_DONE" }, "*"); } catch(e){}
+                try {
+                  parent.postMessage({ type: "IFRAME_PRINT_DONE" }, "*");
+                } catch (e) {}
               };
             </script>
           </body>
@@ -408,12 +438,11 @@ const todayDD = String(today.getDate()).padStart(2, "0");
         window.removeEventListener("message", onMsg);
   
         setTimeout(() => {
-          try { iframe.remove(); } catch {}
+          try {
+            iframe.remove();
+          } catch {}
         }, 50);
   
-        resetForm();
-        setOpenModal(false);
-        setVoucherNo(null);
         setIsPrinting(false);
       };
   
@@ -479,7 +508,7 @@ const todayDD = String(today.getDate()).padStart(2, "0");
       // انتظر رندرة خفيفة حتى الرقم يثبت
       await new Promise((r) => setTimeout(r, 150));
   
-      await printCurrentPreviewA5();
+      await printCurrentPreviewA4();
     } catch (err) {
       console.error(err);
       alert(err.message || "تعذر إنشاء الوصل");
