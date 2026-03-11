@@ -1,26 +1,77 @@
 import { NextResponse } from "next/server";
 import dbConnect from "@/lib/mongodb";
 import { cookies } from "next/headers";
-import { getModelForCompany } from "@/models/Request";
+import Voucher from "@/models/Voucher";
+import VoucherCounter from "@/models/VoucherCounter";
 
 export const runtime = "nodejs";
 
-function calcTotal(items = []) {
-  return items.reduce((sum, it) => {
-    const qty = Number(it?.qty) || 0;
-    const price = Number(it?.price) || 0;
-    return sum + qty * price;
-  }, 0);
+export async function GET(req) {
+  try {
+    await dbConnect();
+
+    const { searchParams } = new URL(req.url);
+    const companyKey = searchParams.get("companyKey");
+    const requestId = searchParams.get("requestId");
+    const mode = searchParams.get("mode") || "payment";
+
+    if (!companyKey || !requestId) {
+      return NextResponse.json(
+        { success: false, error: "companyKey and requestId are required" },
+        { status: 400 }
+      );
+    }
+
+    const doc = await Voucher.findOne({
+      companyKey,
+      requestId,
+      mode,
+    })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    return NextResponse.json({
+      success: true,
+      data: doc || null,
+    });
+  } catch (err) {
+    console.error("Voucher GET error:", err);
+    return NextResponse.json(
+      { success: false, error: err.message || "Server error" },
+      { status: 500 }
+    );
+  }
 }
 
-// POST /api/vouchers
-// body: { company, requestId }
+function safeString(v) {
+  return String(v ?? "").trim();
+}
+
+function toNumber(v, def = 0) {
+  const n = Number(String(v ?? "").replace(/,/g, ""));
+  return Number.isFinite(n) ? n : def;
+}
+
+function buildVoucherDate(yy, mm, dd) {
+  const y = safeString(yy);
+  const m = safeString(mm);
+  const d = safeString(dd);
+
+  if (!y || !m || !d) return new Date();
+
+  const fullYear = Number(y) >= 50 ? `19${y}` : `20${y}`;
+  const iso = `${fullYear}-${m.padStart(2, "0")}-${d.padStart(2, "0")}T00:00:00`;
+
+  const dt = new Date(iso);
+  return Number.isNaN(dt.getTime()) ? new Date() : dt;
+}
+
 export async function POST(req) {
   try {
     await dbConnect();
 
     const cookieStore = await cookies();
-    const userId = cookieStore.get("userId")?.value;
+    const userId = cookieStore.get("userId")?.value || "";
 
     if (!userId) {
       return NextResponse.json(
@@ -30,99 +81,104 @@ export async function POST(req) {
     }
 
     const body = await req.json();
-    const { company, requestId } = body || {};
 
-    if (!company || !requestId) {
+    const {
+      companyKey,
+      companyName,
+      mode,
+      requestId = null,
+
+      vDateYY,
+      vDateMM,
+      vDateDD,
+
+      vAmount,
+      vWords,
+      vDesc,
+      vCurrency,
+
+      vBank,
+      vFxRate,
+      vReceivedBy,
+      vBeneficiary,
+      vNotes,
+
+      cbOne,
+      cbTwo,
+    } = body || {};
+
+    if (!companyKey || !mode) {
       return NextResponse.json(
-        { success: false, error: "company and requestId are required" },
+        { success: false, error: "companyKey and mode are required" },
         { status: 400 }
       );
     }
 
-    const Model = getModelForCompany(company);
-    const request = await Model.findById(requestId);
-
-    if (!request) {
+    if (!["payment", "receipt"].includes(mode)) {
       return NextResponse.json(
-        { success: false, error: "Request not found" },
-        { status: 404 }
-      );
-    }
-
-    // لازم يكون Approved نهائي
-    if (String(request.status || "").toLowerCase() !== "approved") {
-      return NextResponse.json(
-        { success: false, error: "Voucher allowed only after final approval" },
+        { success: false, error: "Invalid mode" },
         { status: 400 }
       );
     }
 
-    // لازم آخر خطوة Approved
-    const steps = request?.workflow?.steps || [];
-    const lastIdx = steps.length - 1;
+    // 1) جيب الرقم التالي
+    const counter = await VoucherCounter.findOneAndUpdate(
+      { companyKey, mode },
+      { $inc: { seq: 1 } },
+      {
+        new: true,
+        upsert: true,
+        setDefaultsOnInsert: true,
+      }
+    );
 
-    if (lastIdx < 0) {
-      return NextResponse.json(
-        { success: false, error: "No workflow steps" },
-        { status: 400 }
-      );
-    }
+    const seq = counter.seq;
+    const voucherNo = String(seq).padStart(5, "0");
 
-    const lastStep = steps[lastIdx];
-    if (!lastStep || String(lastStep.status || "") !== "Approved") {
-      return NextResponse.json(
-        { success: false, error: "Last step must be Approved" },
-        { status: 400 }
-      );
-    }
+    // 2) خزّن الوصل
+    const doc = await Voucher.create({
+      companyKey: safeString(companyKey),
+      companyName: safeString(companyName),
+      mode,
+      seq,
+      voucherNo,
+      requestId: requestId || null,
 
-    // صلاحية: نفس ناس آخر خطوة (نفس منطقك)
-    const isAllowed =
-      Array.isArray(lastStep.users) &&
-      lastStep.users.some((u) => String(u) === String(userId));
+      voucherDate: buildVoucherDate(vDateYY, vDateMM, vDateDD),
 
-    if (!isAllowed) {
-      return NextResponse.json(
-        { success: false, error: "Not authorized to generate voucher" },
-        { status: 403 }
-      );
-    }
+      dateParts: {
+        yy: safeString(vDateYY),
+        mm: safeString(vDateMM),
+        dd: safeString(vDateDD),
+      },
 
-    // بيانات من الريكويست نفسه
-    const total = calcTotal(request.items || []);
-    const currency = String(request.currency || "").toUpperCase();
+      amount: toNumber(vAmount, 0),
+      amountText: safeString(vAmount),
+      amountWords: safeString(vWords),
+      currency: safeString(vCurrency || "IQD").toUpperCase(),
 
-    // مبلغاً وقدره: نخزنه نص بسيط (تبدله بدالة أقوى لاحقاً)
-    const amountWords = `${Math.round(total)} ${
-      currency === "USD" ? "دولار" : "دينار"
-    } فقط لا غير`;
+      description: safeString(vDesc),
+      bank: safeString(vBank),
+      fxRate: safeString(vFxRate),
+      receivedBy: safeString(vReceivedBy),
+      beneficiary: safeString(vBeneficiary),
+      notes: safeString(vNotes),
 
-    // خزّن الوصل داخل الريكويست
-    request.paymentVoucher = {
-      date: request.createdAt ? new Date(request.createdAt) : new Date(),
-      receiverName: String(request.createdBy || ""),
-      description: String(request.description || ""),
-      amount: total,
-      currency,
-      amountWords,
+      cbOne: Boolean(cbOne),
+      cbTwo: Boolean(cbTwo),
+
       createdByUserId: userId,
-      createdAt: new Date(),
-    };
-
-    request.approvalHistory?.push?.({
-      user: userId,
-      action: "voucher",
-      note: "Payment voucher generated",
-      date: new Date(),
     });
 
-    await request.save();
-
-    return NextResponse.json({ success: true, data: request.paymentVoucher });
+    return NextResponse.json({
+      success: true,
+      message: "Voucher created successfully",
+      data: doc,
+    });
   } catch (err) {
-    console.error("❌ VOUCHER API Error:", err);
+    console.error("❌ Create Voucher Error:", err);
     return NextResponse.json(
-      { success: false, error: err.message },
+      { success: false, error: err.message || "Server error" },
       { status: 500 }
     );
   }

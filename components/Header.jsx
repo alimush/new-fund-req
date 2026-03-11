@@ -246,6 +246,18 @@ export default function Header({ onLogout }) {
     label="تقارير"
   />
 )}
+
+
+{permissions?.includes(PERMISSIONS.RECEIPTS) && (
+  <MenuItem
+    onClick={() => {
+      setMenuOpen(false);
+      router.push("/vouchers/reports");
+    }}
+    icon={<FaSquarePollVertical className="text-gray-200" />}
+    label="تقارير الوصلات"
+  />
+)}
                         <MenuItem
                           onClick={handleLogout}
                           icon={<FaSignOutAlt className="text-red-400" />}

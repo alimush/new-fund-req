@@ -31,7 +31,7 @@ const companies = [
 // ✅ نفس POS
 const POS = {
   date: { top: 19.2, left: 74.8 },
-  amountFixed: { top: 13.6, left: 12.0 },
+  amountFixed: { top: 13.6, left: 9.0 },
   currencyUSDBox: { top: 8.0, left: 22.3 },
   currencyIQDBox: { top: 8.0, left: 13.0 },
   amountWords: { top: 37.6, left: -2.0, width: 75.0 },
@@ -51,6 +51,126 @@ const EXTRA = {
 
 const pctStyle = (p) => ({ top: `${p.top}%`, left: `${p.left}%` });
 const only2Digits = (val) => String(val || "").replace(/[^\d]/g, "").slice(0, 2);
+
+function cleanAmount(value) {
+  return String(value || "").replace(/[^\d]/g, "");
+}
+
+function formatAmount(value) {
+  const cleaned = cleanAmount(value);
+  if (!cleaned) return "";
+  return Number(cleaned).toLocaleString("en-US");
+}
+
+function numberToArabicWords(num) {
+  num = parseInt(String(num).replace(/[^\d]/g, ""), 10);
+  if (!Number.isFinite(num) || num === 0) return "";
+
+  const ones = [
+    "",
+    "واحد",
+    "اثنان",
+    "ثلاثة",
+    "أربعة",
+    "خمسة",
+    "ستة",
+    "سبعة",
+    "ثمانية",
+    "تسعة",
+  ];
+
+  const teens = [
+    "عشرة",
+    "أحد عشر",
+    "اثنا عشر",
+    "ثلاثة عشر",
+    "أربعة عشر",
+    "خمسة عشر",
+    "ستة عشر",
+    "سبعة عشر",
+    "ثمانية عشر",
+    "تسعة عشر",
+  ];
+
+  const tens = [
+    "",
+    "",
+    "عشرون",
+    "ثلاثون",
+    "أربعون",
+    "خمسون",
+    "ستون",
+    "سبعون",
+    "ثمانون",
+    "تسعون",
+  ];
+
+  const hundreds = [
+    "",
+    "مائة",
+    "مائتان",
+    "ثلاثمائة",
+    "أربعمائة",
+    "خمسمائة",
+    "ستمائة",
+    "سبعمائة",
+    "ثمانمائة",
+    "تسعمائة",
+  ];
+
+  function below100(n) {
+    if (n < 10) return ones[n];
+    if (n === 10) return "عشرة";
+    if (n > 10 && n < 20) return teens[n - 10];
+    if (n % 10 === 0) return tens[Math.floor(n / 10)];
+    return `${ones[n % 10]} و${tens[Math.floor(n / 10)]}`;
+  }
+
+  function below1000(n) {
+    if (n < 100) return below100(n);
+
+    const h = Math.floor(n / 100);
+    const rest = n % 100;
+
+    if (rest === 0) return hundreds[h];
+    return `${hundreds[h]} و${below100(rest)}`;
+  }
+
+  function groupToWords(n, singular, dual, plural) {
+    if (n === 0) return "";
+    if (n === 1) return singular;
+    if (n === 2) return dual;
+    if (n >= 3 && n <= 10) return `${below1000(n)} ${plural}`;
+    return `${below1000(n)} ${singular}`;
+  }
+
+  const billions = Math.floor(num / 1000000000);
+  const millions = Math.floor((num % 1000000000) / 1000000);
+  const thousands = Math.floor((num % 1000000) / 1000);
+  const rest = num % 1000;
+
+  const parts = [];
+
+  if (billions) {
+    parts.push(groupToWords(billions, "مليار", "ملياران", "مليارات"));
+  }
+
+  if (millions) {
+    parts.push(groupToWords(millions, "مليون", "مليونان", "ملايين"));
+  }
+
+  if (thousands) {
+    parts.push(groupToWords(thousands, "ألف", "ألفان", "آلاف"));
+  }
+
+  if (rest) {
+    parts.push(below1000(rest));
+  }
+
+  return parts.join(" و");
+}
+
+
 
 async function waitForImages(node) {
   if (!node) return;
@@ -72,28 +192,7 @@ async function waitForImages(node) {
     )
   );
 }
-async function fetchNextVoucherNo(companyKey, mode) {
-  const res = await fetch("/api/vouchers/next", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ companyKey, mode }),
-    cache: "no-store",
-  });
 
-  const text = await res.text(); // ✅ لا تستخدم res.json مباشرة
-
-  let data;
-  try {
-    data = JSON.parse(text);
-  } catch {
-    // هذا يعني الرد مو JSON (غالباً HTML)
-    throw new Error(`API returned non-JSON (status ${res.status}). First chars: ${text.slice(0, 80)}`);
-  }
-
-  if (!res.ok) throw new Error(data?.error || "Failed to get next voucher no");
-
-  return data.seq;
-}
 export default function VoucherPage() {
   // ✅ صلاحية الدخول
   const { permissions } = usePermissions();
@@ -226,26 +325,13 @@ const todayDD = String(today.getDate()).padStart(2, "0");
     if (which === "dd" && !vDateDD) mmRef.current?.focus();
   };
 
-  // ✅ طباعة (صورة وحدة من preview) حتى XY ما يتخربط
-  // ✅ طباعة (تفتح Tab جديد + تطبع + تسد التاب + ترجع للتاب الاصلي + تسد البوب اب بدون refresh)
   const printCurrentPreviewA5 = async () => {
     if (!paperRef.current) return;
   
-    setIsPrinting(true);
-    setActiveField("");
-  
     try {
-      if (!selectedCompany) return;
-  
-      // 1) رقم الوصل
-      const nextSeq = await fetchNextVoucherNo(selectedCompany.key, mode);
-      setVoucherNo(nextSeq);
-  
-      // 2) انتظر رندرين حتى الرقم يثبت بالـ preview
       await new Promise((r) => requestAnimationFrame(r));
       await new Promise((r) => requestAnimationFrame(r));
   
-      // 3) جهّز الصورة
       await waitForImages(paperRef.current);
   
       const dataUrl = await toPng(paperRef.current, {
@@ -254,7 +340,6 @@ const todayDD = String(today.getDate()).padStart(2, "0");
         backgroundColor: "#ffffff",
       });
   
-      // 4) اطبع داخل iframe (بدون تبويب جديد)
       const iframe = document.createElement("iframe");
       iframe.style.position = "fixed";
       iframe.style.right = "0";
@@ -265,7 +350,10 @@ const todayDD = String(today.getDate()).padStart(2, "0");
       document.body.appendChild(iframe);
   
       const doc = iframe.contentWindow?.document;
-      if (!doc) return;
+      if (!doc) {
+        setIsPrinting(false);
+        return;
+      }
   
       doc.open();
       doc.write(`
@@ -273,9 +361,6 @@ const todayDD = String(today.getDate()).padStart(2, "0");
         <html>
           <head>
             <meta charset="utf-8" />
-            <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0" />
-            <meta http-equiv="Pragma" content="no-cache" />
-            <meta http-equiv="Expires" content="0" />
             <style>
               @page { size: A5 landscape; margin: 0; }
               html, body {
@@ -287,7 +372,12 @@ const todayDD = String(today.getDate()).padStart(2, "0");
                 background: #fff;
               }
               * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-              img { width: 210mm; height: 148mm; display: block; object-fit: cover; }
+              img {
+                width: 210mm;
+                height: 148mm;
+                display: block;
+                object-fit: cover;
+              }
             </style>
           </head>
           <body>
@@ -300,7 +390,7 @@ const todayDD = String(today.getDate()).padStart(2, "0");
                 setTimeout(() => {
                   window.focus();
                   window.print();
-                }, 60);
+                }, 80);
               };
   
               window.onafterprint = () => {
@@ -312,30 +402,90 @@ const todayDD = String(today.getDate()).padStart(2, "0");
       `);
       doc.close();
   
-      // 5) بعد الطباعة: سكّر المودال + احذف iframe + ريفرش الصفحة الأصلية
       const onMsg = (ev) => {
         if (ev?.data?.type !== "IFRAME_PRINT_DONE") return;
   
         window.removeEventListener("message", onMsg);
   
-        setOpenModal(false);
-  
-        setOpenModal(false);
-        resetForm();           // ✅ يمسح كلشي
-        setVoucherNo(null);     // احتياط
         setTimeout(() => {
           try { iframe.remove(); } catch {}
         }, 50);
+  
+        resetForm();
+        setOpenModal(false);
+        setVoucherNo(null);
+        setIsPrinting(false);
       };
   
       window.addEventListener("message", onMsg);
     } catch (e) {
       console.error(e);
       alert("تعذر طباعة الوصل.");
-    } finally {
-      setTimeout(() => setIsPrinting(false), 350);
+      setIsPrinting(false);
     }
   };
+
+  // ✅ طباعة (صورة وحدة من preview) حتى XY ما يتخربط
+  // ✅ طباعة (تفتح Tab جديد + تطبع + تسد التاب + ترجع للتاب الاصلي + تسد البوب اب بدون refresh)
+  async function saveVoucherAndPrint() {
+    try {
+      if (!selectedCompany) {
+        alert("اختَر شركة أولاً");
+        return;
+      }
+  
+      setIsPrinting(true);
+      setActiveField("");
+  
+      const res = await fetch("/api/vouchers", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          companyKey: selectedCompany.key,
+          companyName: selectedCompany.name,
+          mode,
+  
+          vDateYY,
+          vDateMM,
+          vDateDD,
+  
+          vAmount,
+          vWords,
+          vDesc,
+          vCurrency,
+  
+          vBank,
+          vFxRate,
+          vReceivedBy,
+          vBeneficiary,
+          vNotes,
+  
+          cbOne,
+          cbTwo,
+        }),
+      });
+  
+      const data = await res.json();
+  
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || "فشل إنشاء الوصل");
+      }
+  
+      // خلي الرقم يظهر على المعاينة
+      setVoucherNo(data.data.seq);
+  
+      // انتظر رندرة خفيفة حتى الرقم يثبت
+      await new Promise((r) => setTimeout(r, 150));
+  
+      await printCurrentPreviewA5();
+    } catch (err) {
+      console.error(err);
+      alert(err.message || "تعذر إنشاء الوصل");
+      setIsPrinting(false);
+    }
+  }
 
   // ✅ فتح مودال صرف
   const openPayment = () => {
@@ -636,26 +786,26 @@ const todayDD = String(today.getDate()).padStart(2, "0");
                   </div>
 
                   <div className="flex items-center gap-3">
-                    <button
-                      onClick={printCurrentPreviewA5}
-                      disabled={isPrinting}
-                      className="
-                        flex items-center gap-2
-                        px-5 py-2.5
-                        rounded-2xl
-                        bg-white/70 backdrop-blur
-                        ring-1 ring-black/5
-                        shadow-sm
-                        font-extrabold text-gray-800
-                        hover:bg-white hover:shadow-md
-                        active:scale-[0.97]
-                        disabled:opacity-60
-                        transition-all duration-150
-                      "
-                    >
-                      <FiPrinter className={`text-lg ${isPrinting ? "animate-spin" : ""}`} />
-                      {isPrinting ? "جاري الطباعة..." : "طباعة"}
-                    </button>
+                  <button
+  onClick={saveVoucherAndPrint}
+  disabled={isPrinting}
+  className="
+    flex items-center gap-2
+    px-5 py-2.5
+    rounded-2xl
+    bg-white/70 backdrop-blur
+    ring-1 ring-black/5
+    shadow-sm
+    font-extrabold text-gray-800
+    hover:bg-white hover:shadow-md
+    active:scale-[0.97]
+    disabled:opacity-60
+    transition-all duration-150
+  "
+>
+  <FiPrinter className={`text-lg ${isPrinting ? "animate-spin" : ""}`} />
+  {isPrinting ? "جاري الإنشاء والطباعة..." : "إنشاء وطباعة"}
+</button>
 
                     <button
   onClick={() => {
@@ -702,9 +852,9 @@ const todayDD = String(today.getDate()).padStart(2, "0");
   className={`absolute flex items-center gap-5 text-gray-900 font-extrabold ${cairo.className}`}
   style={{ ...pctStyle(POS.date), fontSize: "18px" }}
 >
-  <span style={{ transform: "translateX(-8px)" }}>{todayYY}</span>
-  <span>{todayMM}</span>
-  <span>{todayDD}</span>
+<span style={{ transform: "translateX(-8px)" }}>{vDateYY || todayYY}</span>
+<span>{vDateMM || todayMM}</span>
+<span>{vDateDD || todayDD}</span>
 </div>
 
   {/* ✓ العملة */}
@@ -724,9 +874,9 @@ const todayDD = String(today.getDate()).padStart(2, "0");
   className={`absolute text-gray-900 font-extrabold ${cairo.className}`}
   style={{ ...pctStyle(POS.amountFixed), fontSize: "16px" }}
 >
-  {vAmount
-    ? Number(vAmount.replace(/,/g, "")).toLocaleString("en-US")
-    : ""}
+{vAmount && !isNaN(Number(vAmount.replace(/,/g, "")))
+  ? Number(vAmount.replace(/,/g, "")).toLocaleString("en-US")
+  : ""}
 </div>
   ) : null}
 
@@ -996,7 +1146,18 @@ const todayDD = String(today.getDate()).padStart(2, "0");
   <input
     ref={amountRef}
     value={vAmount}
-    onChange={(e) => setVAmount(e.target.value)}
+    onChange={(e) => {
+      const cleaned = cleanAmount(e.target.value);
+    
+      if (!cleaned) {
+        setVAmount("");
+        setVWords("");
+        return;
+      }
+    
+      setVAmount(formatAmount(cleaned));
+      setVWords(numberToArabicWords(cleaned));
+    }}
     className="absolute"
     style={{
       ...pctStyle(POS.amountFixed),

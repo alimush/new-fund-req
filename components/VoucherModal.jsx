@@ -154,27 +154,7 @@ const EXTRA = {
 
 const pctStyle = (p) => ({ top: `${p.top}%`, left: `${p.left}%` });
 
-async function fetchNextVoucherNo(companyKey, mode = "payment") {
-  const res = await fetch("/api/vouchers/next", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ companyKey, mode }),
-    cache: "no-store",
-  });
 
-  const text = await res.text();
-
-  let data;
-  try {
-    data = JSON.parse(text);
-  } catch {
-    throw new Error(`API returned non-JSON (status ${res.status}). First chars: ${text.slice(0, 80)}`);
-  }
-
-  if (!res.ok) throw new Error(data?.error || "Failed to get next voucher no");
-
-  return data.seq;
-}
 export default function VoucherModal({ open, onClose, request, companyKey, requestId, onSaved }) {
   const [saving, setSaving] = useState(false);
   const [printing, setPrinting] = useState(false);
@@ -184,18 +164,78 @@ export default function VoucherModal({ open, onClose, request, companyKey, reque
   const [bgDataUrl, setBgDataUrl] = useState("");
   const [bgReady, setBgReady] = useState(false);
   const [voucherNo, setVoucherNo] = useState(null);
+  const [existingVoucher, setExistingVoucher] = useState(null);
+const [loadingVoucher, setLoadingVoucher] = useState(false);
+useEffect(() => {
+  if (!open || !companyKey || !requestId) return;
 
-  const resetAllLocal = () => {
-    setVoucherNo(null);
-  
-    setVBank("");
-    setVFxRate("");
-    setVReceivedBy("");
-    setVBeneficiary("");
-    setVNotes("");
-    setCbOne(false);
-    setCbTwo(false);
+  let cancelled = false;
+
+  const loadExistingVoucher = async () => {
+    try {
+      setLoadingVoucher(true);
+
+      const res = await fetch(
+        `/api/vouchers?companyKey=${encodeURIComponent(companyKey)}&requestId=${encodeURIComponent(requestId)}&mode=payment`,
+        {
+          method: "GET",
+          credentials: "include",
+          cache: "no-store",
+        }
+      );
+
+      const json = await res.json();
+
+      if (!cancelled && res.ok && json?.success) {
+        const doc = json.data || null;
+        setExistingVoucher(doc);
+
+        if (doc) {
+          setVoucherNo(doc.seq ?? null);
+          setVBank(doc.bank || "");
+          setVFxRate(doc.fxRate || "");
+          setVReceivedBy(doc.receivedBy || "");
+          setVBeneficiary(doc.beneficiary || "");
+          setVNotes(doc.notes || "");
+          setCbOne(Boolean(doc.cbOne));
+          setCbTwo(Boolean(doc.cbTwo));
+        } else {
+          setVoucherNo(null);
+          setVBank("");
+          setVFxRate("");
+          setVReceivedBy("");
+          setVBeneficiary("");
+          setVNotes("");
+          setCbOne(false);
+          setCbTwo(false);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to load existing voucher:", err);
+    } finally {
+      if (!cancelled) setLoadingVoucher(false);
+    }
   };
+
+  loadExistingVoucher();
+
+  return () => {
+    cancelled = true;
+  };
+}, [open, companyKey, requestId]);
+
+const resetAllLocal = () => {
+  setExistingVoucher(null);
+  setVoucherNo(null);
+
+  setVBank("");
+  setVFxRate("");
+  setVReceivedBy("");
+  setVBeneficiary("");
+  setVNotes("");
+  setCbOne(false);
+  setCbTwo(false);
+};
   const voucherImg = companyKey === "Badur-Baghdad" ? "/voucher2.jpg" : "/voucher.jpg";
 
   // ✅ تحميل الخلفية كـ dataUrl حتى html-to-image يكون ثابت
@@ -283,31 +323,83 @@ export default function VoucherModal({ open, onClose, request, companyKey, reque
     setTimeout(() => fxRef.current?.focus(), 50);
   }, [open]);
 
-  const saveVoucher = async () => {
+  const saveVoucherAndPrint = async () => {
+    if (!paperRef.current) return;
+  
+    if (!bgReady) {
+      alert("خلي ثواني… دا أحمل صورة الوصل");
+      return;
+    }
+  
+    // إذا الوصل موجود مسبقاً -> لا تنشئ مرة ثانية
+    if (existingVoucher?._id) {
+      await printCurrentVoucher();
+      return;
+    }
+  
     setSaving(true);
+    setPrinting(true);
+  
     try {
       const res = await fetch("/api/vouchers", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ company: companyKey, requestId }),
+        body: JSON.stringify({
+          companyKey,
+          companyName: companyKey,
+          mode: "payment",
+          requestId,
+  
+          vDateYY: dateParts.yearShort,
+          vDateMM: dateParts.month,
+          vDateDD: dateParts.day,
+  
+          vAmount: total,
+          vWords: amountWords,
+          vDesc: description,
+          vCurrency: currency,
+  
+          vBank,
+          vFxRate,
+          vReceivedBy,
+          vBeneficiary,
+          vNotes,
+  
+          cbOne,
+          cbTwo,
+        }),
       });
-
+  
       const json = await res.json();
-      if (!json?.success) {
-        alert(json?.error || "Failed to generate voucher");
-        return;
+  
+      if (!res.ok || !json?.success) {
+        throw new Error(json?.error || "Failed to create voucher");
       }
-
-      onSaved?.(json.data);
-      onClose?.();
+  
+      setExistingVoucher(json.data || null);
+      setVoucherNo(json.data?.seq ?? null);
+  
+      await new Promise((r) => requestAnimationFrame(r));
+      await new Promise((r) => requestAnimationFrame(r));
+      await new Promise((r) => setTimeout(r, 120));
+  
+      await onSaved?.(json.data);
+      await printCurrentVoucher();
+    } catch (e) {
+      console.error(e);
+      alert(e.message || "تعذر إنشاء وطباعة الوصل");
+      setSaving(false);
+      setPrinting(false);
     } finally {
       setSaving(false);
     }
   };
 
   /** ✅ طباعة A5 landscape + تملي الورقة (bleed) */
-  const printVoucher = async () => {
+
+
+  const printCurrentVoucher = async () => {
     if (!paperRef.current) return;
   
     if (!bgReady) {
@@ -317,20 +409,12 @@ export default function VoucherModal({ open, onClose, request, companyKey, reque
   
     setPrinting(true);
   
-    // ✅ جلب رقم الوصل مرة واحدة فقط
     try {
-      if (voucherNo === null) {
-        const seq = await fetchNextVoucherNo(companyKey, "payment");
-        setVoucherNo(seq);
-  
-        // انتظر رندرين حتى الرقم يظهر بالـ preview قبل التصوير
-        await new Promise((r) => requestAnimationFrame(r));
-        await new Promise((r) => requestAnimationFrame(r));
-      }
+      await new Promise((r) => requestAnimationFrame(r));
+      await new Promise((r) => requestAnimationFrame(r));
+      await new Promise((r) => setTimeout(r, 120));
   
       await waitForImages(paperRef.current);
-      await new Promise((r) => requestAnimationFrame(r));
-      await new Promise((r) => requestAnimationFrame(r));
   
       const dataUrl = await toPng(paperRef.current, {
         cacheBust: true,
@@ -350,8 +434,7 @@ export default function VoucherModal({ open, onClose, request, companyKey, reque
       const doc = iframe.contentWindow?.document;
       if (!doc) {
         iframe.remove();
-        alert("تعذر فتح الطباعة.");
-        return;
+        throw new Error("تعذر فتح نافذة الطباعة");
       }
   
       const BLEED_SCALE = 1.04;
@@ -362,9 +445,6 @@ export default function VoucherModal({ open, onClose, request, companyKey, reque
         <html>
           <head>
             <meta charset="utf-8" />
-            <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0" />
-            <meta http-equiv="Pragma" content="no-cache" />
-            <meta http-equiv="Expires" content="0" />
             <title>Voucher</title>
             <style>
               @page { size: A5 landscape; margin: 0; }
@@ -377,7 +457,6 @@ export default function VoucherModal({ open, onClose, request, companyKey, reque
                 background: #fff;
               }
               * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  
               .sheet {
                 width: 210mm;
                 height: 148mm;
@@ -387,7 +466,6 @@ export default function VoucherModal({ open, onClose, request, companyKey, reque
                 align-items: center;
                 justify-content: center;
               }
-  
               img.v {
                 width: 210mm;
                 height: 148mm;
@@ -402,15 +480,12 @@ export default function VoucherModal({ open, onClose, request, companyKey, reque
             <div class="sheet">
               <img class="v" id="v" alt="voucher" />
             </div>
-  
             <script>
               const img = document.getElementById("v");
               img.src = ${JSON.stringify(dataUrl)};
-  
               img.onload = () => {
                 setTimeout(() => { window.focus(); window.print(); }, 120);
               };
-  
               window.onafterprint = () => {
                 try { parent.postMessage({ type: "IFRAME_PRINT_DONE" }, "*"); } catch(e){}
               };
@@ -425,23 +500,21 @@ export default function VoucherModal({ open, onClose, request, companyKey, reque
   
         window.removeEventListener("message", onMsg);
   
-        // ✅ بعد الطباعة: امسح وسكّر
-        resetAllLocal();
-        onClose?.();
-  
         setTimeout(() => {
           try { iframe.remove(); } catch {}
         }, 50);
+  
+        setPrinting(false);
       };
   
       window.addEventListener("message", onMsg);
     } catch (e) {
       console.error(e);
-      alert("تعذر طباعة الوصل.");
-    } finally {
-      setTimeout(() => setPrinting(false), 350);
+      alert(e.message || "تعذر طباعة الوصل");
+      setPrinting(false);
     }
   };
+  
 
   const clearExtras = () => {
     setVBank("");
@@ -479,26 +552,31 @@ export default function VoucherModal({ open, onClose, request, companyKey, reque
               </div>
 
               <div className="flex items-center gap-3">
-                <button
-                  onClick={printVoucher}
-                  disabled={printing}
-                  className="
-                    flex items-center gap-2
-                    px-5 py-2.5
-                    rounded-2xl
-                    bg-white/70 backdrop-blur
-                    ring-1 ring-black/5
-                    shadow-sm
-                    font-extrabold text-gray-800
-                    hover:bg-white hover:shadow-md
-                    active:scale-[0.97]
-                    disabled:opacity-60
-                    transition-all duration-150
-                  "
-                >
-                  <FiPrinter className={`text-lg ${printing ? "animate-spin" : ""}`} />
-                  {printing ? "جاري الطباعة..." : "طباعة"}
-                </button>
+              <button
+  onClick={saveVoucherAndPrint}
+  disabled={printing || saving || !bgReady}
+  className="
+    flex items-center gap-2
+    px-5 py-2.5
+    rounded-2xl
+    bg-white/70 backdrop-blur
+    ring-1 ring-black/5
+    shadow-sm
+    font-extrabold text-gray-800
+    hover:bg-white hover:shadow-md
+    active:scale-[0.97]
+    disabled:opacity-60
+    transition-all duration-150
+  "
+>
+  <FiPrinter className={`text-lg ${(printing || saving) ? "animate-spin" : ""}`} />
+  {printing || saving
+  ? existingVoucher?._id
+    ? "جاري الطباعة..."
+    : "جاري الإنشاء والطباعة..."
+  : existingVoucher?._id
+  ? "طباعة الوصل"
+  : "إنشاء وطباعة"}</button>
 
                 <button
   onClick={() => {

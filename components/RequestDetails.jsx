@@ -854,7 +854,7 @@ export default function RequestDetails({ id, companyKey }) {
 
                         {isFinalApproved &&
                           isLastStepUser &&
-                          ["Badur-Baghdad", "Al-Ghadeer"].includes(companyKey) && (
+                          ["Badur-Baghdad", "Al-Ghadeer" , "010"].includes(companyKey) && (
                             <div className="mt-4">
                               <button
                                 onClick={(e) => {

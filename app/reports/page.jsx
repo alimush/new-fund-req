@@ -24,7 +24,7 @@ import {
 
 import { FaMoneyBillWave } from "react-icons/fa6"; // ✅ ورقة فلوس
 
-import { useRouter } from "next/navigation";
+
 import { usePermissions } from "@/context/PermissionContext";
 import { PERMISSIONS } from "@/lib/permission";
 import TablePagination from "@/components/TablePagination";
@@ -88,17 +88,14 @@ export default function ReportsPage() {
   // حتى ما يسوي fetch أول ما يفتح الصفحة
   const hasSearchedRef = useRef(false);
 
-  const router = useRouter();
+
   const { permissions } = usePermissions();
 
   const canViewReports =
     Array.isArray(permissions) &&
     permissions.includes(PERMISSIONS.VIEW_REPORTS);
 
-  useEffect(() => {
-    if (!Array.isArray(permissions)) return;
-    if (!canViewReports) router.replace("/home");
-  }, [permissions, canViewReports, router]);
+  
 
   useEffect(() => setPortalReady(true), []);
 
