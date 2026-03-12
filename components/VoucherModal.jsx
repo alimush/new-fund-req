@@ -283,12 +283,12 @@ const resetAllLocal = () => {
   const isUSD = currency === "USD";
 
   const dateParts = useMemo(() => {
-    const d = request?.createdAt ? new Date(request.createdAt) : new Date();
+    const d = new Date(); // ✅ تاريخ اليوم الحالي دائماً
     const day = String(d.getDate()).padStart(2, "0");
     const month = String(d.getMonth() + 1).padStart(2, "0");
     const yearShort = String(d.getFullYear()).slice(-2);
     return { day, month, yearShort };
-  }, [request]);
+  }, []);
 
   const description = request?.description || "";
   const amountWords = useMemo(() => toArabicWords(total, currency), [total, currency]);
@@ -412,8 +412,6 @@ const resetAllLocal = () => {
     try {
       await new Promise((r) => requestAnimationFrame(r));
       await new Promise((r) => requestAnimationFrame(r));
-      await new Promise((r) => setTimeout(r, 120));
-  
       await waitForImages(paperRef.current);
   
       const dataUrl = await toPng(paperRef.current, {
@@ -433,11 +431,10 @@ const resetAllLocal = () => {
   
       const doc = iframe.contentWindow?.document;
       if (!doc) {
+        setPrinting(false);
         iframe.remove();
-        throw new Error("تعذر فتح نافذة الطباعة");
+        return;
       }
-  
-      const BLEED_SCALE = 1.04;
   
       doc.open();
       doc.write(`
@@ -445,49 +442,69 @@ const resetAllLocal = () => {
         <html>
           <head>
             <meta charset="utf-8" />
-            <title>Voucher</title>
+            <title>Print Voucher</title>
             <style>
-              @page { size: A5 landscape; margin: 0; }
+              @page {
+                size: A4 portrait;
+                margin: 0;
+              }
+  
               html, body {
                 margin: 0 !important;
                 padding: 0 !important;
                 width: 210mm;
-                height: 148mm;
+                height: 297mm;
                 overflow: hidden;
                 background: #fff;
               }
-              * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-              .sheet {
+  
+              * {
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+                box-sizing: border-box;
+              }
+  
+              .page {
                 width: 210mm;
-                height: 148mm;
-                overflow: hidden;
-                background: #fff;
+                height: 297mm;
                 display: flex;
-                align-items: center;
+                align-items: flex-start;
                 justify-content: center;
+                overflow: hidden;
+                background: #fff;
+                padding-top: 5mm;
               }
-              img.v {
+  
+              img {
                 width: 210mm;
-                height: 148mm;
+                height: auto;
+                max-height: 297mm;
                 display: block;
-                object-fit: cover;
-                transform: scale(${BLEED_SCALE});
-                transform-origin: center center;
+                object-fit: contain;
+                object-position: top center;
               }
             </style>
           </head>
           <body>
-            <div class="sheet">
-              <img class="v" id="v" alt="voucher" />
+            <div class="page">
+              <img id="p" />
             </div>
+  
             <script>
-              const img = document.getElementById("v");
+              const img = document.getElementById("p");
               img.src = ${JSON.stringify(dataUrl)};
+  
               img.onload = () => {
-                setTimeout(() => { window.focus(); window.print(); }, 120);
+                setTimeout(() => {
+                  window.focus();
+                  window.print();
+                }, 100);
               };
+  
               window.onafterprint = () => {
-                try { parent.postMessage({ type: "IFRAME_PRINT_DONE" }, "*"); } catch(e){}
+                try {
+                  parent.postMessage({ type: "IFRAME_PRINT_DONE" }, "*");
+                } catch (e) {}
               };
             </script>
           </body>
@@ -501,7 +518,9 @@ const resetAllLocal = () => {
         window.removeEventListener("message", onMsg);
   
         setTimeout(() => {
-          try { iframe.remove(); } catch {}
+          try {
+            iframe.remove();
+          } catch {}
         }, 50);
   
         setPrinting(false);
@@ -510,7 +529,7 @@ const resetAllLocal = () => {
       window.addEventListener("message", onMsg);
     } catch (e) {
       console.error(e);
-      alert(e.message || "تعذر طباعة الوصل");
+      alert("تعذر طباعة الوصل.");
       setPrinting(false);
     }
   };
