@@ -17,6 +17,7 @@ import {
   FiDownload,
   FiLayers,
 FiEdit,
+FiUploadCloud,
 } from "react-icons/fi";
 import { useRouter } from "next/navigation";
 import CommentModal from "@/components/CommentModal";
@@ -28,6 +29,7 @@ import html2canvas from "html2canvas";
 import { PDFDocument } from "pdf-lib";
 import PrintableRequestPDF from "@/components/PrintableRequestPDF";
 import CreateRequestModal from "@/components/CreateRequestModal";
+import VoucherAttachModal from "@/components/VoucherAttachModal";
 export default function RequestDetails({ id, companyKey }) {
   const router = useRouter();
 
@@ -43,7 +45,7 @@ export default function RequestDetails({ id, companyKey }) {
   const [commentAction, setCommentAction] = useState(null); // approve | reject | view
   const [commentText, setCommentText] = useState("");
   const [activeStep, setActiveStep] = useState(null);
-
+  const [showVoucherAttachModal, setShowVoucherAttachModal] = useState(false);
   const [showVoucherModal, setShowVoucherModal] = useState(false);
 
   const fmt = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
@@ -852,21 +854,32 @@ export default function RequestDetails({ id, companyKey }) {
                           </div>
                         )}
 
-                        {isFinalApproved &&
-                          isLastStepUser &&
-                          ["Badur-Baghdad", "Al-Ghadeer" , "010"].includes(companyKey) && (
-                            <div className="mt-4">
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setShowVoucherModal(true);
-                                }}
-                                className="w-full py-2.5 rounded-2xl bg-gray-900 text-white font-extrabold hover:bg-black shadow"
-                              >
-                                وصل صرف
-                              </button>
-                            </div>
-                          )}
+{isFinalApproved &&
+  isLastStepUser &&
+  ["Badur-Baghdad", "Al-Ghadeer", "010"].includes(companyKey) && (
+    <div className="mt-4 flex gap-3">
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          setShowVoucherModal(true);
+        }}
+        className="flex-1 py-2.5 rounded-2xl bg-gray-900 text-white font-extrabold hover:bg-black shadow"
+      >
+        وصل صرف
+      </button>
+
+      <button
+  onClick={(e) => {
+    e.stopPropagation();
+    setShowVoucherAttachModal(true);
+  }}
+  className="flex-1 py-2.5 rounded-2xl bg-blue-600 text-white font-extrabold hover:bg-blue-700 shadow flex items-center justify-center gap-2"
+>
+  <FiUploadCloud />
+  رفق الوصل
+</button>
+    </div>
+  )}
                       </motion.div>
 
                       {/* ARROW */}
@@ -952,6 +965,22 @@ export default function RequestDetails({ id, companyKey }) {
           await fetchData();
         }}
       />
+
+<VoucherAttachModal
+  open={showVoucherAttachModal}
+  onClose={() => setShowVoucherAttachModal(false)}
+  companyKey={companyKey}
+  requestId={id}
+  stepIndex={workflowSteps.length - 1}
+  title="وصل صرف"
+  onSaved={async () => {
+    setShowVoucherAttachModal(false);
+    await fetchData();
+    router.refresh();
+  }}
+/>
+
+
 <CreateRequestModal
   open={showEditModal}
   onClose={() => setShowEditModal(false)}
