@@ -426,20 +426,62 @@ const isOperationUser =
 
   const workflowSteps = useMemo(() => (Array.isArray(workflow?.steps) ? workflow.steps : []), [workflow]);
   
-  const getStepFiles = (step) => {
+  const getStepFiles = (step, idx) => {
     const files = [];
+    const seenUrls = new Set();
+    const seenKeys = new Set();
   
-    if (Array.isArray(step?.tagAttachments) && step.tagAttachments.length) {
-      files.push(...step.tagAttachments.filter(Boolean));
+    const lastStepIndex = workflowSteps.length - 1;
+    const isLastStep = idx === lastStepIndex;
+  
+    if (Array.isArray(step?.tagAttachments)) {
+      for (const f of step.tagAttachments) {
+        if (!f) continue;
+  
+        const fileKey = String(f.key || "").trim();
+        const fileUrl = String(f.url || "").trim();
+        const fileName = String(f.name || "").trim().toLowerCase();
+  
+        const isOriginalRequestAttachment =
+          fileName === "step attachment" || fileName === "attachment";
+  
+        if (isLastStep && isOriginalRequestAttachment) {
+          continue;
+        }
+  
+        if (
+          (fileKey && seenKeys.has(fileKey)) ||
+          (fileUrl && seenUrls.has(fileUrl))
+        ) {
+          continue;
+        }
+  
+        if (fileKey) seenKeys.add(fileKey);
+        if (fileUrl) seenUrls.add(fileUrl);
+  
+        files.push(f);
+      }
     }
   
-    if (step?.tag && !files.some((f) => f?.url === step.tag)) {
-      files.push({
-        url: step.tag,
-        name: "Step Attachment",
-        type: "",
-        size: 0,
-      });
+    if (step?.tag) {
+      const tagUrl = String(step.tag).trim();
+  
+      if (tagUrl && !seenUrls.has(tagUrl)) {
+        const tagItem = {
+          url: tagUrl,
+          name: "Step Attachment",
+          type: "",
+          size: 0,
+        };
+  
+        const isOriginalRequestAttachment =
+          String(tagItem.name || "").toLowerCase() === "step attachment";
+  
+        if (!(isLastStep && isOriginalRequestAttachment)) {
+          files.push(tagItem);
+          seenUrls.add(tagUrl);
+        }
+      }
     }
   
     return files;
@@ -923,7 +965,7 @@ const isOperationUser =
 
                 <div className="flex items-start gap-6 overflow-x-auto py-6 px-1">
                   {workflowSteps.map((step, idx) => {
-                    const stepFiles = getStepFiles(step);
+                    const stepFiles = getStepFiles(step, idx);
                     const lastIdx = workflowSteps.length - 1;
                     const planStatus = String(plan?.status || "").toLowerCase();
                     const stepStatus = String(step?.status || "Pending");

@@ -5,7 +5,7 @@ import { useMemo, useRef, useState, useEffect } from "react";
 import { toPng } from "html-to-image";
 import { Cairo } from "next/font/google";
 import { FiPrinter, FiX } from "react-icons/fi";
-
+import VoucherDateModal from "@/components/VoucherDateModal";
 const cairo = Cairo({
   subsets: ["arabic"],
   weight: ["400", "600", "700", "800"],
@@ -166,6 +166,8 @@ export default function VoucherModal({ open, onClose, request, companyKey, reque
   const [voucherNo, setVoucherNo] = useState(null);
   const [existingVoucher, setExistingVoucher] = useState(null);
 const [loadingVoucher, setLoadingVoucher] = useState(false);
+
+const [showDateModal, setShowDateModal] = useState(false);
 useEffect(() => {
   if (!open || !companyKey || !requestId) return;
 
@@ -282,13 +284,25 @@ const resetAllLocal = () => {
   const currency = String(request?.currency || "IQD").toUpperCase();
   const isUSD = currency === "USD";
 
-  const dateParts = useMemo(() => {
-    const d = new Date(); // ✅ تاريخ اليوم الحالي دائماً
-    const day = String(d.getDate()).padStart(2, "0");
-    const month = String(d.getMonth() + 1).padStart(2, "0");
-    const yearShort = String(d.getFullYear()).slice(-2);
-    return { day, month, yearShort };
-  }, []);
+
+
+  const [dateParts, setDateParts] = useState(() => {
+    const d = new Date();
+    return {
+      day: String(d.getDate()).padStart(2, "0"),
+      month: String(d.getMonth() + 1).padStart(2, "0"),
+      yearShort: String(d.getFullYear()).slice(-2),
+    };
+  });
+  
+  const [tmpDate, setTmpDate] = useState(() => {
+    const d = new Date();
+    return {
+      day: String(d.getDate()).padStart(2, "0"),
+      month: String(d.getMonth() + 1).padStart(2, "0"),
+      yearShort: String(d.getFullYear()).slice(-2),
+    };
+  });
 
   const description = request?.description || "";
   const amountWords = useMemo(() => toArabicWords(total, currency), [total, currency]);
@@ -323,6 +337,21 @@ const resetAllLocal = () => {
     setTimeout(() => fxRef.current?.focus(), 50);
   }, [open]);
 
+  const only2Digits = (val) => String(val || "").replace(/[^\d]/g, "").slice(0, 2);
+
+  const openDateModal = () => {
+    setTmpDate(dateParts);
+    setShowDateModal(true);
+  };
+  
+  const saveDateModal = () => {
+    setDateParts({
+      day: only2Digits(tmpDate.day).padStart(2, "0"),
+      month: only2Digits(tmpDate.month).padStart(2, "0"),
+      yearShort: only2Digits(tmpDate.yearShort).padStart(2, "0"),
+    });
+    setShowDateModal(false);
+  };
   const saveVoucherAndPrint = async () => {
     if (!paperRef.current) return;
   
@@ -549,6 +578,9 @@ const resetAllLocal = () => {
   };
 
   return (
+    <>
+
+
     <AnimatePresence>
       {open && (
         <motion.div
@@ -1026,6 +1058,14 @@ const resetAllLocal = () => {
                     </button>
 
                     <button
+  type="button"
+  onClick={openDateModal}
+  className="px-4 py-2 rounded-2xl bg-white/70 hover:bg-white ring-1 ring-black/5 font-extrabold text-gray-800 transition"
+>
+  تعديل التاريخ
+</button>
+
+                    <button
                       type="button"
                       onClick={() => notesRef.current?.focus()}
                       className="px-4 py-2 rounded-2xl bg-white/70 hover:bg-white ring-1 ring-black/5 font-extrabold text-gray-800 transition"
@@ -1072,6 +1112,20 @@ const resetAllLocal = () => {
           </motion.div>
         </motion.div>
       )}
+
+      
+
     </AnimatePresence>
+
+<VoucherDateModal
+open={showDateModal}
+tmpDate={tmpDate}
+setTmpDate={setTmpDate}
+only2Digits={only2Digits}
+onClose={() => setShowDateModal(false)}
+onSave={saveDateModal}
+/>
+  </>
+
   );
 }

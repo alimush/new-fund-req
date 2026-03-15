@@ -8,7 +8,7 @@ import { usePermissions } from "@/context/PermissionContext";
 import { FiPrinter, FiX, FiEdit2, FiSave } from "react-icons/fi";
 import { toPng } from "html-to-image";
 import { Cairo } from "next/font/google";
-
+import VoucherDateModal from "@/components/VoucherDateModal";
 const cairo = Cairo({
   subsets: ["arabic"],
   weight: ["400", "600", "700", "800"],
@@ -122,7 +122,13 @@ export default function VoucherViewPage() {
   const [cbOne, setCbOne] = useState(false);
   const [cbTwo, setCbTwo] = useState(false);
   const [voucherNo, setVoucherNo] = useState(null);
+  const [showDateModal, setShowDateModal] = useState(false);
 
+  const [tmpDate, setTmpDate] = useState({
+    yearShort: "",
+    month: "",
+    day: "",
+  });
   const selectedCompany = useMemo(
     () => companies.find((c) => c.key === companyKey) || null,
     [companyKey]
@@ -217,7 +223,19 @@ export default function VoucherViewPage() {
     setVDateYY(v);
     if (v.length === 2) mmRef.current?.focus();
   };
-
+  const fallbackVoucherDate = useMemo(() => {
+    const raw = voucher?.voucherDate || voucher?.createdAt;
+    if (!raw) return { yy: "", mm: "", dd: "" };
+  
+    const d = new Date(raw);
+    if (isNaN(d.getTime())) return { yy: "", mm: "", dd: "" };
+  
+    return {
+      yy: String(d.getFullYear()).slice(-2),
+      mm: String(d.getMonth() + 1).padStart(2, "0"),
+      dd: String(d.getDate()).padStart(2, "0"),
+    };
+  }, [voucher]);
   const onMMChange = (e) => {
     const v = only2Digits(e.target.value);
     setVDateMM(v);
@@ -225,7 +243,26 @@ export default function VoucherViewPage() {
   };
 
   const cleanAmount = (value) => String(value || "").replace(/[^\d]/g, "");
-
+  const openDateModal = () => {
+    const yy = vDateYY || fallbackVoucherDate.yy;
+    const mm = vDateMM || fallbackVoucherDate.mm;
+    const dd = vDateDD || fallbackVoucherDate.dd;
+  
+    setTmpDate({
+      yearShort: String(yy || "").padStart(2, "0"),
+      month: String(mm || "").padStart(2, "0"),
+      day: String(dd || "").padStart(2, "0"),
+    });
+  
+    setShowDateModal(true);
+  };
+  
+  const saveDateModal = () => {
+    setVDateYY(only2Digits(tmpDate.yearShort).padStart(2, "0"));
+    setVDateMM(only2Digits(tmpDate.month).padStart(2, "0"));
+    setVDateDD(only2Digits(tmpDate.day).padStart(2, "0"));
+    setShowDateModal(false);
+  };
 const formatAmountInput = (value) => {
   const digits = cleanAmount(value);
   if (!digits) return "";
@@ -567,10 +604,7 @@ function numberToArabicWords(num) {
     return null;
   }
 
-  const today = new Date();
-  const todayYY = String(today.getFullYear()).slice(-2);
-  const todayMM = String(today.getMonth() + 1).padStart(2, "0");
-  const todayDD = String(today.getDate()).padStart(2, "0");
+
 
   return (
     <MotionConfig transition={{ duration: 0.18, ease: [0.2, 0.8, 0.2, 1] }}>
@@ -757,11 +791,11 @@ function numberToArabicWords(num) {
                             className={`absolute flex items-center gap-5 text-gray-900 font-extrabold ${cairo.className}`}
                             style={{ ...pctStyle(POS.date), fontSize: "18px" }}
                           >
-                            <span style={{ transform: "translateX(-8px)" }}>
-                              {vDateYY || todayYY}
-                            </span>
-                            <span>{vDateMM || todayMM}</span>
-                            <span>{vDateDD || todayDD}</span>
+                          <span style={{ transform: "translateX(-8px)" }}>
+  {vDateYY || fallbackVoucherDate.yy}
+</span>
+<span>{vDateMM || fallbackVoucherDate.mm}</span>
+<span>{vDateDD || fallbackVoucherDate.dd}</span>
                           </div>
 
                           <div
@@ -1284,13 +1318,13 @@ function numberToArabicWords(num) {
                       <div className="flex flex-wrap items-center gap-2">
                         {editMode && (
                           <>
-                            <button
-                              type="button"
-                              onClick={() => yyRef.current?.focus()}
-                              className="px-4 py-2 rounded-2xl bg-white/70 hover:bg-white ring-1 ring-black/5 font-extrabold text-gray-800 transition"
-                            >
-                              تاريخ
-                            </button>
+                           <button
+  type="button"
+  onClick={openDateModal}
+  className="px-4 py-2 rounded-2xl bg-white/70 hover:bg-white ring-1 ring-black/5 font-extrabold text-gray-800 transition"
+>
+  تعديل التاريخ
+</button>
                             <button
                               type="button"
                               onClick={() => amountRef.current?.focus()}
@@ -1369,6 +1403,14 @@ function numberToArabicWords(num) {
             </motion.div>
           ) : null}
         </AnimatePresence>
+        <VoucherDateModal
+  open={showDateModal}
+  tmpDate={tmpDate}
+  setTmpDate={setTmpDate}
+  only2Digits={only2Digits}
+  onClose={() => setShowDateModal(false)}
+  onSave={saveDateModal}
+/>
       </motion.div>
     </MotionConfig>
   );

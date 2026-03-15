@@ -43,6 +43,19 @@ function resetStepToPendingClean(st) {
   st.tagAttachments = [];
 }
 
+function mapRequestAttachmentsToStepFiles(attachments = []) {
+  return (attachments || [])
+    .filter(Boolean)
+    .map((f) => ({
+      key: f.key || "",
+      url: f.url || "",
+      name: f.name || "Attachment",
+      type: f.type || "",
+      size: Number(f.size || 0),
+      uploadedAt: f.uploadedAt || new Date(),
+    }));
+}
+
 
 
 
@@ -103,14 +116,28 @@ async function ensurePlanWorkflowStable(plan, forcedKey) {
       changed = true;
     }
 
- 
+    // ✅ خلي مرفقات الطلب الأصلي تروح للستيب الأول إذا بعده ما بيه مرفقات
+    const firstStep = plan.workflow?.steps?.[0];
+    const isFirstStepLast = plan.workflow?.steps?.length === 1;
+
+    if (
+      firstStep &&
+      !isFirstStepLast &&
+      Array.isArray(plan.attachments) &&
+      plan.attachments.length > 0 &&
+      (!Array.isArray(firstStep.tagAttachments) || firstStep.tagAttachments.length === 0) &&
+      !firstStep.tag
+    ) {
+      const requestFiles = mapRequestAttachmentsToStepFiles(plan.attachments);
+
+      firstStep.tagAttachments = requestFiles;
+      firstStep.tag = requestFiles[0]?.url || "";
+      changed = true;
+    }
 
     if (changed) {
       plan.markModified("workflow");
       plan.markModified("workflow.steps");
-      if (plan.currentStep >= 0) {
-        plan.markModified(`workflow.steps.${plan.currentStep}`);
-      }
       await plan.save();
     }
 
@@ -119,20 +146,29 @@ async function ensurePlanWorkflowStable(plan, forcedKey) {
 
   const newWorkflow = await buildWorkflowForKey(key);
 
+  // ✅ من البداية ابنِ الستيب الأول ومعاه مرفقات الطلب
+  if (
+    Array.isArray(newWorkflow.steps) &&
+    newWorkflow.steps.length > 0 &&
+    newWorkflow.steps.length > 1 &&
+    Array.isArray(plan.attachments) &&
+    plan.attachments.length > 0
+  ) {
+    const requestFiles = mapRequestAttachmentsToStepFiles(plan.attachments);
+    newWorkflow.steps[0].tagAttachments = requestFiles;
+    newWorkflow.steps[0].tag = requestFiles[0]?.url || "";
+  }
+
   plan.workflow = newWorkflow;
   plan.pageKey = key;
 
   if (!String(plan.status || "").trim()) plan.status = "Pending";
   plan.currentStep = newWorkflow.steps.length ? 0 : -1;
 
-
   plan.markModified("workflow");
   plan.markModified("workflow.steps");
-  if (plan.currentStep >= 0) {
-    plan.markModified(`workflow.steps.${plan.currentStep}`);
-  }
-
   await plan.save();
+
   return plan;
 }
 
@@ -377,17 +413,32 @@ export async function PUT(req, ctx) {
       step.actedAt = new Date();
       step.comment = note || "";
     
-      // approve العادي ممكن يبقي attachment على نفس الستيب إذا تريد
+      // approve العادي: خلي المرفق على نفس الستيب إذا موجود
       if (action === "approve") {
-        attachToStepIfNeeded();
-      }
-    
-      // operation submit: لا نخلي attachment على نفس الستيب
-      if (action === "operation_submit") {
         if (clearTag) {
           step.tag = "";
           step.tagAttachments = [];
         }
+    
+        if (attachmentMeta?.key) {
+          step.tag = attachmentMeta.url || attachmentMeta.key || "";
+          step.tagAttachments = [
+            {
+              key: attachmentMeta.key,
+              url: attachmentMeta.url || "",
+              name: attachmentMeta.name || "",
+              type: attachmentMeta.type || "",
+              size: attachmentMeta.size || 0,
+              uploadedAt: new Date(),
+            },
+          ];
+        }
+      }
+    
+      // operation_submit: لا تخلي المرفق على نفس الستيب
+      if (action === "operation_submit") {
+        step.tag = "";
+        step.tagAttachments = [];
       }
     
       const lastIdx = plan.workflow.steps.length - 1;
@@ -425,11 +476,12 @@ export async function PUT(req, ctx) {
         }
       } else {
         const nextIndex = stepIndex + 1;
+        const isNextStepLast = nextIndex === lastIdx;
         plan.currentStep = nextIndex;
         resetStepToPendingClean(plan.workflow.steps[nextIndex]);
         plan.status = "Pending";
     
-        // ✅ فقط مرفق الأوبريشن يروح للستيب الجاي
+        // ✅ هنا المهم: مرفق الأوبريشن يروح مباشرة للستيب الجاي
         if (action === "operation_submit" && attachmentMeta?.key) {
           plan.workflow.steps[nextIndex].tag = attachmentMeta.url || attachmentMeta.key || "";
           plan.workflow.steps[nextIndex].tagAttachments = [
@@ -446,6 +498,43 @@ export async function PUT(req, ctx) {
           plan.workflow.steps[nextIndex].tag = "";
           plan.workflow.steps[nextIndex].tagAttachments = [];
         }
+
+        // ✅ مرفقات الريكويست الأصلي تمشي مع الوركفلو لكن ما توصل للستيب الأخير
+// ✅ مرفقات الريكويست الأصلي تمشي مع الوركفلو لكن ما توصل للستيب الأخير
+if (!isNextStepLast && Array.isArray(plan.attachments) && plan.attachments.length > 0) {
+  const requestFiles = plan.attachments.map((f) => ({
+    key: f.key || "",
+    url: f.url || "",
+    name: f.name || "",
+    type: f.type || "",
+    size: f.size || 0,
+    uploadedAt: f.uploadedAt || new Date(),
+  }));
+
+  const existing = Array.isArray(plan.workflow.steps[nextIndex].tagAttachments)
+    ? plan.workflow.steps[nextIndex].tagAttachments
+    : [];
+
+  const merged = [...existing];
+
+  for (const rf of requestFiles) {
+    const alreadyExists = merged.some(
+      (x) =>
+        String(x.key || "") === String(rf.key || "") &&
+        String(x.name || "") === String(rf.name || "")
+    );
+
+    if (!alreadyExists) {
+      merged.push(rf);
+    }
+  }
+
+  plan.workflow.steps[nextIndex].tagAttachments = merged;
+
+  if (!plan.workflow.steps[nextIndex].tag && merged[0]?.url) {
+    plan.workflow.steps[nextIndex].tag = merged[0].url;
+  }
+}
     
         const nextStepUsers = plan.workflow.steps[nextIndex]?.users || [];
         const nextUserIds = nextStepUsers.map(getIdStr).filter(Boolean);

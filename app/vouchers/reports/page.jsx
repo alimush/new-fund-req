@@ -937,12 +937,14 @@ export default function VoucherReportsPage() {
                       </td>
 
                       <td className="px-6 py-4 text-right whitespace-nowrap text-slate-700">
-                        {r.voucherDate
-                          ? new Date(r.voucherDate).toLocaleDateString("en-GB")
-                          : r.createdAt
-                          ? new Date(r.createdAt).toLocaleDateString("en-GB")
-                          : "-"}
-                      </td>
+  {r.vDateDD && r.vDateMM && r.vDateYY
+    ? `${r.vDateDD}/${r.vDateMM}/${r.vDateYY}`
+    : r.voucherDate
+    ? new Date(r.voucherDate).toLocaleDateString("en-GB")
+    : r.createdAt
+    ? new Date(r.createdAt).toLocaleDateString("en-GB")
+    : "-"}
+</td>
                     </motion.tr>
                   ))}
                 </tbody>
