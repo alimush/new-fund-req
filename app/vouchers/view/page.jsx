@@ -145,7 +145,7 @@ export default function VoucherViewPage() {
     setVDateDD(doc?.vDateDD || "");
 
     setVAmount(String(doc?.vAmount ?? doc?.amount ?? ""));
-    setVWords(doc?.vWords || "");
+   setVWords(doc?.amountWords || doc?.vWords || "");
     setVDesc(doc?.vDesc || doc?.description || "");
     setVCurrency(doc?.vCurrency || doc?.currency || "IQD");
 
@@ -199,7 +199,19 @@ export default function VoucherViewPage() {
   useEffect(() => {
     fetchVoucher();
   }, [fetchVoucher]);
-
+  useEffect(() => {
+    const cleaned = cleanAmount(vAmount);
+  
+    if (!cleaned) {
+      setVWords("");
+      return;
+    }
+  
+    const currencyText =
+      vCurrency === "USD" ? "دولار فقط لا غير" : "دينار فقط لا غير";
+  
+    setVWords(`${numberToArabicWords(cleaned)} ${currencyText}`.trim());
+  }, [vCurrency, vAmount]);
   const onYYChange = (e) => {
     const v = only2Digits(e.target.value);
     setVDateYY(v);
@@ -333,7 +345,6 @@ function numberToArabicWords(num) {
   const handleAmountChange = (rawValue) => {
     const cleaned = cleanAmount(rawValue);
   
-    // إذا ماكو أرقام لا تسوي شي
     if (!cleaned) {
       setVAmount("");
       setVWords("");
@@ -341,9 +352,11 @@ function numberToArabicWords(num) {
     }
   
     const formatted = Number(cleaned).toLocaleString("en-US");
+    const currencyText =
+      vCurrency === "USD" ? "دولار فقط لا غير" : "دينار فقط لا غير";
   
     setVAmount(formatted);
-    setVWords(numberToArabicWords(cleaned));
+    setVWords(`${numberToArabicWords(cleaned)} ${currencyText}`.trim());
   };
 
   const onDDChange = (e) => {

@@ -855,7 +855,7 @@ export default function VoucherReportsPage() {
                       "الشركة",
                       "نوع الوصل",
                       "رقم الوصل",
-                      "رقم الطلب",
+                      // "رقم الطلب",
                       "العملة",
                       "المبلغ",
                       "المستفيد",
@@ -906,9 +906,9 @@ export default function VoucherReportsPage() {
                         {r.voucherNo || String(r.seq ?? "").padStart(5, "0")}
                       </td>
 
-                      <td className="px-6 py-4 text-right whitespace-nowrap">
+                      {/* <td className="px-6 py-4 text-right whitespace-nowrap">
                         {r.requestId || "-"}
-                      </td>
+                      </td> */}
 
                       <td className="px-6 py-4 text-right whitespace-nowrap font-extrabold">
                         {r.currency || "-"}

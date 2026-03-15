@@ -120,6 +120,9 @@ const VoucherSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+
+    requestId: { type: String, default: null },
+requestCode: { type: String, default: "" },
   },
   {
     timestamps: true,

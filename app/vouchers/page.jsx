@@ -271,7 +271,20 @@ const todayDD = String(today.getDate()).padStart(2, "0");
 
   // ✅ هذا هو اللي نطبع منه (صورة واحدة حتى ما يخربط XY)
   const paperRef = useRef(null);
-
+  useEffect(() => {
+    const cleaned = cleanAmount(vAmount);
+  
+    if (!cleaned) {
+      setVWords("");
+      return;
+    }
+  
+    const words = numberToArabicWords(cleaned);
+    const currencyText =
+      vCurrency === "USD" ? "دولار فقط لا غير" : "دينار فقط لا غير";
+  
+    setVWords(words ? `${words} ${currencyText}` : "");
+  }, [vAmount, vCurrency]);
   // ✅ كل ما تتغير الشركة صفّر القيم
   useEffect(() => {
     setOpenModal(false);
@@ -1172,41 +1185,36 @@ const todayDD = String(today.getDate()).padStart(2, "0");
   {/* =======================
       3) المبلغ رقمًا (يسار فوق)
      ======================= */}
-  <input
-    ref={amountRef}
-    value={vAmount}
-    onChange={(e) => {
-      const cleaned = cleanAmount(e.target.value);
-    
-      if (!cleaned) {
-        setVAmount("");
-        setVWords("");
-        return;
-      }
-    
-      setVAmount(formatAmount(cleaned));
-      setVWords(numberToArabicWords(cleaned));
-    }}
-    className="absolute"
-    style={{
-      ...pctStyle(POS.amountFixed),
-      width: "22%",
-      height: "7%",
+<input
+  ref={amountRef}
+  value={vAmount}
+  onChange={(e) => {
+    const cleaned = cleanAmount(e.target.value);
 
-      opacity: 0,
-      background: "transparent",
-      border: "none",
-      outline: "none",
+    if (!cleaned) {
+      setVAmount("");
+      return;
+    }
 
-      direction: "ltr",
-      textAlign: "left",
-      caretColor: "black",
-
-      fontFamily: "inherit",
-      fontSize: "16px",
-      fontWeight: 800,
-    }}
-  />
+    setVAmount(formatAmount(cleaned));
+  }}
+  className="absolute"
+  style={{
+    ...pctStyle(POS.amountFixed),
+    width: "22%",
+    height: "7%",
+    opacity: 0,
+    background: "transparent",
+    border: "none",
+    outline: "none",
+    direction: "ltr",
+    textAlign: "left",
+    caretColor: "black",
+    fontFamily: "inherit",
+    fontSize: "16px",
+    fontWeight: 800,
+  }}
+/>
 
   {/* =======================
       4) سعر الصرف (تحت المبلغ رقمًا)
