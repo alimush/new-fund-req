@@ -286,7 +286,7 @@ export default function CommentModal({
 
       if (files.length > 0) {
         uploadedAttachments = await Promise.all(files.map((f) => uploadOneToS3(f)));
-
+      
         const attachRes = await fetch("/api/workflow/workflow_attach", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -298,21 +298,16 @@ export default function CommentModal({
             attachments: uploadedAttachments,
           }),
         });
-
+      
         const attachData = await attachRes.json().catch(() => ({}));
-
+      
         if (!attachRes.ok || !attachData?.success) {
           throw new Error(attachData?.error || "Failed to save attachments");
         }
-
+      
         if (Array.isArray(attachData.tagAttachments)) {
           setUploadedFiles(attachData.tagAttachments);
-        } else {
-          setUploadedFiles([]);
         }
-      } else {
-        await clearStepAttachment();
-        setUploadedFiles([]);
       }
 
       const result = await onSubmit({

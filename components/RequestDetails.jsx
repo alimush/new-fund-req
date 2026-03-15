@@ -84,6 +84,7 @@ export default function RequestDetails({ id, companyKey }) {
       setLoading(false);
     }
   };
+  
   // 🟢 ----------------------------------------------------------------------
 
   useEffect(() => {

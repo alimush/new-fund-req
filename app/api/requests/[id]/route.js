@@ -2,9 +2,7 @@ import { NextResponse } from "next/server";
 import dbConnect from "@/lib/mongodb";
 import { cookies } from "next/headers";
 import { Types } from "mongoose";
-
-import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
-import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { S3Client } from "@aws-sdk/client-s3";
 
 import User from "@/models/User";
 import Permissions from "@/models/Permissions";
@@ -32,14 +30,12 @@ function getS3() {
   });
 }
 
-async function signS3Url(s3, key) {
-  const command = new GetObjectCommand({
-    Bucket: process.env.S3_BUCKET_NAME,
-    Key: key,
-  });
-  return getSignedUrl(s3, command, { expiresIn: 3600 });
-}
+function buildPublicUrl(key) {
+  const bucket = process.env.S3_BUCKET_NAME;
+  const region = process.env.S3_REGION;
 
+  return `https://${bucket}.s3.${region}.amazonaws.com/${key}`;
+}
 function resetStepToPendingClean(st) {
   if (!st) return;
   st.status = "Pending";
@@ -95,26 +91,26 @@ export async function GET(req, { params }) {
     if (Array.isArray(request.attachments) && request.attachments.length > 0) {
       for (const file of request.attachments) {
         if (!file?.key) continue;
-        file.url = await signS3Url(s3, file.key);
+        file.url = buildPublicUrl(file.key);
       }
     }
 
 
   // step attachments
-if (Array.isArray(request?.workflow?.steps) && request.workflow.steps.length > 0) {
-  for (const st of request.workflow.steps) {
-    if (st?.attachment?.key) {
-      st.attachment.url = await signS3Url(s3, st.attachment.key);
-    }
-
-    if (Array.isArray(st?.tagAttachments) && st.tagAttachments.length > 0) {
-      for (const file of st.tagAttachments) {
-        if (!file?.key) continue;
-        file.url = await signS3Url(s3, file.key);
+  if (Array.isArray(request?.workflow?.steps) && request.workflow.steps.length > 0) {
+    for (const st of request.workflow.steps) {
+      if (st?.attachment?.key) {
+        st.attachment.url = buildPublicUrl(st.attachment.key);
+      }
+  
+      if (Array.isArray(st?.tagAttachments) && st.tagAttachments.length > 0) {
+        for (const file of st.tagAttachments) {
+          if (!file?.key) continue;
+          file.url = buildPublicUrl(file.key);
+        }
       }
     }
   }
-}
 
     return NextResponse.json({ success: true, data: request });
   } catch (err) {
@@ -295,14 +291,19 @@ if (action === "update") {
 
     const applyStepAttachment = () => {
       if (attachmentMeta?.key) {
-        step.attachment = {
+        if (!Array.isArray(step.tagAttachments)) {
+          step.tagAttachments = [];
+        }
+    
+        step.tagAttachments.push({
           key: attachmentMeta.key,
           name: attachmentMeta.name || "",
           type: attachmentMeta.type || "",
           size: attachmentMeta.size || 0,
-        };
+          url: buildPublicUrl(attachmentMeta.key),
+        });
       } else if (clearTag) {
-        step.attachment = null;
+        step.tagAttachments = [];
       }
     };
 

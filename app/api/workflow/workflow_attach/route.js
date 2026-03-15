@@ -62,7 +62,7 @@ export async function POST(req) {
       },
     });
 
-    const finalAttachments = [];
+    const newAttachments = [];
 
     for (const att of attachments) {
       const signedUrl = await getSignedUrl(
@@ -74,7 +74,7 @@ export async function POST(req) {
         { expiresIn: 3600 }
       );
 
-      finalAttachments.push({
+      newAttachments.push({
         key: att.key,
         name: att.name || "",
         type: att.type || "",
@@ -86,27 +86,40 @@ export async function POST(req) {
     await dbConnect();
     const RequestModel = getModelForCompany(companyKey);
 
-    const updateRes = await RequestModel.updateOne(
-      { _id: requestId, companyKey },
-      {
-        $set: {
-          [`workflow.steps.${idx}.tagAttachments`]: finalAttachments,
-          [`workflow.steps.${idx}.tag`]: finalAttachments[0]?.url || "",
-        },
-      }
-    );
+    const requestDoc = await RequestModel.findOne({
+      _id: requestId,
+      companyKey,
+    });
 
-    if (!updateRes.modifiedCount) {
+    if (!requestDoc) {
       return NextResponse.json(
-        { success: false, error: "Attachments not updated" },
+        { success: false, error: "Request not found" },
         { status: 404 }
       );
     }
 
+    if (!requestDoc.workflow?.steps?.[idx]) {
+      return NextResponse.json(
+        { success: false, error: "Step not found" },
+        { status: 404 }
+      );
+    }
+
+    const oldAttachments = Array.isArray(requestDoc.workflow.steps[idx].tagAttachments)
+      ? requestDoc.workflow.steps[idx].tagAttachments
+      : [];
+
+    const mergedAttachments = [...oldAttachments, ...newAttachments];
+
+    requestDoc.workflow.steps[idx].tagAttachments = mergedAttachments;
+    requestDoc.workflow.steps[idx].tag = mergedAttachments[0]?.url || "";
+
+    await requestDoc.save();
+
     return NextResponse.json({
       success: true,
-      tagAttachments: finalAttachments,
-      tagUrl: finalAttachments[0]?.url || "",
+      tagAttachments: mergedAttachments,
+      tagUrl: mergedAttachments[0]?.url || "",
     });
   } catch (err) {
     console.error("workflow_attach error:", err);
@@ -149,16 +162,30 @@ export async function PUT(req) {
 
     await dbConnect();
     const RequestModel = getModelForCompany(companyKey);
+    const requestDoc = await RequestModel.findOne({ _id: requestId, companyKey });
 
-    const updateRes = await RequestModel.updateOne(
-      { _id: requestId, companyKey },
-      {
-        $set: {
-          [`workflow.steps.${idx}.tag`]: "",
-          [`workflow.steps.${idx}.tagAttachments`]: [],
-        },
-      }
-    );
+    if (!requestDoc) {
+      return NextResponse.json(
+        { success: false, error: "Request not found" },
+        { status: 404 }
+      );
+    }
+    
+    const oldAttachments = Array.isArray(requestDoc.workflow?.steps?.[idx]?.tagAttachments)
+      ? requestDoc.workflow.steps[idx].tagAttachments
+      : [];
+    
+    const mergedAttachments = [...oldAttachments, ...finalAttachments];
+    
+    requestDoc.workflow.steps[idx].tagAttachments = mergedAttachments;
+    requestDoc.workflow.steps[idx].tag = mergedAttachments[0]?.url || "";
+    
+    await requestDoc.save();
+    return NextResponse.json({
+      success: true,
+      tagAttachments: mergedAttachments,
+      tagUrl: mergedAttachments[0]?.url || "",
+    });
 
     if (!updateRes.modifiedCount) {
       return NextResponse.json({ success: false, error: "Attachments not cleared" }, { status: 404 });
