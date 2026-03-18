@@ -71,16 +71,7 @@ export async function POST(req) {
     );
 
     // ✅ Signed GET (فتح/تحميل) — هذا يحل AccessDenied
-    const getUrl = await getSignedUrl(
-      s3,
-      new GetObjectCommand({
-        Bucket: bucket,
-        Key: key,
-        // اختياري: يخلي المتصفح يفتح الملف بدل ما ينزله
-        ResponseContentDisposition: "inline",
-      }),
-      { expiresIn: 3600 }
-    );
+    const getUrl = `https://${bucket}.s3.${region}.amazonaws.com/${key}`;
 
     return NextResponse.json({ success: true, url: putUrl, key, getUrl });
   } catch (err) {
