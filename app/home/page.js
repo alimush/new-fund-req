@@ -19,7 +19,8 @@ const cards = [
     href: "/ex/ex-home",
   },
   
-  { key: "RYD", name: "رياض", logo: "" },
+  { key: "Al-Rida", name: "طلبات الرضا", logo: "/الرضا.png" },
+  
 ];
 
 const container = {
