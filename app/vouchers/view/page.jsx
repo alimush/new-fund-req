@@ -151,7 +151,7 @@ export default function VoucherViewPage() {
     setVDateDD(doc?.vDateDD || "");
 
     setVAmount(String(doc?.vAmount ?? doc?.amount ?? ""));
-   setVWords(doc?.amountWords || doc?.vWords || "");
+    setVWords(doc?.vWords || doc?.amountWords || "");
     setVDesc(doc?.vDesc || doc?.description || "");
     setVCurrency(doc?.vCurrency || doc?.currency || "IQD");
 

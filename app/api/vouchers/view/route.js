@@ -199,10 +199,11 @@ export async function PUT(req) {
     }
 
     const payload = sanitizeBody(body);
-
+    
     const updateDoc = {
       ...payload,
       amount: payload.vAmount,
+      amountWords: payload.vWords,   // ✅ هذا المهم
       description: payload.vDesc,
       bank: payload.vBank,
       receivedBy: payload.vReceivedBy,
