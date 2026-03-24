@@ -19,6 +19,8 @@ import {
 FiEdit,
 FiUploadCloud,
 } from "react-icons/fi";
+import { GrCurrency } from "react-icons/gr";
+
 import { useRouter } from "next/navigation";
 import CommentModal from "@/components/CommentModal";
 import StatusBadge from "@/components/StatusBadge";
@@ -392,7 +394,7 @@ export default function RequestDetails({ id, companyKey }) {
 
 {/* 6) Currency */}
 <div className="rounded-2xl transition-all duration-300 hover:-translate-y-1 hover:bg-white/45 hover:shadow-[0_12px_30px_-15px_rgba(0,0,0,0.35)]">
-  <Info label="العملة" value={request.currency} icon={<FiDollarSign />} />
+  <Info label="العملة" value={request.currency} icon={<GrCurrency />} />
 </div>
 
 {/* 7) Created At (Full width) */}
