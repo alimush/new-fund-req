@@ -172,7 +172,6 @@ export default function ReportsPage() {
       approved: requests.filter((x) => x.status === "Approved").length,
       pending: requests.filter((x) => x.status === "Pending").length,
       rejected: requests.filter((x) => x.status === "Rejected").length,
-      cancelled: requests.filter((x) => x.status === "Cancelled").length,
     };
   }, [requests, meta.total]);
 
@@ -208,7 +207,7 @@ export default function ReportsPage() {
           ...currList.map((c) => ({ value: c, label: c })),
         ]);
 
-        const st = (f.statuses || ["Pending", "Approved", "Rejected", "Cancelled"]).map((s) => ({
+        const st = (f.statuses || ["Pending", "Approved", "Rejected"]).map((s) => ({
           value: s,
           label:
             s === "Pending"
@@ -217,8 +216,6 @@ export default function ReportsPage() {
               ? "مقبول"
               : s === "Rejected"
               ? "مرفوض"
-              : s === "Cancelled"
-              ? "ملغي"
               : s,
         }));
         setStatuses([{ value: "all", label: "كل الحالات" }, ...st]);
@@ -498,12 +495,7 @@ useEffect(() => {
           <FiXCircle /> مرفوض
         </span>
       );
-    if (status === "Cancelled")
-      return (
-        <span className={`${base} bg-gray-100 text-gray-700 border-gray-200`}>
-          <FiXCircle /> ملغي
-        </span>
-      );
+
     return (
       <span className={`${base} bg-yellow-50 text-yellow-700 border-yellow-200`}>
         <FiClock /> قيد الانتظار
@@ -749,14 +741,12 @@ const Card = ({ icon: Icon, title, value }) => (
       </motion.div>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 mb-5">
-        <Card icon={FiLayers} title="المجموع" value={stats.total} />
-        <Card icon={FiCheckCircle} title="مقبول " value={stats.approved} />
-        <Card icon={FiClock} title="قيد الانتظار " value={stats.pending} />
-        <Card icon={FiXCircle} title="مرفوض " value={stats.rejected} />
-        <Card icon={FiXCircle} title="ملغي" value={stats.cancelled} />
-      </div>
-
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-3 mb-5">
+  <Card icon={FiLayers} title="المجموع" value={stats.total} />
+  <Card icon={FiCheckCircle} title="مقبول" value={stats.approved} />
+  <Card icon={FiClock} title="قيد الانتظار" value={stats.pending} />
+  <Card icon={FiXCircle} title="مرفوض" value={stats.rejected} />
+</div>
       {/* Filters */}
       <motion.div
         className="relative z-20 rounded-2xl border border-gray-200/80 bg-white/85 backdrop-blur shadow-sm p-5 md:p-6 mb-6"
@@ -964,7 +954,7 @@ const Card = ({ icon: Icon, title, value }) => (
   "مقدم الطلب",
   "الحالة",
   "قيد الانتظار عند",
-  "الشركة",
+  "القسم",
   "العملة",
   "المبلغ",
   "الوصف",

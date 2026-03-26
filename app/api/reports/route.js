@@ -222,7 +222,7 @@ export async function GET(req) {
             companies: allowedCompanies,
             users: [],
             currencies: [],
-            statuses: ["Pending", "Approved", "Rejected", "Cancelled"],
+            statuses: ["Pending", "Approved", "Rejected"],
             pendingUsers: pendingUsers.map((u) => ({
               value: String(u._id),
               label: u.username,
@@ -252,7 +252,7 @@ export async function GET(req) {
           companies: allowedCompanies,
           users: allUsers.map((u) => u.username).filter(Boolean),
           currencies: Array.from(currenciesSet).sort(),
-          statuses: ["Pending", "Approved", "Rejected", "Cancelled"],
+          statuses: ["Pending", "Approved", "Rejected"],
           pendingUsers: pendingUsers.map((u) => ({
             value: String(u._id),
             label: u.username,
@@ -315,8 +315,17 @@ export async function GET(req) {
       const query = {};
 
       if (createdByList) query.createdBy = { $in: createdByList };
-      if (statusParam !== "all") query.status = statusParam;
-      if (currencyParam !== "all") query.currency = currencyParam;
+
+// ✅ لا تسمح بإظهار الملغي نهائيًا
+if (statusParam === "Cancelled") {
+  query.status = "__never_match__";
+} else if (statusParam !== "all") {
+  query.status = statusParam;
+} else {
+  query.status = { $ne: "Cancelled" };
+}
+
+if (currencyParam !== "all") query.currency = currencyParam;
 
       if (fromDate || toDate) {
         query.createdAt = {};

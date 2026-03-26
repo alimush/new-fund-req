@@ -741,10 +741,9 @@ export default function RequestsPage({ companyKey }) {
                     className="bg-transparent outline-none text-[13px] font-extrabold text-gray-900"
                   >
                     <option value="all">All</option>
-                    <option value="approved">Approved</option>
-                    <option value="pending">Pending</option>
-                    <option value="rejected">Rejected</option>
-                    <option value="cancelled">Cancelled</option>
+<option value="approved">Approved</option>
+<option value="pending">Pending</option>
+<option value="rejected">Rejected</option>
                   </select>
                 </div>
               </div>
@@ -757,11 +756,10 @@ export default function RequestsPage({ companyKey }) {
                 onChange={(e) => setMyStatus(e.target.value)}
                 className="bg-transparent outline-none w-full text-[13px] font-extrabold text-gray-900"
               >
-                <option value="all">All</option>
-                <option value="approved">Approved</option>
-                <option value="pending">Pending</option>
-                <option value="rejected">Rejected</option>
-                <option value="cancelled">Cancelled</option>
+               <option value="all">All</option>
+<option value="approved">Approved</option>
+<option value="pending">Pending</option>
+<option value="rejected">Rejected</option>
               </select>
             </div>
 

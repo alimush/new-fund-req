@@ -438,19 +438,22 @@ export async function GET(req) {
       const filter = {
         createdBy: username || "__no_user__",
       };
-
-      // ✅ status filter (اختياري)
-      if (statusParam && statusParam !== "all") {
-        // نخليها case-insensitive عبر $in
+    
+      // ✅ لا نظهر الملغي نهائياً
+      if (statusParam === "cancelled") {
+        filter.status = "__never_match__";
+      } else if (statusParam && statusParam !== "all") {
         const s = statusParam[0].toUpperCase() + statusParam.slice(1);
         filter.status = { $in: [s, statusParam] };
+      } else {
+        filter.status = { $nin: ["Cancelled", "cancelled"] };
       }
-
+    
       const searchFilter = buildSearchFilter(q);
       const finalFilter = searchFilter ? { $and: [filter, searchFilter] } : filter;
-
+    
       const list = await Model.find(finalFilter).lean().sort({ createdAt: -1 });
-
+    
       return NextResponse.json({ success: true, data: list });
     }
 
