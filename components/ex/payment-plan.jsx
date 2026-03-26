@@ -129,16 +129,16 @@ const openAttachment = (file) => {
   setTimeout(() => URL.revokeObjectURL(url), 5000);
 };
 
-  const steps = useMemo(
-    () => [
-      { key: "Header", label: "Header" },
-      { key: "Table", label: "Table" },
-      { key: "Footer", label: "Footer" },
-      { key: "Attachment", label: "Attachment" }, 
-      { key: "Review", label: "Review" },
-    ],
-    []
-  );
+const steps = useMemo(
+  () => [
+    { key: "Header", label: "Header" },
+    { key: "Table", label: "Table" },
+    { key: "Footer", label: "Footer" },
+    { key: "Review", label: "Review" },
+    { key: "Attachment", label: "Attachment" },
+  ],
+  []
+);
 
   // ✅ حذفنا signature من الفورم
   const [form, setForm] = useState(() => ({
@@ -1019,7 +1019,7 @@ const openAttachment = (file) => {
                     مسح الكل
                   </button>
 
-                  {activeTab === "Review" ? (
+                  {activeTab === "Attachment" ? (
                     <>
                     <button
   onClick={doPrint}

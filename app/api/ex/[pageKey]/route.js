@@ -10,6 +10,7 @@ import Permissions from "@/models/Permissions";
 import User from "@/models/User";
 
 import { getExForm } from "@/lib/exForms/registry";
+import { sendWorkflowEmail, buildExWorkflowActionEmailHtml } from "@/lib/email/exWorkflowEmail";
 
 import ReplaceBookingTransfer from "@/models/ReplaceBookingTransfer";
 import WaiverReservation from "@/models/WaiverReservation";
@@ -22,6 +23,13 @@ const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
 
 function escapeRegExp(s) {
   return String(s || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function getIdStr(v) {
+  if (!v) return "";
+  if (typeof v === "string" || typeof v === "number") return String(v);
+  if (typeof v === "object" && v._id) return String(v._id);
+  return String(v);
 }
 
 /* ================= AUTH (Cookie-based مثل نظامك) ================= */
@@ -45,7 +53,6 @@ async function requireExPermission() {
     return { ok: false, status: 401, message: "User not found" };
   }
 
-  // Permissions groups where this user included
   const groups = await Permissions.find({ users: user._id }).lean();
   const perms = [...new Set(groups.flatMap((g) => g.permissions || []))];
 
@@ -221,6 +228,60 @@ export async function POST(req, ctx) {
     });
 
     await ensureDocWorkflowStable(doc, pageKey);
+
+    // ✅ Send email to first step users
+    try {
+      const freshDoc = await Model.findById(doc._id).lean();
+
+      const firstStepUsers = freshDoc?.workflow?.steps?.[0]?.users || [];
+      const firstStepUserIds = firstStepUsers.map(getIdStr).filter(Boolean);
+
+      if (firstStepUserIds.length > 0) {
+        const stepUsers = await User.find({ _id: { $in: firstStepUserIds } })
+          .select("_id username name email")
+          .lean();
+
+        const toEmails = stepUsers.map((u) => u.email).filter(Boolean);
+        const toUserName = stepUsers?.[0]?.name || stepUsers?.[0]?.username || "زميلنا";
+
+        if (toEmails.length > 0) {
+          const baseDomain =
+            process.env.EX_BASE_DOMAIN || "https://funds-gdr.spc-it.com.iq";
+
+          const docUrl = `${String(baseDomain).replace(/\/+$/, "")}/ex/${encodeURIComponent(
+            pageKey
+          )}/${encodeURIComponent(String(doc._id))}?key=${encodeURIComponent(pageKey)}`;
+
+          const docTitle = cfg?.title || pageKey;
+          const docTypeAr = cfg?.title || "المستند";
+
+          const html = buildExWorkflowActionEmailHtml({
+            action: "created",
+            planId: String(doc._id),
+            pageKey,
+            stepFrom: 0,
+            stepTo: 0,
+            note: "تم إنشاء طلب جديد بانتظار الإجراء.",
+            actorName:
+              auth.user?.username || auth.user?.name || auth.user?.email || "System",
+            greetingName: toUserName,
+            toUserName,
+            planUrl: docUrl,
+            showRoutingLine: true,
+            docTitle,
+            docTypeAr,
+          });
+
+          await sendWorkflowEmail({
+            toEmails,
+            subject: `${pageKey} Waiting Your Action | Step 1`,
+            html,
+          });
+        }
+      }
+    } catch (emailErr) {
+      console.error("❌ Create email send failed:", emailErr?.message || emailErr);
+    }
 
     return NextResponse.json({ success: true, data: doc });
   } catch (err) {

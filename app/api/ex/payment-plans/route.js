@@ -7,6 +7,7 @@ import PaymentPlan from "@/models/PaymentPlan";
 import ExWorkflow from "@/models/ExWorkflow";
 import User from "@/models/User";
 import Permissions from "@/models/Permissions";
+import { sendWorkflowEmail, buildExWorkflowActionEmailHtml } from "@/lib/email/exWorkflowEmail";
 
 export const runtime = "nodejs";
 
@@ -37,9 +38,16 @@ function cleanAttachments(arr) {
       name: cleanStr(a?.name),
       type: cleanStr(a?.type),
       size: Number(a?.size) || 0,
-      url: cleanStr(a?.url), // نخزن الرابط
+      url: cleanStr(a?.url),
     }))
     .filter((a) => a.key && a.name);
+}
+
+function getIdStr(v) {
+  if (!v) return "";
+  if (typeof v === "string" || typeof v === "number") return String(v);
+  if (typeof v === "object" && v._id) return String(v._id);
+  return String(v);
 }
 
 /* ======= Public URL Helpers (بدون Signed URL) ======= */
@@ -57,9 +65,6 @@ function buildPublicUrl(key) {
   return `https://${bucket}.s3.${region}.amazonaws.com/${encodeS3Key(key)}`;
 }
 
-/**
- * ✅ بدل التوقيع: نبني URL ثابت
- */
 async function signAttachmentsForDoc(doc) {
   if (!doc) return doc;
 
@@ -172,7 +177,6 @@ export async function POST(req) {
     await dbConnect();
     const body = await req.json().catch(() => ({}));
 
-    // ✅ لا نعتمد على قيم الفرونت
     const createdBy = auth.user?.username || auth.user?.name || "";
     const createdByIdObj = toObjId(auth.userId);
 
@@ -220,6 +224,54 @@ export async function POST(req) {
         strictPopulate: false,
       })
       .lean();
+
+    // ✅ Send email to first step users
+    try {
+      const firstStepUsers = savedDoc?.workflow?.steps?.[0]?.users || [];
+      const firstStepUserIds = firstStepUsers.map(getIdStr).filter(Boolean);
+
+      if (firstStepUserIds.length > 0) {
+        const stepUsers = await User.find({ _id: { $in: firstStepUserIds } })
+          .select("_id username name email")
+          .lean();
+
+        const toEmails = stepUsers.map((u) => u.email).filter(Boolean);
+        const toUserName = stepUsers?.[0]?.name || stepUsers?.[0]?.username || "زميلنا";
+
+        if (toEmails.length > 0) {
+          const baseDomain =
+            process.env.EX_BASE_DOMAIN || "https://funds-gdr.spc-it.com.iq";
+
+          const planUrl = `${String(baseDomain).replace(/\/+$/, "")}/ex/payment-plans/${encodeURIComponent(
+            String(doc._id)
+          )}?key=${encodeURIComponent(pageKey)}`;
+
+          const html = buildExWorkflowActionEmailHtml({
+            action: "created",
+            planId: String(doc._id),
+            pageKey,
+            stepFrom: 0,
+            stepTo: 0,
+            note: "تم إنشاء طلب جديد بانتظار الإجراء.",
+            actorName: auth.user?.username || auth.user?.name || auth.user?.email || "System",
+            greetingName: toUserName,
+            toUserName,
+            planUrl,
+            showRoutingLine: true,
+            docTitle: "Payment Plan",
+            docTypeAr: "الاستثناءات",
+          });
+
+          await sendWorkflowEmail({
+            toEmails,
+            subject: `Payment Plan Waiting Your Action | Step 1`,
+            html,
+          });
+        }
+      }
+    } catch (emailErr) {
+      console.error("❌ Payment Plan create email send failed:", emailErr?.message || emailErr);
+    }
 
     const withPublicUrls = await signAttachmentsForDoc(savedDoc);
 
