@@ -42,7 +42,18 @@ function resetStepToPendingClean(st) {
   st.tag = "";
   st.tagAttachments = [];
 }
+function normalizeEmails(list = []) {
+  return [...new Set(
+    (Array.isArray(list) ? list : [])
+      .map((x) => String(x || "").trim().toLowerCase())
+      .filter(Boolean)
+  )];
+}
 
+async function getFinalApproveEmails(pageKey) {
+  const wf = await ExWorkflow.findOne({ pageKey }).select("finalApproveEmails").lean();
+  return normalizeEmails(wf?.finalApproveEmails || []);
+}
 function mapRequestAttachmentsToStepFiles(attachments = []) {
   return (attachments || [])
     .filter(Boolean)
@@ -446,33 +457,62 @@ export async function PUT(req, ctx) {
       if (stepIndex === lastIdx) {
         plan.status = "Approved";
         plan.currentStep = -1;
-    
-        const toEmails = creatorUser?.email ? [creatorUser.email] : [];
-        const greetingName = creatorUser?.name || creatorUser?.username || "زميلنا";
-    
-        const html = buildExWorkflowActionEmailHtml({
-          action: "approve",
-          planId: String(plan._id),
-          pageKey,
-          stepFrom: stepIndex,
-          stepTo: stepIndex,
-          note,
-          actorName,
-          greetingName,
-          toUserName: "",
-          planUrl,
-          showRoutingLine: false,
-        });
-    
-        try {
-          emailResult = await sendWorkflowEmail({
-            toEmails,
-            subject: `Payment Plan Approved | ${String(plan._id).slice(-6)}`,
-            html,
+        const extraEmails = await getFinalApproveEmails(pageKey);
+
+        // لصاحب الطلب
+        if (creatorUser?.email) {
+          const creatorHtml = buildExWorkflowActionEmailHtml({
+            action: "reject",
+            planId: String(plan._id),
+            pageKey,
+            stepFrom: stepIndex,
+            stepTo: stepIndex,
+            note,
+            actorName,
+            greetingName: creatorUser?.name || creatorUser?.username || "زميلنا",
+            toUserName: "",
+            planUrl,
+            showRoutingLine: false,
           });
-        } catch (e) {
-          console.error("❌ Email send failed (final approve):", e?.message || e);
-          emailResult = { error: e?.message || "email_failed" };
+        
+          try {
+            await sendWorkflowEmail({
+              toEmails: [creatorUser.email],
+              subject: `Payment Plan Rejected | ${String(plan._id).slice(-6)}`,
+              html: creatorHtml,
+            });
+          } catch (e) {
+            console.error("❌ Email send failed (creator reject):", e?.message || e);
+          }
+        }
+        
+        // للإيميلات الإضافية
+        if (extraEmails.length > 0) {
+          const extraHtml = buildExWorkflowActionEmailHtml({
+            action: "reject",
+            planId: String(plan._id),
+            pageKey,
+            stepFrom: stepIndex,
+            stepTo: stepIndex,
+            note,
+            actorName,
+            greetingName: "زميلنا",
+            toUserName: "",
+            planUrl,
+            showRoutingLine: false,
+          });
+        
+          try {
+            emailResult = await sendWorkflowEmail({
+              toEmails: extraEmails,
+              subject: `Payment Plan Rejected | ${String(plan._id).slice(-6)}`,
+              html: extraHtml,
+            });
+          } catch (e) {
+            console.error("❌ Email send failed (extra reject):", e?.message || e);
+            emailResult = { error: e?.message || "email_failed" };
+          }
+        
         }
       } else {
         const nextIndex = stepIndex + 1;
@@ -583,7 +623,12 @@ if (!isNextStepLast && Array.isArray(plan.attachments) && plan.attachments.lengt
       plan.status = "Rejected";
       plan.currentStep = -1;
 
-      const toEmails = creatorUser?.email ? [creatorUser.email] : [];
+      const extraEmails = await getFinalApproveEmails(pageKey);
+
+      const toEmails = normalizeEmails([
+        creatorUser?.email || "",
+        ...extraEmails,
+      ]);
       const greetingName = creatorUser?.name || creatorUser?.username || "زميلنا";
 
       const html = buildExWorkflowActionEmailHtml({

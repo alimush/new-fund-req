@@ -213,7 +213,7 @@ export default function ExListPage() {
   // ✅ صلاحية Create
   const { permissions } = usePermissions();
   const canCreate =
-    Array.isArray(permissions) && permissions.includes(PERMISSIONS.CREATE_REQUEST);
+    Array.isArray(permissions) && permissions.includes(PERMISSIONS.EX_Create_Request);
 
   // ===== User (localStorage) =====
   const currentUsername = useMemo(() => {

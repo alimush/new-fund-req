@@ -15,7 +15,7 @@ export default function ExWorkflowDetailsPage() {
   const [workflow, setWorkflow] = useState(null);
   const [users, setUsers] = useState([]);
   const [steps, setSteps] = useState([]);
-
+  const [finalApproveEmailsText, setFinalApproveEmailsText] = useState("");
   const [loadingWorkflow, setLoadingWorkflow] = useState(true);
   const [loadingUsers, setLoadingUsers] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -73,6 +73,12 @@ export default function ExWorkflowDetailsPage() {
       if (data?.success && data?.workflow) {
         setWorkflow(data.workflow);
 
+        setFinalApproveEmailsText(
+          Array.isArray(data.workflow.finalApproveEmails)
+            ? data.workflow.finalApproveEmails.join("\n")
+            : ""
+        );
+
         const normalizedSteps = (data.workflow.steps || []).map((s) => ({
           users: Array.isArray(s.users)
             ? s.users.map((u) => (typeof u === "string" ? u : u._id))
@@ -118,44 +124,53 @@ export default function ExWorkflowDetailsPage() {
 
   const saveSteps = async () => {
     if (!workflow) return;
-
+  
     if (steps.some((s) => !s.users || s.users.length === 0)) {
       return alert("❌ كل Step لازم بيه مستخدم واحد على الأقل");
     }
-
+  
     setSaving(true);
-
+  
     const payload = {
       id,
       name: workflow.name,
-      code: workflow.code, // نخليه مثل ما هو
+      code: workflow.code,
       steps: steps.map((s) => ({ users: s.users })),
+      finalApproveEmails: parseEmails(finalApproveEmailsText),
     };
-
+  
     try {
       const res = await fetch("/api/ex/workflow", {
         method: "PUT",
         headers: authHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify(payload),
       });
-
+  
       if (res.status === 401) return router.replace("/login");
       if (res.status === 403) return router.replace("/home");
-
+  
       const data = await res.json();
-
+  
       if (data?.success) {
         alert("✔️ تم حفظ الـ EX Workflow بنجاح\n(سيُطبق على الجديد فقط)");
         await loadWorkflow();
       } else {
         alert(data?.error || "❌ فشل حفظ Workflow");
       }
-    } catch {
+    } catch (err) {
+      console.error(err);
       alert("❌ Error saving workflow");
     } finally {
       setSaving(false);
     }
   };
+  const parseEmails = (text = "") =>
+    [...new Set(
+      String(text || "")
+        .split(/[\n,;]/)
+        .map((x) => x.trim().toLowerCase())
+        .filter(Boolean)
+    )];
 
   if (!authorized) return null;
 
@@ -257,7 +272,20 @@ export default function ExWorkflowDetailsPage() {
         >
           <FiPlus /> Add Step
         </button>
+        <div className="mt-6">
+  <h3 className="text-md font-semibold mb-2">Final Approve Emails</h3>
+  <p className="text-sm text-gray-500 mb-2">
+    هاي الإيميلات يندزلها إشعار فقط عند الموافقة النهائية
+  </p>
 
+  <textarea
+    value={finalApproveEmailsText}
+    onChange={(e) => setFinalApproveEmailsText(e.target.value)}
+    placeholder={`example1@company.com
+example2@company.com`}
+    className="w-full min-h-[140px] border rounded-xl p-3"
+  />
+</div>
         <button
           onClick={saveSteps}
           disabled={saving}

@@ -11,6 +11,14 @@ export const runtime = "nodejs";
 
 const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
 
+function normalizeEmails(list = []) {
+  return [...new Set(
+    (Array.isArray(list) ? list : [])
+      .map((x) => String(x || "").trim().toLowerCase())
+      .filter(Boolean)
+  )];
+}
+
 // ✅ سماح pageKey من الفورمات + الاستثناءات
 function isAllowedPageKey(k) {
   const key = String(k || "").trim();
@@ -99,7 +107,7 @@ export async function POST(req) {
   await dbConnect();
   const body = await req.json();
 
-  const { name, pageKey, code, steps } = body;
+  const { name, pageKey, code, steps, finalApproveEmails = [] } = body;
 
   if (!name?.trim()) {
     return NextResponse.json({ success: false, error: "name required" }, { status: 400 });
@@ -133,6 +141,7 @@ export async function POST(req) {
     pageKey: pageKey.trim(),
     code: codeNorm,
     steps: Array.isArray(steps) ? steps : [],
+    finalApproveEmails: normalizeEmails(finalApproveEmails),
   });
 
   return NextResponse.json({ success: true, workflow: wf });
@@ -148,7 +157,7 @@ export async function PUT(req) {
   await dbConnect();
   const body = await req.json();
 
-  const { id, name, code, steps = [] } = body;
+  const { id, name, code, steps = [], finalApproveEmails = [] } = body;
 
   if (!id || !isValidObjectId(id)) {
     return NextResponse.json({ success: false, error: "Valid workflow id required" }, { status: 400 });
@@ -183,6 +192,8 @@ export async function PUT(req) {
   const updateDoc = {
     name: name.trim(),
     steps: Array.isArray(steps) ? steps : [],
+    finalApproveEmails: normalizeEmails(finalApproveEmails),
+
   };
 
   if (codeNorm !== undefined) updateDoc.code = codeNorm;

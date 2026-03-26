@@ -80,7 +80,7 @@ export default function PaymentPlansPage() {
   // ✅ Permission hook
   const { permissions } = usePermissions();
   const canCreate =
-    Array.isArray(permissions) && permissions.includes(PERMISSIONS.CREATE_REQUEST);
+    Array.isArray(permissions) && permissions.includes(PERMISSIONS.EX_Create_Request);
 
   // ===== User =====
   const currentUsername = useMemo(() => {

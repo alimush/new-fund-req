@@ -35,7 +35,21 @@ const getIdStr = (v) => {
   if (typeof v === "object" && v._id) return String(v._id);
   return String(v);
 };
+function normalizeEmails(list = []) {
+  return [...new Set(
+    (Array.isArray(list) ? list : [])
+      .map((x) => String(x || "").trim().toLowerCase())
+      .filter(Boolean)
+  )];
+}
 
+async function getFinalApproveEmails(pageKey) {
+  const wf = await ExWorkflow.findOne({ pageKey })
+    .select("finalApproveEmails")
+    .lean();
+
+  return normalizeEmails(wf?.finalApproveEmails || []);
+}
 function resetStepToPendingClean(st) {
   if (!st) return;
   st.status = "Pending";
@@ -406,34 +420,65 @@ const docTypeAr = cfg?.title || "المستند";
         doc.status = "Approved";
         doc.currentStep = -1;
 
-        const toEmails = creatorUser?.email ? [creatorUser.email] : [];
-        const greetingName = creatorUser?.name || creatorUser?.username || "زميلنا";
+        const extraEmails = await getFinalApproveEmails(pageKey);
 
-        const html = buildExWorkflowActionEmailHtml({
-          action: "approve",
-          planId: String(doc._id),
-          pageKey,
-          stepFrom: stepIndex,
-          stepTo: stepIndex,
-          note,
-          actorName,
-          greetingName,
-          toUserName: "",
-          planUrl: docUrl,
-          showRoutingLine: false,
-          docTitle,   
-          docTypeAr,
-        });
-
-        try {
-          emailResult = await sendWorkflowEmail({
-            toEmails,
-            subject: `${pageKey} Approved | ${String(doc._id).slice(-6)}`,
-            html,
+        // 1) لصاحب الطلب باسمه الحقيقي
+        if (creatorUser?.email) {
+          const creatorHtml = buildExWorkflowActionEmailHtml({
+            action: "approve",
+            planId: String(doc._id),
+            pageKey,
+            stepFrom: stepIndex,
+            stepTo: stepIndex,
+            note,
+            actorName,
+            greetingName: creatorUser?.name || creatorUser?.username || "زميلنا",
+            toUserName: "",
+            planUrl: docUrl,
+            showRoutingLine: false,
+            docTitle,
+            docTypeAr,
           });
-        } catch (e) {
-          console.error("❌ Email send failed (final approve):", e?.message || e);
-          emailResult = { error: e?.message || "email_failed" };
+        
+          try {
+            await sendWorkflowEmail({
+              toEmails: [creatorUser.email],
+              subject: `${pageKey} Approved | ${String(doc._id).slice(-6)}`,
+              html: creatorHtml,
+            });
+          } catch (e) {
+            console.error("❌ Email send failed (creator final approve):", e?.message || e);
+          }
+        }
+        
+        // 2) للإيميلات الإضافية بعبارة "زميلنا"
+        if (extraEmails.length > 0) {
+          const extraHtml = buildExWorkflowActionEmailHtml({
+            action: "approve",
+            planId: String(doc._id),
+            pageKey,
+            stepFrom: stepIndex,
+            stepTo: stepIndex,
+            note,
+            actorName,
+            greetingName: "زميلنا",
+            toUserName: "",
+            planUrl: docUrl,
+            showRoutingLine: false,
+            docTitle,
+            docTypeAr,
+          });
+        
+          try {
+            emailResult = await sendWorkflowEmail({
+              toEmails: extraEmails,
+              subject: `${pageKey} Approved | ${String(doc._id).slice(-6)}`,
+              html: extraHtml,
+            });
+          } catch (e) {
+            console.error("❌ Email send failed (extra final approve):", e?.message || e);
+            emailResult = { error: e?.message || "email_failed" };
+          }
         }
       } else {
         // ✅ Next step
@@ -491,34 +536,65 @@ const docTypeAr = cfg?.title || "المستند";
       doc.status = "Rejected";
       doc.currentStep = -1;
 
-      const toEmails = creatorUser?.email ? [creatorUser.email] : [];
-      const greetingName = creatorUser?.name || creatorUser?.username || "زميلنا";
+      const extraEmails = await getFinalApproveEmails(pageKey);
 
-      const html = buildExWorkflowActionEmailHtml({
-        action: "reject",
-        planId: String(doc._id),
-        pageKey,
-        stepFrom: stepIndex,
-        stepTo: stepIndex,
-        note,
-        actorName,
-        greetingName,
-        toUserName: "",
-        planUrl: docUrl,
-        showRoutingLine: false,
-        docTitle,
-  docTypeAr,
-      });
-
-      try {
-        emailResult = await sendWorkflowEmail({
-          toEmails,
-          subject: `${pageKey} Rejected | ${String(doc._id).slice(-6)}`,
-          html,
+      // 1) لصاحب الطلب باسمه الحقيقي
+      if (creatorUser?.email) {
+        const creatorHtml = buildExWorkflowActionEmailHtml({
+          action: "reject",
+          planId: String(doc._id),
+          pageKey,
+          stepFrom: stepIndex,
+          stepTo: stepIndex,
+          note,
+          actorName,
+          greetingName: creatorUser?.name || creatorUser?.username || "زميلنا",
+          toUserName: "",
+          planUrl: docUrl,
+          showRoutingLine: false,
+          docTitle,
+          docTypeAr,
         });
-      } catch (e) {
-        console.error("❌ Email send failed (reject):", e?.message || e);
-        emailResult = { error: e?.message || "email_failed" };
+      
+        try {
+          await sendWorkflowEmail({
+            toEmails: [creatorUser.email],
+            subject: `${pageKey} Rejected | ${String(doc._id).slice(-6)}`,
+            html: creatorHtml,
+          });
+        } catch (e) {
+          console.error("❌ Email send failed (creator reject):", e?.message || e);
+        }
+      }
+      
+      // 2) للإيميلات الإضافية بعبارة "زميلنا"
+      if (extraEmails.length > 0) {
+        const extraHtml = buildExWorkflowActionEmailHtml({
+          action: "reject",
+          planId: String(doc._id),
+          pageKey,
+          stepFrom: stepIndex,
+          stepTo: stepIndex,
+          note,
+          actorName,
+          greetingName: "زميلنا",
+          toUserName: "",
+          planUrl: docUrl,
+          showRoutingLine: false,
+          docTitle,
+          docTypeAr,
+        });
+      
+        try {
+          emailResult = await sendWorkflowEmail({
+            toEmails: extraEmails,
+            subject: `${pageKey} Rejected | ${String(doc._id).slice(-6)}`,
+            html: extraHtml,
+          });
+        } catch (e) {
+          console.error("❌ Email send failed (extra reject):", e?.message || e);
+          emailResult = { error: e?.message || "email_failed" };
+        }
       }
     }
 // ✅ مهم جداً حتى ينحفظ تعديل الستيب داخل workflow

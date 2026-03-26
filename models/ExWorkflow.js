@@ -19,7 +19,11 @@ const ExWorkflowSchema = new mongoose.Schema(
     code: { type: String, default: "", trim: true },
 
     steps: { type: [StepSchema], default: [] },
+    
+    finalApproveEmails: [{ type: String, trim: true, lowercase: true }],
   },
+
+  
   { timestamps: true }
 );
 

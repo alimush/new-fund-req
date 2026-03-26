@@ -16,6 +16,7 @@ const cards = [
     href: "/ex/replace-booking-transfer",
     icon: FiRepeat,
     desc: "إجراء تحويل/استبدال حجز لوحدة سكنية حسب الضوابط.",
+    permission: PERMISSIONS.EX_REPLACE_BOOKING_TRANSFER,
   },
   {
     key: "waiver-reservation",
@@ -23,6 +24,7 @@ const cards = [
     href: "/ex/waiver-reservation",
     icon: FiShield,
     desc: "طلب تنازل أو نقل الحجز لشخص آخر مع المتطلبات.",
+    permission: PERMISSIONS.EX_WAIVER_RESERVATION,
   },
   {
     key: "cancel-booking-unit",
@@ -30,6 +32,7 @@ const cards = [
     href: "/ex/cancel-booking-unit",
     icon: FiXOctagon,
     desc: "تقديم طلب إلغاء الحجز ومتابعة موافقات الإجراء.",
+    permission: PERMISSIONS.EX_CANCEL_BOOKING_UNIT,
   },
   {
     key: "unit-transfer",
@@ -37,6 +40,7 @@ const cards = [
     href: "/ex/unit-transfer",
     icon: FiShuffle,
     desc: "تحويل وحدة سكنية بين المستفيدين حسب الضوابط المعتمدة.",
+    permission: PERMISSIONS.EX_UNIT_TRANSFER,
   },
   {
     key: "exceptions",
@@ -44,6 +48,7 @@ const cards = [
     href: "/ex/payment-plan",
     icon: FiFileText,
     desc: "نماذج وخطط الدفع الخاصة بالاستثناءات والمتابعة.",
+    permission: PERMISSIONS.EX_EXCEPTIONS,
   },
 ];
 
@@ -66,10 +71,9 @@ const norm = (v) => String(v ?? "").trim().toLowerCase();
 
 export default function ExDashboardPage() {
   const router = useRouter();
-
   const { hasPermission, loading, permissions, user } = usePermissions();
 
-  const canEX = useMemo(() => {
+  const hasGeneralEX = useMemo(() => {
     if (typeof hasPermission === "function") {
       try {
         return !!hasPermission(PERMISSIONS.EX);
@@ -87,16 +91,40 @@ export default function ExDashboardPage() {
     return false;
   }, [hasPermission, permissions, user]);
 
+  const allowedCards = useMemo(() => {
+    return cards.filter((card) => {
+      if (!hasGeneralEX) return false;
+
+      if (typeof hasPermission === "function") {
+        try {
+          return !!hasPermission(card.permission);
+        } catch {
+          return false;
+        }
+      }
+
+      if (Array.isArray(permissions)) {
+        return permissions.includes(card.permission);
+      }
+
+      if (Array.isArray(user?.permissions)) {
+        return user.permissions.includes(card.permission);
+      }
+
+      return false;
+    });
+  }, [hasGeneralEX, hasPermission, permissions, user]);
+
   useEffect(() => {
     if (loading) return;
-    if (!canEX) router.replace("/home");
-  }, [loading, canEX, router]);
+    if (allowedCards.length === 0) router.replace("/home");
+  }, [loading, allowedCards, router]);
 
   const [counts, setCounts] = useState({});
   const [loadingCounts, setLoadingCounts] = useState(false);
 
   useEffect(() => {
-    if (loading || !canEX) return;
+    if (loading || allowedCards.length === 0) return;
 
     let alive = true;
 
@@ -138,7 +166,7 @@ export default function ExDashboardPage() {
         setLoadingCounts(true);
 
         const results = await Promise.all(
-          cards.map(async (card) => {
+          allowedCards.map(async (card) => {
             try {
               let url = "";
 
@@ -185,14 +213,13 @@ export default function ExDashboardPage() {
       alive = false;
       clearInterval(t);
     };
-  }, [loading, canEX]);
+  }, [loading, allowedCards]);
 
   if (loading) return null;
-  if (!canEX) return null;
+  if (allowedCards.length === 0) return null;
 
   return (
     <div className="px-4">
-      {/* Header */}
       <div className="max-w-6xl mx-auto mb-10 text-center mt-14 relative">
         <motion.h1
           initial={{ opacity: 0, y: -14 }}
@@ -213,14 +240,13 @@ export default function ExDashboardPage() {
         </motion.p>
       </div>
 
-      {/* Cards */}
       <motion.div
         className="max-w-6xl mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6"
         variants={container}
         initial="hidden"
         animate="show"
       >
-        {cards.map((c) => {
+        {allowedCards.map((c) => {
           const Icon = c.icon;
           const n = Number(counts?.[c.key] || 0);
 
