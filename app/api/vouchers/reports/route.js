@@ -279,18 +279,49 @@ export async function GET(req) {
     const total = await col.countDocuments(query);
     const totalPages = total ? Math.ceil(total / pageSize) : 0;
 
-    const data = await col
-      .find(query)
-      .sort({ createdAt: -1 })
-      .skip((page - 1) * pageSize)
-      .limit(pageSize)
-      .toArray();
-
-    return NextResponse.json({
-      success: true,
-      data,
-      meta: { total, totalPages, page, pageSize },
-    });
+    const rawData = await col
+    .find(query, {
+      projection: {
+        companyKey: 1,
+        mode: 1,
+        voucherNo: 1,
+        seq: 1,
+        requestId: 1,
+        currency: 1,
+        amount: 1,
+        beneficiary: 1,
+        receivedBy: 1,
+        bank: 1,
+        description: 1,
+        notes: 1,
+        createdAt: 1,
+        voucherDate: 1,
+        vDateDD: 1,
+        vDateMM: 1,
+        vDateYY: 1,
+        attachments: 1,
+        attachment: 1,
+      },
+    })
+    .sort({ createdAt: -1 })
+    .skip((page - 1) * pageSize)
+    .limit(pageSize)
+    .toArray();
+  
+  const data = rawData.map((x) => ({
+    ...x,
+    attachments: Array.isArray(x.attachments)
+      ? x.attachments
+      : x.attachment
+      ? [x.attachment]
+      : [],
+  }));
+  
+  return NextResponse.json({
+    success: true,
+    data,
+    meta: { total, totalPages, page, pageSize },
+  });
   } catch (err) {
     console.error("❌ Voucher Reports API Error:", err);
     return NextResponse.json(

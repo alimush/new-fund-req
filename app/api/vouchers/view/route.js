@@ -61,6 +61,26 @@ function sanitizeBody(body = {}) {
   };
 }
 
+function sanitizeAttachment(att = {}) {
+  if (!att || typeof att !== "object") return null;
+
+  const key = String(att.key || "").trim();
+  const name = String(att.name || "").trim();
+  const url = String(att.url || "").trim();
+  const contentType = String(att.contentType || "").trim();
+
+  if (!key && !url) return null;
+
+  return {
+    key,
+    name,
+    url,
+    contentType,
+    size: Number(att.size || 0),
+    uploadedAt: att.uploadedAt ? new Date(att.uploadedAt) : new Date(),
+  };
+}
+
 export async function GET(req) {
   try {
     await dbConnect();
@@ -127,6 +147,11 @@ export async function GET(req) {
       success: true,
       data: {
         ...doc,
+        attachments: Array.isArray(doc.attachments)
+          ? doc.attachments
+          : doc.attachment
+          ? [doc.attachment]
+          : [],
         _id: doc._id?.toString?.() || doc._id,
       },
     });
@@ -198,26 +223,65 @@ export async function PUT(req) {
       );
     }
 
-    const payload = sanitizeBody(body);
-    
-    const updateDoc = {
-      ...payload,
-      amount: payload.vAmount,
-      amountWords: payload.vWords,   // ✅ هذا المهم
-      description: payload.vDesc,
-      bank: payload.vBank,
-      receivedBy: payload.vReceivedBy,
-      beneficiary: payload.vBeneficiary,
-      notes: payload.vNotes,
-      currency: payload.vCurrency,
+    const attachmentOnly =
+      body?.attachment &&
+      !("vAmount" in body) &&
+      !("vWords" in body) &&
+      !("vDesc" in body) &&
+      !("vBank" in body) &&
+      !("vReceivedBy" in body) &&
+      !("vBeneficiary" in body) &&
+      !("vNotes" in body) &&
+      !("vCurrency" in body) &&
+      !("vDateYY" in body) &&
+      !("vDateMM" in body) &&
+      !("vDateDD" in body) &&
+      !("cbOne" in body) &&
+      !("cbTwo" in body);
+
+    let updateDoc = {
       updatedAt: new Date(),
       updatedBy: userId,
     };
 
-    await col.updateOne(
-      { _id: new ObjectId(id) },
-      { $set: updateDoc }
-    );
+    if (!attachmentOnly) {
+      const payload = sanitizeBody(body);
+
+      updateDoc = {
+        ...updateDoc,
+        ...payload,
+        amount: payload.vAmount,
+        amountWords: payload.vWords,
+        description: payload.vDesc,
+        bank: payload.vBank,
+        receivedBy: payload.vReceivedBy,
+        beneficiary: payload.vBeneficiary,
+        notes: payload.vNotes,
+        currency: payload.vCurrency,
+      };
+    }
+
+    const newAttachment = sanitizeAttachment(body.attachment);
+
+    if (newAttachment) {
+      const oldAttachments = Array.isArray(existing.attachments)
+        ? existing.attachments
+        : existing.attachment
+        ? [existing.attachment]
+        : [];
+
+      const alreadyExists = oldAttachments.some(
+        (x) =>
+          String(x?.key || "") === String(newAttachment.key || "") &&
+          String(x?.name || "") === String(newAttachment.name || "")
+      );
+
+      updateDoc.attachments = alreadyExists
+        ? oldAttachments
+        : [...oldAttachments, newAttachment];
+    }
+
+    await col.updateOne({ _id: new ObjectId(id) }, { $set: updateDoc });
 
     const updated = await col.findOne({ _id: new ObjectId(id) });
 
@@ -225,6 +289,11 @@ export async function PUT(req) {
       success: true,
       data: {
         ...updated,
+        attachments: Array.isArray(updated.attachments)
+          ? updated.attachments
+          : updated.attachment
+          ? [updated.attachment]
+          : [],
         _id: updated._id?.toString?.() || updated._id,
       },
     });

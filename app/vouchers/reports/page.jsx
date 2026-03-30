@@ -63,6 +63,12 @@ export default function VoucherReportsPage() {
   const [companiesOptions, setCompaniesOptions] = useState([]);
   const [modes, setModes] = useState([]);
   const [currencies, setCurrencies] = useState([]);
+  const [attachmentsModal, setAttachmentsModal] = useState({
+    open: false,
+    rowId: null,
+    rowName: "",
+    attachments: [],
+  });
 
   const [companyFilter, setCompanyFilter] = useState({
     value: "all",
@@ -93,7 +99,8 @@ export default function VoucherReportsPage() {
   const [showSuggest, setShowSuggest] = useState(false);
   const [activeIdx, setActiveIdx] = useState(-1);
   const [portalReady, setPortalReady] = useState(false);
-
+  const [uploadingId, setUploadingId] = useState(null);
+  const fileInputRefs = useRef({});
   const inputRef = useRef(null);
   const suggestBoxRef = useRef(null);
   const [suggestPos, setSuggestPos] = useState({ top: 0, left: 0, width: 0 });
@@ -334,6 +341,71 @@ export default function VoucherReportsPage() {
     setActiveIdx(-1);
   };
 
+  const openAttachmentsModal = useCallback((row) => {
+    setAttachmentsModal({
+      open: true,
+      rowId: row._id,
+      rowName: row.voucherNo || String(row.seq ?? "").padStart(5, "0"),
+      attachments: Array.isArray(row.attachments) ? row.attachments : [],
+    });
+  }, []);
+  
+  const closeAttachmentsModal = useCallback(() => {
+    setAttachmentsModal({
+      open: false,
+      rowId: null,
+      rowName: "",
+      attachments: [],
+    });
+  }, []);
+
+  const handleDeleteAttachment = useCallback(async (rowId, attachmentKey) => {
+    try {
+      const ok = window.confirm("تأكيد حذف الاتاج؟");
+      if (!ok) return;
+  
+      const res = await fetch("/api/vouchers/view", {
+        method: "PUT",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          id: rowId,
+          deleteAttachmentKey: attachmentKey,
+        }),
+      });
+  
+      const json = await res.json();
+  
+      if (!json?.success) {
+        throw new Error(json?.error || "فشل حذف الاتاج");
+      }
+  
+      setRows((prev) =>
+        prev.map((x) =>
+          x._id === rowId
+            ? {
+                ...x,
+                attachments: (Array.isArray(x.attachments) ? x.attachments : []).filter(
+                  (a) => a.key !== attachmentKey
+                ),
+              }
+            : x
+        )
+      );
+  
+      setAttachmentsModal((prev) => ({
+        ...prev,
+        attachments: (Array.isArray(prev.attachments) ? prev.attachments : []).filter(
+          (a) => a.key !== attachmentKey
+        ),
+      }));
+    } catch (err) {
+      console.error("❌ Delete attachment error:", err);
+      alert(err.message || "فشل حذف الاتاج");
+    }
+  }, []);
   const onSmartKeyDown = (e) => {
     if (!showSuggest || smartOptions.length === 0) {
       if (e.key === "Enter") return; // لا تمنع الانتر هنا
@@ -452,7 +524,124 @@ export default function VoucherReportsPage() {
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
   }, [fetchPage, page]);
+  const triggerAttachmentPick = useCallback((rowId) => {
+    const ref = fileInputRefs.current[rowId];
+    if (ref) ref.click();
+  }, []);
+  const handleUploadAttachments = useCallback(async (row, files) => {
+    if (!row?._id || !files?.length) return;
   
+    try {
+      setUploadingId(row._id);
+  
+      const uploadedAttachments = [];
+  
+      for (const file of files) {
+        // 1) جيب presigned URL
+        const presignRes = await fetch("/api/upload/presign", {
+          method: "POST",
+          credentials: "include",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            fileName: file.name,
+            fileType: file.type || "application/octet-stream", // ✅ بدل contentType
+            prefix: `vouchers/${row.companyKey}/${row.mode}/${row._id}`, // ✅ بدل folder
+          }),
+        });
+  
+        const presignJson = await presignRes.json();
+  
+        if (!presignJson?.success) {
+          throw new Error(presignJson?.error || "Failed to create presigned URL");
+        }
+  
+        const uploadUrl = presignJson.url;     // ✅ الـ API يرجع url
+        const fileKey = presignJson.key;
+        const fileUrl = presignJson.getUrl || ""; // ✅ الـ API يرجع getUrl
+  
+        if (!uploadUrl || !fileKey) {
+          throw new Error("Presign response missing url or key");
+        }
+  
+        // 2) ارفع الملف
+        const uploadRes = await fetch(uploadUrl, {
+          method: "PUT",
+          headers: {
+            "Content-Type": file.type || "application/octet-stream",
+          },
+          body: file,
+        });
+  
+        if (!uploadRes.ok) {
+          throw new Error(`Upload failed for ${file.name}`);
+        }
+  
+        // 3) خزّن الأتاج على الوصل
+        const attachment = {
+          key: fileKey,
+          name: file.name,
+          url: fileUrl, // ✅ خزّن رابط الفتح الحقيقي
+          contentType: file.type || "application/octet-stream",
+          size: file.size || 0,
+          uploadedAt: new Date().toISOString(),
+        };
+  
+        const saveRes = await fetch("/api/vouchers/view", {
+          method: "PUT",
+          credentials: "include",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            id: row._id,
+            company: row.companyKey,
+            mode: row.mode,
+            attachment,
+          }),
+        });
+  
+        const saveJson = await saveRes.json();
+  
+        if (!saveJson?.success) {
+          throw new Error(saveJson?.error || `Failed to save ${file.name}`);
+        }
+  
+        uploadedAttachments.push(attachment);
+      }
+  
+      // 4) حدّث الصف محلياً
+      setRows((prev) =>
+        prev.map((x) =>
+          x._id === row._id
+            ? {
+                ...x,
+                attachments: [
+                  ...(Array.isArray(x.attachments) ? x.attachments : []),
+                  ...uploadedAttachments,
+                ],
+              }
+            : x
+        )
+      );
+  
+      alert("✅ تم رفع الاتاجات بنجاح");
+    } catch (err) {
+      console.error("❌ Upload attachments error:", err);
+      alert(err.message || "فشل رفع الاتاجات");
+    } finally {
+      setUploadingId(null);
+    }
+  }, []);
+
+  const openAttachment = (att) => {
+    if (!att?.url) return;
+  
+    const encodedUrl = encodeURI(att.url); // ✅ الحل
+  
+    window.open(encodedUrl, "_blank");
+  };
   // البحث فقط من زر بحث
   const handleSearch = async () => {
     hasSearchedRef.current = true;
@@ -862,6 +1051,7 @@ export default function VoucherReportsPage() {
                       "استلمت من",
                       "البنك",
                       "الوصف",
+                      "الاتاج",
                       "التاريخ",
                     ].map((h, i) => (
                       <th
@@ -936,6 +1126,52 @@ export default function VoucherReportsPage() {
                         </div>
                       </td>
 
+                      <td
+  className="px-6 py-4 text-right whitespace-nowrap"
+  onClick={(e) => e.stopPropagation()}
+>
+  <input
+    type="file"
+    hidden
+    multiple
+    ref={(el) => {
+      fileInputRefs.current[r._id] = el;
+    }}
+    onChange={(e) => {
+      const files = Array.from(e.target.files || []);
+      if (files.length) handleUploadAttachments(r, files);
+      e.target.value = "";
+    }}
+  />
+
+<div className="flex flex-col items-end gap-2">
+  <button
+    type="button"
+    onClick={() => triggerAttachmentPick(r._id)}
+    disabled={uploadingId === r._id}
+    className={`px-3 py-2 rounded-xl border text-[13px] font-extrabold transition ${
+      uploadingId === r._id
+        ? "bg-gray-200 text-gray-500 border-gray-200 cursor-not-allowed"
+        : "bg-white hover:bg-gray-50 text-slate-900 border-gray-200"
+    }`}
+  >
+    {uploadingId === r._id ? "جاري الرفع..." : "رفع مرفق"}
+  </button>
+
+  {Array.isArray(r.attachments) && r.attachments.length > 0 ? (
+    <button
+      type="button"
+      onClick={() => openAttachmentsModal(r)}
+      className="px-3 py-2 rounded-xl border border-blue-200 bg-blue-50 text-blue-700 text-[13px] font-extrabold hover:bg-blue-100"
+    >
+      عرض الاتاجات ({r.attachments.length})
+    </button>
+  ) : (
+    <span className="text-[12px] text-slate-400">لا يوجد</span>
+  )}
+</div>
+</td>
+
                       <td className="px-6 py-4 text-right whitespace-nowrap text-slate-700">
   {r.vDateDD && r.vDateMM && r.vDateYY
     ? `${r.vDateDD}/${r.vDateMM}/${r.vDateYY}`
@@ -977,6 +1213,88 @@ export default function VoucherReportsPage() {
           </motion.div>
         )}
       </AnimatePresence>
+      <AnimatePresence>
+  {attachmentsModal.open && (
+    <motion.div
+      className="fixed inset-0 z-[99999] bg-black/40 flex items-center justify-center p-4"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      onClick={closeAttachmentsModal}
+    >
+      <motion.div
+        initial={{ scale: 0.96, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.96, opacity: 0 }}
+        transition={{ duration: 0.18 }}
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-2xl rounded-3xl bg-white shadow-2xl border border-gray-200 overflow-hidden"
+      >
+        <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
+          <button
+            type="button"
+            onClick={closeAttachmentsModal}
+            className="px-3 py-2 rounded-xl border border-gray-200 bg-white text-gray-700 font-extrabold hover:bg-gray-50"
+          >
+            إغلاق
+          </button>
+
+          <div className="text-right">
+            <div className="text-lg font-extrabold text-gray-900">الاتاجات</div>
+            <div className="text-sm text-gray-500 font-bold">
+              الوصل: {attachmentsModal.rowName}
+            </div>
+          </div>
+        </div>
+
+        <div className="p-5 max-h-[70vh] overflow-y-auto space-y-3">
+          {attachmentsModal.attachments.length > 0 ? (
+            attachmentsModal.attachments.map((att, idx) => (
+              <div
+                key={`${att.key || att.name}-${idx}`}
+                className="rounded-2xl border border-gray-200 p-4 flex items-center justify-between gap-3"
+              >
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleDeleteAttachment(attachmentsModal.rowId, att.key)
+                    }
+                    className="px-3 py-2 rounded-xl border border-red-200 bg-red-50 text-red-700 text-[13px] font-extrabold hover:bg-red-100"
+                  >
+                    حذف
+                  </button>
+
+                  <a
+                    href={att?.url ? encodeURI(att.url) : "#"}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3 py-2 rounded-xl border border-blue-200 bg-blue-50 text-blue-700 text-[13px] font-extrabold hover:bg-blue-100"
+                  >
+                    فتح
+                  </a>
+                </div>
+
+                <div className="text-right min-w-0">
+                  <div className="font-extrabold text-gray-900 truncate">
+                    {att.name || `ملف ${idx + 1}`}
+                  </div>
+                  <div className="text-xs text-gray-500 truncate">
+                    {att.contentType || "-"}
+                  </div>
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="text-center text-gray-500 font-extrabold py-8">
+              لا توجد اتاجات
+            </div>
+          )}
+        </div>
+      </motion.div>
+    </motion.div>
+  )}
+</AnimatePresence>
     </motion.div>
   );
 }
