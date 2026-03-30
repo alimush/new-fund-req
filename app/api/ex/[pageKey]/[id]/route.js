@@ -436,7 +436,7 @@ const docTypeAr = cfg?.title || "المستند";
             toUserName: "",
             planUrl: docUrl,
             showRoutingLine: false,
-            showDetailsButton: false,
+            showDetailsButton: true,
             docTitle,
             docTypeAr,
           });
@@ -465,6 +465,7 @@ const docTypeAr = cfg?.title || "المستند";
             toUserName: "",
             planUrl: docUrl,
             showRoutingLine: false,
+            showDetailsButton: false,
             docTitle,
             docTypeAr,
           });
