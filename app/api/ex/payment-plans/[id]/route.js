@@ -423,95 +423,71 @@ export async function PUT(req, ctx) {
       step.actedBy = userIdObj;
       step.actedAt = new Date();
       step.comment = note || "";
-    
-      // approve العادي: خلي المرفق على نفس الستيب إذا موجود
-      if (action === "approve") {
-        if (clearTag) {
-          step.tag = "";
-          step.tagAttachments = [];
-        }
-    
-        if (attachmentMeta?.key) {
-          step.tag = attachmentMeta.url || attachmentMeta.key || "";
-          step.tagAttachments = [
-            {
-              key: attachmentMeta.key,
-              url: attachmentMeta.url || "",
-              name: attachmentMeta.name || "",
-              type: attachmentMeta.type || "",
-              size: attachmentMeta.size || 0,
-              uploadedAt: new Date(),
-            },
-          ];
-        }
-      }
-    
-      // operation_submit: لا تخلي المرفق على نفس الستيب
-      if (action === "operation_submit") {
-        step.tag = "";
-        step.tagAttachments = [];
-      }
-    
-      const lastIdx = plan.workflow.steps.length - 1;
-    
-      if (stepIndex === lastIdx) {
-        plan.status = "Approved";
-        plan.currentStep = -1;
-        const extraEmails = await getFinalApproveEmails(pageKey);
 
-        // لصاحب الطلب
-        if (creatorUser?.email) {
-          const creatorHtml = buildExWorkflowActionEmailHtml({
-            action: "reject",
-            planId: String(plan._id),
-            pageKey,
-            stepFrom: stepIndex,
-            stepTo: stepIndex,
-            note,
-            actorName,
-            greetingName: creatorUser?.name || creatorUser?.username || "زميلنا",
-            toUserName: "",
-            planUrl,
-            showRoutingLine: false,
-          });
-        
-          try {
-            await sendWorkflowEmail({
-              toEmails: [creatorUser.email],
-              subject: `Payment Plan Rejected | ${String(plan._id).slice(-6)}`,
-              html: creatorHtml,
-            });
-          } catch (e) {
-            console.error("❌ Email send failed (creator reject):", e?.message || e);
-          }
-        }
-        
-        // للإيميلات الإضافية
-        if (extraEmails.length > 0) {
-          const extraHtml = buildExWorkflowActionEmailHtml({
-            action: "reject",
-            planId: String(plan._id),
-            pageKey,
-            stepFrom: stepIndex,
-            stepTo: stepIndex,
-            note,
-            actorName,
-            greetingName: "زميلنا",
-            toUserName: "",
-            planUrl,
-            showRoutingLine: false,
-          });
-        
-          try {
-            emailResult = await sendWorkflowEmail({
-              toEmails: extraEmails,
-              subject: `Payment Plan Rejected | ${String(plan._id).slice(-6)}`,
-              html: extraHtml,
-            });
-          } catch (e) {
-            console.error("❌ Email send failed (extra reject):", e?.message || e);
-            emailResult = { error: e?.message || "email_failed" };
-          }
+      const lastIdx = plan.workflow.steps.length - 1; // ✅ أضف هذا هنا
+
+    
+   if (stepIndex === lastIdx) {
+  plan.status = "Approved";
+  plan.currentStep = -1;
+  const extraEmails = await getFinalApproveEmails(pageKey);
+
+  // لصاحب الطلب
+  if (creatorUser?.email) {
+    const creatorHtml = buildExWorkflowActionEmailHtml({
+      action: "approve",
+      planId: String(plan._id),
+      pageKey,
+      stepFrom: stepIndex,
+      stepTo: stepIndex,
+      note,
+      actorName,
+      greetingName: creatorUser?.name || creatorUser?.username || "زميلنا",
+      toUserName: "",
+      planUrl,
+      showRoutingLine: false,
+      showDetailsButton: true,
+    });
+
+    try {
+      await sendWorkflowEmail({
+        toEmails: [creatorUser.email],
+        subject: `Payment Plan Approved | ${String(plan._id).slice(-6)}`,
+        html: creatorHtml,
+      });
+    } catch (e) {
+      console.error("❌ Email send failed (creator final approve):", e?.message || e);
+    }
+  }
+
+  // للإيميلات الإضافية
+  if (extraEmails.length > 0) {
+    const extraHtml = buildExWorkflowActionEmailHtml({
+      action: "approve",
+      planId: String(plan._id),
+      pageKey,
+      stepFrom: stepIndex,
+      stepTo: stepIndex,
+      note,
+      actorName,
+      greetingName: "زميلنا",
+      toUserName: "",
+      planUrl,
+      showRoutingLine: false,
+      showDetailsButton: false,
+    });
+
+    try {
+      emailResult = await sendWorkflowEmail({
+        toEmails: extraEmails,
+        subject: `Payment Plan Approved | ${String(plan._id).slice(-6)}`,
+        html: extraHtml,
+      });
+    } catch (e) {
+      console.error("❌ Email send failed (extra final approve):", e?.message || e);
+      emailResult = { error: e?.message || "email_failed" };
+    }
+  
         
         }
       } else {

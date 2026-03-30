@@ -436,10 +436,10 @@ const docTypeAr = cfg?.title || "المستند";
             toUserName: "",
             planUrl: docUrl,
             showRoutingLine: false,
+            showDetailsButton: false,
             docTitle,
             docTypeAr,
           });
-        
           try {
             await sendWorkflowEmail({
               toEmails: [creatorUser.email],
@@ -570,7 +570,7 @@ const docTypeAr = cfg?.title || "المستند";
       // 2) للإيميلات الإضافية بعبارة "زميلنا"
       if (extraEmails.length > 0) {
         const extraHtml = buildExWorkflowActionEmailHtml({
-          action: "reject",
+          action: "approve",
           planId: String(doc._id),
           pageKey,
           stepFrom: stepIndex,
@@ -581,6 +581,7 @@ const docTypeAr = cfg?.title || "المستند";
           toUserName: "",
           planUrl: docUrl,
           showRoutingLine: false,
+          showDetailsButton: false,
           docTitle,
           docTypeAr,
         });
