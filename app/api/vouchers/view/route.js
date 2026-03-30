@@ -192,6 +192,7 @@ export async function PUT(req) {
     );
 
     const body = await req.json();
+    const deleteAttachmentKey = String(body?.deleteAttachmentKey || "").trim();
     const id = String(body?.id || "").trim();
 
     if (!id) {
@@ -222,7 +223,45 @@ export async function PUT(req) {
         { status: 404 }
       );
     }
+// ✅ حذف اتاج
+if (deleteAttachmentKey) {
+  const oldAttachments = Array.isArray(existing.attachments)
+    ? existing.attachments
+    : existing.attachment
+    ? [existing.attachment]
+    : [];
 
+  const filteredAttachments = oldAttachments.filter(
+    (att) => String(att?.key || "") !== deleteAttachmentKey
+  );
+
+  await col.updateOne(
+    { _id: new ObjectId(id) },
+    {
+      $set: {
+        attachments: filteredAttachments,
+        updatedAt: new Date(),
+        updatedBy: userId,
+      },
+      $unset: {
+        attachment: "",
+      },
+    }
+  );
+
+  const updated = await col.findOne({ _id: new ObjectId(id) });
+
+  return NextResponse.json({
+    success: true,
+    data: {
+      ...updated,
+      attachments: Array.isArray(updated.attachments)
+        ? updated.attachments
+        : [],
+      _id: updated._id?.toString?.() || updated._id,
+    },
+  });
+}
     const attachmentOnly =
       body?.attachment &&
       !("vAmount" in body) &&
@@ -281,7 +320,15 @@ export async function PUT(req) {
         : [...oldAttachments, newAttachment];
     }
 
-    await col.updateOne({ _id: new ObjectId(id) }, { $set: updateDoc });
+    await col.updateOne(
+      { _id: new ObjectId(id) },
+      {
+        $set: updateDoc,
+        $unset: {
+          attachment: "",
+        },
+      }
+    );
 
     const updated = await col.findOne({ _id: new ObjectId(id) });
 
