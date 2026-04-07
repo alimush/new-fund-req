@@ -36,10 +36,6 @@ export default function PermissionsPage() {
           },
         });
 
-        if (res.status === 401 || res.status === 403) {
-          window.location.href = "/home";
-          return;
-        }
 
         const data = await res.json();
         if (data.success) setGroups(data.data);
@@ -75,11 +71,7 @@ export default function PermissionsPage() {
         body: JSON.stringify({ name: newGroupName }),
       });
 
-      if (res.status === 401 || res.status === 403) {
-        window.location.href = "/home";
-        return;
-      }
-
+     
       const data = await res.json();
       if (data.success) {
         setGroups((prev) => [...prev, data.data]);
@@ -110,10 +102,7 @@ export default function PermissionsPage() {
         },
       });
 
-      if (res.status === 401 || res.status === 403) {
-        window.location.href = "/home";
-        return;
-      }
+    
 
       const data = await res.json();
       if (data.success) {

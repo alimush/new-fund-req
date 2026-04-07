@@ -37,12 +37,13 @@ export default function RootLayout({ children }) {
 
         <UserProvider>
           <PermissionProvider>
-            <AuthGate>
+          <AuthGate>
               <HeaderWrapper />
 
 
               <main className="p-6">{children}</main>
             </AuthGate>
+
           </PermissionProvider>
         </UserProvider>
       </body>

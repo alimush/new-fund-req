@@ -287,7 +287,7 @@ if (!workflow) {
     };
 
     const companyText = company.toUpperCase().replace(/\s+/g, "-").replace(/-+/g, "-");
-    const counterKey = `REQ_${companyText}`;
+    const counterKey = `WAS_${companyText}`;
 
     for (let attempt = 0; attempt < 5; attempt++) {
       const counter = await Counter.findOneAndUpdate(
@@ -297,7 +297,7 @@ if (!workflow) {
       );
 
       const serial = String(counter.seq).padStart(5, "0");
-      const requestCode = `REQ-${companyText}-${serial}`;
+      const requestCode = `WAS-${companyText}-${serial}`;
 
       try {
         const newRequest = new Model({ ...baseData, requestCode });

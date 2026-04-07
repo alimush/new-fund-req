@@ -76,7 +76,16 @@ function normalizeRequestAttachments(doc) {
     }))
     .filter((f) => f.key || f.url);
 }
+function buildEmailAttachmentsFromRequest(doc) {
+  const files = Array.isArray(doc?.attachments) ? doc.attachments : [];
 
+  return files
+    .filter((f) => f?.url)
+    .map((f, idx) => ({
+      filename: f?.name || `attachment-${idx + 1}`,
+      path: encodeURI(String(f.url)),
+    }));
+}
 function syncRequestAttachmentsToStep(step, doc) {
   if (!step) return;
 
@@ -382,7 +391,7 @@ const docTypeAr = cfg?.title || "المستند";
     )}?key=${encodeURIComponent(pageKey)}`;
 
     let emailResult = null;
-
+    const requestEmailAttachments = buildEmailAttachmentsFromRequest(doc);
 
     const attachToStepIfNeeded = () => {
       if (clearTag) {
@@ -451,36 +460,37 @@ const docTypeAr = cfg?.title || "المستند";
           }
         }
         
-        // 2) للإيميلات الإضافية بعبارة "زميلنا"
-        if (extraEmails.length > 0) {
-          const extraHtml = buildExWorkflowActionEmailHtml({
-            action: "approve",
-            planId: String(doc._id),
-            pageKey,
-            stepFrom: stepIndex,
-            stepTo: stepIndex,
-            note,
-            actorName,
-            greetingName: "زميلنا",
-            toUserName: "",
-            planUrl: docUrl,
-            showRoutingLine: false,
-            showDetailsButton: false,
-            docTitle,
-            docTypeAr,
-          });
-        
-          try {
-            emailResult = await sendWorkflowEmail({
-              toEmails: extraEmails,
-              subject: `${pageKey} Approved | ${String(doc._id).slice(-6)}`,
-              html: extraHtml,
-            });
-          } catch (e) {
-            console.error("❌ Email send failed (extra final approve):", e?.message || e);
-            emailResult = { error: e?.message || "email_failed" };
-          }
-        }
+     // 2) للإيميلات الإضافية بعبارة "زميلنا"
+if (extraEmails.length > 0) {
+  const extraHtml = buildExWorkflowActionEmailHtml({
+    action: "approve",
+    planId: String(doc._id),
+    pageKey,
+    stepFrom: stepIndex,
+    stepTo: stepIndex,
+    note,
+    actorName,
+    greetingName: "زميلنا",
+    toUserName: "",
+    planUrl: docUrl,
+    showRoutingLine: false,
+    showDetailsButton: false,
+    docTitle,
+    docTypeAr,
+  });
+
+  try {
+    emailResult = await sendWorkflowEmail({
+      toEmails: extraEmails,
+      subject: `${pageKey} Approved | ${String(doc._id).slice(-6)}`,
+      html: extraHtml,
+      attachments: requestEmailAttachments,
+    });
+  } catch (e) {
+    console.error("❌ Email send failed (extra final approve):", e?.message || e);
+    emailResult = { error: e?.message || "email_failed" };
+  }
+}
       } else {
         // ✅ Next step
         const nextIndex = stepIndex + 1;
