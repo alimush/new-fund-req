@@ -16,7 +16,7 @@ const cairo = Cairo({
   weight: ["400", "600", "700", "800"],
 });
 
-const TEMPLATE_SWITCH_DATE = new Date("2026-04-18T02:00:00");
+const TEMPLATE_SWITCH_DATE = new Date("2026-04-18T13:40:06.558+03:00");
 const companies = [
   {
     key: "Al-Ghadeer",
@@ -449,17 +449,14 @@ export default function VoucherViewPage() {
     };
   }, [voucher]);
 
-  const effectiveDate = useMemo(
-    () =>
-      buildEffectiveDate(
-        voucher,
-        vDateYY || fallbackVoucherDate.yy,
-        vDateMM || fallbackVoucherDate.mm,
-        vDateDD || fallbackVoucherDate.dd
-      ),
-    [voucher, vDateYY, vDateMM, vDateDD, fallbackVoucherDate]
-  );
-
+  const effectiveDate = useMemo(() => {
+    const raw = voucher?.voucherDate || voucher?.createdAt;
+    if (!raw) return null;
+  
+    const dt = new Date(raw);
+    return Number.isNaN(dt.getTime()) ? null : dt;
+  }, [voucher]);
+  
   const useOldTemplate = useMemo(() => {
     if (!effectiveDate) return true;
     return effectiveDate < TEMPLATE_SWITCH_DATE;
