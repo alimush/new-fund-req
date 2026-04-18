@@ -16,8 +16,7 @@ const cairo = Cairo({
   weight: ["400", "600", "700", "800"],
 });
 
-const TEMPLATE_SWITCH_DATE = new Date("2026-04-16T00:00:00");
-
+const TEMPLATE_SWITCH_DATE = new Date("2026-04-18T02:15:00");
 const companies = [
   {
     key: "Al-Ghadeer",
