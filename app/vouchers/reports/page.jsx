@@ -16,6 +16,9 @@ import {
   FiShield,
   FiDownload,
   FiFileText,
+  FiHash,
+  FiUser,
+  FiCreditCard,
 } from "react-icons/fi";
 
 import { FaMoneyBillWave } from "react-icons/fa6";
@@ -246,29 +249,27 @@ export default function VoucherReportsPage() {
     });
   }, []);
 
-  const isDigitsOnly = (s) => /^\d+$/.test(String(s || "").replace(/,/g, "").trim());
-
   const fetchSuggestions = useCallback(async () => {
     const q = smartInput.trim();
-  
+
     if (!q) {
       setSmartOptions([]);
       setShowSuggest(false);
       setActiveIdx(-1);
       return;
     }
-  
+
     try {
       const res = await fetch(
         `/api/vouchers/reports?suggest=1&q=${encodeURIComponent(q)}`,
         { credentials: "include" }
       );
       const json = await res.json();
-  
+
       if (json?.success) {
         const arr = Array.isArray(json.data) ? json.data : [];
         setSmartOptions(arr);
-  
+
         if (arr.length > 0) {
           recalcSuggestPos();
           setShowSuggest(true);
@@ -283,21 +284,20 @@ export default function VoucherReportsPage() {
     }
   }, [smartInput, recalcSuggestPos]);
 
-  // اقتراحات فقط أثناء الكتابة، بدون بحث للجدول
   useEffect(() => {
     const q = smartInput.trim();
-  
+
     if (!q) {
       setSmartOptions([]);
       setShowSuggest(false);
       setActiveIdx(-1);
       return;
     }
-  
+
     const t = setTimeout(() => {
       fetchSuggestions();
     }, 250);
-  
+
     return () => clearTimeout(t);
   }, [smartInput, fetchSuggestions]);
 
@@ -349,7 +349,7 @@ export default function VoucherReportsPage() {
       attachments: Array.isArray(row.attachments) ? row.attachments : [],
     });
   }, []);
-  
+
   const closeAttachmentsModal = useCallback(() => {
     setAttachmentsModal({
       open: false,
@@ -363,7 +363,7 @@ export default function VoucherReportsPage() {
     try {
       const ok = window.confirm("تأكيد حذف الاتاج؟");
       if (!ok) return;
-  
+
       const res = await fetch("/api/vouchers/view", {
         method: "PUT",
         credentials: "include",
@@ -375,13 +375,13 @@ export default function VoucherReportsPage() {
           deleteAttachmentKey: attachmentKey,
         }),
       });
-  
+
       const json = await res.json();
-  
+
       if (!json?.success) {
         throw new Error(json?.error || "فشل حذف الاتاج");
       }
-  
+
       setRows((prev) =>
         prev.map((x) =>
           x._id === rowId
@@ -394,7 +394,7 @@ export default function VoucherReportsPage() {
             : x
         )
       );
-  
+
       setAttachmentsModal((prev) => ({
         ...prev,
         attachments: (Array.isArray(prev.attachments) ? prev.attachments : []).filter(
@@ -406,12 +406,13 @@ export default function VoucherReportsPage() {
       alert(err.message || "فشل حذف الاتاج");
     }
   }, []);
+
   const onSmartKeyDown = (e) => {
     if (!showSuggest || smartOptions.length === 0) {
-      if (e.key === "Enter") return; // لا تمنع الانتر هنا
+      if (e.key === "Enter") return;
       return;
     }
-  
+
     if (e.key === "ArrowDown") {
       e.preventDefault();
       setActiveIdx((i) => Math.min(i + 1, smartOptions.length - 1));
@@ -476,7 +477,7 @@ export default function VoucherReportsPage() {
           credentials: "include",
         });
         const json = await res.json();
-  
+
         if (json?.success) {
           setRows(json.data || []);
           setMeta(
@@ -511,33 +512,33 @@ export default function VoucherReportsPage() {
     },
     [buildParams]
   );
-  
-  // ✅ حطه هنا
+
   useEffect(() => {
     const onMessage = (event) => {
       if (event?.data?.type !== "VOUCHER_UPDATED") return;
       if (!hasSearchedRef.current) return;
-  
+
       fetchPage(page);
     };
-  
+
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
   }, [fetchPage, page]);
+
   const triggerAttachmentPick = useCallback((rowId) => {
     const ref = fileInputRefs.current[rowId];
     if (ref) ref.click();
   }, []);
+
   const handleUploadAttachments = useCallback(async (row, files) => {
     if (!row?._id || !files?.length) return;
-  
+
     try {
       setUploadingId(row._id);
-  
+
       const uploadedAttachments = [];
-  
+
       for (const file of files) {
-        // 1) جيب presigned URL
         const presignRes = await fetch("/api/upload/presign", {
           method: "POST",
           credentials: "include",
@@ -546,26 +547,25 @@ export default function VoucherReportsPage() {
           },
           body: JSON.stringify({
             fileName: file.name,
-            fileType: file.type || "application/octet-stream", // ✅ بدل contentType
-            prefix: `vouchers/${row.companyKey}/${row.mode}/${row._id}`, // ✅ بدل folder
+            fileType: file.type || "application/octet-stream",
+            prefix: `vouchers/${row.companyKey}/${row.mode}/${row._id}`,
           }),
         });
-  
+
         const presignJson = await presignRes.json();
-  
+
         if (!presignJson?.success) {
           throw new Error(presignJson?.error || "Failed to create presigned URL");
         }
-  
-        const uploadUrl = presignJson.url;     // ✅ الـ API يرجع url
+
+        const uploadUrl = presignJson.url;
         const fileKey = presignJson.key;
-        const fileUrl = presignJson.getUrl || ""; // ✅ الـ API يرجع getUrl
-  
+        const fileUrl = presignJson.getUrl || "";
+
         if (!uploadUrl || !fileKey) {
           throw new Error("Presign response missing url or key");
         }
-  
-        // 2) ارفع الملف
+
         const uploadRes = await fetch(uploadUrl, {
           method: "PUT",
           headers: {
@@ -573,21 +573,20 @@ export default function VoucherReportsPage() {
           },
           body: file,
         });
-  
+
         if (!uploadRes.ok) {
           throw new Error(`Upload failed for ${file.name}`);
         }
-  
-        // 3) خزّن الأتاج على الوصل
+
         const attachment = {
           key: fileKey,
           name: file.name,
-          url: fileUrl, // ✅ خزّن رابط الفتح الحقيقي
+          url: fileUrl,
           contentType: file.type || "application/octet-stream",
           size: file.size || 0,
           uploadedAt: new Date().toISOString(),
         };
-  
+
         const saveRes = await fetch("/api/vouchers/view", {
           method: "PUT",
           credentials: "include",
@@ -601,17 +600,16 @@ export default function VoucherReportsPage() {
             attachment,
           }),
         });
-  
+
         const saveJson = await saveRes.json();
-  
+
         if (!saveJson?.success) {
           throw new Error(saveJson?.error || `Failed to save ${file.name}`);
         }
-  
+
         uploadedAttachments.push(attachment);
       }
-  
-      // 4) حدّث الصف محلياً
+
       setRows((prev) =>
         prev.map((x) =>
           x._id === row._id
@@ -625,7 +623,7 @@ export default function VoucherReportsPage() {
             : x
         )
       );
-  
+
       alert("✅ تم رفع الاتاجات بنجاح");
     } catch (err) {
       console.error("❌ Upload attachments error:", err);
@@ -635,14 +633,6 @@ export default function VoucherReportsPage() {
     }
   }, []);
 
-  const openAttachment = (att) => {
-    if (!att?.url) return;
-  
-    const encodedUrl = encodeURI(att.url); // ✅ الحل
-  
-    window.open(encodedUrl, "_blank");
-  };
-  // البحث فقط من زر بحث
   const handleSearch = async () => {
     hasSearchedRef.current = true;
     setPage(1);
@@ -652,8 +642,7 @@ export default function VoucherReportsPage() {
   useEffect(() => {
     if (!hasSearchedRef.current) return;
     fetchPage(page);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page]);
+  }, [page, fetchPage]);
 
   const handleReset = () => {
     setCompanyFilter({ value: "all", label: "كل الشركات" });
@@ -737,7 +726,6 @@ export default function VoucherReportsPage() {
         Company: getCompanyName(r.companyKey),
         Mode: r.mode === "payment" ? "وصل صرف" : "وصل قبض",
         Seq: r.voucherNo || String(r.seq ?? "").padStart(5, "0"),
-        RequestId: r.requestId || "-",
         Currency: r.currency || "-",
         Amount: Number(r.amount || 0),
         Beneficiary: r.beneficiary || "-",
@@ -746,7 +734,9 @@ export default function VoucherReportsPage() {
         Description: r.description || "-",
         Notes: r.notes || "-",
         Date:
-          r.voucherDate
+          r.vDateDD && r.vDateMM && r.vDateYY
+            ? `${r.vDateDD}/${r.vDateMM}/${r.vDateYY}`
+            : r.voucherDate
             ? new Date(r.voucherDate).toLocaleDateString("en-GB")
             : r.createdAt
             ? new Date(r.createdAt).toLocaleDateString("en-GB")
@@ -935,11 +925,57 @@ export default function VoucherReportsPage() {
             />
           </div>
 
-          
+          <div className="text-right">
+            <label className="text-[13px] text-gray-700 mb-1 flex items-center justify-end gap-2 font-extrabold">
+              <FiHash /> رقم الوصل
+            </label>
+            <input
+              type="text"
+              value={seqInput}
+              onChange={(e) => setSeqInput(e.target.value)}
+              placeholder="رقم الوصل"
+              className="w-full rounded-xl px-3 py-2.5 border border-gray-200 bg-white text-gray-900 outline-none font-extrabold text-[14px]"
+            />
+          </div>
 
-       
+          {/* <div className="text-right">
+            <label className="text-[13px] text-gray-700 mb-1 flex items-center justify-end gap-2 font-extrabold">
+              <FiUser /> المستفيد
+            </label>
+            <input
+              type="text"
+              value={beneficiaryInput}
+              onChange={(e) => setBeneficiaryInput(e.target.value)}
+              placeholder="اسم المستفيد"
+              className="w-full rounded-xl px-3 py-2.5 border border-gray-200 bg-white text-gray-900 outline-none font-extrabold text-[14px]"
+            />
+          </div> */}
 
-        
+          <div className="text-right">
+            <label className="text-[13px] text-gray-700 mb-1 flex items-center justify-end gap-2 font-extrabold">
+              <FiUser /> استلمت من
+            </label>
+            <input
+              type="text"
+              value={receivedByInput}
+              onChange={(e) => setReceivedByInput(e.target.value)}
+              placeholder="استلمت من"
+              className="w-full rounded-xl px-3 py-2.5 border border-gray-200 bg-white text-gray-900 outline-none font-extrabold text-[14px]"
+            />
+          </div>
+
+          <div className="text-right">
+            <label className="text-[13px] text-gray-700 mb-1 flex items-center justify-end gap-2 font-extrabold">
+              <FiCreditCard /> البنك
+            </label>
+            <input
+              type="text"
+              value={bankInput}
+              onChange={(e) => setBankInput(e.target.value)}
+              placeholder="اسم البنك"
+              className="w-full rounded-xl px-3 py-2.5 border border-gray-200 bg-white text-gray-900 outline-none font-extrabold text-[14px]"
+            />
+          </div>
 
           <div className="text-right">
             <label className="text-[13px] text-gray-700 mb-1 flex items-center justify-end gap-2 font-extrabold">
@@ -966,31 +1002,31 @@ export default function VoucherReportsPage() {
           </div>
 
           <div className="text-right lg:col-span-2">
-  <label className="text-[13px] text-gray-700 mb-1 flex items-center justify-end gap-2 font-extrabold">
-    <FiSearch /> بحث موحّد
-  </label>
+            <label className="text-[13px] text-gray-700 mb-1 flex items-center justify-end gap-2 font-extrabold">
+              <FiSearch /> بحث موحّد
+            </label>
 
-  <div className="relative flex gap-2">
-    <input
-      ref={inputRef}
-      value={smartInput}
-      onChange={(e) => {
-        setSmartInput(e.target.value);
-        setSmartPicked(null);
-        setActiveIdx(-1);
-      }}
-      onFocus={() => {
-        if (smartOptions.length > 0) {
-          recalcSuggestPos();
-          setShowSuggest(true);
-        }
-      }}
-      onKeyDown={onSmartKeyDown}
-      placeholder="رقم / وصف / مستفيد / استلمت من / بنك"
-      className="w-full rounded-xl px-4 py-2.5 border border-gray-200 bg-white text-gray-900 font-extrabold text-[16px] shadow-sm outline-none focus:border-gray-300"
-    />
-  </div>
-</div>
+            <div className="relative flex gap-2">
+              <input
+                ref={inputRef}
+                value={smartInput}
+                onChange={(e) => {
+                  setSmartInput(e.target.value);
+                  setSmartPicked(null);
+                  setActiveIdx(-1);
+                }}
+                onFocus={() => {
+                  if (smartOptions.length > 0) {
+                    recalcSuggestPos();
+                    setShowSuggest(true);
+                  }
+                }}
+                onKeyDown={onSmartKeyDown}
+                placeholder="رقم / وصف / مستفيد / استلمت من / بنك"
+                className="w-full rounded-xl px-4 py-2.5 border border-gray-200 bg-white text-gray-900 font-extrabold text-[16px] shadow-sm outline-none focus:border-gray-300"
+              />
+            </div>
+          </div>
         </div>
       </motion.div>
 
@@ -1044,10 +1080,9 @@ export default function VoucherReportsPage() {
                       "الشركة",
                       "نوع الوصل",
                       "رقم الوصل",
-                      // "رقم الطلب",
                       "العملة",
                       "المبلغ",
-                      "المستفيد",
+                      // "المستفيد",
                       "استلمت من",
                       "البنك",
                       "الوصف",
@@ -1096,10 +1131,6 @@ export default function VoucherReportsPage() {
                         {r.voucherNo || String(r.seq ?? "").padStart(5, "0")}
                       </td>
 
-                      {/* <td className="px-6 py-4 text-right whitespace-nowrap">
-                        {r.requestId || "-"}
-                      </td> */}
-
                       <td className="px-6 py-4 text-right whitespace-nowrap font-extrabold">
                         {r.currency || "-"}
                       </td>
@@ -1108,9 +1139,9 @@ export default function VoucherReportsPage() {
                         {fmtAmount(r.amount)}
                       </td>
 
-                      <td className="px-6 py-4 text-right whitespace-nowrap">
+                      {/* <td className="px-6 py-4 text-right whitespace-nowrap">
                         {r.beneficiary || "-"}
-                      </td>
+                      </td> */}
 
                       <td className="px-6 py-4 text-right whitespace-nowrap">
                         {r.receivedBy || "-"}
@@ -1127,60 +1158,60 @@ export default function VoucherReportsPage() {
                       </td>
 
                       <td
-  className="px-6 py-4 text-right whitespace-nowrap"
-  onClick={(e) => e.stopPropagation()}
->
-  <input
-    type="file"
-    hidden
-    multiple
-    ref={(el) => {
-      fileInputRefs.current[r._id] = el;
-    }}
-    onChange={(e) => {
-      const files = Array.from(e.target.files || []);
-      if (files.length) handleUploadAttachments(r, files);
-      e.target.value = "";
-    }}
-  />
+                        className="px-6 py-4 text-right whitespace-nowrap"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <input
+                          type="file"
+                          hidden
+                          multiple
+                          ref={(el) => {
+                            fileInputRefs.current[r._id] = el;
+                          }}
+                          onChange={(e) => {
+                            const files = Array.from(e.target.files || []);
+                            if (files.length) handleUploadAttachments(r, files);
+                            e.target.value = "";
+                          }}
+                        />
 
-<div className="flex flex-col items-end gap-2">
-  <button
-    type="button"
-    onClick={() => triggerAttachmentPick(r._id)}
-    disabled={uploadingId === r._id}
-    className={`px-3 py-2 rounded-xl border text-[13px] font-extrabold transition ${
-      uploadingId === r._id
-        ? "bg-gray-200 text-gray-500 border-gray-200 cursor-not-allowed"
-        : "bg-white hover:bg-gray-50 text-slate-900 border-gray-200"
-    }`}
-  >
-    {uploadingId === r._id ? "جاري الرفع..." : "رفع مرفق"}
-  </button>
+                        <div className="flex flex-col items-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => triggerAttachmentPick(r._id)}
+                            disabled={uploadingId === r._id}
+                            className={`px-3 py-2 rounded-xl border text-[13px] font-extrabold transition ${
+                              uploadingId === r._id
+                                ? "bg-gray-200 text-gray-500 border-gray-200 cursor-not-allowed"
+                                : "bg-white hover:bg-gray-50 text-slate-900 border-gray-200"
+                            }`}
+                          >
+                            {uploadingId === r._id ? "جاري الرفع..." : "رفع مرفق"}
+                          </button>
 
-  {Array.isArray(r.attachments) && r.attachments.length > 0 ? (
-    <button
-      type="button"
-      onClick={() => openAttachmentsModal(r)}
-      className="px-3 py-2 rounded-xl border border-blue-200 bg-blue-50 text-blue-700 text-[13px] font-extrabold hover:bg-blue-100"
-    >
-      عرض الاتاجات ({r.attachments.length})
-    </button>
-  ) : (
-    <span className="text-[12px] text-slate-400">لا يوجد</span>
-  )}
-</div>
-</td>
+                          {Array.isArray(r.attachments) && r.attachments.length > 0 ? (
+                            <button
+                              type="button"
+                              onClick={() => openAttachmentsModal(r)}
+                              className="px-3 py-2 rounded-xl border border-blue-200 bg-blue-50 text-blue-700 text-[13px] font-extrabold hover:bg-blue-100"
+                            >
+                              عرض الاتاجات ({r.attachments.length})
+                            </button>
+                          ) : (
+                            <span className="text-[12px] text-slate-400">لا يوجد</span>
+                          )}
+                        </div>
+                      </td>
 
                       <td className="px-6 py-4 text-right whitespace-nowrap text-slate-700">
-  {r.vDateDD && r.vDateMM && r.vDateYY
-    ? `${r.vDateDD}/${r.vDateMM}/${r.vDateYY}`
-    : r.voucherDate
-    ? new Date(r.voucherDate).toLocaleDateString("en-GB")
-    : r.createdAt
-    ? new Date(r.createdAt).toLocaleDateString("en-GB")
-    : "-"}
-</td>
+                        {r.vDateDD && r.vDateMM && r.vDateYY
+                          ? `${r.vDateDD}/${r.vDateMM}/${r.vDateYY}`
+                          : r.voucherDate
+                          ? new Date(r.voucherDate).toLocaleDateString("en-GB")
+                          : r.createdAt
+                          ? new Date(r.createdAt).toLocaleDateString("en-GB")
+                          : "-"}
+                      </td>
                     </motion.tr>
                   ))}
                 </tbody>
@@ -1213,92 +1244,89 @@ export default function VoucherReportsPage() {
           </motion.div>
         )}
       </AnimatePresence>
+
       <AnimatePresence>
-  {attachmentsModal.open && (
-    <motion.div
-      className="fixed inset-0 z-[99999] bg-black/40 flex items-center justify-center p-4"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      onClick={closeAttachmentsModal}
-    >
-      <motion.div
-        initial={{ scale: 0.96, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        exit={{ scale: 0.96, opacity: 0 }}
-        transition={{ duration: 0.18 }}
-        onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-2xl rounded-3xl bg-white shadow-2xl border border-gray-200 overflow-hidden"
-      >
-        <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
-          <button
-            type="button"
+        {attachmentsModal.open && (
+          <motion.div
+            className="fixed inset-0 z-[99999] bg-black/40 flex items-center justify-center p-4"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
             onClick={closeAttachmentsModal}
-            className="px-3 py-2 rounded-xl border border-gray-200 bg-white text-gray-700 font-extrabold hover:bg-gray-50"
           >
-            إغلاق
-          </button>
+            <motion.div
+              initial={{ scale: 0.96, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.96, opacity: 0 }}
+              transition={{ duration: 0.18 }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-2xl rounded-3xl bg-white shadow-2xl border border-gray-200 overflow-hidden"
+            >
+              <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={closeAttachmentsModal}
+                  className="px-3 py-2 rounded-xl border border-gray-200 bg-white text-gray-700 font-extrabold hover:bg-gray-50"
+                >
+                  إغلاق
+                </button>
 
-          <div className="text-right">
-            <div className="text-lg font-extrabold text-gray-900">الاتاجات</div>
-            <div className="text-sm text-gray-500 font-bold">
-              الوصل: {attachmentsModal.rowName}
-            </div>
-          </div>
-        </div>
-
-        <div className="p-5 max-h-[70vh] overflow-y-auto space-y-3">
-          {attachmentsModal.attachments.length > 0 ? (
-            attachmentsModal.attachments.map((att, idx) => (
-              <div
-                key={`${att.key || att.name}-${idx}`}
-                className="rounded-2xl border border-gray-200 p-4 flex items-center justify-between gap-3"
-              >
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      handleDeleteAttachment(attachmentsModal.rowId, att.key)
-                    }
-                    className="px-3 py-2 rounded-xl border border-red-200 bg-red-50 text-red-700 text-[13px] font-extrabold hover:bg-red-100"
-                  >
-                    حذف
-                  </button>
-
-                  <a
-                    href={att?.url ? encodeURI(att.url) : "#"}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="px-3 py-2 rounded-xl border border-blue-200 bg-blue-50 text-blue-700 text-[13px] font-extrabold hover:bg-blue-100"
-                  >
-                    فتح
-                  </a>
-                </div>
-
-                <div className="text-right min-w-0">
-                  <div className="font-extrabold text-gray-900 truncate">
-                    {att.name || `ملف ${idx + 1}`}
-                  </div>
-                  <div className="text-xs text-gray-500 truncate">
-                    {att.contentType || "-"}
+                <div className="text-right">
+                  <div className="text-lg font-extrabold text-gray-900">الاتاجات</div>
+                  <div className="text-sm text-gray-500 font-bold">
+                    الوصل: {attachmentsModal.rowName}
                   </div>
                 </div>
               </div>
-            ))
-          ) : (
-            <div className="text-center text-gray-500 font-extrabold py-8">
-              لا توجد اتاجات
-            </div>
-          )}
-        </div>
-      </motion.div>
-    </motion.div>
-  )}
-</AnimatePresence>
+
+              <div className="p-5 max-h-[70vh] overflow-y-auto space-y-3">
+                {attachmentsModal.attachments.length > 0 ? (
+                  attachmentsModal.attachments.map((att, idx) => (
+                    <div
+                      key={`${att.key || att.name}-${idx}`}
+                      className="rounded-2xl border border-gray-200 p-4 flex items-center justify-between gap-3"
+                    >
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleDeleteAttachment(attachmentsModal.rowId, att.key)
+                          }
+                          className="px-3 py-2 rounded-xl border border-red-200 bg-red-50 text-red-700 text-[13px] font-extrabold hover:bg-red-100"
+                        >
+                          حذف
+                        </button>
+
+                        <a
+                          href={att?.url ? encodeURI(att.url) : "#"}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-3 py-2 rounded-xl border border-blue-200 bg-blue-50 text-blue-700 text-[13px] font-extrabold hover:bg-blue-100"
+                        >
+                          فتح
+                        </a>
+                      </div>
+
+                      <div className="text-right min-w-0">
+                        <div className="font-extrabold text-gray-900 truncate">
+                          {att.name || `ملف ${idx + 1}`}
+                        </div>
+                        <div className="text-xs text-gray-500 truncate">
+                          {att.contentType || "-"}
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-center text-gray-500 font-extrabold py-8">
+                    لا توجد اتاجات
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }
-
-
-
-

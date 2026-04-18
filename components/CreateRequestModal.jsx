@@ -408,7 +408,7 @@ const formatInputMoney = (v) => {
   <option value="دفعة">دفعة</option>
   <option value="حقوق">حقوق</option>
   <option value="تعويض">تعويض</option>
-  <option value="مصارف">مصارف</option>
+    
   <option value="ارجاع قرضة">ارجاع قرضة</option>
   <option value="قرضة">قرضة</option>
   <option value="شخصي">شخصي</option>
@@ -458,7 +458,6 @@ const formatInputMoney = (v) => {
   <option value="">حدد القسم</option>
 
   <option value="تكنولوجيا المعلومات">تكنولوجيا المعلومات</option>
-  <option value="المكتب التنفيذي">المكتب التنفيذي</option>
   <option value="الموارد البشرية">الموارد البشرية</option>
   <option value="خدمة العملاء">خدمة العملاء</option>
   <option value="التسويق">التسويق</option>

@@ -56,9 +56,12 @@ export async function GET(req) {
 
     const { allowedCompanies, allowedPerms } = await getUserAccess(userId);
 
-    if (!allowedPerms.includes(PERMISSIONS.VIEW_REPORTS)) {
+    if (
+      !allowedPerms.includes(PERMISSIONS.VIEW_REPORTS) &&
+      !allowedPerms.includes(PERMISSIONS.RECEIPTS)
+    ) {
       return NextResponse.json(
-        { success: false, error: "Forbidden: missing VIEW_REPORTS permission" },
+        { success: false, error: "Forbidden: missing permission" },
         { status: 403 }
       );
     }
@@ -72,9 +75,7 @@ export async function GET(req) {
 
     const { searchParams } = new URL(req.url);
 
-    // =========================
     // filters only
-    // =========================
     if (isFiltersOnlyRequest(searchParams)) {
       const currencies = await col.distinct("currency", {
         companyKey: { $in: finalAllowedCompanies },
@@ -91,9 +92,7 @@ export async function GET(req) {
       });
     }
 
-    // =========================
     // suggest only
-    // =========================
     if (searchParams.get("suggest") === "1") {
       const q = (searchParams.get("q") || "").trim();
       if (!q) return NextResponse.json({ success: true, data: [] });
@@ -135,21 +134,9 @@ export async function GET(req) {
         const candidates = [
           { value: d.voucherNo, label: d.voucherNo, type: "voucherNo" },
           { value: d.requestId, label: d.requestId, type: "requestId" },
-          {
-            value: d.description,
-            label: d.description,
-            type: "description",
-          },
-          {
-            value: d.beneficiary,
-            label: d.beneficiary,
-            type: "beneficiary",
-          },
-          {
-            value: d.receivedBy,
-            label: d.receivedBy,
-            type: "receivedBy",
-          },
+          { value: d.description, label: d.description, type: "description" },
+          { value: d.beneficiary, label: d.beneficiary, type: "beneficiary" },
+          { value: d.receivedBy, label: d.receivedBy, type: "receivedBy" },
           { value: d.bank, label: d.bank, type: "bank" },
         ];
 
@@ -171,9 +158,7 @@ export async function GET(req) {
       });
     }
 
-    // =========================
-    // main query (table search only)
-    // =========================
+    // main query
     const q = (searchParams.get("q") || "").trim();
     const company = searchParams.get("company") || "all";
     const mode = searchParams.get("mode") || "all";
@@ -280,48 +265,48 @@ export async function GET(req) {
     const totalPages = total ? Math.ceil(total / pageSize) : 0;
 
     const rawData = await col
-    .find(query, {
-      projection: {
-        companyKey: 1,
-        mode: 1,
-        voucherNo: 1,
-        seq: 1,
-        requestId: 1,
-        currency: 1,
-        amount: 1,
-        beneficiary: 1,
-        receivedBy: 1,
-        bank: 1,
-        description: 1,
-        notes: 1,
-        createdAt: 1,
-        voucherDate: 1,
-        vDateDD: 1,
-        vDateMM: 1,
-        vDateYY: 1,
-        attachments: 1,
-        attachment: 1,
-      },
-    })
-    .sort({ createdAt: -1 })
-    .skip((page - 1) * pageSize)
-    .limit(pageSize)
-    .toArray();
-  
-  const data = rawData.map((x) => ({
-    ...x,
-    attachments: Array.isArray(x.attachments)
-      ? x.attachments
-      : x.attachment
-      ? [x.attachment]
-      : [],
-  }));
-  
-  return NextResponse.json({
-    success: true,
-    data,
-    meta: { total, totalPages, page, pageSize },
-  });
+      .find(query, {
+        projection: {
+          companyKey: 1,
+          mode: 1,
+          voucherNo: 1,
+          seq: 1,
+          requestId: 1,
+          currency: 1,
+          amount: 1,
+          beneficiary: 1,
+          receivedBy: 1,
+          bank: 1,
+          description: 1,
+          notes: 1,
+          createdAt: 1,
+          voucherDate: 1,
+          vDateDD: 1,
+          vDateMM: 1,
+          vDateYY: 1,
+          attachments: 1,
+          attachment: 1,
+        },
+      })
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * pageSize)
+      .limit(pageSize)
+      .toArray();
+
+    const data = rawData.map((x) => ({
+      ...x,
+      attachments: Array.isArray(x.attachments)
+        ? x.attachments
+        : x.attachment
+        ? [x.attachment]
+        : [],
+    }));
+
+    return NextResponse.json({
+      success: true,
+      data,
+      meta: { total, totalPages, page, pageSize },
+    });
   } catch (err) {
     console.error("❌ Voucher Reports API Error:", err);
     return NextResponse.json(

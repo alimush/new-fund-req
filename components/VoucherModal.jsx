@@ -6,6 +6,7 @@ import { toPng } from "html-to-image";
 import { Cairo } from "next/font/google";
 import { FiPrinter, FiX } from "react-icons/fi";
 import VoucherDateModal from "@/components/VoucherDateModal";
+import { POS, EXTRA } from "@/components/voucherConfig";
 const cairo = Cairo({
   subsets: ["arabic"],
   weight: ["400", "600", "700", "800"],
@@ -132,25 +133,25 @@ function isArabicText(s = "") {
 }
 
 /** ✅ POS نسبية */
-const POS = {
-  date: { top: 19.2, left: 75.0 },
-  amountFixed: { top: 13.6, left: 12.0 },
-  currencyUSDBox: { top: 8.0, left: 22.3 },
-  currencyIQDBox: { top: 8.0, left: 13.0 },
-  amountWords: { top: 38.0, left: -2.0, width: 75.0 },
-  description: { top: 53.5, left: 35.0, width: 54.2, height: 15.0 },
-};
+// const POS = {
+//   date: { top: 19.2, left: 75.0 },
+//   amountFixed: { top: 13.6, left: 12.0 },
+//   currencyUSDBox: { top: 8.0, left: 22.3 },
+//   currencyIQDBox: { top: 8.0, left: 13.0 },
+//   amountWords: { top: 38.0, left: -2.0, width: 75.0 },
+//   description: { top: 53.5, left: 35.0, width: 54.2, height: 15.0 },
+// };
 
-/** ✅ حقول إضافية (نفس فكرة الكود السابق) — عدّل top/left حسب صورتك */
-const EXTRA = {
-  bank: { top: 70, left: -20, width: 54.2, height: 6.0 },
-  fxRate: { top: 20, left: 12.0, width: 30.0, height: 6.0 },
-  receivedBy: { top: 29.2, left: 18.8, width: 54.2, height: 6.0 },
-  beneficiary: { top: 85.8, left: -20, width: 54.2, height: 6.0 },
-  notes: { top: 84.0, left: 50.0, width: 40.2, height: 8.0 },
-  cb1: { top: 71.7, left: 81.2 },
-  cb2: { top: 71.7, left: 70.3 },
-};
+// /** ✅ حقول إضافية (نفس فكرة الكود السابق) — عدّل top/left حسب صورتك */
+// const EXTRA = {
+//   bank: { top: 70, left: -20, width: 54.2, height: 6.0 },
+//   fxRate: { top: 20, left: 12.0, width: 30.0, height: 6.0 },
+//   receivedBy: { top: 29.2, left: 18.8, width: 54.2, height: 6.0 },
+//   beneficiary: { top: 85.8, left: -20, width: 54.2, height: 6.0 },
+//   notes: { top: 84.0, left: 50.0, width: 40.2, height: 8.0 },
+//   cb1: { top: 71.7, left: 81.2 },
+//   cb2: { top: 71.7, left: 70.3 },
+// };
 
 const pctStyle = (p) => ({ top: `${p.top}%`, left: `${p.left}%` });
 

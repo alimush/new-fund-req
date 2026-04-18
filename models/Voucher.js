@@ -1,5 +1,23 @@
 import mongoose from "mongoose";
 
+const TextStyleSchema = new mongoose.Schema(
+  {
+    fontSize: {
+      type: Number,
+      default: 16,
+    },
+    fontWeight: {
+      type: Number,
+      default: 700,
+    },
+    color: {
+      type: String,
+      default: "#111827",
+    },
+  },
+  { _id: false }
+);
+
 const VoucherSchema = new mongoose.Schema(
   {
     companyKey: {
@@ -29,12 +47,6 @@ const VoucherSchema = new mongoose.Schema(
     voucherNo: {
       type: String,
       required: true,
-      index: true,
-    },
-
-    requestId: {
-      type: mongoose.Schema.Types.ObjectId,
-      default: null,
       index: true,
     },
 
@@ -100,6 +112,26 @@ const VoucherSchema = new mongoose.Schema(
       default: "",
     },
 
+    chequeNo: {
+      type: String,
+      default: "",
+    },
+
+    nationalId: {
+      type: String,
+      default: "",
+    },
+
+    phone: {
+      type: String,
+      default: "",
+    },
+
+    sanadNo: {
+      type: String,
+      default: "",
+    },
+
     cbOne: {
       type: Boolean,
       default: false,
@@ -108,6 +140,132 @@ const VoucherSchema = new mongoose.Schema(
     cbTwo: {
       type: Boolean,
       default: false,
+    },
+
+    globalTextStyle: {
+      type: new mongoose.Schema(
+        {
+          fontSize: {
+            type: Number,
+            default: 16,
+          },
+          fontWeight: {
+            type: Number,
+            default: 700,
+          },
+          color: {
+            type: String,
+            default: "#111827",
+          },
+        },
+        { _id: false }
+      ),
+      default: () => ({
+        fontSize: 16,
+        fontWeight: 700,
+        color: "#111827",
+      }),
+    },
+
+    fieldStyles: {
+      date: {
+        type: TextStyleSchema,
+        default: () => ({
+          fontSize: 18,
+          fontWeight: 800,
+          color: "#ffffff",
+        }),
+      },
+
+      amount: {
+        type: TextStyleSchema,
+        default: () => ({
+          fontSize: 16,
+          fontWeight: 800,
+          color: "#111827",
+        }),
+      },
+
+      words: {
+        type: TextStyleSchema,
+        default: () => ({
+          fontSize: 16,
+          fontWeight: 700,
+          color: "#111827",
+        }),
+      },
+
+      desc: {
+        type: TextStyleSchema,
+        default: () => ({
+          fontSize: 16,
+          fontWeight: 600,
+          color: "#111827",
+        }),
+      },
+
+      bank: {
+        type: TextStyleSchema,
+        default: () => ({
+          fontSize: 16,
+          fontWeight: 700,
+          color: "#111827",
+        }),
+      },
+
+      fxRate: {
+        type: TextStyleSchema,
+        default: () => ({
+          fontSize: 16,
+          fontWeight: 700,
+          color: "#111827",
+        }),
+      },
+
+      receivedBy: {
+        type: TextStyleSchema,
+        default: () => ({
+          fontSize: 16,
+          fontWeight: 700,
+          color: "#111827",
+        }),
+      },
+
+      notes: {
+        type: TextStyleSchema,
+        default: () => ({
+          fontSize: 16,
+          fontWeight: 600,
+          color: "#111827",
+        }),
+      },
+
+      chequeNo: {
+        type: TextStyleSchema,
+        default: () => ({
+          fontSize: 16,
+          fontWeight: 700,
+          color: "#111827",
+        }),
+      },
+
+      nationalId: {
+        type: TextStyleSchema,
+        default: () => ({
+          fontSize: 16,
+          fontWeight: 700,
+          color: "#111827",
+        }),
+      },
+
+      phone: {
+        type: TextStyleSchema,
+        default: () => ({
+          fontSize: 16,
+          fontWeight: 700,
+          color: "#111827",
+        }),
+      },
     },
 
     createdByUserId: {
@@ -121,8 +279,16 @@ const VoucherSchema = new mongoose.Schema(
       default: "",
     },
 
-    requestId: { type: String, default: null },
-requestCode: { type: String, default: "" },
+    requestId: {
+      type: String,
+      default: null,
+      index: true,
+    },
+
+    requestCode: {
+      type: String,
+      default: "",
+    },
   },
   {
     timestamps: true,
@@ -130,10 +296,7 @@ requestCode: { type: String, default: "" },
 );
 
 // منع تكرار نفس الرقم لنفس الشركة ولنفس النوع
-VoucherSchema.index(
-  { companyKey: 1, mode: 1, seq: 1 },
-  { unique: true }
-);
+VoucherSchema.index({ companyKey: 1, mode: 1, seq: 1 }, { unique: true });
 
 export default mongoose.models.Voucher ||
   mongoose.model("Voucher", VoucherSchema);
