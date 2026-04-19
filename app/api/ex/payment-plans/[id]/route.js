@@ -33,6 +33,26 @@ const getIdStr = (v) => {
   return String(v);
 };
 
+function buildMailAttachmentsFromMeta(meta) {
+  if (!meta?.url) return [];
+
+  return [
+    {
+      filename: meta.name || "attachment",
+      path: meta.url,
+      contentType: meta.type || "application/octet-stream",
+    },
+  ];
+}
+function buildMailAttachmentsFromFiles(files = []) {
+  return (Array.isArray(files) ? files : [])
+    .filter((f) => f?.url)
+    .map((f, idx) => ({
+      filename: f.name || `attachment-${idx + 1}`,
+      path: f.url,
+      contentType: f.type || "application/octet-stream",
+    }));
+}
 function resetStepToPendingClean(st) {
   if (!st) return;
   st.status = "Pending";
@@ -42,18 +62,22 @@ function resetStepToPendingClean(st) {
   st.tag = "";
   st.tagAttachments = [];
 }
+
 function normalizeEmails(list = []) {
-  return [...new Set(
-    (Array.isArray(list) ? list : [])
-      .map((x) => String(x || "").trim().toLowerCase())
-      .filter(Boolean)
-  )];
+  return [
+    ...new Set(
+      (Array.isArray(list) ? list : [])
+        .map((x) => String(x || "").trim().toLowerCase())
+        .filter(Boolean)
+    ),
+  ];
 }
 
 async function getFinalApproveEmails(pageKey) {
   const wf = await ExWorkflow.findOne({ pageKey }).select("finalApproveEmails").lean();
   return normalizeEmails(wf?.finalApproveEmails || []);
 }
+
 function mapRequestAttachmentsToStepFiles(attachments = []) {
   return (attachments || [])
     .filter(Boolean)
@@ -67,8 +91,38 @@ function mapRequestAttachmentsToStepFiles(attachments = []) {
     }));
 }
 
+function buildOperationFileFromMeta(meta) {
+  if (!meta?.key) return null;
 
+  return {
+    key: meta.key,
+    url: meta.url || "",
+    name: meta.name || "",
+    type: meta.type || "",
+    size: Number(meta.size || 0),
+    uploadedAt: new Date(),
+  };
+}
 
+function mergeFilesUnique(existing = [], incoming = []) {
+  const base = Array.isArray(existing) ? [...existing] : [];
+
+  for (const file of Array.isArray(incoming) ? incoming : []) {
+    if (!file) continue;
+
+    const exists = base.some(
+      (x) =>
+        (String(x?.key || "") && String(file?.key || "") && String(x.key) === String(file.key)) ||
+        (String(x?.url || "") && String(file?.url || "") && String(x.url) === String(file.url))
+    );
+
+    if (!exists) {
+      base.push(file);
+    }
+  }
+
+  return base;
+}
 
 async function buildWorkflowForKey(key) {
   const wf = await ExWorkflow.findOne({ pageKey: key }).lean();
@@ -102,10 +156,7 @@ async function buildWorkflowForKey(key) {
 async function ensurePlanWorkflowStable(plan, forcedKey) {
   if (!plan) return plan;
 
-  const key =
-    String(plan.pageKey || "").trim() ||
-    String(forcedKey || "").trim() ||
-    "exceptions";
+  const key = String(plan.pageKey || "").trim() || String(forcedKey || "").trim() || "exceptions";
 
   const hasSteps = Array.isArray(plan?.workflow?.steps) && plan.workflow.steps.length > 0;
 
@@ -127,7 +178,6 @@ async function ensurePlanWorkflowStable(plan, forcedKey) {
       changed = true;
     }
 
-    // ✅ خلي مرفقات الطلب الأصلي تروح للستيب الأول إذا بعده ما بيه مرفقات
     const firstStep = plan.workflow?.steps?.[0];
     const isFirstStepLast = plan.workflow?.steps?.length === 1;
 
@@ -140,7 +190,6 @@ async function ensurePlanWorkflowStable(plan, forcedKey) {
       !firstStep.tag
     ) {
       const requestFiles = mapRequestAttachmentsToStepFiles(plan.attachments);
-
       firstStep.tagAttachments = requestFiles;
       firstStep.tag = requestFiles[0]?.url || "";
       changed = true;
@@ -157,7 +206,6 @@ async function ensurePlanWorkflowStable(plan, forcedKey) {
 
   const newWorkflow = await buildWorkflowForKey(key);
 
-  // ✅ من البداية ابنِ الستيب الأول ومعاه مرفقات الطلب
   if (
     Array.isArray(newWorkflow.steps) &&
     newWorkflow.steps.length > 0 &&
@@ -186,9 +234,7 @@ async function ensurePlanWorkflowStable(plan, forcedKey) {
 async function getUserPermissions(userId) {
   if (!userId) return [];
 
-  const groups = await Permissions.find({ users: userId })
-    .select("permissions")
-    .lean();
+  const groups = await Permissions.find({ users: userId }).select("permissions").lean();
 
   const perms = new Set();
 
@@ -221,9 +267,7 @@ export async function GET(req, ctx) {
       return NextResponse.json({ success: false, error: "Not authenticated" }, { status: 401 });
     }
 
-    const currentUser = await User.findById(userId)
-      .select("_id username name email")
-      .lean();
+    const currentUser = await User.findById(userId).select("_id username name email").lean();
 
     if (!currentUser) {
       return NextResponse.json({ success: false, error: "User not found" }, { status: 401 });
@@ -311,9 +355,7 @@ export async function PUT(req, ctx) {
       return NextResponse.json({ success: false, error: "Invalid userId" }, { status: 401 });
     }
 
-    const currentUser = await User.findById(userIdObj)
-      .select("_id username name email")
-      .lean();
+    const currentUser = await User.findById(userIdObj).select("_id username name email").lean();
 
     if (!currentUser) {
       return NextResponse.json({ success: false, error: "User not found" }, { status: 401 });
@@ -361,13 +403,11 @@ export async function PUT(req, ctx) {
       return NextResponse.json({ success: false, error: "Not authorized" }, { status: 403 });
     }
 
-    if (isOperationUser) {
-      if (action === "reject") {
-        return NextResponse.json(
-          { success: false, error: "Operation user cannot reject" },
-          { status: 403 }
-        );
-      }
+    if (isOperationUser && action === "reject") {
+      return NextResponse.json(
+        { success: false, error: "Operation user cannot reject" },
+        { status: 403 }
+      );
     }
 
     if (isOperationUser && action === "operation_submit" && !attachmentMeta?.key) {
@@ -396,26 +436,21 @@ export async function PUT(req, ctx) {
 
     let emailResult = null;
 
-    const attachToStepIfNeeded = () => {
-      if (clearTag) {
-        step.tag = "";
-        step.tagAttachments = [];
-      }
-    
-      if (attachmentMeta?.key) {
-        step.tag = attachmentMeta.url || attachmentMeta.key || "";
-        step.tagAttachments = [
-          {
-            key: attachmentMeta.key,
-            url: attachmentMeta.url || "",
-            name: attachmentMeta.name || "",
-            type: attachmentMeta.type || "",
-            size: attachmentMeta.size || 0,
-            uploadedAt: new Date(),
-          },
-        ];
-      }
-    };
+    const operationEmailAttachments =
+      action === "operation_submit" && attachmentMeta?.url
+        ? buildMailAttachmentsFromMeta(attachmentMeta)
+        : [];
+
+        const attachToCurrentStepIfNeeded = () => {
+          if (attachmentMeta?.key) {
+            const opFile = buildOperationFileFromMeta(attachmentMeta);
+            const existing = Array.isArray(step.tagAttachments) ? step.tagAttachments : [];
+            const merged = mergeFilesUnique(existing, opFile ? [opFile] : []);
+        
+            step.tagAttachments = merged;
+            step.tag = attachmentMeta.url || attachmentMeta.key || step.tag || "";
+          }
+        };
 
     /* ================= APPROVE / OPERATION SUBMIT ================= */
     if (action === "approve" || action === "operation_submit") {
@@ -424,144 +459,109 @@ export async function PUT(req, ctx) {
       step.actedAt = new Date();
       step.comment = note || "";
 
-      const lastIdx = plan.workflow.steps.length - 1; // ✅ أضف هذا هنا
+      // الأوبريشن يحتفظ بكل الاتاجات اللي عنده + الاتاج الجديد
+      if (action === "operation_submit" && attachmentMeta?.key) {
+        attachToCurrentStepIfNeeded();
+      }
 
-    
-   if (stepIndex === lastIdx) {
-  plan.status = "Approved";
-  plan.currentStep = -1;
-  const extraEmails = await getFinalApproveEmails(pageKey);
+      const lastIdx = plan.workflow.steps.length - 1;
 
-  // لصاحب الطلب
-  if (creatorUser?.email) {
-    const creatorHtml = buildExWorkflowActionEmailHtml({
-      action: "approve",
-      planId: String(plan._id),
-      pageKey,
-      stepFrom: stepIndex,
-      stepTo: stepIndex,
-      note,
-      actorName,
-      greetingName: creatorUser?.name || creatorUser?.username || "زميلنا",
-      toUserName: "",
-      planUrl,
-      showRoutingLine: false,
-      showDetailsButton: true,
-    });
+      if (stepIndex === lastIdx) {
+        plan.status = "Approved";
+        plan.currentStep = -1;
 
-    try {
-      await sendWorkflowEmail({
-        toEmails: [creatorUser.email],
-        subject: `Payment Plan Approved | ${String(plan._id).slice(-6)}`,
-        html: creatorHtml,
-      });
-    } catch (e) {
-      console.error("❌ Email send failed (creator final approve):", e?.message || e);
-    }
-  }
+        const extraEmails = await getFinalApproveEmails(pageKey);
 
-  // للإيميلات الإضافية
-  if (extraEmails.length > 0) {
-    const extraHtml = buildExWorkflowActionEmailHtml({
-      action: "approve",
-      planId: String(plan._id),
-      pageKey,
-      stepFrom: stepIndex,
-      stepTo: stepIndex,
-      note,
-      actorName,
-      greetingName: "زميلنا",
-      toUserName: "",
-      planUrl,
-      showRoutingLine: false,
-      showDetailsButton: false,
-    });
+        if (creatorUser?.email) {
+          const creatorHtml = buildExWorkflowActionEmailHtml({
+            action: "approve",
+            planId: String(plan._id),
+            pageKey,
+            stepFrom: stepIndex,
+            stepTo: stepIndex,
+            note,
+            actorName,
+            greetingName: creatorUser?.name || creatorUser?.username || "زميلنا",
+            toUserName: "",
+            planUrl,
+            showRoutingLine: false,
+            showDetailsButton: true,
+          });
 
-    try {
-      emailResult = await sendWorkflowEmail({
-        toEmails: extraEmails,
-        subject: `Payment Plan Approved | ${String(plan._id).slice(-6)}`,
-        html: extraHtml,
-      });
-    } catch (e) {
-      console.error("❌ Email send failed (extra final approve):", e?.message || e);
-      emailResult = { error: e?.message || "email_failed" };
-    }
-  
-        
+          try {
+            await sendWorkflowEmail({
+              toEmails: [creatorUser.email],
+              subject: `Payment Plan Approved | ${String(plan._id).slice(-6)}`,
+              html: creatorHtml,
+            });
+          } catch (e) {
+            console.error("❌ Email send failed (creator final approve):", e?.message || e);
+          }
+        }
+
+        if (extraEmails.length > 0) {
+          const extraHtml = buildExWorkflowActionEmailHtml({
+            action: "approve",
+            planId: String(plan._id),
+            pageKey,
+            stepFrom: stepIndex,
+            stepTo: stepIndex,
+            note,
+            actorName,
+            greetingName: "زميلنا",
+            toUserName: "",
+            planUrl,
+            showRoutingLine: false,
+            showDetailsButton: false,
+          });
+
+          try {
+            emailResult = await sendWorkflowEmail({
+              toEmails: extraEmails,
+              subject: `Payment Plan Approved | ${String(plan._id).slice(-6)}`,
+              html: extraHtml,
+
+attachments: buildMailAttachmentsFromFiles(step.tagAttachments),
+            });
+          } catch (e) {
+            console.error("❌ Email send failed (extra final approve):", e?.message || e);
+            emailResult = { error: e?.message || "email_failed" };
+          }
         }
       } else {
         const nextIndex = stepIndex + 1;
         const isNextStepLast = nextIndex === lastIdx;
+      
         plan.currentStep = nextIndex;
         resetStepToPendingClean(plan.workflow.steps[nextIndex]);
         plan.status = "Pending";
-    
-        // ✅ هنا المهم: مرفق الأوبريشن يروح مباشرة للستيب الجاي
+      
+        const previousStepFiles = Array.isArray(step.tagAttachments) ? step.tagAttachments : [];
+      
+        // إذا الأوبريشن دا يرسل للي بعده => فقط مرفقه الجديد يروح للستيب الجاي
         if (action === "operation_submit" && attachmentMeta?.key) {
+          const opFile = buildOperationFileFromMeta(attachmentMeta);
+      
           plan.workflow.steps[nextIndex].tag = attachmentMeta.url || attachmentMeta.key || "";
-          plan.workflow.steps[nextIndex].tagAttachments = [
-            {
-              key: attachmentMeta.key,
-              url: attachmentMeta.url || "",
-              name: attachmentMeta.name || "",
-              type: attachmentMeta.type || "",
-              size: attachmentMeta.size || 0,
-              uploadedAt: new Date(),
-            },
-          ];
+          plan.workflow.steps[nextIndex].tagAttachments = opFile ? [opFile] : [];
         } else {
-          plan.workflow.steps[nextIndex].tag = "";
-          plan.workflow.steps[nextIndex].tagAttachments = [];
+          // إذا approve عادي => انقل مرفقات الستيب الحالي للستيب الجاي
+          const carriedFiles = mergeFilesUnique([], previousStepFiles);
+      
+          plan.workflow.steps[nextIndex].tagAttachments = carriedFiles;
+          plan.workflow.steps[nextIndex].tag = carriedFiles[0]?.url || "";
         }
-
-        // ✅ مرفقات الريكويست الأصلي تمشي مع الوركفلو لكن ما توصل للستيب الأخير
-// ✅ مرفقات الريكويست الأصلي تمشي مع الوركفلو لكن ما توصل للستيب الأخير
-if (!isNextStepLast && Array.isArray(plan.attachments) && plan.attachments.length > 0) {
-  const requestFiles = plan.attachments.map((f) => ({
-    key: f.key || "",
-    url: f.url || "",
-    name: f.name || "",
-    type: f.type || "",
-    size: f.size || 0,
-    uploadedAt: f.uploadedAt || new Date(),
-  }));
-
-  const existing = Array.isArray(plan.workflow.steps[nextIndex].tagAttachments)
-    ? plan.workflow.steps[nextIndex].tagAttachments
-    : [];
-
-  const merged = [...existing];
-
-  for (const rf of requestFiles) {
-    const alreadyExists = merged.some(
-      (x) =>
-        String(x.key || "") === String(rf.key || "") &&
-        String(x.name || "") === String(rf.name || "")
-    );
-
-    if (!alreadyExists) {
-      merged.push(rf);
-    }
-  }
-
-  plan.workflow.steps[nextIndex].tagAttachments = merged;
-
-  if (!plan.workflow.steps[nextIndex].tag && merged[0]?.url) {
-    plan.workflow.steps[nextIndex].tag = merged[0].url;
-  }
-}
-    
+      
         const nextStepUsers = plan.workflow.steps[nextIndex]?.users || [];
         const nextUserIds = nextStepUsers.map(getIdStr).filter(Boolean);
-    
+      
         const nextUsers = nextUserIds.length
           ? await User.find({ _id: { $in: nextUserIds } }).select("_id username name email").lean()
           : [];
-    
+      
         const toEmails = nextUsers.map((u) => u.email).filter(Boolean);
         const toUserName = nextUsers?.[0]?.name || nextUsers?.[0]?.username || "";
-    
+      
         const html = buildExWorkflowActionEmailHtml({
           action: "approve",
           planId: String(plan._id),
@@ -575,12 +575,13 @@ if (!isNextStepLast && Array.isArray(plan.attachments) && plan.attachments.lengt
           planUrl,
           showRoutingLine: true,
         });
-    
+      
         try {
           emailResult = await sendWorkflowEmail({
             toEmails,
             subject: `Payment Plan Waiting Your Action | Step ${nextIndex + 1}`,
             html,
+            attachments: buildMailAttachmentsFromFiles(plan.workflow.steps[nextIndex].tagAttachments),
           });
         } catch (e) {
           console.error("❌ Email send failed (next step):", e?.message || e);
@@ -601,10 +602,7 @@ if (!isNextStepLast && Array.isArray(plan.attachments) && plan.attachments.lengt
 
       const extraEmails = await getFinalApproveEmails(pageKey);
 
-      const toEmails = normalizeEmails([
-        creatorUser?.email || "",
-        ...extraEmails,
-      ]);
+      const toEmails = normalizeEmails([creatorUser?.email || "", ...extraEmails]);
       const greetingName = creatorUser?.name || creatorUser?.username || "زميلنا";
 
       const html = buildExWorkflowActionEmailHtml({

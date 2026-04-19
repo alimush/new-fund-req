@@ -546,7 +546,7 @@ const isOperationUser =
             stepIndex: actionModal.stepIndex,
             key: PAGE_KEY,
             attachmentMeta,
-            clearTag: true,
+            clearTag: false,
           }),
         }
       );
