@@ -461,7 +461,8 @@ const formatInputMoney = (v) => {
   <option value="الموارد البشرية">الموارد البشرية</option>
   <option value="خدمة العملاء">خدمة العملاء</option>
   <option value="التسويق">التسويق</option>
-  <option value="العمليات">العمليات</option>
+  <option value="قسم العمليات التنفيذية">قسم العمليات التنفيذية</option>
+  <option value="قسم العمليات">قسم العمليات</option>
   <option value="المبيعات">المبيعات</option>
   <option value="العقود">العقود</option>
   <option value="الحسابات">الحسابات</option>
