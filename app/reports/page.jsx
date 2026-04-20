@@ -19,11 +19,9 @@ import {
   FiLayers,
   FiShield,
   FiDownload,
-  FiChevronDown,
 } from "react-icons/fi";
 
-import { FaMoneyBillWave } from "react-icons/fa6"; // ✅ ورقة فلوس
-
+import { FaMoneyBillWave } from "react-icons/fa6";
 
 import { usePermissions } from "@/context/PermissionContext";
 import { PERMISSIONS } from "@/lib/permission";
@@ -71,15 +69,15 @@ export default function ReportsPage() {
   });
   const [date, setDate] = useState({ from: "", to: "" });
 
-  // ✅ Smart input (لا fetch أثناء الكتابة)
+  // Smart input
   const [smartInput, setSmartInput] = useState("");
-  const [smartPicked, setSmartPicked] = useState(null); // {value,label,type}
+  const [smartPicked, setSmartPicked] = useState(null);
   const [smartOptions, setSmartOptions] = useState([]);
   const [showSuggest, setShowSuggest] = useState(false);
   const [activeIdx, setActiveIdx] = useState(-1);
   const [suggestLoading, setSuggestLoading] = useState(false);
 
-  // ✅ Portal positioning
+  // Portal positioning
   const inputRef = useRef(null);
   const suggestBoxRef = useRef(null);
   const [suggestPos, setSuggestPos] = useState({ top: 0, left: 0, width: 0 });
@@ -88,18 +86,21 @@ export default function ReportsPage() {
   // حتى ما يسوي fetch أول ما يفتح الصفحة
   const hasSearchedRef = useRef(false);
 
-
   const { permissions } = usePermissions();
 
   const canViewReports =
     Array.isArray(permissions) &&
     permissions.includes(PERMISSIONS.VIEW_REPORTS);
 
-  
+  const canViewAllReports =
+    Array.isArray(permissions) &&
+    permissions.includes(PERMISSIONS.VIEW_ALL_REPORTS);
+
+  const canOpenReports = canViewReports || canViewAllReports;
 
   useEffect(() => setPortalReady(true), []);
 
-  // ✅ Fix portal target for react-select
+  // react-select portal target
   const [menuTarget, setMenuTarget] = useState(null);
   useEffect(() => setMenuTarget(document.body), []);
 
@@ -111,7 +112,6 @@ export default function ReportsPage() {
     [menuTarget]
   );
 
-  // ✅ Smaller controls (الانبتات أصغر)
   const selectStyles = useMemo(
     () => ({
       menuPortal: (base) => ({ ...base, zIndex: 9999 }),
@@ -165,7 +165,6 @@ export default function ReportsPage() {
     []
   );
 
-  // ✅ stats
   const stats = useMemo(() => {
     return {
       total: meta.total || 0,
@@ -175,8 +174,10 @@ export default function ReportsPage() {
     };
   }, [requests, meta.total]);
 
-  // ✅ تحميل الفلاتر مرة وحدة فقط (هذا طبيعي)
+  // تحميل الفلاتر
   useEffect(() => {
+    if (!canOpenReports) return;
+
     const loadFilters = async () => {
       try {
         const res = await fetch("/api/reports?filters=1");
@@ -187,10 +188,26 @@ export default function ReportsPage() {
 
         setCompanies((f.companies || []).map((c) => ({ value: c, label: c })));
 
-        setUsers([
-          { value: "all", label: "كل المستخدمين" },
-          ...(f.users || []).map((u) => ({ value: u, label: u })),
-        ]);
+        const userOptions = canViewAllReports
+          ? [
+              { value: "all", label: "كل المستخدمين" },
+              ...(f.users || []).map((u) => ({ value: u, label: u })),
+            ]
+          : (f.users || []).map((u) => ({ value: u, label: u }));
+
+        setUsers(userOptions);
+
+        // إذا ما عنده VIEW_ALL_REPORTS نخلي المستخدم نفسه default
+        if (!canViewAllReports) {
+          const me = (f.users || [])[0];
+          if (me) {
+            setUserFilter([{ value: me, label: me }]);
+          } else {
+            setUserFilter([]);
+          }
+        } else {
+          setUserFilter([]);
+        }
 
         const currList = Array.from(
           new Set(
@@ -225,13 +242,12 @@ export default function ReportsPage() {
         console.error("❌ Error loading reports filters:", err);
       }
     };
-    loadFilters();
-  }, []);
 
-  // =========================
-  // ✅ Suggestions: فقط user-triggered (زر الاقتراحات)
-  // =========================
-  const isDigitsOnly = (s) => /^\d+$/.test(String(s || "").replace(/,/g, "").trim());
+    loadFilters();
+  }, [canOpenReports, canViewAllReports]);
+
+  const isDigitsOnly = (s) =>
+    /^\d+$/.test(String(s || "").replace(/,/g, "").trim());
 
   const recalcSuggestPos = useCallback(() => {
     const el = inputRef.current;
@@ -253,7 +269,6 @@ export default function ReportsPage() {
       return;
     }
 
-    // ✅ أرقام؟ لا اقتراحات
     if (isDigitsOnly(q)) {
       setSmartOptions([]);
       setShowSuggest(false);
@@ -283,32 +298,31 @@ export default function ReportsPage() {
       setSuggestLoading(false);
     }
   }, [smartInput, recalcSuggestPos]);
-// ✅ اقتراحات تلقائية أثناء الكتابة (بس مو بحث)
-useEffect(() => {
-  const q = smartInput.trim();
 
-  // اذا فاضي
-  if (!q) {
-    setSmartOptions([]);
-    setShowSuggest(false);
-    setActiveIdx(-1);
-    return;
-  }
+  useEffect(() => {
+    const q = smartInput.trim();
 
-  // ✅ اذا أرقام فقط: لا اقتراحات
-  if (/^\d+$/.test(q.replace(/,/g, "").trim())) {
-    setSmartOptions([]);
-    setShowSuggest(false);
-    setActiveIdx(-1);
-    return;
-  }
+    if (!q) {
+      setSmartOptions([]);
+      setShowSuggest(false);
+      setActiveIdx(-1);
+      return;
+    }
 
-  const t = setTimeout(() => {
-    fetchSuggestions(); // هذا بس يجيب اقتراحات، ما يسوي بحث للجدول
-  }, 250);
+    if (/^\d+$/.test(q.replace(/,/g, "").trim())) {
+      setSmartOptions([]);
+      setShowSuggest(false);
+      setActiveIdx(-1);
+      return;
+    }
 
-  return () => clearTimeout(t);
-}, [smartInput, fetchSuggestions]);
+    const t = setTimeout(() => {
+      fetchSuggestions();
+    }, 250);
+
+    return () => clearTimeout(t);
+  }, [smartInput, fetchSuggestions]);
+
   useEffect(() => {
     if (!showSuggest) return;
     recalcSuggestPos();
@@ -323,7 +337,6 @@ useEffect(() => {
     };
   }, [showSuggest, recalcSuggestPos]);
 
-  // ✅ اغلاق الاقتراحات اذا ضغط برا (يشمل portal)
   useEffect(() => {
     const onDown = (e) => {
       const inp = inputRef.current;
@@ -370,18 +383,19 @@ useEffect(() => {
     }
   };
 
-  // ✅ Prevent mixing "All" in multi (for users only)
   const handleMultiAll = (selected, setter, allLabel) => {
     if (!selected) return setter([]);
-    if (selected.some((s) => s.value === "all")) setter([{ value: "all", label: allLabel }]);
-    else setter(selected.filter((s) => s.value !== "all"));
+    if (selected.some((s) => s.value === "all")) {
+      setter([{ value: "all", label: allLabel }]);
+    } else {
+      setter(selected.filter((s) => s.value !== "all"));
+    }
   };
 
   const buildParams = useCallback(
     (pageValue) => {
       const params = new URLSearchParams();
 
-      // ✅ q واحد فقط (وماكو fetch إلا بالبحث)
       const q = smartPicked?.value ? String(smartPicked.value) : smartInput.trim();
       if (q) params.set("q", q);
 
@@ -392,9 +406,17 @@ useEffect(() => {
 
       params.set(
         "user",
-        userFilter.length === 0 || userFilter.some((u) => u.value === "all")
-          ? "all"
-          : userFilter.map((u) => u.value).join(",")
+        canViewAllReports
+          ? (
+              userFilter.length === 0 || userFilter.some((u) => u.value === "all")
+                ? "all"
+                : userFilter.map((u) => u.value).join(",")
+            )
+          : (
+              userFilter.length > 0
+                ? userFilter.map((u) => u.value).join(",")
+                : "all"
+            )
       );
 
       params.set("status", statusFilter?.value || "all");
@@ -418,6 +440,7 @@ useEffect(() => {
       date,
       smartInput,
       smartPicked,
+      canViewAllReports,
     ]
   );
 
@@ -431,7 +454,14 @@ useEffect(() => {
 
         if (json?.success) {
           setRequests(json.data || []);
-          setMeta(json.meta || { total: 0, totalPages: 0, page: pageValue, pageSize: PAGE_SIZE });
+          setMeta(
+            json.meta || {
+              total: 0,
+              totalPages: 0,
+              page: pageValue,
+              pageSize: PAGE_SIZE,
+            }
+          );
         } else {
           setRequests([]);
           setMeta({ total: 0, totalPages: 0, page: pageValue, pageSize: PAGE_SIZE });
@@ -447,7 +477,6 @@ useEffect(() => {
     [buildParams]
   );
 
-  // ✅ البحث فقط من زر "بحث"
   const handleSearch = async () => {
     hasSearchedRef.current = true;
     setPage(1);
@@ -457,12 +486,10 @@ useEffect(() => {
   useEffect(() => {
     if (!hasSearchedRef.current) return;
     fetchPage(page);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page]);
+  }, [page, fetchPage]);
 
   const handleReset = () => {
     setCompanyFilter([]);
-    setUserFilter([]);
     setCurrencyFilter({ value: "all", label: "كل العملات" });
     setStatusFilter({ value: "all", label: "كل الحالات" });
     setPendingFilter({ value: "all", label: "الكل" });
@@ -474,6 +501,10 @@ useEffect(() => {
     setShowSuggest(false);
     setActiveIdx(-1);
 
+    if (canViewAllReports) {
+      setUserFilter([]);
+    }
+
     setRequests([]);
     setMeta({ total: 0, totalPages: 0, page: 1, pageSize: PAGE_SIZE });
     setPage(1);
@@ -483,18 +514,22 @@ useEffect(() => {
   const badge = (status) => {
     const base =
       "inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-[13px] font-extrabold border";
-    if (status === "Approved")
+
+    if (status === "Approved") {
       return (
         <span className={`${base} bg-green-50 text-green-700 border-green-200`}>
           <FiCheckCircle /> مقبول
         </span>
       );
-    if (status === "Rejected")
+    }
+
+    if (status === "Rejected") {
       return (
         <span className={`${base} bg-red-50 text-red-700 border-red-200`}>
           <FiXCircle /> مرفوض
         </span>
       );
+    }
 
     return (
       <span className={`${base} bg-yellow-50 text-yellow-700 border-yellow-200`}>
@@ -519,156 +554,162 @@ useEffect(() => {
     r.value ??
     null;
 
-  // ✅ API limit عندك
-const EXPORT_PAGE_SIZE = 200;
+  const EXPORT_PAGE_SIZE = 200;
 
-// نفس فلترة buildParams بس للـ export وبـ pageSize أكبر
-const buildParamsExport = useCallback(
-  (pageValue) => {
-    const params = new URLSearchParams();
+  const buildParamsExport = useCallback(
+    (pageValue) => {
+      const params = new URLSearchParams();
 
-    const q = smartPicked?.value ? String(smartPicked.value) : smartInput.trim();
-    if (q) params.set("q", q);
+      const q = smartPicked?.value ? String(smartPicked.value) : smartInput.trim();
+      if (q) params.set("q", q);
 
-    params.set(
-      "company",
-      companyFilter.length === 0 ? "all" : companyFilter.map((c) => c.value).join(",")
-    );
+      params.set(
+        "company",
+        companyFilter.length === 0 ? "all" : companyFilter.map((c) => c.value).join(",")
+      );
 
-    params.set(
-      "user",
-      userFilter.length === 0 || userFilter.some((u) => u.value === "all")
-        ? "all"
-        : userFilter.map((u) => u.value).join(",")
-    );
+      params.set(
+        "user",
+        canViewAllReports
+          ? (
+              userFilter.length === 0 || userFilter.some((u) => u.value === "all")
+                ? "all"
+                : userFilter.map((u) => u.value).join(",")
+            )
+          : (
+              userFilter.length > 0
+                ? userFilter.map((u) => u.value).join(",")
+                : "all"
+            )
+      );
 
-    params.set("status", statusFilter?.value || "all");
-    params.set("currency", currencyFilter?.value || "all");
-    params.set("pending", pendingFilter?.value || "all");
+      params.set("status", statusFilter?.value || "all");
+      params.set("currency", currencyFilter?.value || "all");
+      params.set("pending", pendingFilter?.value || "all");
 
-    if (date.from) params.set("from", date.from);
-    if (date.to) params.set("to", date.to);
+      if (date.from) params.set("from", date.from);
+      if (date.to) params.set("to", date.to);
 
-    params.set("page", String(pageValue));
-    params.set("pageSize", String(EXPORT_PAGE_SIZE));
+      params.set("page", String(pageValue));
+      params.set("pageSize", String(EXPORT_PAGE_SIZE));
 
-    return params;
-  },
-  [
-    smartPicked,
-    smartInput,
-    companyFilter,
-    userFilter,
-    statusFilter,
-    currencyFilter,
-    pendingFilter,
-    date,
-  ]
-);
+      return params;
+    },
+    [
+      smartPicked,
+      smartInput,
+      companyFilter,
+      userFilter,
+      statusFilter,
+      currencyFilter,
+      pendingFilter,
+      date,
+      canViewAllReports,
+    ]
+  );
 
-const fetchAllForExport = useCallback(async () => {
-  // ✅ أول صفحة حتى نعرف عدد الصفحات
-  const firstParams = buildParamsExport(1);
-  const firstRes = await fetch(`/api/reports?${firstParams.toString()}`);
-  const firstJson = await firstRes.json();
+  const fetchAllForExport = useCallback(async () => {
+    const firstParams = buildParamsExport(1);
+    const firstRes = await fetch(`/api/reports?${firstParams.toString()}`);
+    const firstJson = await firstRes.json();
 
-  if (!firstJson?.success) return { all: [], totalPages: 0 };
+    if (!firstJson?.success) return { all: [], totalPages: 0 };
 
-  const totalPages = Number(firstJson?.meta?.totalPages || 1);
-  const all = [...(firstJson.data || [])];
+    const totalPages = Number(firstJson?.meta?.totalPages || 1);
+    const all = [...(firstJson.data || [])];
 
-  // ✅ باقي الصفحات
-  for (let p = 2; p <= totalPages; p++) {
-    const params = buildParamsExport(p);
-    const res = await fetch(`/api/reports?${params.toString()}`);
-    const json = await res.json();
-    if (json?.success && Array.isArray(json.data)) {
-      all.push(...json.data);
-    }
-  }
-
-  return { all, totalPages };
-}, [buildParamsExport]);
-
-// ✅ استبدل handleExportExcel بهذا
-const handleExportExcel = useCallback(async () => {
-  try {
-    setLoading(true);
-
-    const { all } = await fetchAllForExport();
-    if (!all || all.length === 0) return;
-
-    const rows = all.map((r) => ({
-      Company: r.companyKey || "-",
-      Code: r.requestCode || "-",
-      Type: r.requestType || "-",
-      Requester: r.createdBy || "-",
-      Status: r.status || "-",
-      "Pending With": Array.isArray(r.pendingWithNames) ? r.pendingWithNames.join(", ") : "-",
-      Department: r.department || "-",
-      Currency: r.currency || "-",
-      Amount: (() => {
-        const v = getAmount(r);
-        const n = Number(v);
-        return Number.isFinite(n) ? n : "";
-      })(),
-      Description: r.description || "-",
-      Date: r.createdAt ? new Date(r.createdAt).toLocaleDateString("en-GB") : "-",
-    }));
-
-    const ws = XLSX.utils.json_to_sheet(rows);
-
-    const amountCol = Object.keys(rows[0] || {}).indexOf("Amount");
-    if (amountCol >= 0) {
-      const range = XLSX.utils.decode_range(ws["!ref"] || "A1:A1");
-      for (let R = range.s.r + 1; R <= range.e.r; R++) {
-        const cellAddr = XLSX.utils.encode_cell({ r: R, c: amountCol });
-        if (ws[cellAddr] && typeof ws[cellAddr].v === "number") ws[cellAddr].z = "#,##0";
+    for (let p = 2; p <= totalPages; p++) {
+      const params = buildParamsExport(p);
+      const res = await fetch(`/api/reports?${params.toString()}`);
+      const json = await res.json();
+      if (json?.success && Array.isArray(json.data)) {
+        all.push(...json.data);
       }
     }
 
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Reports");
-    XLSX.writeFile(wb, `Requests_Reports_${new Date().toISOString().slice(0, 10)}.xlsx`);
-  } catch (e) {
-    console.error("❌ Export all pages error:", e);
-  } finally {
-    setLoading(false);
-  }
-}, [fetchAllForExport]);
+    return { all, totalPages };
+  }, [buildParamsExport]);
 
-const Card = ({ icon: Icon, title, value }) => (
-  <motion.div
-    whileHover={{ y: -3, scale: 1.01 }}
-    whileTap={{ scale: 0.99 }}
-    transition={{ duration: 0.18, ease: "easeOut" }}
-    className="group relative overflow-hidden rounded-2xl border border-gray-200/80 bg-white/85 backdrop-blur shadow-sm"
-  >
-    {/* ✅ نفس الهوفر القديم (glow) */}
-    <div className="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-      <div className="absolute -top-16 -right-16 h-40 w-40 rounded-full bg-blue-500/10 blur-2xl" />
-      <div className="absolute -bottom-16 -left-16 h-40 w-40 rounded-full bg-indigo-500/10 blur-2xl" />
-    </div>
+  const handleExportExcel = useCallback(async () => {
+    try {
+      setLoading(true);
 
-    <div className="relative px-5 py-4 flex items-center gap-4">
-      {/* ✅ كبرنا الأيقونة */}
-      <div className="w-12 h-12 rounded-2xl bg-gray-900 text-white flex items-center justify-center shadow-sm">
-        <Icon className="text-xl" />
+      const { all } = await fetchAllForExport();
+      if (!all || all.length === 0) return;
+
+      const rows = all.map((r) => ({
+        Company: r.companyKey || "-",
+        Code: r.requestCode || "-",
+        Type: r.requestType || "-",
+        Requester: r.createdBy || "-",
+        Status: r.status || "-",
+        "Pending With": Array.isArray(r.pendingWithNames)
+          ? r.pendingWithNames.join(", ")
+          : "-",
+        Department: r.department || "-",
+        Currency: r.currency || "-",
+        Amount: (() => {
+          const v = getAmount(r);
+          const n = Number(v);
+          return Number.isFinite(n) ? n : "";
+        })(),
+        Description: r.description || "-",
+        Date: r.createdAt ? new Date(r.createdAt).toLocaleDateString("en-GB") : "-",
+      }));
+
+      const ws = XLSX.utils.json_to_sheet(rows);
+
+      const amountCol = Object.keys(rows[0] || {}).indexOf("Amount");
+      if (amountCol >= 0) {
+        const range = XLSX.utils.decode_range(ws["!ref"] || "A1:A1");
+        for (let R = range.s.r + 1; R <= range.e.r; R++) {
+          const cellAddr = XLSX.utils.encode_cell({ r: R, c: amountCol });
+          if (ws[cellAddr] && typeof ws[cellAddr].v === "number") {
+            ws[cellAddr].z = "#,##0";
+          }
+        }
+      }
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Reports");
+      XLSX.writeFile(
+        wb,
+        `Requests_Reports_${new Date().toISOString().slice(0, 10)}.xlsx`
+      );
+    } catch (e) {
+      console.error("❌ Export all pages error:", e);
+    } finally {
+      setLoading(false);
+    }
+  }, [fetchAllForExport]);
+
+  const Card = ({ icon: Icon, title, value }) => (
+    <motion.div
+      whileHover={{ y: -3, scale: 1.01 }}
+      whileTap={{ scale: 0.99 }}
+      transition={{ duration: 0.18, ease: "easeOut" }}
+      className="group relative overflow-hidden rounded-2xl border border-gray-200/80 bg-white/85 backdrop-blur shadow-sm"
+    >
+      <div className="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+        <div className="absolute -top-16 -right-16 h-40 w-40 rounded-full bg-blue-500/10 blur-2xl" />
+        <div className="absolute -bottom-16 -left-16 h-40 w-40 rounded-full bg-indigo-500/10 blur-2xl" />
       </div>
 
-      <div>
-        {/* ✅ كبرنا عنوان الكارد */}
-        <div className="text-[14px] font-extrabold text-gray-500">{title}</div>
+      <div className="relative px-5 py-4 flex items-center gap-4">
+        <div className="w-12 h-12 rounded-2xl bg-gray-900 text-white flex items-center justify-center shadow-sm">
+          <Icon className="text-xl" />
+        </div>
 
-        {/* ✅ كبرنا الرقم */}
-        <div className="text-2xl font-extrabold text-gray-900">{value}</div>
+        <div>
+          <div className="text-[14px] font-extrabold text-gray-500">{title}</div>
+          <div className="text-2xl font-extrabold text-gray-900">{value}</div>
+        </div>
       </div>
-    </div>
-  </motion.div>
-);
+    </motion.div>
+  );
 
   if (!Array.isArray(permissions)) return null;
-  if (!canViewReports) return null;
+  if (!canOpenReports) return null;
 
   return (
     <motion.div
@@ -678,7 +719,6 @@ const Card = ({ icon: Icon, title, value }) => (
       transition={{ duration: 0.35 }}
       dir="ltr"
     >
-      {/* Header (مصغّر) */}
       <motion.div
         initial={{ y: -10, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
@@ -740,14 +780,13 @@ const Card = ({ icon: Icon, title, value }) => (
         </div>
       </motion.div>
 
-      {/* Stats */}
       <div className="grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-3 mb-5">
-  <Card icon={FiLayers} title="المجموع" value={stats.total} />
-  <Card icon={FiCheckCircle} title="مقبول" value={stats.approved} />
-  <Card icon={FiClock} title="قيد الانتظار" value={stats.pending} />
-  <Card icon={FiXCircle} title="مرفوض" value={stats.rejected} />
-</div>
-      {/* Filters */}
+        <Card icon={FiLayers} title="المجموع" value={stats.total} />
+        <Card icon={FiCheckCircle} title="مقبول" value={stats.approved} />
+        <Card icon={FiClock} title="قيد الانتظار" value={stats.pending} />
+        <Card icon={FiXCircle} title="مرفوض" value={stats.rejected} />
+      </div>
+
       <motion.div
         className="relative z-20 rounded-2xl border border-gray-200/80 bg-white/85 backdrop-blur shadow-sm p-5 md:p-6 mb-6"
         initial={{ opacity: 0, y: 10 }}
@@ -759,7 +798,6 @@ const Card = ({ icon: Icon, title, value }) => (
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
-          {/* الشركة */}
           <div className="text-right">
             <label className="text-[13px] text-gray-700 mb-1 flex items-center justify-end gap-2 font-extrabold">
               <FiHome /> الشركة
@@ -775,7 +813,6 @@ const Card = ({ icon: Icon, title, value }) => (
             />
           </div>
 
-          {/* مقدم الطلب */}
           <div className="text-right">
             <label className="text-[13px] text-gray-700 mb-1 flex items-center justify-end gap-2 font-extrabold">
               <FiUser /> مقدم الطلب
@@ -784,14 +821,14 @@ const Card = ({ icon: Icon, title, value }) => (
               {...selectMenuProps}
               options={users}
               isMulti
-              placeholder="كل المستخدمين"
+              placeholder={canViewAllReports ? "كل المستخدمين" : "مقدم الطلب الحالي"}
               value={userFilter}
               onChange={(v) => handleMultiAll(v, setUserFilter, "كل المستخدمين")}
               styles={selectStyles}
+              isDisabled={!canViewAllReports}
             />
           </div>
 
-          {/* الحالة */}
           <div className="text-right">
             <label className="text-[13px] text-gray-700 mb-1 flex items-center justify-end gap-2 font-extrabold">
               <FiCheckCircle /> الحالة
@@ -808,7 +845,6 @@ const Card = ({ icon: Icon, title, value }) => (
             />
           </div>
 
-          {/* العملة */}
           <div className="text-right">
             <label className="text-[13px] text-gray-700 mb-1 flex items-center justify-end gap-2 font-extrabold">
               <FaMoneyBillWave /> العملة
@@ -825,7 +861,6 @@ const Card = ({ icon: Icon, title, value }) => (
             />
           </div>
 
-          {/* قيد الانتظار عند */}
           <div className="text-right">
             <label className="text-[13px] text-gray-700 mb-1 flex items-center justify-end gap-2 font-extrabold">
               <FiClock /> قيد الانتظار عند
@@ -842,7 +877,6 @@ const Card = ({ icon: Icon, title, value }) => (
             />
           </div>
 
-          {/* From */}
           <div className="text-right">
             <label className="text-[13px] text-gray-700 mb-1 flex items-center justify-end gap-2 font-extrabold">
               <FiCalendar /> From
@@ -855,7 +889,6 @@ const Card = ({ icon: Icon, title, value }) => (
             />
           </div>
 
-          {/* To */}
           <div className="text-right">
             <label className="text-[13px] text-gray-700 mb-1 flex items-center justify-end gap-2 font-extrabold">
               <FiCalendar /> To
@@ -868,7 +901,6 @@ const Card = ({ icon: Icon, title, value }) => (
             />
           </div>
 
-          {/* ✅ Smart search */}
           <div className="text-right lg:col-span-2">
             <label className="text-[13px] text-gray-700 mb-1 flex items-center justify-end gap-2 font-extrabold">
               <FiSearch /> بحث موحّد (كود / وصف)
@@ -881,7 +913,6 @@ const Card = ({ icon: Icon, title, value }) => (
                 onChange={(e) => {
                   setSmartInput(e.target.value);
                   setSmartPicked(null);
-                  // ✅ لا تسوي أي fetch هنا
                   setShowSuggest(false);
                   setActiveIdx(-1);
                 }}
@@ -889,16 +920,11 @@ const Card = ({ icon: Icon, title, value }) => (
                 placeholder="اكتب كود أو وصف..."
                 className="w-full rounded-xl px-4 py-2.5 border border-gray-200 bg-white text-gray-900 font-extrabold text-[16px] shadow-sm outline-none focus:border-gray-300"
               />
-
-              
             </div>
-
-           
           </div>
         </div>
       </motion.div>
 
-      {/* ✅ Suggestions Portal */}
       {portalReady && showSuggest && smartOptions.length > 0 &&
         createPortal(
           <div
@@ -926,10 +952,8 @@ const Card = ({ icon: Icon, title, value }) => (
             ))}
           </div>,
           document.body
-        )
-      }
+        )}
 
-      {/* Table */}
       <AnimatePresence mode="wait">
         {loading ? (
           <motion.div className="flex flex-col items-center py-20">
@@ -947,26 +971,26 @@ const Card = ({ icon: Icon, title, value }) => (
               <table className="min-w-[1100px] w-full text-[15px] md:text-[16px] text-slate-800 font-bold">
                 <thead className="sticky top-0 z-10">
                   <tr className="bg-white/80 backdrop-blur border-b border-white/40">
-                  {[
-  "الشركة",
-  "كود الريكويست",
-  "نوع الطلب",
-  "مقدم الطلب",
-  "الحالة",
-  "قيد الانتظار عند",
-  "القسم",
-  "العملة",
-  "المبلغ",
-  "الوصف",
-  "التاريخ",
-].map((h, i) => (
-  <th
-    key={`${h}-${i}`}   // ✅ هسه يصير unique
-    className="px-6 py-4 text-right text-[13px] md:text-[14px] font-extrabold tracking-wide text-slate-900 whitespace-nowrap"
-  >
-    {h}
-  </th>
-))}
+                    {[
+                      "الشركة",
+                      "كود الريكويست",
+                      "نوع الطلب",
+                      "مقدم الطلب",
+                      "الحالة",
+                      "قيد الانتظار عند",
+                      "القسم",
+                      "العملة",
+                      "المبلغ",
+                      "الوصف",
+                      "التاريخ",
+                    ].map((h, i) => (
+                      <th
+                        key={`${h}-${i}`}
+                        className="px-6 py-4 text-right text-[13px] md:text-[14px] font-extrabold tracking-wide text-slate-900 whitespace-nowrap"
+                      >
+                        {h}
+                      </th>
+                    ))}
                   </tr>
                 </thead>
 
@@ -977,7 +1001,9 @@ const Card = ({ icon: Icon, title, value }) => (
                       whileHover={{ backgroundColor: "rgba(2,132,199,0.08)" }}
                       transition={{ duration: 0.12 }}
                       onClick={() => window.open(`/requests/${r.companyKey}/${r._id}`, "_blank")}
-                      className={`cursor-pointer ${idx % 2 === 0 ? "bg-white/30" : "bg-white/20"} hover:bg-white/45`}
+                      className={`cursor-pointer ${
+                        idx % 2 === 0 ? "bg-white/30" : "bg-white/20"
+                      } hover:bg-white/45`}
                     >
                       <td className="px-6 py-4 text-right font-extrabold text-slate-900 whitespace-nowrap">
                         {r.companyKey || "-"}
@@ -985,9 +1011,15 @@ const Card = ({ icon: Icon, title, value }) => (
                       <td className="px-6 py-4 text-right font-mono text-slate-900 whitespace-nowrap">
                         {r.requestCode || "-"}
                       </td>
-                      <td className="px-6 py-4 text-right whitespace-nowrap">{r.requestType || "-"}</td>
-                      <td className="px-6 py-4 text-right whitespace-nowrap">{r.createdBy || "-"}</td>
-                      <td className="px-6 py-4 text-right whitespace-nowrap">{badge(r.status)}</td>
+                      <td className="px-6 py-4 text-right whitespace-nowrap">
+                        {r.requestType || "-"}
+                      </td>
+                      <td className="px-6 py-4 text-right whitespace-nowrap">
+                        {r.createdBy || "-"}
+                      </td>
+                      <td className="px-6 py-4 text-right whitespace-nowrap">
+                        {badge(r.status)}
+                      </td>
 
                       <td className="px-6 py-4 text-right">
                         <div className="max-w-[240px] truncate">
@@ -997,7 +1029,9 @@ const Card = ({ icon: Icon, title, value }) => (
                         </div>
                       </td>
 
-                      <td className="px-6 py-4 text-right whitespace-nowrap">{r.department || "-"}</td>
+                      <td className="px-6 py-4 text-right whitespace-nowrap">
+                        {r.department || "-"}
+                      </td>
                       <td className="px-6 py-4 text-right whitespace-nowrap font-extrabold">
                         {r.currency || "-"}
                       </td>
@@ -1010,12 +1044,15 @@ const Card = ({ icon: Icon, title, value }) => (
                       </td>
 
                       <td className="px-6 py-4 text-right">
-                        <div className="max-w-[320px] truncate text-slate-700">{r.description || "-"}</div>
+                        <div className="max-w-[320px] truncate text-slate-700">
+                          {r.description || "-"}
+                        </div>
                       </td>
 
-                      {/* ✅ التاريخ EN */}
                       <td className="px-6 py-4 text-right whitespace-nowrap text-slate-700">
-                        {r.createdAt ? new Date(r.createdAt).toLocaleDateString("en-GB") : "-"}
+                        {r.createdAt
+                          ? new Date(r.createdAt).toLocaleDateString("en-GB")
+                          : "-"}
                       </td>
                     </motion.tr>
                   ))}
@@ -1023,7 +1060,6 @@ const Card = ({ icon: Icon, title, value }) => (
               </table>
             </div>
 
-            {/* Pagination */}
             <div className="relative px-5 py-4 bg-white/65 backdrop-blur border-t border-white/30 flex items-center justify-between gap-3">
               <div className="text-sm text-slate-700 font-extrabold">
                 Total: <span className="text-slate-900">{meta.total}</span>
@@ -1032,7 +1068,11 @@ const Card = ({ icon: Icon, title, value }) => (
                 <span className="text-slate-900">{meta.totalPages || 1}</span>
               </div>
 
-              <TablePagination page={page} totalPages={meta.totalPages || 1} onPage={setPage} />
+              <TablePagination
+                page={page}
+                totalPages={meta.totalPages || 1}
+                onPage={setPage}
+              />
             </div>
           </motion.div>
         ) : (
