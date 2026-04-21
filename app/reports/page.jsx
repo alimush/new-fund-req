@@ -545,7 +545,10 @@ export default function ReportsPage() {
     await fetchPage(1);
   };
 
-
+  useEffect(() => {
+    if (!hasSearchedRef.current) return;
+    fetchPage(page);
+  }, [page, fetchPage]);
 
   const handleReset = () => {
     resetUiState();

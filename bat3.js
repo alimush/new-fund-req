@@ -1,10 +1,10 @@
 const { MongoClient } = require("mongodb");
 
-// 🔴 المصدر (Cluster01)
+// 🔴 المصدر
 const sourceUri =
   "mongodb+srv://alimushtaqmcamt_db_user:pDaGJT4YdNMnIRfV@cluster01.dkc7vo.mongodb.net/test?appName=Cluster01";
 
-// 🟢 الهدف (Cluster0)
+// 🟢 الهدف
 const targetUri =
   "mongodb+srv://AliMushtaq:Aaa12345@cluster0.iihipor.mongodb.net/?appName=Cluster0";
 
@@ -27,33 +27,30 @@ async function run() {
     const sourceCol = sourceDB.collection(collectionName);
     const targetCol = targetDB.collection(collectionName);
 
-    // 🔥 (اختياري) يمسح القديم من الهدف
-    await targetCol.deleteMany({});
-    console.log("🗑️ Cleared target collection");
-
+    // ✅ قراءة كل الداتا من المصدر
     const docs = await sourceCol.find({}).toArray();
-
-    console.log(`📦 Found ${docs.length} documents`);
+    console.log(`📦 Found ${docs.length} documents in source collection: ${collectionName}`);
 
     if (!docs.length) {
-      console.log("⚠️ No data to copy");
+      console.log("⚠️ No data found to copy");
       return;
     }
 
-    const newDocs = docs.map((doc) => {
-      const { _id, ...rest } = doc;
-      return {
-        ...rest,
-        migratedFrom: "cluster01",
-        migratedAt: new Date(),
-      };
-    });
+    // ✅ إدراج مثل ما هي، بدون حذف من المصدر وبدون تغيير اسم الكولكشن
+    // ordered: false حتى إذا أكو _id مكرر يكمل بالباقي
+    const result = await targetCol.insertMany(docs, { ordered: false });
 
-    const result = await targetCol.insertMany(newDocs);
-
-    console.log(`🎉 Copied ${result.insertedCount} documents successfully`);
+    console.log(`🎉 Copied ${result.insertedCount} documents successfully to target collection: ${collectionName}`);
   } catch (err) {
-    console.error("❌ Error:", err);
+    // duplicate key error
+    if (err.code === 11000 || (err.writeErrors && err.writeErrors.length > 0)) {
+      const insertedCount = err.result?.result?.nInserted || err.result?.nInserted || 0;
+      console.log(`⚠️ Some documents already exist in target (duplicate _id).`);
+      console.log(`✅ Inserted ${insertedCount} new documents.`);
+      console.log(`⏭️ Skipped duplicated documents and continued.`);
+    } else {
+      console.error("❌ Error:", err);
+    }
   } finally {
     await sourceClient.close();
     await targetClient.close();
