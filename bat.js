@@ -4,7 +4,7 @@ const SOURCE_URI =
   "mongodb+srv://AliMushtaq:Aaa12345@cluster0.iihipor.mongodb.net/?appName=Cluster0";
 
 const TARGET_URI =
-  "mongodb+srv://AliMushtaq001:Aaa12345AMT@cluster0.0wougmq.mongodb.net/?appName=Cluster0";
+  "mongodb+srv://alimushtaqmcamt_db_user:pDaGJT4YdNMnIRfV@cluster01.dkc7vo.mongodb.net/?appName=Cluster01"
 
 const SOURCE_DB = "test";
 const TARGET_DB = "test";

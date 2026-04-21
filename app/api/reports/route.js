@@ -6,6 +6,7 @@ import { getModelForCompany } from "@/models/Request";
 import { cookies } from "next/headers";
 import Permissions from "@/models/Permissions";
 import { PERMISSIONS } from "@/lib/permission";
+import RequestOldData from "@/models/RequestOldData";
 
 export const runtime = "nodejs";
 
@@ -83,6 +84,71 @@ function parseDigitsAmount(q) {
   return { isNumber: true, amount: Number(cleaned) };
 }
 
+async function getCurrenciesBySource(source, allowedCompanies) {
+  if (source === "old") {
+    return await RequestOldData.distinct("currency", {
+      companyKey: { $in: allowedCompanies },
+    });
+  }
+
+  const currencyArrays = await Promise.all(
+    allowedCompanies.map(async (companyKey) => {
+      const Model = getModelForCompany(companyKey);
+      return await Model.distinct("currency", {});
+    })
+  );
+
+  return currencyArrays.flat();
+}
+
+async function getNewDocsByCompany({
+  companyList,
+  queryBase,
+  select = null,
+}) {
+  const docsByCompany = await Promise.all(
+    companyList.map(async (companyKey) => {
+      const Model = getModelForCompany(companyKey);
+
+      let q = Model.find(queryBase).sort({ createdAt: -1 });
+      if (select) q = q.select(select);
+
+      const docs = await q.lean();
+      return (docs || []).map((d) => ({ ...d, companyKey }));
+    })
+  );
+
+  return docsByCompany.flat();
+}
+
+async function getOldDocs({
+  companyList,
+  queryBase,
+  select = null,
+}) {
+  let q = RequestOldData.find({
+    ...queryBase,
+    companyKey: { $in: companyList },
+  }).sort({ createdAt: -1 });
+
+  if (select) q = q.select(select);
+
+  return await q.lean();
+}
+
+async function getDocsBySource({
+  source,
+  companyList,
+  queryBase,
+  select = null,
+}) {
+  if (source === "old") {
+    return await getOldDocs({ companyList, queryBase, select });
+  }
+
+  return await getNewDocsByCompany({ companyList, queryBase, select });
+}
+
 export async function GET(req) {
   try {
     await dbConnect();
@@ -130,10 +196,11 @@ export async function GET(req) {
     }
 
     const { searchParams } = new URL(req.url);
+    const source = searchParams.get("source") || "new";
+    const isOldSource = source === "old";
 
     // =========================
-    // ✅ SUGGEST MODE (كود + وصف فقط)
-    // ✅ الأرقام: no suggestions
+    // SUGGEST MODE
     // =========================
     if (searchParams.get("suggest") === "1") {
       const q = (searchParams.get("q") || "").trim();
@@ -141,41 +208,29 @@ export async function GET(req) {
 
       const { isNumber } = parseDigitsAmount(q);
 
-      // ✅ إذا رقم -> ماكو اقتراحات نهائياً
       if (isNumber) {
         return NextResponse.json({ success: true, data: [] });
       }
 
-      const options = [];
       const rxText = escapeRegex(q);
       const rx = new RegExp(rxText, "i");
-      const perCompanyLimit = 40;
 
-      const docsByCompany = await Promise.all(
-        allowedCompanies.map(async (companyKey) => {
-          const Model = getModelForCompany(companyKey);
+      const cond = {
+        ...(canViewAllReports
+          ? {}
+          : { createdBy: currentUsername || "__never_match__" }),
+        $or: [
+          { requestCode: { $regex: rxText, $options: "i" } },
+          { description: { $regex: rxText, $options: "i" } },
+        ],
+      };
 
-          const cond = {
-            ...(canViewAllReports
-              ? {}
-              : { createdBy: currentUsername || "__never_match__" }),
-            $or: [
-              { requestCode: { $regex: rxText, $options: "i" } },
-              { description: { $regex: rxText, $options: "i" } },
-            ],
-          };
-
-          const docs = await Model.find(cond)
-            .sort({ createdAt: -1 })
-            .limit(perCompanyLimit)
-            .select("requestCode description createdAt")
-            .lean();
-
-          return docs || [];
-        })
-      );
-
-      const merged = docsByCompany.flat();
+      const merged = await getDocsBySource({
+        source,
+        companyList: allowedCompanies,
+        queryBase: cond,
+        select: "requestCode description createdAt companyKey",
+      });
 
       const codesSet = new Set();
       const descMap = new Map();
@@ -193,6 +248,8 @@ export async function GET(req) {
           if (!descMap.has(desc)) descMap.set(desc, short);
         }
       }
+
+      const options = [];
 
       Array.from(codesSet)
         .sort()
@@ -251,16 +308,10 @@ export async function GET(req) {
         ? [{ username: currentUsername }]
         : [];
 
-      const currencyArrays = await Promise.all(
-        allowedCompanies.map(async (companyKey) => {
-          const Model = getModelForCompany(companyKey);
-          const arr = await Model.distinct("currency", {});
-          return arr || [];
-        })
-      );
+      const currenciesRaw = await getCurrenciesBySource(source, allowedCompanies);
 
       const currenciesSet = new Set();
-      currencyArrays.flat().forEach((c) => c && currenciesSet.add(String(c)));
+      (currenciesRaw || []).flat().forEach((c) => c && currenciesSet.add(String(c)));
 
       return NextResponse.json({
         success: true,
@@ -348,7 +399,6 @@ export async function GET(req) {
         query.createdBy = { $in: createdByList };
       }
 
-      // ✅ لا تسمح بإظهار الملغي نهائيًا
       if (statusParam === "Cancelled") {
         query.status = "__never_match__";
       } else if (statusParam !== "all") {
@@ -371,7 +421,6 @@ export async function GET(req) {
         }
       }
 
-      // ✅ q نص: فلترة بالكود/الوصف/... (q رقم: ينحل بالـ heavy filter بالمبلغ)
       if (qParam && !qIsNumber) {
         const rx = { $regex: escapeRegex(qParam), $options: "i" };
         query.$or = [
@@ -390,16 +439,15 @@ export async function GET(req) {
     const needHeavyFilter =
       pendingParam !== "all" || (qIsNumber && Number.isFinite(qAmount));
 
+    // =========================
+    // HEAVY FILTER MODE
+    // =========================
     if (needHeavyFilter) {
-      const allDocsByCompany = await Promise.all(
-        companyList.map(async (companyKey) => {
-          const Model = getModelForCompany(companyKey);
-          const docs = await Model.find(queryBase).sort({ createdAt: -1 }).lean();
-          return (docs || []).map((d) => ({ ...d, companyKey }));
-        })
-      );
-
-      let mergedAll = allDocsByCompany.flat();
+      let mergedAll = await getDocsBySource({
+        source,
+        companyList,
+        queryBase,
+      });
 
       for (const d of mergedAll) {
         d.pendingWithIds = computePendingWithIds(d);
@@ -496,17 +544,26 @@ export async function GET(req) {
     }
 
     // =========================
-    // NORMAL MODE (pagination)
+    // NORMAL MODE
     // =========================
-    const countsByCompany = await Promise.all(
-      companyList.map(async (companyKey) => {
-        const Model = getModelForCompany(companyKey);
-        const c = await Model.countDocuments(queryBase);
-        return { companyKey, count: c };
-      })
-    );
+    let merged = await getDocsBySource({
+      source,
+      companyList,
+      queryBase,
+    });
 
-    const total = countsByCompany.reduce((a, x) => a + x.count, 0);
+    for (const d of merged) {
+      d.pendingWithIds = computePendingWithIds(d);
+      d.totalAmount = computeTotalAmount(d);
+    }
+
+    merged.sort((a, b) => {
+      const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return tb - ta;
+    });
+
+    const total = merged.length;
     const totalPages = total ? Math.ceil(total / pageSize) : 0;
 
     if (!total) {
@@ -533,57 +590,11 @@ export async function GET(req) {
       });
     }
 
-    const globalSkip = (page - 1) * pageSize;
-    let remainingSkip = globalSkip;
-    let remainingTake = pageSize;
-
-    const plan = [];
-
-    for (const { companyKey, count } of countsByCompany) {
-      if (remainingTake <= 0) break;
-      if (count <= 0) continue;
-
-      if (remainingSkip >= count) {
-        remainingSkip -= count;
-        continue;
-      }
-
-      const skip = Math.max(0, remainingSkip);
-      const available = count - skip;
-      const limit = Math.min(remainingTake, available);
-
-      plan.push({ companyKey, skip, limit });
-
-      remainingSkip = 0;
-      remainingTake -= limit;
-    }
-
-    const fetchPromises = plan.map(async ({ companyKey, skip, limit }) => {
-      const Model = getModelForCompany(companyKey);
-      const docs = await Model.find(queryBase)
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limit)
-        .lean();
-
-      return docs.map((d) => ({ ...d, companyKey }));
-    });
-
-    let merged = (await Promise.all(fetchPromises)).flat();
-
-    for (const d of merged) {
-      d.pendingWithIds = computePendingWithIds(d);
-      d.totalAmount = computeTotalAmount(d);
-    }
-
-    merged.sort((a, b) => {
-      const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-      const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-      return tb - ta;
-    });
+    const start = (page - 1) * pageSize;
+    const pageDocs = merged.slice(start, start + pageSize);
 
     const allPendingIds = new Set();
-    for (const d of merged) {
+    for (const d of pageDocs) {
       (d.pendingWithIds || []).forEach((id) => allPendingIds.add(String(id)));
     }
 
@@ -596,7 +607,7 @@ export async function GET(req) {
       pendingNameMap = new Map(users.map((u) => [String(u._id), u.username]));
     }
 
-    const finalData = merged.map((d) => ({
+    const finalData = pageDocs.map((d) => ({
       ...d,
       pendingWithNames: (d.pendingWithIds || [])
         .map((id) => pendingNameMap.get(String(id)))

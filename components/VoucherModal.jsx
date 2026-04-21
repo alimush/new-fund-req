@@ -19,6 +19,15 @@ const companies = [
     receiptImgPng: "/receipt.png",
   },
   {
+    key: "010",
+    name: "شركة الغدير",
+    logo: "/الغدير.png",
+    paymentImgJpg: "/voucher.jpg",
+    receiptImgJpg: "/receipt.jpg",
+    paymentImgPng: "/voucher.png",
+    receiptImgPng: "/receipt.png",
+  },
+  {
     key: "Badur-Baghdad",
     name: "شركة بدور بغداد",
     logo: "/بدور_بغداد.png",

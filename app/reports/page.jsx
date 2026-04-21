@@ -35,7 +35,6 @@ export default function ReportsPage() {
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  // meta
   const PAGE_SIZE = 25;
   const [meta, setMeta] = useState({
     total: 0,
@@ -45,14 +44,12 @@ export default function ReportsPage() {
   });
   const [page, setPage] = useState(1);
 
-  // Filters options from API
   const [companies, setCompanies] = useState([]);
   const [users, setUsers] = useState([]);
   const [currencies, setCurrencies] = useState([]);
   const [statuses, setStatuses] = useState([]);
   const [pendingUsers, setPendingUsers] = useState([]);
 
-  // Selected filters
   const [companyFilter, setCompanyFilter] = useState([]);
   const [userFilter, setUserFilter] = useState([]);
   const [currencyFilter, setCurrencyFilter] = useState({
@@ -69,7 +66,6 @@ export default function ReportsPage() {
   });
   const [date, setDate] = useState({ from: "", to: "" });
 
-  // Smart input
   const [smartInput, setSmartInput] = useState("");
   const [smartPicked, setSmartPicked] = useState(null);
   const [smartOptions, setSmartOptions] = useState([]);
@@ -77,13 +73,21 @@ export default function ReportsPage() {
   const [activeIdx, setActiveIdx] = useState(-1);
   const [suggestLoading, setSuggestLoading] = useState(false);
 
-  // Portal positioning
   const inputRef = useRef(null);
   const suggestBoxRef = useRef(null);
   const [suggestPos, setSuggestPos] = useState({ top: 0, left: 0, width: 0 });
   const [portalReady, setPortalReady] = useState(false);
 
-  // حتى ما يسوي fetch أول ما يفتح الصفحة
+  const [dataSource, setDataSource] = useState({
+    value: "new",
+    label: "new data",
+  });
+
+  const dataSourceOptions = [
+    { value: "new", label: "new data" },
+    { value: "old", label: "old data" },
+  ];
+
   const hasSearchedRef = useRef(false);
 
   const { permissions } = usePermissions();
@@ -96,11 +100,18 @@ export default function ReportsPage() {
     Array.isArray(permissions) &&
     permissions.includes(PERMISSIONS.VIEW_ALL_REPORTS);
 
+    const canViewNewOldData =
+  Array.isArray(permissions) &&
+  permissions.includes(PERMISSIONS.VIEW_NEW_OLD_DATA);
+
   const canOpenReports = canViewReports || canViewAllReports;
 
   useEffect(() => setPortalReady(true), []);
-
-  // react-select portal target
+  useEffect(() => {
+    if (!canViewNewOldData) {
+      setDataSource({ value: "new", label: "new data" });
+    }
+  }, [canViewNewOldData]);
   const [menuTarget, setMenuTarget] = useState(null);
   useEffect(() => setMenuTarget(document.body), []);
 
@@ -174,13 +185,41 @@ export default function ReportsPage() {
     };
   }, [requests, meta.total]);
 
-  // تحميل الفلاتر
+  const resetUiState = useCallback(() => {
+    setCompanyFilter([]);
+    setCurrencyFilter({ value: "all", label: "كل العملات" });
+    setStatusFilter({ value: "all", label: "كل الحالات" });
+    setPendingFilter({ value: "all", label: "الكل" });
+    setDate({ from: "", to: "" });
+
+    setSmartInput("");
+    setSmartPicked(null);
+    setSmartOptions([]);
+    setShowSuggest(false);
+    setActiveIdx(-1);
+
+    if (canViewAllReports) {
+      setUserFilter([]);
+    }
+
+    setRequests([]);
+    setMeta({ total: 0, totalPages: 0, page: 1, pageSize: PAGE_SIZE });
+    setPage(1);
+    hasSearchedRef.current = false;
+  }, [canViewAllReports]);
+
   useEffect(() => {
     if (!canOpenReports) return;
 
     const loadFilters = async () => {
       try {
-        const res = await fetch("/api/reports?filters=1");
+        const res = await fetch(
+          `/api/reports?filters=1&source=${encodeURIComponent(
+            dataSource?.value || "new"
+          )}`,
+          { cache: "no-store" }
+        );
+
         const json = await res.json();
         if (!json?.success) return;
 
@@ -197,7 +236,6 @@ export default function ReportsPage() {
 
         setUsers(userOptions);
 
-        // إذا ما عنده VIEW_ALL_REPORTS نخلي المستخدم نفسه default
         if (!canViewAllReports) {
           const me = (f.users || [])[0];
           if (me) {
@@ -205,8 +243,6 @@ export default function ReportsPage() {
           } else {
             setUserFilter([]);
           }
-        } else {
-          setUserFilter([]);
         }
 
         const currList = Array.from(
@@ -224,27 +260,37 @@ export default function ReportsPage() {
           ...currList.map((c) => ({ value: c, label: c })),
         ]);
 
-        const st = (f.statuses || ["Pending", "Approved", "Rejected"]).map((s) => ({
-          value: s,
-          label:
-            s === "Pending"
-              ? "قيد الانتظار"
-              : s === "Approved"
-              ? "مقبول"
-              : s === "Rejected"
-              ? "مرفوض"
-              : s,
-        }));
+        const st = (f.statuses || ["Pending", "Approved", "Rejected"]).map(
+          (s) => ({
+            value: s,
+            label:
+              s === "Pending"
+                ? "قيد الانتظار"
+                : s === "Approved"
+                ? "مقبول"
+                : s === "Rejected"
+                ? "مرفوض"
+                : s,
+          })
+        );
+
         setStatuses([{ value: "all", label: "كل الحالات" }, ...st]);
 
-        setPendingUsers([{ value: "all", label: "الكل" }, ...(f.pendingUsers || [])]);
+        setPendingUsers([
+          { value: "all", label: "الكل" },
+          ...(f.pendingUsers || []),
+        ]);
       } catch (err) {
         console.error("❌ Error loading reports filters:", err);
       }
     };
 
     loadFilters();
-  }, [canOpenReports, canViewAllReports]);
+  }, [canOpenReports, canViewAllReports, dataSource]);
+
+  useEffect(() => {
+    resetUiState();
+  }, [dataSource, resetUiState]);
 
   const isDigitsOnly = (s) =>
     /^\d+$/.test(String(s || "").replace(/,/g, "").trim());
@@ -278,8 +324,13 @@ export default function ReportsPage() {
 
     setSuggestLoading(true);
     try {
-      const res = await fetch(`/api/reports?suggest=1&q=${encodeURIComponent(q)}`);
+      const res = await fetch(
+        `/api/reports?suggest=1&q=${encodeURIComponent(q)}&source=${encodeURIComponent(
+          dataSource?.value || "new"
+        )}`
+      );
       const json = await res.json();
+
       if (json?.success) {
         const arr = Array.isArray(json.data) ? json.data : [];
         setSmartOptions(arr);
@@ -293,11 +344,11 @@ export default function ReportsPage() {
         }
       }
     } catch {
-      // ignore
+      //
     } finally {
       setSuggestLoading(false);
     }
-  }, [smartInput, recalcSuggestPos]);
+  }, [smartInput, recalcSuggestPos, dataSource]);
 
   useEffect(() => {
     const q = smartInput.trim();
@@ -399,24 +450,24 @@ export default function ReportsPage() {
       const q = smartPicked?.value ? String(smartPicked.value) : smartInput.trim();
       if (q) params.set("q", q);
 
+      params.set("source", dataSource?.value || "new");
+
       params.set(
         "company",
-        companyFilter.length === 0 ? "all" : companyFilter.map((c) => c.value).join(",")
+        companyFilter.length === 0
+          ? "all"
+          : companyFilter.map((c) => c.value).join(",")
       );
 
       params.set(
         "user",
         canViewAllReports
-          ? (
-              userFilter.length === 0 || userFilter.some((u) => u.value === "all")
-                ? "all"
-                : userFilter.map((u) => u.value).join(",")
-            )
-          : (
-              userFilter.length > 0
-                ? userFilter.map((u) => u.value).join(",")
-                : "all"
-            )
+          ? userFilter.length === 0 || userFilter.some((u) => u.value === "all")
+            ? "all"
+            : userFilter.map((u) => u.value).join(",")
+          : userFilter.length > 0
+          ? userFilter.map((u) => u.value).join(",")
+          : "all"
       );
 
       params.set("status", statusFilter?.value || "all");
@@ -441,6 +492,7 @@ export default function ReportsPage() {
       smartInput,
       smartPicked,
       canViewAllReports,
+      dataSource,
     ]
   );
 
@@ -464,12 +516,22 @@ export default function ReportsPage() {
           );
         } else {
           setRequests([]);
-          setMeta({ total: 0, totalPages: 0, page: pageValue, pageSize: PAGE_SIZE });
+          setMeta({
+            total: 0,
+            totalPages: 0,
+            page: pageValue,
+            pageSize: PAGE_SIZE,
+          });
         }
       } catch (err) {
         console.error("❌ Error fetching reports:", err);
         setRequests([]);
-        setMeta({ total: 0, totalPages: 0, page: pageValue, pageSize: PAGE_SIZE });
+        setMeta({
+          total: 0,
+          totalPages: 0,
+          page: pageValue,
+          pageSize: PAGE_SIZE,
+        });
       } finally {
         setLoading(false);
       }
@@ -483,32 +545,10 @@ export default function ReportsPage() {
     await fetchPage(1);
   };
 
-  useEffect(() => {
-    if (!hasSearchedRef.current) return;
-    fetchPage(page);
-  }, [page, fetchPage]);
+
 
   const handleReset = () => {
-    setCompanyFilter([]);
-    setCurrencyFilter({ value: "all", label: "كل العملات" });
-    setStatusFilter({ value: "all", label: "كل الحالات" });
-    setPendingFilter({ value: "all", label: "الكل" });
-    setDate({ from: "", to: "" });
-
-    setSmartInput("");
-    setSmartPicked(null);
-    setSmartOptions([]);
-    setShowSuggest(false);
-    setActiveIdx(-1);
-
-    if (canViewAllReports) {
-      setUserFilter([]);
-    }
-
-    setRequests([]);
-    setMeta({ total: 0, totalPages: 0, page: 1, pageSize: PAGE_SIZE });
-    setPage(1);
-    hasSearchedRef.current = false;
+    resetUiState();
   };
 
   const badge = (status) => {
@@ -563,24 +603,24 @@ export default function ReportsPage() {
       const q = smartPicked?.value ? String(smartPicked.value) : smartInput.trim();
       if (q) params.set("q", q);
 
+      params.set("source", dataSource?.value || "new");
+
       params.set(
         "company",
-        companyFilter.length === 0 ? "all" : companyFilter.map((c) => c.value).join(",")
+        companyFilter.length === 0
+          ? "all"
+          : companyFilter.map((c) => c.value).join(",")
       );
 
       params.set(
         "user",
         canViewAllReports
-          ? (
-              userFilter.length === 0 || userFilter.some((u) => u.value === "all")
-                ? "all"
-                : userFilter.map((u) => u.value).join(",")
-            )
-          : (
-              userFilter.length > 0
-                ? userFilter.map((u) => u.value).join(",")
-                : "all"
-            )
+          ? userFilter.length === 0 || userFilter.some((u) => u.value === "all")
+            ? "all"
+            : userFilter.map((u) => u.value).join(",")
+          : userFilter.length > 0
+          ? userFilter.map((u) => u.value).join(",")
+          : "all"
       );
 
       params.set("status", statusFilter?.value || "all");
@@ -605,6 +645,7 @@ export default function ReportsPage() {
       pendingFilter,
       date,
       canViewAllReports,
+      dataSource,
     ]
   );
 
@@ -674,14 +715,16 @@ export default function ReportsPage() {
       XLSX.utils.book_append_sheet(wb, ws, "Reports");
       XLSX.writeFile(
         wb,
-        `Requests_Reports_${new Date().toISOString().slice(0, 10)}.xlsx`
+        `Requests_Reports_${dataSource?.value || "new"}_${
+          new Date().toISOString().slice(0, 10)
+        }.xlsx`
       );
     } catch (e) {
       console.error("❌ Export all pages error:", e);
     } finally {
       setLoading(false);
     }
-  }, [fetchAllForExport]);
+  }, [fetchAllForExport, dataSource]);
 
   const Card = ({ icon: Icon, title, value }) => (
     <motion.div
@@ -838,7 +881,9 @@ export default function ReportsPage() {
               options={statuses}
               placeholder="كل الحالات"
               value={statusFilter}
-              onChange={(v) => setStatusFilter(v || { value: "all", label: "كل الحالات" })}
+              onChange={(v) =>
+                setStatusFilter(v || { value: "all", label: "كل الحالات" })
+              }
               styles={selectStyles}
               isSearchable
               components={noClearComponents}
@@ -854,7 +899,9 @@ export default function ReportsPage() {
               options={currencies}
               placeholder="كل العملات"
               value={currencyFilter}
-              onChange={(v) => setCurrencyFilter(v || { value: "all", label: "كل العملات" })}
+              onChange={(v) =>
+                setCurrencyFilter(v || { value: "all", label: "كل العملات" })
+              }
               styles={selectStyles}
               isSearchable
               components={noClearComponents}
@@ -870,7 +917,9 @@ export default function ReportsPage() {
               options={pendingUsers}
               placeholder="الكل"
               value={pendingFilter}
-              onChange={(v) => setPendingFilter(v || { value: "all", label: "الكل" })}
+              onChange={(v) =>
+                setPendingFilter(v || { value: "all", label: "الكل" })
+              }
               styles={selectStyles}
               isSearchable
               components={noClearComponents}
@@ -901,6 +950,26 @@ export default function ReportsPage() {
             />
           </div>
 
+          {canViewNewOldData && (
+  <div className="text-right">
+    <label className="text-[13px] text-gray-700 mb-1 flex items-center justify-end gap-2 font-extrabold">
+      <FiLayers /> مصدر البيانات
+    </label>
+    <Select
+      {...selectMenuProps}
+      options={dataSourceOptions}
+      placeholder="اختر المصدر"
+      value={dataSource}
+      onChange={(v) =>
+        setDataSource(v || { value: "new", label: "new data" })
+      }
+      styles={selectStyles}
+      isSearchable={false}
+      components={noClearComponents}
+    />
+  </div>
+)}
+
           <div className="text-right lg:col-span-2">
             <label className="text-[13px] text-gray-700 mb-1 flex items-center justify-end gap-2 font-extrabold">
               <FiSearch /> بحث موحّد (كود / وصف)
@@ -925,34 +994,35 @@ export default function ReportsPage() {
         </div>
       </motion.div>
 
-      {portalReady && showSuggest && smartOptions.length > 0 &&
-        createPortal(
-          <div
-            ref={suggestBoxRef}
-            style={{
-              position: "fixed",
-              left: suggestPos.left,
-              top: suggestPos.top,
-              width: suggestPos.width,
-              zIndex: 99999,
-            }}
-            className="rounded-2xl border border-gray-200 bg-white shadow-2xl overflow-hidden"
-          >
-            {smartOptions.slice(0, 12).map((opt, idx) => (
-              <button
-                key={`${opt.type || "x"}-${opt.value}-${idx}`}
-                type="button"
-                onClick={() => pickSuggestion(opt)}
-                className={`w-full text-right px-4 py-3 text-[15px] font-extrabold ${
-                  idx === activeIdx ? "bg-gray-100" : "bg-white"
-                } hover:bg-gray-100`}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>,
-          document.body
-        )}
+      {portalReady && showSuggest && smartOptions.length > 0
+        ? createPortal(
+            <div
+              ref={suggestBoxRef}
+              style={{
+                position: "fixed",
+                left: suggestPos.left,
+                top: suggestPos.top,
+                width: suggestPos.width,
+                zIndex: 99999,
+              }}
+              className="rounded-2xl border border-gray-200 bg-white shadow-2xl overflow-hidden"
+            >
+              {smartOptions.slice(0, 12).map((opt, idx) => (
+                <button
+                  key={`${opt.type || "x"}-${opt.value}-${idx}`}
+                  type="button"
+                  onClick={() => pickSuggestion(opt)}
+                  className={`w-full text-right px-4 py-3 text-[15px] font-extrabold ${
+                    idx === activeIdx ? "bg-gray-100" : "bg-white"
+                  } hover:bg-gray-100`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>,
+            document.body
+          )
+        : null}
 
       <AnimatePresence mode="wait">
         {loading ? (
@@ -1000,7 +1070,9 @@ export default function ReportsPage() {
                       key={r._id}
                       whileHover={{ backgroundColor: "rgba(2,132,199,0.08)" }}
                       transition={{ duration: 0.12 }}
-                      onClick={() => window.open(`/requests/${r.companyKey}/${r._id}`, "_blank")}
+                      onClick={() =>
+                        window.open(`/requests/${r.companyKey}/${r._id}`, "_blank")
+                      }
                       className={`cursor-pointer ${
                         idx % 2 === 0 ? "bg-white/30" : "bg-white/20"
                       } hover:bg-white/45`}
@@ -1023,7 +1095,8 @@ export default function ReportsPage() {
 
                       <td className="px-6 py-4 text-right">
                         <div className="max-w-[240px] truncate">
-                          {Array.isArray(r.pendingWithNames) && r.pendingWithNames.length > 0
+                          {Array.isArray(r.pendingWithNames) &&
+                          r.pendingWithNames.length > 0
                             ? r.pendingWithNames.join(", ")
                             : "-"}
                         </div>

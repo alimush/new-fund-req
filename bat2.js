@@ -7,8 +7,9 @@ import xlsx from "xlsx";
 const MONGODB_URI =
   "mongodb+srv://alimushtaqmcamt_db_user:pDaGJT4YdNMnIRfV@cluster01.dkc7vo.mongodb.net/test?appName=Cluster01";
 
-const EXCEL_FILE_PATH = "./requests.xlsx";
+const EXCEL_FILE_PATH = "./requests2.xlsx";
 const SHEET_NAME = "Sheet1";
+const collectionName = "requests_old-data";
 
 // =====================================
 // Helpers
@@ -21,8 +22,11 @@ function normLower(v) {
   return norm(v).toLowerCase();
 }
 
-function companyToCollection(company) {
-  return `requests_${String(company || "").trim().toLowerCase()}`;
+function splitPendingUsers(value) {
+  return String(value || "")
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean);
 }
 
 function excelDateToJSDate(value) {
@@ -49,33 +53,33 @@ function excelDateToJSDate(value) {
 }
 
 function parseAmount(value) {
-    if (value === null || value === undefined || value === "") return 0;
-  
-    const clean = String(value)
-      .replace(/,/g, "")
-      .replace(/\s/g, "")
-      .trim();
-  
-    const num = Number(clean);
-    return isNaN(num) ? 0 : num;
-  }
+  if (value === null || value === undefined || value === "") return 0;
 
-  function getCell(row, keyName) {
-    const entry = Object.keys(row).find(
-      (k) => String(k).trim().toLowerCase() === String(keyName).trim().toLowerCase()
-    );
-    return entry ? row[entry] : "";
-  }
-  
-  function buildItems(amount, description) {
-    return [
-      {
-        desc: norm(description),
-        qty: 1,
-        price: parseAmount(amount),
-      },
-    ];
-  }
+  const clean = String(value)
+    .replace(/,/g, "")
+    .replace(/\s/g, "")
+    .trim();
+
+  const num = Number(clean);
+  return isNaN(num) ? 0 : num;
+}
+
+function getCell(row, keyName) {
+  const entry = Object.keys(row).find(
+    (k) => String(k).trim().toLowerCase() === String(keyName).trim().toLowerCase()
+  );
+  return entry ? row[entry] : "";
+}
+
+function buildItems(amount, description) {
+  return [
+    {
+      desc: norm(description),
+      qty: 1,
+      price: parseAmount(amount),
+    },
+  ];
+}
 
 function mapFinalStatus(statusText) {
   const s = normLower(statusText);
@@ -229,13 +233,9 @@ const Workflow =
 const User =
   mongoose.models.User || mongoose.model("User", UserSchema, "users");
 
-function getRequestModelForCompany(companyKey) {
-  const collectionName = companyToCollection(companyKey);
-  return (
-    mongoose.models[collectionName] ||
-    mongoose.model(collectionName, RequestSchema, collectionName)
-  );
-}
+const RequestModel =
+  mongoose.models[collectionName] ||
+  mongoose.model(collectionName, RequestSchema, collectionName);
 
 // =====================================
 // Workflow logic
@@ -247,67 +247,68 @@ async function findUserByUsername(username) {
   return await User.findOne({ username: clean }).select("_id username email").lean();
 }
 
-function findStepIndexByUserId(workflow, userId) {
-  if (!workflow?.steps?.length || !userId) return -1;
+async function findUsersByUsernames(usernames) {
+  const cleaned = (usernames || []).map(norm).filter(Boolean);
+  if (!cleaned.length) return [];
 
-  const userIdStr = String(userId);
+  return await User.find({ username: { $in: cleaned } })
+    .select("_id username email")
+    .lean();
+}
+
+function findStepIndexByUserIds(workflow, userIds) {
+  if (!workflow?.steps?.length || !Array.isArray(userIds) || !userIds.length) return -1;
+
+  const userIdSet = new Set(userIds.map((id) => String(id)));
 
   return workflow.steps.findIndex(
     (step) =>
       Array.isArray(step.users) &&
       step.users.some((u) => {
         const id = String(u?._id || u);
-        return id === userIdStr;
+        return userIdSet.has(id);
       })
   );
 }
 
-async function getWorkflowForCompany(company) {
-  return await Workflow.findOne({ company: norm(company) }).lean();
-}
-
+/**
+ * إذا أكو Pending With:
+ * - الستيبات قبل stepIndex => Approved
+ * - الستيب الحالية:
+ *    Approved  => Pending
+ *    Pending   => Pending
+ *    Rejected  => Rejected
+ *    Cancelled => Cancelled
+ * - الستيبات بعدها => Pending
+ */
 function buildWorkflowState(workflow, stepIndex, finalStatus) {
   const steps = (workflow.steps || []).map((step, idx) => {
     let status = "Pending";
     let actedAt = null;
     let comment = "";
 
-    if (finalStatus === "Approved") {
+    if (idx < stepIndex) {
       status = "Approved";
       actedAt = new Date();
       comment = "Approved";
-    } else if (finalStatus === "Rejected") {
-      if (idx < stepIndex) {
-        status = "Approved";
-        actedAt = new Date();
-        comment = "Approved";
-      } else if (idx === stepIndex) {
+    } else if (idx === stepIndex) {
+      if (finalStatus === "Rejected") {
         status = "Rejected";
         actedAt = new Date();
         comment = "Rejected";
-      } else {
-        status = "Pending";
-      }
-    } else if (finalStatus === "Cancelled") {
-      if (idx < stepIndex) {
-        status = "Approved";
-        actedAt = new Date();
-        comment = "Approved";
-      } else if (idx === stepIndex) {
+      } else if (finalStatus === "Cancelled") {
         status = "Cancelled";
         actedAt = new Date();
         comment = "Cancelled";
       } else {
         status = "Pending";
+        actedAt = null;
+        comment = "";
       }
     } else {
-      if (idx < stepIndex) {
-        status = "Approved";
-        actedAt = new Date();
-        comment = "Approved";
-      } else {
-        status = "Pending";
-      }
+      status = "Pending";
+      actedAt = null;
+      comment = "";
     }
 
     return {
@@ -370,6 +371,10 @@ function buildWorkflowStateWithoutPendingWith(workflow, finalStatus) {
   return steps;
 }
 
+async function getWorkflowForCompany(company) {
+  return await Workflow.findOne({ company: norm(company) }).lean();
+}
+
 // =====================================
 // Main
 // =====================================
@@ -389,6 +394,7 @@ async function run() {
 
     const rows = xlsx.utils.sheet_to_json(sheet, { defval: "" });
     console.log(`📄 Rows found: ${rows.length}`);
+    console.log(`📁 Target collection: ${collectionName}`);
 
     let inserted = 0;
     let skipped = 0;
@@ -404,11 +410,12 @@ async function run() {
         const requestType = norm(row.Type);
         const requester = norm(row.Requester);
         const statusText = norm(row.Status);
-        const pendingWith = norm(row["Pending With"]);
+        const pendingWithRaw = norm(row["Pending With"]);
+        const pendingWithUsers = splitPendingUsers(pendingWithRaw);
         const department = norm(row.Department);
         const currency = norm(row.Currency);
         const amount = parseAmount(getCell(row, "Amount"));
-const description = norm(getCell(row, "Description"));
+        const description = norm(getCell(row, "Description"));
         const date = excelDateToJSDate(row.Date);
 
         if (!company) {
@@ -422,8 +429,6 @@ const description = norm(getCell(row, "Description"));
           skipped++;
           continue;
         }
-
-        const RequestModel = getRequestModelForCompany(company);
 
         const exists = await RequestModel.findOne({ requestCode }).lean();
         if (exists) {
@@ -445,31 +450,41 @@ const description = norm(getCell(row, "Description"));
         let currentStep = 0;
         let note = "";
 
-        if (pendingWith) {
-          const pendingUser = await findUserByUsername(pendingWith);
+        if (pendingWithUsers.length > 0) {
+          const pendingUsers = await findUsersByUsernames(pendingWithUsers);
 
-          if (!pendingUser) {
-            console.log(`❌ Row ${rowNo}: Pending With user not found "${pendingWith}"`);
+          if (!pendingUsers.length) {
+            console.log(
+              `❌ Row ${rowNo}: Pending With users not found "${pendingWithRaw}"`
+            );
             failed++;
             continue;
           }
 
-          const stepIndex = findStepIndexByUserId(workflow, pendingUser._id);
+          const foundUsernames = pendingUsers.map((u) => u.username);
+          const missingUsernames = pendingWithUsers.filter(
+            (u) => !foundUsernames.includes(u)
+          );
+
+          const stepIndex = findStepIndexByUserIds(
+            workflow,
+            pendingUsers.map((u) => u._id)
+          );
+
           if (stepIndex === -1) {
             console.log(
-              `❌ Row ${rowNo}: user "${pendingWith}" not found in workflow of company "${company}"`
+              `❌ Row ${rowNo}: none of users "${pendingWithRaw}" found in workflow of company "${company}"`
             );
             failed++;
             continue;
           }
 
           workflowSteps = buildWorkflowState(workflow, stepIndex, finalStatus);
-          currentStep =
-            finalStatus === "Approved"
-              ? Math.max((workflow.steps?.length || 1) - 1, 0)
-              : stepIndex;
+          currentStep = stepIndex;
 
-          note = `Pending With = ${pendingWith}, currentStep = ${currentStep}`;
+          note = `Pending With = ${pendingWithRaw}, matchedUsers = ${foundUsernames.join(
+            ", "
+          )}, missingUsers = ${missingUsernames.join(", ") || "NONE"}, currentStep = ${currentStep}, finalStatus = ${finalStatus}`;
         } else {
           workflowSteps = buildWorkflowStateWithoutPendingWith(workflow, finalStatus);
 
@@ -499,7 +514,11 @@ const description = norm(getCell(row, "Description"));
             steps: workflowSteps,
           },
           currentStep,
-          status: finalStatus,
+          status:
+            pendingWithUsers.length > 0 &&
+            (finalStatus === "Approved" || finalStatus === "Pending")
+              ? "Pending"
+              : finalStatus,
           projectName: "",
           cancelledAt: finalStatus === "Cancelled" ? new Date() : null,
           cancelledNote: finalStatus === "Cancelled" ? "Cancelled" : "",
@@ -517,7 +536,7 @@ const description = norm(getCell(row, "Description"));
 
         inserted++;
         console.log(
-          `✅ Row ${rowNo}: inserted ${requestCode} | company=${company} | pendingWith=${pendingWith || "EMPTY"} | status=${finalStatus} | currentStep=${currentStep}`
+          `✅ Row ${rowNo}: inserted ${requestCode} | company=${company} | pendingWith=${pendingWithRaw || "EMPTY"} | status=${finalStatus} | currentStep=${currentStep}`
         );
       } catch (err) {
         failed++;
