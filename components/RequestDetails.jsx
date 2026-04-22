@@ -42,7 +42,7 @@ export default function RequestDetails({ id, companyKey }) {
   const workflowSteps = workflow?.steps || [];
 
   const [currentUser, setCurrentUser] = useState(null);
-
+  const [pdfLoading, setPdfLoading] = useState(false);
   const [showCommentModal, setShowCommentModal] = useState(false);
   const [commentAction, setCommentAction] = useState(null); // approve | reject | view
   const [commentText, setCommentText] = useState("");
@@ -55,6 +55,8 @@ export default function RequestDetails({ id, companyKey }) {
   const [stepAttachment, setStepAttachment] = useState(null); // {url,name,type,size} | null
 
   const { permissions } = usePermissions();
+  const canPrint =
+  Array.isArray(permissions) && permissions.includes(PERMISSIONS.PRINT_REQUEST);
 
   const printRef = useRef(null);
 
@@ -117,15 +119,13 @@ export default function RequestDetails({ id, companyKey }) {
   }, [request, currentUser]);
 
   const handleDownloadPDF = async () => {
-    if (!printRef.current) return;
-
+    if (!printRef.current || !request) return;
+  
     const root = printRef.current;
-
-    // اخفاء اي شي ما تريده بالـ PDF داخل printable
+  
     const hiddenEls = root.querySelectorAll("[data-no-pdf='1']");
     hiddenEls.forEach((el) => (el.style.display = "none"));
-
-    // ✅ ستايل مؤقت: يلغي blur/shadow + يحوّل tailwind colors إلى HEX (يتجنب lab/oklch)
+  
     const style = document.createElement("style");
     style.innerHTML = `
       .no-pdf-effects, .no-pdf-effects * {
@@ -136,86 +136,196 @@ export default function RequestDetails({ id, companyKey }) {
         background-image: none !important;
       }
       .no-pdf-effects { background-color: #ffffff !important; }
-
+  
       .no-pdf-effects .bg-white { background-color: #ffffff !important; }
       .no-pdf-effects .bg-gray-50 { background-color: #f9fafb !important; }
       .no-pdf-effects .bg-gray-100 { background-color: #f3f4f6 !important; }
       .no-pdf-effects .bg-slate-50 { background-color: #f8fafc !important; }
       .no-pdf-effects .bg-slate-200 { background-color: #e2e8f0 !important; }
-
+  
       .no-pdf-effects .bg-green-50 { background-color: #f0fdf4 !important; }
       .no-pdf-effects .bg-yellow-50 { background-color: #fefce8 !important; }
       .no-pdf-effects .bg-red-50 { background-color: #fef2f2 !important; }
-
+  
       .no-pdf-effects .text-black { color: #000000 !important; }
       .no-pdf-effects .text-gray-600 { color: #4b5563 !important; }
       .no-pdf-effects .text-gray-700 { color: #374151 !important; }
-
+  
       .no-pdf-effects .text-green-600 { color: #16a34a !important; }
       .no-pdf-effects .text-yellow-600 { color: #ca8a04 !important; }
       .no-pdf-effects .text-red-600 { color: #dc2626 !important; }
-
+  
       .no-pdf-effects .border-gray-600 { border-color: #4b5563 !important; }
       .no-pdf-effects .border-gray-300 { border-color: #d1d5db !important; }
       .no-pdf-effects .border-green-300 { border-color: #86efac !important; }
       .no-pdf-effects .border-yellow-300 { border-color: #fde047 !important; }
       .no-pdf-effects .border-red-300 { border-color: #fca5a5 !important; }
-
+  
       .no-pdf-effects, .no-pdf-effects * {
         outline-color: #d1d5db !important;
         caret-color: #111827 !important;
       }
     `;
     document.head.appendChild(style);
-
-    root.classList.add("no-pdf-effects");
-    await new Promise((r) => setTimeout(r, 250));
-
-    const canvas = await html2canvas(root, {
-      scale: 2,
-      useCORS: true,
-      backgroundColor: "#ffffff",
-      scrollX: 0,
-      scrollY: 0,
-      windowWidth: root.scrollWidth,
-      windowHeight: root.scrollHeight,
-    });
-
-    root.classList.remove("no-pdf-effects");
-    document.head.removeChild(style);
-    hiddenEls.forEach((el) => (el.style.display = ""));
-
-    const pdf = await PDFDocument.create();
-    const pageW = 841.89;
-    const pageH = 595.28;
-
-    const pngBytes = await new Promise((resolve) =>
-      canvas.toBlob((b) => resolve(b), "image/png", 1)
-    ).then((b) => b.arrayBuffer());
-
-    const pngImage = await pdf.embedPng(pngBytes);
-
-    const scale = pageW / pngImage.width;
-    const scaledHeight = pngImage.height * scale;
-    const pagesCount = Math.ceil(scaledHeight / pageH);
-
-    for (let i = 0; i < pagesCount; i++) {
-      const page = pdf.addPage([pageW, pageH]);
-      page.drawImage(pngImage, {
-        x: 0,
-        y: pageH - scaledHeight + i * pageH,
-        width: pageW,
-        height: scaledHeight,
+  
+    try {
+      root.classList.add("no-pdf-effects");
+      await new Promise((r) => setTimeout(r, 250));
+  
+      const canvas = await html2canvas(root, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: "#ffffff",
+        scrollX: 0,
+        scrollY: 0,
+        windowWidth: root.scrollWidth,
+        windowHeight: root.scrollHeight,
       });
+  
+      const pdf = await PDFDocument.create();
+  
+      // A4 landscape للصفحة الأولى
+      const pageW = 841.89;
+      const pageH = 595.28;
+  
+      // ===============================
+      // 1) الصفحة الأولى: request PDF
+      // ===============================
+      const pngBlob = await new Promise((resolve) =>
+        canvas.toBlob((b) => resolve(b), "image/png", 1)
+      );
+  
+      if (!pngBlob) throw new Error("Failed to create canvas blob");
+  
+      const pngBytes = await pngBlob.arrayBuffer();
+      const pngImage = await pdf.embedPng(pngBytes);
+  
+      const scale = pageW / pngImage.width;
+      const scaledHeight = pngImage.height * scale;
+      const pagesCount = Math.ceil(scaledHeight / pageH);
+  
+      for (let i = 0; i < pagesCount; i++) {
+        const page = pdf.addPage([pageW, pageH]);
+        page.drawImage(pngImage, {
+          x: 0,
+          y: pageH - scaledHeight + i * pageH,
+          width: pageW,
+          height: scaledHeight,
+        });
+      }
+  
+      // ==========================================
+      // 2) بعده: كل attachment بصفحة / صفحات
+      // ==========================================
+      const attachments = Array.isArray(request.attachments)
+        ? request.attachments
+        : [];
+  
+      for (const file of attachments) {
+        if (!file?.url) continue;
+  
+        try {
+          const res = await fetch(
+            `/api/download?url=${encodeURIComponent(file.url)}`,
+            {
+              cache: "no-store",
+            }
+          );
+  
+          if (!res.ok) {
+            console.error("❌ Failed to fetch attachment:", file.name, res.status);
+            continue;
+          }
+  
+          const contentType =
+            (file?.type || res.headers.get("content-type") || "").toLowerCase();
+  
+          const bytes = await res.arrayBuffer();
+          const lowerName = String(file?.name || "").toLowerCase();
+  
+          // ========= PDF =========
+          if (contentType.includes("pdf") || lowerName.endsWith(".pdf")) {
+            const attachmentPdf = await PDFDocument.load(bytes, {
+              ignoreEncryption: true,
+            });
+  
+            const copiedPages = await pdf.copyPages(
+              attachmentPdf,
+              attachmentPdf.getPageIndices()
+            );
+  
+            copiedPages.forEach((p) => pdf.addPage(p));
+            continue;
+          }
+  
+          // ========= JPG / JPEG =========
+          if (
+            contentType.includes("jpeg") ||
+            contentType.includes("jpg") ||
+            /\.(jpg|jpeg)$/i.test(lowerName)
+          ) {
+            const img = await pdf.embedJpg(bytes);
+            const page = pdf.addPage([595.28, 841.89]); // A4 portrait
+  
+            const imgScale = Math.min(595.28 / img.width, 841.89 / img.height);
+            const w = img.width * imgScale;
+            const h = img.height * imgScale;
+  
+            page.drawImage(img, {
+              x: (595.28 - w) / 2,
+              y: (841.89 - h) / 2,
+              width: w,
+              height: h,
+            });
+            continue;
+          }
+  
+          // ========= PNG =========
+          if (
+            contentType.includes("png") ||
+            /\.(png)$/i.test(lowerName)
+          ) {
+            const img = await pdf.embedPng(bytes);
+            const page = pdf.addPage([595.28, 841.89]); // A4 portrait
+  
+            const imgScale = Math.min(595.28 / img.width, 841.89 / img.height);
+            const w = img.width * imgScale;
+            const h = img.height * imgScale;
+  
+            page.drawImage(img, {
+              x: (595.28 - w) / 2,
+              y: (841.89 - h) / 2,
+              width: w,
+              height: h,
+            });
+            continue;
+          }
+  
+          console.warn("Unsupported attachment type:", file.name, contentType);
+        } catch (err) {
+          console.error("❌ Failed to append attachment:", file?.name, err);
+        }
+      }
+  
+      const pdfBytes = await pdf.save();
+      const blob = new Blob([pdfBytes], { type: "application/pdf" });
+  
+      const link = document.createElement("a");
+      const objectUrl = URL.createObjectURL(blob);
+      link.href = objectUrl;
+      link.download = `Request-${request?.requestCode || request?._id}.pdf`;
+      link.click();
+  
+      URL.revokeObjectURL(objectUrl);
+    } catch (err) {
+      console.error("❌ PDF generation failed:", err);
+    } finally {
+      root.classList.remove("no-pdf-effects");
+      if (document.head.contains(style)) {
+        document.head.removeChild(style);
+      }
+      hiddenEls.forEach((el) => (el.style.display = ""));
     }
-
-    const pdfBytes = await pdf.save();
-    const blob = new Blob([pdfBytes], { type: "application/pdf" });
-
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = `Request-${request?.requestCode || request?._id}.pdf`;
-    link.click();
   };
 
   // Guards
@@ -331,17 +441,38 @@ export default function RequestDetails({ id, companyKey }) {
     <span className="text-sm font-bold">Edit</span>
   </button>
 )}
-
+{canPrint && (
   <button
     data-no-pdf="1"
-    onClick={handleDownloadPDF}
-    className="flex items-center gap-2 px-4 py-2 rounded-xl
-               bg-blue-600 text-white
-               hover:bg-blue-700 transition shadow"
+    onClick={async () => {
+      if (pdfLoading) return;
+      setPdfLoading(true);
+      try {
+        await handleDownloadPDF();
+      } finally {
+        setPdfLoading(false);
+      }
+    }}
+    disabled={pdfLoading}
+    className={`flex items-center gap-2 px-4 py-2 rounded-xl text-white transition shadow ${
+      pdfLoading
+        ? "bg-gray-400 cursor-not-allowed"
+        : "bg-blue-600 hover:bg-blue-700"
+    }`}
   >
-    <FiDownload />
-    <span className="text-sm font-bold">PDF</span>
+    {pdfLoading ? (
+      <>
+        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+        <span className="text-sm font-bold">جاري التحميل...</span>
+      </>
+    ) : (
+      <>
+        <FiDownload />
+        <span className="text-sm font-bold">PDF</span>
+      </>
+    )}
   </button>
+)}
 </div>
       </div>
 

@@ -333,6 +333,7 @@ export default function PrintableRequestPDF({ request, companyKey }) {
       <div className="flex flex-wrap justify-center gap-2 mb-26 text-center text-xs">
         {steps.map((step, i) => stepCard(step, i))}
       </div>
+      
     </div>
   );
 }
