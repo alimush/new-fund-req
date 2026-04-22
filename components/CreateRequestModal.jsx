@@ -413,6 +413,7 @@ const formatInputMoney = (v) => {
       <option value="تبرعات">تبرعات</option>
       <option value="دفعة">دفعة</option>
       <option value="حقوق">حقوق</option>
+      <option value="مصاريف">مصاريف</option>
       <option value="تعويض">تعويض</option>
       <option value="ارجاع قرضة">ارجاع قرضة</option>
       <option value="قرضة">قرضة</option>
