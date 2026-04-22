@@ -135,7 +135,7 @@ export async function PUT(req, { params }) {
       attachmentMeta,
       stepIndex: bodyStepIndex,
       clearTag,
-    
+      expenseType,
       description,
       items,
       requestType,
@@ -233,7 +233,7 @@ if (action === "update") {
   if (typeof department !== "undefined") request.department = department;
   if (typeof currency !== "undefined") request.currency = currency;
   if (typeof projectName !== "undefined") request.projectName = projectName;
-
+  if (typeof expenseType !== "undefined") request.expenseType = expenseType;
   if (Array.isArray(items)) {
     request.items = items;
   }

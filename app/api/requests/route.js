@@ -107,6 +107,7 @@ function buildSearchFilter(q) {
       { department: rx },
       { createdBy: rx },
       { projectName: rx },
+    {expenseType: rx}
       // _id as string search (fallback): we can't regex ObjectId directly reliably, so ignore
     ],
   };
@@ -274,6 +275,7 @@ if (!workflow) {
       companyKey: company,
       company,
       requestType: body.requestType,
+      expenseType: body.expenseType || "",
       description: body.description,
       projectName: body.projectName,
       currency: body.currency,
@@ -489,6 +491,7 @@ export async function GET(req) {
             r.companyKey,
             r.requestType,
             r.description,
+            r.expenseType,
             r.currency,
             r.department,
             r.createdBy,

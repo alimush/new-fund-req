@@ -495,6 +495,15 @@ export default function RequestDetails({ id, companyKey }) {
 <div className="sm:col-span-2 rounded-2xl transition-all duration-300 hover:-translate-y-1 hover:bg-white/45 hover:shadow-[0_12px_30px_-15px_rgba(0,0,0,0.35)]">
   <Info label="الشركة" value={companyLabel} icon={<FiUsers />} />
 </div>
+{companyKey === "Al-Rida" && (
+  <div className="sm:col-span-2 rounded-2xl transition-all duration-300 hover:-translate-y-1 hover:bg-white/45 hover:shadow-[0_12px_30px_-15px_rgba(0,0,0,0.35)]">
+    <Info
+      label="المصروفية"
+      value={request.expenseType || "-"}
+      icon={<FiDollarSign />}
+    />
+  </div>
+)}
 
 {/* 2) Project Name (Full width) */}
 <div className="sm:col-span-2 rounded-2xl transition-all duration-300 hover:-translate-y-1 hover:bg-white/45 hover:shadow-[0_12px_30px_-15px_rgba(0,0,0,0.35)]">

@@ -53,6 +53,7 @@ export default function CreateRequestModal({
   const [newItem, setNewItem] = useState({ desc: "", qty: "", price: "" });
   const [projectName, setProjectName] = useState("");
   const [attachment, setAttachment] = useState([]);
+  const [expenseType, setExpenseType] = useState("");
   // فوق داخل الكمبوننت (قبل return) خلي هاي الستايت:
 const [dragOver, setDragOver] = useState(false);
 
@@ -118,6 +119,7 @@ const formatInputMoney = (v) => {
     setCurrency("");
     setProjectName("");
     setDepartment("");
+    setExpenseType("");
     setItems([]);
     setNewItem({ desc: "", qty: "", price: "" });
     setAttachment([]);
@@ -136,6 +138,7 @@ const formatInputMoney = (v) => {
       setDepartment(initialData.department || "");
       setItems(Array.isArray(initialData.items) ? initialData.items : []);
       setNewItem({ desc: "", qty: "", price: "" });
+      setExpenseType(initialData.expenseType || "");
   
       // بالمود edit نخلّي المرفقات القديمة كـ metadata objects
       setAttachment(
@@ -233,6 +236,7 @@ const formatInputMoney = (v) => {
       projectName,
       description,
       currency,
+      expenseType,
       department,
       createdBy: localStorage.getItem("username"),
       items,
@@ -385,58 +389,76 @@ const formatInputMoney = (v) => {
             >
               {/* Basic Info */}
               {activeTab === "Basic Info" && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <input
-                    type="text"
-                    value={companyKey}
-                    readOnly
-                    className="border border-gray-300 rounded-lg p-2 bg-gray-100 text-gray-800"
-                  />
+  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
 
-<select
-  value={requestType}
-  onChange={(e) => setRequestType(e.target.value)}
-  className="border border-gray-300 rounded-lg p-2 bg-white text-gray-800"
->
-  <option value="">حدد نوع الطلب</option>
+    {/* Company */}
+    <input
+      type="text"
+      value={companyKey}
+      readOnly
+      className="border border-gray-300 rounded-lg p-2 bg-gray-100 text-gray-800"
+    />
 
-  <option value="تسديد مستحقات">تسديد مستحقات</option>
-  <option value="موجودات">موجودات</option>
-  <option value="تمويل">تمويل</option>
-  <option value="سلفة شخصية">سلفة شخصية</option>
-  <option value="تبرعات">تبرعات</option>
-  <option value="دفعة">دفعة</option>
-  <option value="حقوق">حقوق</option>
-  <option value="تعويض">تعويض</option>
-    
-  <option value="ارجاع قرضة">ارجاع قرضة</option>
-  <option value="قرضة">قرضة</option>
-  <option value="شخصي">شخصي</option>
-  <option value="سلفة مستدامة">سلفة مستدامة</option>
-  <option value="سلفة لأغراض النشاط">سلفة لأغراض النشاط</option>
-  <option value="مصاريف مقر شركة">مصاريف مقر شركة</option>
-  <option value="قرض شخصي">قرض شخصي</option>
-  <option value="سلفة">سلفة</option>
-</select>
-<input
-  type="text"
-  placeholder="Project Name"
-  value={projectName}
-  onChange={(e) => setProjectName(e.target.value)}
-  className="sm:col-span-2 border border-gray-300 rounded-lg p-2 bg-white text-gray-800"
-/>
+    {/* Request Type */}
+    <select
+      value={requestType}
+      onChange={(e) => setRequestType(e.target.value)}
+      className="border border-gray-300 rounded-lg p-2 bg-white text-gray-800"
+    >
+      <option value="">حدد نوع الطلب</option>
+      <option value="تسديد مستحقات">تسديد مستحقات</option>
+      <option value="موجودات">موجودات</option>
+      <option value="تمويل">تمويل</option>
+      <option value="سلفة شخصية">سلفة شخصية</option>
+      <option value="تبرعات">تبرعات</option>
+      <option value="دفعة">دفعة</option>
+      <option value="حقوق">حقوق</option>
+      <option value="تعويض">تعويض</option>
+      <option value="ارجاع قرضة">ارجاع قرضة</option>
+      <option value="قرضة">قرضة</option>
+      <option value="شخصي">شخصي</option>
+      <option value="سلفة مستدامة">سلفة مستدامة</option>
+      <option value="سلفة لأغراض النشاط">سلفة لأغراض النشاط</option>
+      <option value="مصاريف مقر شركة">مصاريف مقر شركة</option>
+      <option value="قرض شخصي">قرض شخصي</option>
+      <option value="سلفة">سلفة</option>
+    </select>
 
-                  <textarea
-                    placeholder="الوصف"
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    className="sm:col-span-2 border border-gray-300 rounded-lg p-3 bg-white text-gray-800"
-                    rows={3}
-                  />
-                  
-                </div>
-                
-              )}
+    {/* Expense Type (فقط للرضا) */}
+    {companyKey === "Al-Rida" && (
+      <div className="sm:col-span-2">
+        <select
+          value={expenseType}
+          onChange={(e) => setExpenseType(e.target.value)}
+          className="w-full border border-gray-300 rounded-lg p-2 bg-white text-gray-800"
+        >
+          <option value="">حدد نوع المصروف</option>
+          <option value="مصروف">مصروف</option>
+          <option value="غير مصروف">غير مصروف</option>
+        </select>
+      </div>
+    )}
+
+    {/* Project Name */}
+    <input
+      type="text"
+      placeholder="Project Name"
+      value={projectName}
+      onChange={(e) => setProjectName(e.target.value)}
+      className="sm:col-span-2 border border-gray-300 rounded-lg p-2 bg-white text-gray-800"
+    />
+
+    {/* Description */}
+    <textarea
+      placeholder="الوصف"
+      value={description}
+      onChange={(e) => setDescription(e.target.value)}
+      className="sm:col-span-2 border border-gray-300 rounded-lg p-3 bg-white text-gray-800"
+      rows={3}
+    />
+
+  </div>
+)}
 
               {/* Financial */}
               {activeTab === "Financial" && (
@@ -757,11 +779,12 @@ const formatInputMoney = (v) => {
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
   {/* ====== Summary Cards ====== */}
   {[
-    { icon: FiBriefcase, label: "الشركة", value: companyKey || "-" },
-    { icon: FiTag, label: "نوع الطلب", value: requestType || "-" },
-    { icon: FiDollarSign, label: "العملة", value: currency || "-" },
-    { icon: FiLayers, label: "القسم", value: department || "-" },
-  ].map((c, i) => (
+  { icon: FiBriefcase, label: "الشركة", value: companyKey || "-" },
+  { icon: FiTag, label: "نوع الطلب", value: requestType || "-" },
+  { icon: FiDollarSign, label: "العملة", value: currency || "-" },
+  { icon: FiLayers, label: "القسم", value: department || "-" },
+  
+].map((c, i) => (
     <div
       key={i}
       className="group relative flex items-center gap-3 p-3 rounded-xl
@@ -954,7 +977,45 @@ const formatInputMoney = (v) => {
   )}
 </div>
 </div>
+{companyKey === "Al-Rida" && (
+  <div
+    className="sm:col-span-2 group relative flex gap-3 p-3 rounded-xl
+               border border-white/40
+               bg-white/70 backdrop-blur-xl
+               shadow-sm
+               transition-all duration-200
+               hover:bg-white/80
+               hover:shadow-md
+               hover:-translate-y-[1px]"
+  >
+    <div
+      className="h-9 w-9 rounded-lg
+                 bg-white/90 border border-gray-200
+                 flex items-center justify-center
+                 text-gray-700
+                 transition
+                 group-hover:bg-white
+                 group-hover:shadow"
+    >
+      <FiDollarSign size={16} />
+    </div>
 
+    <div className="flex-1 min-w-0">
+      <div className="text-[10px] uppercase tracking-wide text-gray-500 mb-0.5">
+        نوع المصروف
+      </div>
+      <div className="text-sm font-semibold text-gray-800 truncate">
+        {expenseType || "-"}
+      </div>
+    </div>
+
+    <div
+      className="pointer-events-none absolute inset-0 rounded-xl
+                 opacity-0 group-hover:opacity-100 transition
+                 bg-gradient-to-br from-white/40 to-transparent"
+    />
+  </div>
+)}
     {/* ================= Items Summary ================= */}
     <div
       className="rounded-2xl

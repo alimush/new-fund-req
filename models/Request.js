@@ -55,6 +55,11 @@ const RequestSchema = new mongoose.Schema(
     description: String,
     currency: String,
     department: String,
+    expenseType: {
+      type: String,
+      enum: ["", "مصروف", "غير مصروف"],
+      default: "",
+    },
 
     items: [ItemSchema],
 
