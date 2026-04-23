@@ -1074,7 +1074,13 @@ export default function ReportsPage() {
                       whileHover={{ backgroundColor: "rgba(2,132,199,0.08)" }}
                       transition={{ duration: 0.12 }}
                       onClick={() =>
-                        window.open(`/requests/${r.companyKey}/${r._id}`, "_blank")
+                        window.open(
+                          `/requests/${r.companyKey}/${r._id}?source=${encodeURIComponent(
+                            dataSource?.value || "new"
+                          )}`,
+                          "_blank"
+                        )
+                      
                       }
                       className={`cursor-pointer ${
                         idx % 2 === 0 ? "bg-white/30" : "bg-white/20"

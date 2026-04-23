@@ -7,6 +7,7 @@ import { S3Client } from "@aws-sdk/client-s3";
 import User from "@/models/User";
 import Permissions from "@/models/Permissions";
 import { getModelForCompany } from "@/models/Request";
+import RequestOldData from "@/models/RequestOldData";
 
 import { buildWorkflowActionEmailHtml, sendWorkflowEmail } from "@/lib/email/workflowEmail";
 
@@ -56,6 +57,7 @@ export async function GET(req, { params }) {
     const { id } = await params;
     const { searchParams } = new URL(req.url);
     const company = searchParams.get("company");
+    const source = searchParams.get("source") || "new";
 
     if (!company) {
       return NextResponse.json({ success: false, error: "Company is required" }, { status: 400 });
@@ -73,8 +75,7 @@ export async function GET(req, { params }) {
       return NextResponse.json({ success: false, error: "No access to this company" }, { status: 403 });
     }
 
-    const Model = getModelForCompany(company);
-
+    const Model = source === "old" ? RequestOldData : getModelForCompany(company);
     const request = await Model.findById(id)
       .populate({ path: "workflow.steps.users", model: "User", strictPopulate: false })
       .populate({ path: "workflow.steps.actedBy", model: "User", strictPopulate: false });

@@ -21,7 +21,7 @@ FiUploadCloud,
 } from "react-icons/fi";
 import { GrCurrency } from "react-icons/gr";
 
-import { useRouter } from "next/navigation";
+
 import CommentModal from "@/components/CommentModal";
 import StatusBadge from "@/components/StatusBadge";
 import { usePermissions } from "@/context/PermissionContext";
@@ -32,9 +32,11 @@ import { PDFDocument } from "pdf-lib";
 import PrintableRequestPDF from "@/components/PrintableRequestPDF";
 import CreateRequestModal from "@/components/CreateRequestModal";
 import VoucherAttachModal from "@/components/VoucherAttachModal";
+import { useRouter, useSearchParams } from "next/navigation";
 export default function RequestDetails({ id, companyKey }) {
   const router = useRouter();
-
+  const searchParams = useSearchParams();
+  const source = searchParams.get("source") || "new";
   const [request, setRequest] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -70,7 +72,7 @@ export default function RequestDetails({ id, companyKey }) {
   // 🟢 ---------------- FETCH DATA FUNCTION (خارج useEffect) ----------------
   const fetchData = async () => {
     try {
-      const res = await fetch(`/api/requests/${id}?company=${companyKey}`, {
+      const res = await fetch(`/api/requests/${id}?company=${companyKey}&source=${encodeURIComponent(source)}`, {
         cache: "no-store",
         credentials: "include",
       });
