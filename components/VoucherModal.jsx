@@ -86,13 +86,21 @@ function only2Digits(val) {
 }
 
 function cleanAmount(value) {
-  return String(value || "").replace(/[^\d]/g, "");
+  return String(value || "")
+    .replace(/,/g, "")
+    .replace(/[^\d.]/g, "");
 }
 
 function formatAmount(value) {
   const cleaned = cleanAmount(value);
   if (!cleaned) return "";
-  return Number(cleaned).toLocaleString("en-US");
+
+  const n = Number(cleaned);
+  if (!Number.isFinite(n)) return "";
+
+  return n.toLocaleString("en-US", {
+    maximumFractionDigits: 3,
+  });
 }
 
 function clampFontSize(value, fallback = 16) {
@@ -721,17 +729,21 @@ export default function VoucherModal({
 
   const buildPayload = () => {
     const amountCleaned = cleanAmount(vAmount);
+    const amountNumber = amountCleaned ? Number(amountCleaned) : 0;
+  
     return {
       companyKey,
       companyName: selectedCompany?.name || companyKey,
       mode: "payment",
       requestId,
-
+  
       vDateYY,
       vDateMM,
       vDateDD,
-
-      vAmount: amountCleaned ? Number(amountCleaned) : 0,
+  
+      amount: amountNumber,
+      vAmount: amountNumber,
+  
       vWords,
       vDesc,
       vCurrency,

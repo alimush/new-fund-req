@@ -665,8 +665,13 @@ export default function VoucherReportsPage() {
   };
 
   const fmtAmount = (v) => {
-    const n = Number(v);
+    if (v === null || v === undefined || v === "") return "-";
+  
+    const cleaned = String(v).replace(/,/g, "").trim();
+    const n = Number(cleaned);
+  
     if (!Number.isFinite(n)) return "-";
+  
     return new Intl.NumberFormat("en-US").format(n);
   };
 
@@ -727,7 +732,11 @@ export default function VoucherReportsPage() {
         Mode: r.mode === "payment" ? "وصل صرف" : "وصل قبض",
         Seq: r.voucherNo || String(r.seq ?? "").padStart(5, "0"),
         Currency: r.currency || "-",
-        Amount: Number(r.amount || 0),
+        Amount: (() => {
+          const cleaned = String(r.amount ?? "").replace(/,/g, "").trim();
+          const n = Number(cleaned);
+          return Number.isFinite(n) ? n : "";
+        })(),
         Beneficiary: r.beneficiary || "-",
         ReceivedBy: r.receivedBy || "-",
         Bank: r.bank || "-",

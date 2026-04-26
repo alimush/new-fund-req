@@ -24,6 +24,10 @@ export default function Header({ onLogout }) {
   const [username, setUsername] = useState(null);
   
   const { permissions, user } = usePermissions();
+
+  const openNewTab = (path) => {
+    window.open(path, "_blank", "noopener,noreferrer");
+  };
   useEffect(() => {
     const updateUser = () => {
       const storedUser = localStorage.getItem("username");
@@ -236,11 +240,11 @@ export default function Header({ onLogout }) {
                           label="طلبات الحجز"
                         />)}
 
-                      {canViewReports && (
+{canViewReports && (
   <MenuItem
     onClick={() => {
       setMenuOpen(false);
-      router.push("/reports");
+      openNewTab("/reports");
     }}
     icon={<FaSquarePollVertical className="text-gray-200" />}
     label="تقارير"
@@ -252,7 +256,7 @@ export default function Header({ onLogout }) {
   <MenuItem
     onClick={() => {
       setMenuOpen(false);
-      router.push("/vouchers/reports");
+      openNewTab("/vouchers/reports");
     }}
     icon={<FaSquarePollVertical className="text-gray-200" />}
     label="تقارير الوصلات"
