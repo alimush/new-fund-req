@@ -216,9 +216,12 @@ export async function GET(req) {
       const rx = new RegExp(rxText, "i");
 
       const cond = {
+        status: { $ne: "Cancelled" },
+      
         ...(canViewAllReports
           ? {}
           : { createdBy: currentUsername || "__never_match__" }),
+      
         $or: [
           { requestCode: { $regex: rxText, $options: "i" } },
           { description: { $regex: rxText, $options: "i" } },
