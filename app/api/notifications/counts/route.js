@@ -9,7 +9,6 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-// ✅ نفس الدالة اللي عندك
 async function hasCompanyAccess(userId, company) {
   if (!userId || !company) return false;
   if (!Types.ObjectId.isValid(userId)) return false;
@@ -28,11 +27,10 @@ export async function GET(req) {
   try {
     await dbConnect();
 
-    // ✅ Auth (FIX: لازم await)
     const cookieStore = await cookies();
     const userId = cookieStore.get("userId")?.value;
 
-    if (!userId) {
+    if (!userId || !Types.ObjectId.isValid(userId)) {
       return NextResponse.json(
         { success: false, error: "Not authenticated" },
         { status: 401 }
@@ -40,7 +38,8 @@ export async function GET(req) {
     }
 
     const { searchParams } = new URL(req.url);
-    const companiesParam = searchParams.get("companies") || ""; // comma-separated
+    const companiesParam = searchParams.get("companies") || "";
+
     const companies = companiesParam
       .split(",")
       .map((x) => x.trim())
@@ -53,10 +52,9 @@ export async function GET(req) {
     const uid = new Types.ObjectId(userId);
     const counts = {};
 
-    // ✅ لكل شركة: نجيب عدد الطلبات اللي currentStep مالها Pending وبيها userId ضمن users
     for (const company of companies) {
-      // ✅ صلاحية الشركة
       const allowed = await hasCompanyAccess(userId, company);
+
       if (!allowed) {
         counts[company] = 0;
         continue;
@@ -64,34 +62,49 @@ export async function GET(req) {
 
       const Model = getModelForCompany(company);
 
-      // ✅ Aggregation حتى نجيب الستيب الحالي بدقة
       const rows = await Model.aggregate([
         {
           $match: {
             currentStep: { $gte: 0 },
-            status: { $in: ["Pending", "Rejected"] }, // إذا تحب فقط Pending خليها ["Pending"]
+            status: "Pending",
           },
         },
         {
           $addFields: {
-            _currStep: { $arrayElemAt: ["$workflow.steps", "$currentStep"] },
+            _currStep: {
+              $arrayElemAt: ["$workflow.steps", "$currentStep"],
+            },
           },
         },
         {
           $match: {
             "_currStep.status": "Pending",
-            "_currStep.users": uid, // وجود اليوزر داخل users
+            $or: [
+              { "_currStep.users": uid },
+              { "_currStep.users._id": uid },
+            ],
           },
         },
-        { $count: "c" },
+        {
+          $group: {
+            _id: "$_id",
+          },
+        },
+        {
+          $count: "c",
+        },
       ]);
 
       counts[company] = rows?.[0]?.c || 0;
     }
 
-    return NextResponse.json({ success: true, counts });
+    return NextResponse.json({
+      success: true,
+      counts,
+    });
   } catch (err) {
     console.error("❌ notifications/counts error:", err);
+
     return NextResponse.json(
       { success: false, error: err?.message || "Server error" },
       { status: 500 }
