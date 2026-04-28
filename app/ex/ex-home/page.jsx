@@ -275,8 +275,8 @@ export default function ExDashboardPage() {
                   text-right
                 "
               >
-                {!loadingCounts && n > 0 && (
-                  <div
+{c.key !== "attachment-only" && !loadingCounts && n > 0 && (
+                    <div
                     className="
                       absolute top-2 right-3
                       min-w-[34px] h-[28px] px-2
