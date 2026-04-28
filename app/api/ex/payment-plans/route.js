@@ -98,7 +98,9 @@ async function requireExPermission() {
   if (!userId) return { ok: false, status: 401, message: "Not authenticated" };
   if (!isValidObjectId(userId)) return { ok: false, status: 401, message: "Invalid userId" };
 
-  const user = await User.findById(userId).select("_id username name email").lean();
+  const user = await User.findById(userId)
+  .select("_id username name email arabicName")
+  .lean();
   if (!user) return { ok: false, status: 401, message: "User not found" };
 
   const groups = await Permissions.find({ users: user._id }).lean();
@@ -151,7 +153,7 @@ export async function GET() {
       .populate({
         path: "createdById",
         model: "User",
-        select: "username email",
+        select: "username email arabicname",
         strictPopulate: false,
       })
       .lean();
@@ -177,7 +179,7 @@ export async function POST(req) {
     await dbConnect();
     const body = await req.json().catch(() => ({}));
 
-    const createdBy = auth.user?.username || auth.user?.name || "";
+    const createdBy = auth.user?.username || "User";
     const createdByIdObj = toObjId(auth.userId);
 
     const rows = cleanRows(body?.rows);
@@ -220,7 +222,7 @@ export async function POST(req) {
       .populate({
         path: "createdById",
         model: "User",
-        select: "username email",
+        select: "username email arabicname",
         strictPopulate: false,
       })
       .lean();
@@ -229,14 +231,21 @@ export async function POST(req) {
     try {
       const firstStepUsers = savedDoc?.workflow?.steps?.[0]?.users || [];
       const firstStepUserIds = firstStepUsers.map(getIdStr).filter(Boolean);
-
+      const emailDocFields = {
+        customerName: savedDoc?.customer || "",
+        unitNo: savedDoc?.unitNo || "",
+      };
       if (firstStepUserIds.length > 0) {
         const stepUsers = await User.find({ _id: { $in: firstStepUserIds } })
-          .select("_id username name email")
-          .lean();
+        .select("_id username name email arabicName")
+        .lean();
 
         const toEmails = stepUsers.map((u) => u.email).filter(Boolean);
-        const toUserName = stepUsers?.[0]?.name || stepUsers?.[0]?.username || "زميلنا";
+        const toUserName =
+        stepUsers?.[0]?.arabicName ||
+        stepUsers?.[0]?.name ||
+        stepUsers?.[0]?.username ||
+        "زميلنا";
 
         if (toEmails.length > 0) {
           const baseDomain =
@@ -253,13 +262,19 @@ export async function POST(req) {
             stepFrom: 0,
             stepTo: 0,
             note: "تم إنشاء طلب جديد بانتظار الإجراء.",
-            actorName: auth.user?.username || auth.user?.name || auth.user?.email || "System",
+            actorName:
+            auth.user?.arabicName ||
+            auth.user?.username ||
+            auth.user?.name ||
+            auth.user?.email ||
+            "System",
             greetingName: toUserName,
             toUserName,
             planUrl,
             showRoutingLine: true,
             docTitle: "Payment Plan",
             docTypeAr: "الاستثناءات",
+            ...emailDocFields,
           });
 
           await sendWorkflowEmail({

@@ -92,7 +92,6 @@ function numberToArabicWordsIQD(input) {
     const o = x % 10;
     return o ? `${ones[o]} و ${tens[t]}` : tens[t];
   };
-
   const threeDigits = (x) => {
     x = Number(x);
     if (x === 0) return "";
@@ -179,17 +178,22 @@ export default function ReplaceBookingTransferGenerator({
   const TEMPLATE_IMG = cfg?.template?.url || cfg?.template?.img || "/replace-booking-transfer-a4.jpg";
   const POS = cfg?.pos || {};
   const FIELDS = Array.isArray(cfg?.fields) ? cfg.fields : [];
+  const isAttachmentOnly = formKey === "attachment-only" || cfg?.key === "attachment-only";
 
   // steps ثابتة
   const steps = useMemo(
-    () => [
-      { key: "Header", label: "Header" },
-     
-      { key: "Review", label: "Review" },
-
-      { key: "Attachment", label: "Attachment" },
-    ],
-    []
+    () =>
+      isAttachmentOnly
+    ? [
+        { key: "Header", label: "بيانات المعاملة" },
+        { key: "Attachment", label: "Attachment" },
+      ]
+        : [
+            { key: "Header", label: "Header" },
+            { key: "Review", label: "Review" },
+            { key: "Attachment", label: "Attachment" },
+          ],
+    [isAttachmentOnly]
   );
 
   const [activeTab, setActiveTab] = useState("Header");
@@ -222,7 +226,7 @@ export default function ReplaceBookingTransferGenerator({
     setServerMsg("");
     setActiveTab("Header");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [formKey]);
+  }, [formKey, isAttachmentOnly]);
 
   const resetAll = () => {
     setForm(makeInitialForm());
@@ -411,12 +415,16 @@ export default function ReplaceBookingTransferGenerator({
       {/* Hidden render area فقط للطباعة/الصور */}
       <div className="sr-only" aria-hidden="true">
         <div ref={pageRef} className="relative bg-white overflow-hidden" style={{ width: 900, aspectRatio: "210/297" }}>
-          <img
-            src={TEMPLATE_IMG}
-            alt="template"
-            className="absolute inset-0 w-full h-full object-contain"
-            draggable={false}
-          />
+        {TEMPLATE_IMG ? (
+  <img
+    src={TEMPLATE_IMG}
+    alt="template"
+    className="absolute inset-0 w-full h-full object-contain"
+    draggable={false}
+  />
+) : (
+  <div className="absolute inset-0 bg-white" />
+)}
 
           <div className="absolute inset-0 text-gray-900">
             {/* ✅ overlay dynamic from cfg.pos + cfg.fields */}
@@ -628,9 +636,9 @@ export default function ReplaceBookingTransferGenerator({
                       );
                     })}
 
-                    <div className="sm:col-span-2 text-right text-xs text-gray-500 font-bold">
+                    {/* <div className="sm:col-span-2 text-right text-xs text-gray-500 font-bold">
                       ✅ التاريخ رح ينعرض بالصورة بصيغة dd/mm/yyyy
-                    </div>
+                    </div> */}
                   </div>
                 )}
 

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import Link from "next/link";
-import { FiRepeat, FiShield, FiXOctagon, FiFileText, FiShuffle } from "react-icons/fi";
+import { FiRepeat, FiShield, FiXOctagon, FiFileText, FiShuffle , FiPaperclip } from "react-icons/fi";
 
 import { usePermissions } from "@/context/PermissionContext";
 import { PERMISSIONS } from "@/lib/permission";
@@ -49,6 +49,14 @@ const cards = [
     icon: FiFileText,
     desc: "نماذج وخطط الدفع الخاصة بالاستثناءات والمتابعة.",
     permission: PERMISSIONS.EX_EXCEPTIONS,
+  },
+  {
+    key: "attachment-only",
+    name: "معامله زبون",
+    href: "/ex/attachment-only",
+    icon: FiPaperclip,
+    desc: "رفع مرفق وإرساله للموافقة حسب الورك فلو.",
+    permission: PERMISSIONS.EX_ATTACHMENT_ONLY,
   },
 ];
 

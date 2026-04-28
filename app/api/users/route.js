@@ -84,7 +84,7 @@ export async function POST(req) {
   const auth = await requireManagePermissions(req);
   if (!auth.ok) return auth.res;
 
-  const { username, password, email, group, companies } = await req.json();
+  const { username, password, arabicName , email, group, companies } = await req.json();
 
   if (!username || !password) {
     return NextResponse.json(
@@ -106,6 +106,7 @@ export async function POST(req) {
 
   const newUser = await User.create({
     username,
+    arabicName: (arabicName || "").trim(),
     password: hashedPassword, // ✅ بدل plain
     email: (email || "").trim().toLowerCase(),
     group: group || null,
@@ -123,7 +124,7 @@ export async function PUT(req) {
   const auth = await requireManagePermissions(req);
   if (!auth.ok) return auth.res;
 
-  const { id, username, password, email, group, companies } = await req.json();
+  const { id, username, password, email, arabicName, group, companies } = await req.json();
 
   if (!id || !isValidObjectId(id)) {
     return NextResponse.json(
@@ -132,12 +133,16 @@ export async function PUT(req) {
     );
   }
 
-  const updateData = {};
-  if (username !== undefined) updateData.username = username;
-  if (email !== undefined)
-    updateData.email = (email || "").trim().toLowerCase();
+  const updateData = {}; // ✅ لازم قبل استخدامه
 
-  // ✅ إذا كتب باسورد جديد نعمله hash
+  if (username !== undefined) updateData.username = String(username || "").trim();
+
+  if (email !== undefined)
+    updateData.email = String(email || "").trim().toLowerCase();
+
+  if (arabicName !== undefined)
+    updateData.arabicName = String(arabicName || "").trim();
+
   if (password !== undefined && String(password).trim() !== "") {
     updateData.password = await bcrypt.hash(String(password), 10);
   }

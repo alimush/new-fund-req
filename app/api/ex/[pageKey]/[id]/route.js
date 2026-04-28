@@ -12,6 +12,7 @@ import ReplaceBookingTransfer from "@/models/ReplaceBookingTransfer";
 import WaiverReservation from "@/models/WaiverReservation";
 import CancelBookingUnit from "@/models/CancelBookingUnit";
 import UnitTransfer from "@/models/UnitTransfer";
+import AttachmentOnly from "@/models/AttachmentOnly";
 import { sendWorkflowEmail, buildExWorkflowActionEmailHtml } from "@/lib/email/exWorkflowEmail";
 import { getExForm } from "@/lib/exForms/registry";
 export const runtime = "nodejs";
@@ -125,6 +126,8 @@ function getModelByPageKey(pageKey) {
       return CancelBookingUnit;
       case "unit-transfer":
   return UnitTransfer;
+  case "attachment-only":
+  return AttachmentOnly;
     default:
       return null;
   }
@@ -233,7 +236,7 @@ export async function GET(req, ctx) {
 
     if (!userIdObj) return NextResponse.json({ success: false, error: "Not authenticated" }, { status: 401 });
 
-    const currentUser = await User.findById(userIdObj).select("_id username name email").lean();
+    const currentUser = await User.findById(userIdObj).select("_id username name email arabicName").lean();
     if (!currentUser) return NextResponse.json({ success: false, error: "User not found" }, { status: 401 });
 
     let doc = await Model.findById(id);
@@ -242,8 +245,8 @@ export async function GET(req, ctx) {
     doc = await ensureDocWorkflowStable(doc, keyFromQuery, pageKey);
 
     const doc2 = await Model.findById(id)
-      .populate({ path: "workflow.steps.users", model: "User", select: "username name email", strictPopulate: false })
-      .populate({ path: "workflow.steps.actedBy", model: "User", select: "username name email", strictPopulate: false })
+    .populate({ path: "workflow.steps.users", model: "User", select: "username name email arabicName", strictPopulate: false })
+    .populate({ path: "workflow.steps.actedBy", model: "User", select: "username name email arabicName", strictPopulate: false })
       .lean();
 
     return NextResponse.json({
@@ -317,7 +320,9 @@ export async function PUT(req, ctx) {
 
     if (!userIdObj) return NextResponse.json({ success: false, error: "Not authenticated" }, { status: 401 });
 
-    const currentUser = await User.findById(userIdObj).select("_id username name email").lean();
+    const currentUser = await User.findById(userIdObj)
+    .select("_id username name email arabicName")
+    .lean();
     if (!currentUser) return NextResponse.json({ success: false, error: "User not found" }, { status: 401 });
     const currentUserPerms = await getUserPermissions(userIdObj);
     const isOperationUser = currentUserPerms.includes(PERMISSIONS.OPERATION);
@@ -368,24 +373,45 @@ export async function PUT(req, ctx) {
 
     // لو عندك createdById
     if (doc.createdById && Types.ObjectId.isValid(String(doc.createdById))) {
-      creatorUser = await User.findById(doc.createdById).select("_id username name email").lean();
+      creatorUser = await User.findById(doc.createdById).select("_id username name email arabicName").lean();
     }
     // لو عندك createdBy كـ ObjectId
     else if (doc.createdBy && Types.ObjectId.isValid(String(doc.createdBy))) {
-      creatorUser = await User.findById(doc.createdBy).select("_id username name email").lean();
+      creatorUser = await User.findById(doc.createdBy).select("_id username name email arabicName").lean();
     }
     // لو createdBy username
     else if (doc.createdBy) {
-      creatorUser = await User.findOne({ username: String(doc.createdBy) }).select("_id username name email").lean();
+      creatorUser = await User.findOne({ username: String(doc.createdBy) }).select("_id username name email arabicName").lean();
     }
 
-    const actorName = currentUser?.username || currentUser?.name || currentUser?.email || "System";
+    const actorName =
+    currentUser?.arabicName ||
+    currentUser?.username ||
+    currentUser?.name ||
+    currentUser?.email ||
+    "System";
     const baseDomain = process.env.EX_BASE_DOMAIN || "https://funds-gdr.spc-it.com.iq";
     const pageKey = doc.pageKey || forcedKey || pageKeyParam;
     const cfg = getExForm(pageKey);
 const docTitle = cfg?.title || pageKey;   // هذا يطلع بدل Document
 const docTypeAr = cfg?.title || "المستند";
+const emailDocFields = {
+  customerName:
+    doc?.customerName ||
+    doc?.clientName ||
+    doc?.transfereeName ||
+    doc?.name ||
+    "",
 
+  unitNo:
+    doc?.unitNo ||
+    doc?.newUnitNo ||
+    doc?.oldUnitNo ||
+    "",
+
+  oldUnitNo: doc?.oldUnitNo || "",
+  newUnitNo: doc?.newUnitNo || "",
+};
     const docUrl = `${String(baseDomain).replace(/\/+$/, "")}/ex/${encodeURIComponent(pageKey)}/${encodeURIComponent(
       String(doc._id)
     )}?key=${encodeURIComponent(pageKey)}`;
@@ -441,13 +467,14 @@ const docTypeAr = cfg?.title || "المستند";
             stepTo: stepIndex,
             note,
             actorName,
-            greetingName: creatorUser?.name || creatorUser?.username || "زميلنا",
+            greetingName: creatorUser?.arabicName || creatorUser?.name || creatorUser?.username || "زميلنا",
             toUserName: "",
             planUrl: docUrl,
             showRoutingLine: false,
             showDetailsButton: true,
             docTitle,
             docTypeAr,
+            ...emailDocFields,
           });
           try {
             await sendWorkflowEmail({
@@ -477,6 +504,7 @@ if (extraEmails.length > 0) {
     showDetailsButton: false,
     docTitle,
     docTypeAr,
+    ...emailDocFields,
   });
 
   try {
@@ -502,11 +530,15 @@ if (extraEmails.length > 0) {
         const nextUserIds = nextStepUsers.map(getIdStr).filter(Boolean);
 
         const nextUsers = nextUserIds.length
-          ? await User.find({ _id: { $in: nextUserIds } }).select("_id username name email").lean()
+          ? await User.find({ _id: { $in: nextUserIds } }).select("_id username name email arabicName").lean()
           : [];
 
         const toEmails = nextUsers.map((u) => u.email).filter(Boolean);
-        const toUserName = nextUsers?.[0]?.name || nextUsers?.[0]?.username || "";
+        const toUserName =
+        nextUsers?.[0]?.arabicName ||
+        nextUsers?.[0]?.name ||
+        nextUsers?.[0]?.username ||
+        "";
 
         const html = buildExWorkflowActionEmailHtml({
           action: "approve",
@@ -522,6 +554,7 @@ if (extraEmails.length > 0) {
           showRoutingLine: true,
           docTitle,
   docTypeAr,
+  ...emailDocFields,
         });
 
         try {
@@ -565,6 +598,7 @@ if (extraEmails.length > 0) {
           showRoutingLine: false,
           docTitle,
           docTypeAr,
+          ...emailDocFields,
         });
       
         try {
@@ -595,6 +629,7 @@ if (extraEmails.length > 0) {
           showDetailsButton: false,
           docTitle,
           docTypeAr,
+          ...emailDocFields,
         });
       
         try {

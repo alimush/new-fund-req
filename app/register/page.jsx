@@ -13,7 +13,7 @@ export default function RegisterPage() {
   const [newPassword, setNewPassword] = useState(""); // ✅ NEW (اختياري)
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [successMsg, setSuccessMsg] = useState("");
-
+  const [arabicName, setArabicName] = useState("");
   // ✅ حالة صلاحية/دخول
   const [authError, setAuthError] = useState("");
 
@@ -115,6 +115,7 @@ export default function RegisterPage() {
     const payload = {
       id: selectedUser._id,
       username: selectedUser.username,
+      arabicName: selectedUser.arabicName || "",
       email: selectedUser.email || "", // ✅
     };
 
@@ -206,6 +207,14 @@ export default function RegisterPage() {
                        outline-none focus:ring-2 focus:ring-gray-400 bg-white/70"
             required
           />
+          <input
+  type="text"
+  placeholder="الاسم بالعربي"
+  value={arabicName}
+  onChange={(e) => setArabicName(e.target.value)}
+  className="w-full border border-gray-300 rounded-lg p-3 
+             outline-none focus:ring-2 focus:ring-gray-400 bg-white/70"
+/>
 
           {/* ✅ Email */}
           <input
@@ -343,6 +352,20 @@ export default function RegisterPage() {
                                outline-none focus:ring-2 focus:ring-gray-400 bg-white/70"
                   />
                 </div>
+                <div>
+  <label className="block text-sm font-medium text-gray-600">
+    الاسم بالعربي
+  </label>
+  <input
+    type="text"
+    value={selectedUser.arabicName || ""}
+    onChange={(e) =>
+      setSelectedUser({ ...selectedUser, arabicName: e.target.value })
+    }
+    className="w-full border border-gray-300 rounded-lg p-2 mt-1 
+               outline-none focus:ring-2 focus:ring-gray-400 bg-white/70"
+  />
+</div>
 
                 {/* ✅ Email */}
                 <div>

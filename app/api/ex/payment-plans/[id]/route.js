@@ -267,7 +267,7 @@ export async function GET(req, ctx) {
       return NextResponse.json({ success: false, error: "Not authenticated" }, { status: 401 });
     }
 
-    const currentUser = await User.findById(userId).select("_id username name email").lean();
+    const currentUser = await User.findById(userId).select("_id username name email arabicName").lean();
 
     if (!currentUser) {
       return NextResponse.json({ success: false, error: "User not found" }, { status: 401 });
@@ -281,18 +281,18 @@ export async function GET(req, ctx) {
     plan = await ensurePlanWorkflowStable(plan, key);
 
     const plan2 = await PaymentPlan.findById(id)
-      .populate({
-        path: "workflow.steps.users",
-        model: "User",
-        select: "username name email",
-        strictPopulate: false,
-      })
-      .populate({
-        path: "workflow.steps.actedBy",
-        model: "User",
-        select: "username name email",
-        strictPopulate: false,
-      })
+    .populate({
+      path: "workflow.steps.users",
+      model: "User",
+      select: "username name email arabicName",
+      strictPopulate: false,
+    })
+    .populate({
+      path: "workflow.steps.actedBy",
+      model: "User",
+      select: "username name email arabicName",
+      strictPopulate: false,
+    })
       .lean();
 
     return NextResponse.json({
@@ -355,7 +355,7 @@ export async function PUT(req, ctx) {
       return NextResponse.json({ success: false, error: "Invalid userId" }, { status: 401 });
     }
 
-    const currentUser = await User.findById(userIdObj).select("_id username name email").lean();
+    const currentUser = await User.findById(userIdObj).select("_id username name email arabicName").lean();
 
     if (!currentUser) {
       return NextResponse.json({ success: false, error: "User not found" }, { status: 401 });
@@ -419,17 +419,25 @@ export async function PUT(req, ctx) {
 
     let creatorUser = null;
     if (plan.createdBy && Types.ObjectId.isValid(String(plan.createdBy))) {
-      creatorUser = await User.findById(plan.createdBy).select("_id username name email").lean();
+      creatorUser = await User.findById(plan.createdBy).select("_id username name email arabicName").lean();
     } else if (plan.createdBy) {
       creatorUser = await User.findOne({ username: String(plan.createdBy) })
-        .select("_id username name email")
+        .select("_id username name email arabicName")
         .lean();
     }
 
-    const actorName = currentUser?.username || currentUser?.name || currentUser?.email || "System";
+    const actorName =
+  currentUser?.arabicName ||
+  currentUser?.username ||
+  currentUser?.name ||
+  currentUser?.email ||
+  "System";
     const baseDomain = process.env.EX_BASE_DOMAIN || "https://funds-gdr.spc-it.com.iq";
     const pageKey = plan.pageKey || forcedKey || "exceptions";
-
+    const emailDocFields = {
+      customerName: plan?.customer || "",
+      unitNo: plan?.unitNo || "",
+    };
     const planUrl = `${String(baseDomain).replace(/\/+$/, "")}/ex/payment-plans/${encodeURIComponent(
       String(plan._id)
     )}?key=${encodeURIComponent(pageKey)}`;
@@ -481,11 +489,16 @@ export async function PUT(req, ctx) {
             stepTo: stepIndex,
             note,
             actorName,
-            greetingName: creatorUser?.name || creatorUser?.username || "زميلنا",
+            greetingName:
+  creatorUser?.arabicName ||
+  creatorUser?.name ||
+  creatorUser?.username ||
+  "زميلنا",
             toUserName: "",
             planUrl,
             showRoutingLine: false,
             showDetailsButton: true,
+            ...emailDocFields,
           });
 
           try {
@@ -513,6 +526,7 @@ export async function PUT(req, ctx) {
             planUrl,
             showRoutingLine: false,
             showDetailsButton: false,
+            ...emailDocFields,
           });
 
           try {
@@ -556,11 +570,15 @@ attachments: buildMailAttachmentsFromFiles(step.tagAttachments),
         const nextUserIds = nextStepUsers.map(getIdStr).filter(Boolean);
       
         const nextUsers = nextUserIds.length
-          ? await User.find({ _id: { $in: nextUserIds } }).select("_id username name email").lean()
+          ? await User.find({ _id: { $in: nextUserIds } }).select("_id username name email arabicName").lean()
           : [];
       
         const toEmails = nextUsers.map((u) => u.email).filter(Boolean);
-        const toUserName = nextUsers?.[0]?.name || nextUsers?.[0]?.username || "";
+        const toUserName =
+  nextUsers?.[0]?.arabicName ||
+  nextUsers?.[0]?.name ||
+  nextUsers?.[0]?.username ||
+  "";
       
         const html = buildExWorkflowActionEmailHtml({
           action: "approve",
@@ -574,6 +592,7 @@ attachments: buildMailAttachmentsFromFiles(step.tagAttachments),
           toUserName: toUserName || "",
           planUrl,
           showRoutingLine: true,
+          ...emailDocFields,
         });
       
         try {
@@ -603,7 +622,11 @@ attachments: buildMailAttachmentsFromFiles(step.tagAttachments),
       const extraEmails = await getFinalApproveEmails(pageKey);
 
       const toEmails = normalizeEmails([creatorUser?.email || "", ...extraEmails]);
-      const greetingName = creatorUser?.name || creatorUser?.username || "زميلنا";
+      const greetingName =
+  creatorUser?.arabicName ||
+  creatorUser?.name ||
+  creatorUser?.username ||
+  "زميلنا";
 
       const html = buildExWorkflowActionEmailHtml({
         action: "reject",
@@ -617,6 +640,7 @@ attachments: buildMailAttachmentsFromFiles(step.tagAttachments),
         toUserName: "",
         planUrl,
         showRoutingLine: false,
+        ...emailDocFields,
       });
 
       try {

@@ -5,11 +5,17 @@ const UserSchema = new mongoose.Schema(
     username: { type: String, required: true, unique: true, trim: true },
     password: { type: String, required: true },
 
-    // ✅ NEW
     email: {
       type: String,
       trim: true,
       lowercase: true,
+      default: "",
+    },
+
+    // ✅ NEW الاسم العربي
+    arabicName: {
+      type: String,
+      trim: true,
       default: "",
     },
 

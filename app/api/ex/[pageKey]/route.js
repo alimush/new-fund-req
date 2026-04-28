@@ -16,7 +16,7 @@ import ReplaceBookingTransfer from "@/models/ReplaceBookingTransfer";
 import WaiverReservation from "@/models/WaiverReservation";
 import CancelBookingUnit from "@/models/CancelBookingUnit";
 import UnitTransfer from "@/models/UnitTransfer";
-
+import AttachmentOnly from "@/models/AttachmentOnly";
 export const runtime = "nodejs";
 
 const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
@@ -48,8 +48,9 @@ async function requireExPermission() {
     return { ok: false, status: 401, message: "Invalid userId" };
   }
 
-  const user = await User.findById(userId).select("_id username name email").lean();
-  if (!user) {
+  const user = await User.findById(userId)
+  .select("_id username name email arabicName")
+  .lean();  if (!user) {
     return { ok: false, status: 401, message: "User not found" };
   }
 
@@ -94,7 +95,12 @@ function getModelByPageKey(pageKey) {
         searchFields: ["description", "dateDMY", "createdBy"],
         sort: { createdAt: -1 },
       };
-
+      case "attachment-only":
+        return {
+          model: AttachmentOnly,
+          searchFields: ["title", "createdBy"],
+          sort: { createdAt: -1 },
+        };
     default:
       return null;
   }
@@ -111,9 +117,10 @@ async function buildWorkflowForKey(key) {
     name: wf?.name || "",
     steps: steps.map((s) => ({
       users: s.users || [],
-      status: "Pending",
+
       actedBy: null,
-      actedAt: null,
+      status: key === "attachment-only" ? "" : "Pending",
+      actedAt: key === "attachment-only" ? new Date() : null,
       comment: "",
       tag: "",
       tagAttachments: [],
@@ -136,8 +143,13 @@ async function ensureDocWorkflowStable(doc, forcedKey) {
 
   doc.workflow = await buildWorkflowForKey(key);
   doc.pageKey = key;
-  doc.status = doc.status || "Pending";
-  doc.currentStep = doc.workflow.steps.length ? 0 : -1;
+  if (key === "attachment-only") {
+    doc.status = "";
+    doc.currentStep = -1;
+  } else {
+    doc.status = doc.status || "Pending";
+    doc.currentStep = doc.workflow.steps.length ? 0 : -1;
+  }
 
   await doc.save();
   return doc;
@@ -216,33 +228,150 @@ export async function POST(req, ctx) {
 
     const Model = reg.model;
     const body = await req.json().catch(() => ({}));
-
+    const isAttachmentOnly = pageKey === "attachment-only";
     const doc = await Model.create({
       ...body,
       pageKey,
-      status: "Pending",
-      currentStep: 0,
-      createdBy: body.createdBy || auth.user?.username || auth.user?.name || "User",
-      createdById: body.createdById || String(auth.userId),
+      status: isAttachmentOnly ? "" : "Pending",
+currentStep: isAttachmentOnly ? -1 : 0,
+createdBy: auth.user?.username || body.createdBy || "User",
+createdById: String(auth.userId),
       attachments: Array.isArray(body.attachments) ? body.attachments : [],
     });
 
     await ensureDocWorkflowStable(doc, pageKey);
+    if (pageKey === "attachment-only") {
+      const freshDoc = await Model.findById(doc._id).lean();
+      const emailDocFields = {
 
+        customerName:
+    
+          freshDoc?.customerName ||
+    
+          freshDoc?.clientName ||
+    
+          freshDoc?.transfereeName ||
+    
+          freshDoc?.name ||
+    
+          "",
+    
+        unitNo:
+    
+          freshDoc?.unitNo ||
+    
+          freshDoc?.newUnitNo ||
+    
+          freshDoc?.oldUnitNo ||
+    
+          "",
+    
+        oldUnitNo: freshDoc?.oldUnitNo || "",
+    
+        newUnitNo: freshDoc?.newUnitNo || "",
+    
+      };
+    
+      const allUserIds = [
+        ...new Set(
+          (freshDoc?.workflow?.steps || [])
+            .flatMap((s) => s?.users || [])
+            .map(getIdStr)
+            .filter(Boolean)
+        ),
+      ];
+    
+      const users = allUserIds.length
+        ? await User.find({ _id: { $in: allUserIds } })
+        .select("_id username name email arabicName")
+            .lean()
+        : [];
+    
+      const toEmails = users.map((u) => u.email).filter(Boolean);
+    
+      const baseDomain = process.env.EX_BASE_DOMAIN || "https://funds-gdr.spc-it.com.iq";
+    
+      const docUrl = `${String(baseDomain).replace(/\/+$/, "")}/ex/${encodeURIComponent(
+        pageKey
+      )}/${encodeURIComponent(String(doc._id))}?key=${encodeURIComponent(pageKey)}`;
+    
+      const html = buildExWorkflowActionEmailHtml({
+        action: "created",
+        planId: String(doc._id),
+        pageKey,
+        stepFrom: 0,
+        stepTo: 0,
+        note: "تم إرسال الاتاج إلى جميع المعنيين في الورك فلو.",
+        actorName:
+        auth.user?.arabicName ||
+        auth.user?.username ||
+        auth.user?.name ||
+        auth.user?.email ||
+        "System",
+        greetingName: "زميلنا",
+        toUserName: "",
+        planUrl: docUrl,
+        showRoutingLine: false,
+        showDetailsButton: false,
+        docTitle: cfg?.title || "اتاج",
+        docTypeAr: "الاتاج",
+        ...emailDocFields,
+      });
+    
+      const emailAttachments = (freshDoc?.attachments || [])
+        .filter((f) => f?.url)
+        .map((f, idx) => ({
+          filename: f?.name || `attachment-${idx + 1}`,
+          path: encodeURI(String(f.url)),
+        }));
+    
+      if (toEmails.length > 0) {
+        await sendWorkflowEmail({
+          toEmails,
+          subject: `اتاج جديد | ${String(doc._id).slice(-6)}`,
+          html,
+          attachments: emailAttachments,
+        });
+      }
+    
+      return NextResponse.json({ success: true, data: freshDoc });
+    }
+
+    
     // ✅ Send email to first step users
     try {
       const freshDoc = await Model.findById(doc._id).lean();
-
+      const emailDocFields = {
+        customerName:
+          freshDoc?.customerName ||
+          freshDoc?.clientName ||
+          freshDoc?.transfereeName ||
+          freshDoc?.name ||
+          "",
+      
+        unitNo:
+          freshDoc?.unitNo ||
+          freshDoc?.newUnitNo ||
+          freshDoc?.oldUnitNo ||
+          "",
+      
+        oldUnitNo: freshDoc?.oldUnitNo || "",
+        newUnitNo: freshDoc?.newUnitNo || "",
+      };
       const firstStepUsers = freshDoc?.workflow?.steps?.[0]?.users || [];
       const firstStepUserIds = firstStepUsers.map(getIdStr).filter(Boolean);
 
       if (firstStepUserIds.length > 0) {
         const stepUsers = await User.find({ _id: { $in: firstStepUserIds } })
-          .select("_id username name email")
+        .select("_id username name email arabicName")
           .lean();
 
         const toEmails = stepUsers.map((u) => u.email).filter(Boolean);
-        const toUserName = stepUsers?.[0]?.name || stepUsers?.[0]?.username || "زميلنا";
+        const toUserName =
+        stepUsers?.[0]?.arabicName ||
+        stepUsers?.[0]?.name ||
+        stepUsers?.[0]?.username ||
+        "زميلنا";
 
         if (toEmails.length > 0) {
           const baseDomain =
@@ -263,13 +392,18 @@ export async function POST(req, ctx) {
             stepTo: 0,
             note: "تم إنشاء طلب جديد بانتظار الإجراء.",
             actorName:
-              auth.user?.username || auth.user?.name || auth.user?.email || "System",
+            auth.user?.arabicName ||
+            auth.user?.username ||
+            auth.user?.name ||
+            auth.user?.email ||
+            "System",
             greetingName: toUserName,
             toUserName,
             planUrl: docUrl,
             showRoutingLine: true,
             docTitle,
             docTypeAr,
+            ...emailDocFields,
           });
 
           await sendWorkflowEmail({

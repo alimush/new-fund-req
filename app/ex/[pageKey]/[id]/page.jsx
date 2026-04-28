@@ -58,7 +58,8 @@ function printAllPngs(pngs) {
   if (!doc) return;
 
   const imgsHtml = pngs.map((src) => `<div class="page"><img src="${src}" /></div>`).join("");
-
+  const cfg = getExForm(pageKey);
+  const hideWorkflow = !!cfg?.hideWorkflow;
   doc.open();
   doc.write(`
     <!doctype html>
@@ -248,6 +249,7 @@ const isOperationUser =
   const TEMPLATE_IMG = cfg?.template?.url || cfg?.template?.img || "/fallback-a4.jpg";
   const POS = cfg?.pos || {};
   const FIELDS = Array.isArray(cfg?.fields) ? cfg.fields : [];
+  const isAttachmentOnly = pageKey === "attachment-only" || cfg?.key === "attachment-only";
 
   const [status, setStatus] = useState("loading");
   const [doc, setDoc] = useState(null);
@@ -519,8 +521,9 @@ const isOperationUser =
         {/* HEADER */}
         <div className="mb-10">
           <div className="flex items-center justify-between">
-            <StatusBadge status={doc?.status || "Pending"} />
-
+          {!isAttachmentOnly && (
+  <StatusBadge status={doc?.status || "Pending"} />
+)}
             <h1 className="text-3xl font-bold text-gray-800 flex items-center gap-3">
               <FiInfo className="text-blue-600" /> {cfg?.title || pageKey} Details
             </h1>
@@ -533,7 +536,7 @@ const isOperationUser =
             </button>
           </div>
 
-          {planStatus === "pending" && (
+          {planStatus === "pending" && !isAttachmentOnly && (
             <div className="mt-4 flex flex-wrap items-center gap-3">
               <button
                 onClick={openPreview}
@@ -580,25 +583,89 @@ const isOperationUser =
           </motion.div>
 
           <motion.div
-            className="rounded-3xl bg-white/35 backdrop-blur-2xl ring-1 ring-white/25 shadow-[0_18px_45px_-25px_rgba(0,0,0,0.35)] p-6"
-            initial={{ opacity: 0, y: 30 }}
-            animate={{ opacity: 1, y: 0 }}
-          >
-            <h2 className="text-lg font-semibold mb-4 flex items-center gap-2 text-gray-700">
-              <FiInfo /> الحقول
-            </h2>
+  className="rounded-3xl bg-white/35 backdrop-blur-2xl ring-1 ring-white/25 shadow-[0_18px_45px_-25px_rgba(0,0,0,0.35)] p-6"
+  initial={{ opacity: 0, y: 30 }}
+  animate={{ opacity: 1, y: 0 }}
+>
+  <h2 className="text-lg font-semibold mb-4 flex items-center gap-2 text-gray-700">
+    <FiPaperclip /> {isAttachmentOnly ? "الاتاج" : "الحقول"}
+  </h2>
 
-            <div className="grid grid-cols-1 gap-4 text-sm text-gray-700">
-            {FIELDS.map((f) => (
-  <Info
-    key={f.name}
-    label={f.label || f.name}
-    value={doc?.[f.name]}
-    icon={<FiInfo />}
-  />
-))}
+  {isAttachmentOnly ? (
+  <div className="space-y-4">
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <Info label="اسم الزبون" value={doc?.customerName} icon={<FiUser />} />
+      <Info label="رقم الوحدة" value={doc?.unitNo} icon={<FiInfo />} />
+    </div>
+      {Array.isArray(doc?.attachments) && doc.attachments.length > 0 ? (
+        doc.attachments.map((file, idx) => {
+          const img = isImageFile(file);
+          const pdf = isPdfFile(file);
+
+          return (
+            <div
+              key={idx}
+              className="flex items-center justify-between gap-3 p-3 rounded-2xl bg-white/60 ring-1 ring-black/5"
+            >
+              <div className="min-w-0 flex items-center gap-3">
+                <div className="h-11 w-11 rounded-xl bg-white flex items-center justify-center text-gray-700 ring-1 ring-black/10">
+                  {img ? <FiImage /> : <FiFileText />}
+                </div>
+
+                <div className="min-w-0">
+                  <div className="font-bold text-gray-800 truncate">
+                    {file?.name || `Attachment ${idx + 1}`}
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    {pdf ? "PDF" : img ? "Image" : fileExt(file?.name) || "FILE"}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <a
+                  href={file?.url || "#"}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => {
+                    if (!file?.url) e.preventDefault();
+                  }}
+                  className="px-3 py-1.5 rounded-xl text-xs font-bold bg-gray-900 text-white hover:bg-black"
+                >
+                  Open
+                </a>
+
+                <button
+                  type="button"
+                  onClick={() => downloadFile(file)}
+                  disabled={!file?.url}
+                  className="px-3 py-1.5 rounded-xl text-xs font-bold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60 inline-flex items-center gap-1.5"
+                >
+                  <FiDownload /> Download
+                </button>
+              </div>
             </div>
-          </motion.div>
+          );
+        })
+      ) : (
+        <div className="text-sm text-gray-500 text-center py-6">
+          لا توجد مرفقات
+        </div>
+      )}
+    </div>
+  ) : (
+    <div className="grid grid-cols-1 gap-4 text-sm text-gray-700">
+      {FIELDS.map((f) => (
+        <Info
+          key={f.name}
+          label={f.label || f.name}
+          value={doc?.[f.name]}
+          icon={<FiInfo />}
+        />
+      ))}
+    </div>
+  )}
+</motion.div>
         </div>
 
 
@@ -721,7 +788,11 @@ const isOperationUser =
               ? "cursor-not-allowed opacity-80"
               : "cursor-default hover:bg-white/55 hover:ring-white/40";
 
-            const currentRing = isCurrent && !isCancelled ? "ring-2 ring-blue-200/70" : "";
+              const currentRing = isAttachmentOnly
+              ? "ring-2 ring-green-200/80 bg-green-50/40"
+              : isCurrent && !isCancelled
+              ? "ring-2 ring-blue-200/70"
+              : "";
 
             return (
               <div key={idx} className="flex items-center gap-5">
@@ -739,17 +810,29 @@ const isOperationUser =
                     <div className="flex items-center gap-3">
                       <div
                         className={`h-11 w-11 rounded-2xl flex items-center justify-center text-white font-bold
-                          ${isCancelled ? "bg-gray-500" : isCurrent ? "bg-blue-600" : "bg-gray-800"}
+                          ${
+                            isAttachmentOnly
+                              ? "bg-green-600"
+                              : isCancelled
+                              ? "bg-gray-500"
+                              : isCurrent
+                              ? "bg-blue-600"
+                              : "bg-gray-800"
+                          }
                         `}
                       >
                         {idx + 1}
                       </div>
 
                       <div>
-                        <p className="font-semibold text-gray-800 text-base">Step {idx + 1}</p>
+                      <p className="font-semibold text-gray-800 text-base">
+  {isAttachmentOnly ? `تم ارسال الاتاج للستيب رقم ${idx + 1}` : `Step ${idx + 1}`}
+</p>
 
                         <div className="mt-2">
-                          <StatusBadge status={isCancelled ? "cancelled" : stepStatus} />
+                        {!isAttachmentOnly && (
+  <StatusBadge status={isCancelled ? "cancelled" : stepStatus} />
+)}
                         </div>
 
                         {(step?.actedAt || actedName) && (
@@ -842,7 +925,8 @@ const isOperationUser =
                     })}
                   </div>
 
-                  {stepFiles.length > 0 &&
+                  {!isAttachmentOnly &&
+  stepFiles.length > 0 &&
   currentUser &&
   step?.users?.some((u) => String(u?._id) === String(currentUser?._id)) && ( <div className="mt-4 space-y-2">
     <div className="text-sm font-semibold text-gray-700">مرفقات الستيب</div>
@@ -902,7 +986,7 @@ const isOperationUser =
 )}
 
                   {/* ACTIONS */}
-                  {canAct && !isCancelled && !isOperationUser && (
+                  {canAct && !isCancelled && !isOperationUser && !isAttachmentOnly && (
   <div className="mt-5 flex gap-3">
     <button
       disabled={acting}
@@ -927,7 +1011,7 @@ const isOperationUser =
   </div>
 )}
 
-{canAct && !isCancelled && isOperationUser && (
+{canAct && !isCancelled && isOperationUser && !isAttachmentOnly && (
   <div className="mt-5">
     <button
       disabled={acting}

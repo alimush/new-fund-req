@@ -215,18 +215,18 @@ export async function GET(req) {
       const rxText = escapeRegex(q);
       const rx = new RegExp(rxText, "i");
 
-      const cond = {
-        status: { $ne: "Cancelled" },
-      
-        ...(canViewAllReports
-          ? {}
-          : { createdBy: currentUsername || "__never_match__" }),
-      
-        $or: [
-          { requestCode: { $regex: rxText, $options: "i" } },
-          { description: { $regex: rxText, $options: "i" } },
-        ],
-      };
+     const cond = {
+  status: { $ne: "Cancelled" },
+
+  ...(canViewAllReports
+    ? {}
+    : { createdBy: currentUsername || "__never_match__" }),
+
+  $or: [
+    { requestCode: { $regex: rxText, $options: "i" } },
+    { description: { $regex: rxText, $options: "i" } },
+  ],
+};
 
       const merged = await getDocsBySource({
         source,

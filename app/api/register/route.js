@@ -44,11 +44,12 @@ export default function RegisterPage() {
     const res = await fetch("/api/users", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, password, group }),
+      body: JSON.stringify({ username, arabicName, email, password }),
     });
 
     if (res.ok) {
       setUsername("");
+      setArabicName("");
       setPassword("");
       setGroup("");
       fetchUsers(search);

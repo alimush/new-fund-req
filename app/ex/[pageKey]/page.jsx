@@ -473,11 +473,21 @@ export default function ExListPage() {
 
   // ===== Stats (من طلباتي الحالية بعد الفلتر) =====
   const stats = useMemo(() => {
+    if (pageKey === "attachment-only") {
+      const attachmentsCount = myRequestsAll.reduce(
+        (sum, r) => sum + (Array.isArray(r?.attachments) ? r.attachments.length : 0),
+        0
+      );
+  
+      return { total: myRequestsAll.length, attachmentsCount };
+    }
+  
     const total = myRequestsAll.length;
     const approved = myRequestsAll.filter((r) => norm(r.status) === "approved").length;
     const pending = myRequestsAll.filter((r) => norm(r.status) === "pending").length;
-    return { total, approved, pending };
-  }, [myRequestsAll]);
+  
+    return { total, approved, pending, attachmentsCount: 0 };
+  }, [myRequestsAll, pageKey]);
 
   // ===== Pagination computed + clamp =====
   const myPaged = useMemo(() => paginate(myRequests, pageMy, PAGE_SIZE), [myRequests, pageMy]);
@@ -570,7 +580,9 @@ export default function ExListPage() {
           {/* LEFT */}
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <StatusBadge status={r?.status || "pending"} />
+            {(r?.pageKey || pageKey) !== "attachment-only" && (
+  <StatusBadge status={r?.status || "pending"} />
+)}
               <span className="text-[12px] font-semibold text-gray-600">{dateText}</span>
             </div>
 
@@ -861,131 +873,187 @@ export default function ExListPage() {
         ) : null}
 
         {/* Stats (مثل Requests) */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div className="rounded-3xl bg-white/40 backdrop-blur-2xl ring-1 ring-white/30 p-4 shadow-[0_16px_45px_-30px_rgba(0,0,0,0.45)]">
-            <div className="text-[13px] font-bold text-gray-700/80">طلباتي الموافق عليها</div>
-            <div className="mt-2 flex items-center justify-between">
-              <div className="text-3xl font-black text-gray-900">{stats.approved}</div>
-              <div className="h-11 w-11 rounded-2xl bg-white/55 ring-1 ring-white/30 flex items-center justify-center">
-                <FiCheckCircle className="text-green-700 text-xl" />
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-3xl bg-white/40 backdrop-blur-2xl ring-1 ring-white/30 p-4 shadow-[0_16px_45px_-30px_rgba(0,0,0,0.45)]">
-            <div className="text-[13px] font-bold text-gray-700/80">طلباتي قيد الانتظار</div>
-            <div className="mt-2 flex items-center justify-between">
-              <div className="text-3xl font-black text-gray-900">{stats.pending}</div>
-              <div className="h-11 w-11 rounded-2xl bg-white/55 ring-1 ring-white/30 flex items-center justify-center">
-                <FiClock className="text-amber-700 text-xl" />
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-3xl bg-white/40 backdrop-blur-2xl ring-1 ring-white/30 p-4 shadow-[0_16px_45px_-30px_rgba(0,0,0,0.45)]">
-            <div className="text-[13px] font-bold text-gray-700/80">مجموع طلباتي</div>
-            <div className="mt-2 flex items-center justify-between">
-              <div className="text-3xl font-black text-gray-900">{stats.total}</div>
-              <div className="h-11 w-11 rounded-2xl bg-white/55 ring-1 ring-white/30 flex items-center justify-center">
-                <FiFileText className="text-blue-700 text-xl" />
-              </div>
-            </div>
-          </div>
+        {pageKey === "attachment-only" ? (
+  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+    <div className="rounded-3xl bg-white/40 backdrop-blur-2xl ring-1 ring-white/30 p-4 shadow-[0_16px_45px_-30px_rgba(0,0,0,0.45)]">
+      <div className="text-[13px] font-bold text-gray-700/80">عدد المرفقات</div>
+      <div className="mt-2 flex items-center justify-between">
+        <div className="text-3xl font-black text-gray-900">{stats.attachmentsCount}</div>
+        <div className="h-11 w-11 rounded-2xl bg-white/55 ring-1 ring-white/30 flex items-center justify-center">
+          <FiFileText className="text-blue-700 text-xl" />
         </div>
+      </div>
+    </div>
+
+    <div className="rounded-3xl bg-white/40 backdrop-blur-2xl ring-1 ring-white/30 p-4 shadow-[0_16px_45px_-30px_rgba(0,0,0,0.45)]">
+      <div className="text-[13px] font-bold text-gray-700/80">مجموع طلباتي</div>
+      <div className="mt-2 flex items-center justify-between">
+        <div className="text-3xl font-black text-gray-900">{stats.total}</div>
+        <div className="h-11 w-11 rounded-2xl bg-white/55 ring-1 ring-white/30 flex items-center justify-center">
+          <FiFileText className="text-blue-700 text-xl" />
+        </div>
+      </div>
+    </div>
+  </div>
+) : (
+  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+    {/* خلي الإحصائيات القديمة هنا مثل ما هي */}
+  </div>
+)}
 
         {/* Two columns (نفس Requests) */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Pending */}
-          <SectionShell
-            title="قيد الانتظار للموافقة"
-            subtitle="Requests that are pending with you"
-            icon={FiClock}
-            right={<span className="text-[13px] font-extrabold text-gray-800/70">{pendingPaged.total} items</span>}
-          >
-            {loading ? (
-              <div className="py-10 text-center font-extrabold text-gray-800/70">Loading...</div>
-            ) : pendingApprovals.length === 0 ? (
-              <div className="py-10 text-center font-extrabold text-gray-800/70">لايوجد قيد الانتظار للموافقة</div>
-            ) : (
-              <>
-                <ScrollBox>
-                  <div className="space-y-3">
-                    {pendingPaged.items.map((r) => (
-                      <ExCard key={r._id} r={r} />
-                    ))}
-                  </div>
-                </ScrollBox>
-
-                <Pager page={pendingPaged.page} totalPages={pendingPaged.totalPages} onPage={setPagePending} />
-              </>
-            )}
-          </SectionShell>
-
-          {/* My Requests + Status Filter */}
-          <SectionShell
-            title="طلباتي"
-            subtitle={currentUsername ? `Requests created by: ${currentUsername}` : "Requests created by:"}
-            icon={FiFileText}
-            right={
-              <div className="flex items-center gap-2">
-                <div className="hidden sm:flex items-center gap-2 px-3 py-2 rounded-2xl bg-white/45 ring-1 ring-white/30">
-                  <FiFilter className="text-gray-700" />
-                  <select
-                    value={myStatus}
-                    onChange={(e) => {
-                      setMyStatus(e.target.value);
-                      setPageMy(1);
-                    }}
-                    className="bg-transparent outline-none text-[13px] font-extrabold text-gray-900"
-                  >
-                    <option value="all">All</option>
-                    <option value="approved">Approved</option>
-                    <option value="pending">Pending</option>
-                    <option value="rejected">Rejected</option>
-                    <option value="cancelled">Cancelled</option>
-                  </select>
-                </div>
-              </div>
-            }
-          >
-            {/* Mobile filter */}
-            <div className="sm:hidden mb-3 flex items-center gap-2 px-3 py-2 rounded-2xl bg-white/45 ring-1 ring-white/30">
-              <FiFilter className="text-gray-700" />
-              <select
-                value={myStatus}
-                onChange={(e) => {
-                  setMyStatus(e.target.value);
-                  setPageMy(1);
-                }}
-                className="bg-transparent outline-none w-full text-[13px] font-extrabold text-gray-900"
-              >
-                <option value="all">All</option>
-                <option value="approved">Approved</option>
-                <option value="pending">Pending</option>
-                <option value="rejected">Rejected</option>
-                <option value="cancelled">Cancelled</option>
-              </select>
-            </div>
-
-            {loading ? (
-              <div className="py-10 text-center font-extrabold text-gray-800/70">Loading...</div>
-            ) : myRequests.length === 0 ? (
-              <div className="py-10 text-center font-extrabold text-gray-800/70">لا يوجد طلبات حسب الفلتر</div>
-            ) : (
-              <>
-                <ScrollBox>
-                  <div className="space-y-3">
-                    {myPaged.items.map((r) => (
-                      <ExCard key={r._id} r={r} />
-                    ))}
-                  </div>
-                </ScrollBox>
-
-                <Pager page={myPaged.page} totalPages={myPaged.totalPages} onPage={setPageMy} />
-              </>
-            )}
-          </SectionShell>
+        {pageKey === "attachment-only" ? (
+  <div className="grid grid-cols-1 gap-6">
+    <SectionShell
+      title="الاتاج"
+      subtitle="جميع طلبات الاتاج"
+      icon={FiFileText}
+      right={
+        <span className="text-[13px] font-extrabold text-gray-800/70">
+          {appliedFiltered.length} items
+        </span>
+      }
+    >
+      {loading ? (
+        <div className="py-10 text-center font-extrabold text-gray-800/70">
+          Loading...
         </div>
+      ) : appliedFiltered.length === 0 ? (
+        <div className="py-10 text-center font-extrabold text-gray-800/70">
+          لا يوجد اتاج
+        </div>
+      ) : (
+        <>
+          <ScrollBox>
+            <div className="space-y-3">
+              {paginate(appliedFiltered, pageMy, PAGE_SIZE).items.map((r) => (
+                <ExCard key={r._id} r={r} />
+              ))}
+            </div>
+          </ScrollBox>
+
+          <Pager
+            page={paginate(appliedFiltered, pageMy, PAGE_SIZE).page}
+            totalPages={paginate(appliedFiltered, pageMy, PAGE_SIZE).totalPages}
+            onPage={setPageMy}
+          />
+        </>
+      )}
+    </SectionShell>
+  </div>
+) : (
+  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    {/* Pending */}
+    <SectionShell
+      title="قيد الانتظار للموافقة"
+      subtitle="Requests that are pending with you"
+      icon={FiClock}
+      right={
+        <span className="text-[13px] font-extrabold text-gray-800/70">
+          {pendingPaged.total} items
+        </span>
+      }
+    >
+      {loading ? (
+        <div className="py-10 text-center font-extrabold text-gray-800/70">
+          Loading...
+        </div>
+      ) : pendingApprovals.length === 0 ? (
+        <div className="py-10 text-center font-extrabold text-gray-800/70">
+          لايوجد قيد الانتظار للموافقة
+        </div>
+      ) : (
+        <>
+          <ScrollBox>
+            <div className="space-y-3">
+              {pendingPaged.items.map((r) => (
+                <ExCard key={r._id} r={r} />
+              ))}
+            </div>
+          </ScrollBox>
+
+          <Pager
+            page={pendingPaged.page}
+            totalPages={pendingPaged.totalPages}
+            onPage={setPagePending}
+          />
+        </>
+      )}
+    </SectionShell>
+
+    {/* My Requests + Status Filter */}
+    <SectionShell
+      title="طلباتي"
+      subtitle={currentUsername ? `Requests created by: ${currentUsername}` : "Requests created by:"}
+      icon={FiFileText}
+      right={
+        <div className="flex items-center gap-2">
+          <div className="hidden sm:flex items-center gap-2 px-3 py-2 rounded-2xl bg-white/45 ring-1 ring-white/30">
+            <FiFilter className="text-gray-700" />
+            <select
+              value={myStatus}
+              onChange={(e) => {
+                setMyStatus(e.target.value);
+                setPageMy(1);
+              }}
+              className="bg-transparent outline-none text-[13px] font-extrabold text-gray-900"
+            >
+              <option value="all">All</option>
+              <option value="approved">Approved</option>
+              <option value="pending">Pending</option>
+              <option value="rejected">Rejected</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+          </div>
+        </div>
+      }
+    >
+      <div className="sm:hidden mb-3 flex items-center gap-2 px-3 py-2 rounded-2xl bg-white/45 ring-1 ring-white/30">
+        <FiFilter className="text-gray-700" />
+        <select
+          value={myStatus}
+          onChange={(e) => {
+            setMyStatus(e.target.value);
+            setPageMy(1);
+          }}
+          className="bg-transparent outline-none w-full text-[13px] font-extrabold text-gray-900"
+        >
+          <option value="all">All</option>
+          <option value="approved">Approved</option>
+          <option value="pending">Pending</option>
+          <option value="rejected">Rejected</option>
+          <option value="cancelled">Cancelled</option>
+        </select>
+      </div>
+
+      {loading ? (
+        <div className="py-10 text-center font-extrabold text-gray-800/70">
+          Loading...
+        </div>
+      ) : myRequests.length === 0 ? (
+        <div className="py-10 text-center font-extrabold text-gray-800/70">
+          لا يوجد طلبات حسب الفلتر
+        </div>
+      ) : (
+        <>
+          <ScrollBox>
+            <div className="space-y-3">
+              {myPaged.items.map((r) => (
+                <ExCard key={r._id} r={r} />
+              ))}
+            </div>
+          </ScrollBox>
+
+          <Pager
+            page={myPaged.page}
+            totalPages={myPaged.totalPages}
+            onPage={setPageMy}
+          />
+        </>
+      )}
+    </SectionShell>
+  </div>
+)}
       </div>
 
       {/* ✅ Create Modal (فقط لمن عنده CREATE_REQUEST) */}
