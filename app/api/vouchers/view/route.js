@@ -9,7 +9,7 @@ import { ObjectId } from "mongodb";
 export const runtime = "nodejs";
 
 const COLLECTION_NAME = "vouchers";
-const VOUCHER_COMPANIES = ["Al-Ghadeer", "Badur-Baghdad"];
+const VOUCHER_COMPANIES = ["Al-Ghadeer", "Badur-Baghdad" , "Tiba-Al-najaf" , "Ghadeer-Karbala"];
 
 const DEFAULT_GLOBAL_TEXT_STYLE = {
   fontSize: 16,

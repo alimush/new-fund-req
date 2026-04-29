@@ -36,6 +36,20 @@ const companies = [
     paymentImgPng: "/voucher2.png",
     receiptImgPng: "/receipt2.png",
   },
+  {
+    key: "Tiba-Al-najaf",
+    name: "طيبة النجف",
+    logo: "/طيبة_النجف.png",
+    paymentImgPng: "/voucherTB.png",
+    receiptImgPng: "/receiptTB.png",
+  },
+  {
+    key: "Ghadeer-Karbala",
+    name: "غدير كربلاء",
+    logo: "غدير_كربلاء.png",
+    paymentImgPng: "/voucherGH.png",
+    receiptImgPng: "/receiptGH.png",
+  },
 ];
 
 const POS_OLD = {

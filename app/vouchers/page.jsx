@@ -23,6 +23,20 @@ const companies = [
     paymentImg: "/voucher2.png",
     receiptImg: "/receipt2.png",
   },
+  {
+    key: "Tiba-Al-najaf",
+    name: "طيبة النجف",
+    logo: "/طيبة_النجف.png",
+    paymentImg: "/voucherTB.png",
+    receiptImg: "/receiptTB.png",
+  },
+  {
+    key: "Ghadeer-Karbala",
+    name: "غدير كربلاء",
+    logo: "غدير_كربلاء.png",
+    paymentImg: "/voucherGH.png",
+    receiptImg: "/receiptGH.png",
+  },
 ];
 
 const DEFAULT_GLOBAL_TEXT_STYLE = {

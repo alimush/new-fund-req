@@ -45,7 +45,22 @@ const companies = [
     paymentImg: "/voucher2.jpg",
     receiptImg: "/receipt2.jpg",
   },
+  {
+    key: "Tiba-Al-najaf",
+    name: "طيبة النجف",
+    logo: "/طيبة_النجف.png",
+    paymentImgPng: "/voucherTB.png",
+    receiptImgPng: "/receiptTB.png",
+  },
+  {
+    key: "Ghadeer-Karbala",
+    name: "غدير كربلاء",
+    logo: "غدير_كربلاء.png",
+    paymentImgPng: "/voucherGH.png",
+    receiptImgPng: "/receiptGH.png",
+  },
 ];
+
 
 const getCompanyName = (key) =>
   companies.find((c) => c.key === key)?.name || key || "-";

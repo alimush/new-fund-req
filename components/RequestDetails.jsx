@@ -1001,7 +1001,7 @@ export default function RequestDetails({ id, companyKey }) {
 
 {isFinalApproved &&
   isLastStepUser &&
-  ["Badur-Baghdad", "Al-Ghadeer", "010"].includes(companyKey) && (
+  ["Badur-Baghdad", "Al-Ghadeer", "010" , "Tiba-Al-najaf" , "Ghadeer-Karbala"].includes(companyKey) && (
     <div className="mt-4 flex gap-3">
       <button
         onClick={(e) => {

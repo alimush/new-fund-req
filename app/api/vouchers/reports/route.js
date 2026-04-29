@@ -8,7 +8,7 @@ import mongoose from "mongoose";
 export const runtime = "nodejs";
 
 const COLLECTION_NAME = "vouchers";
-const VOUCHER_COMPANIES = ["Al-Ghadeer", "Badur-Baghdad"];
+const VOUCHER_COMPANIES = ["Al-Ghadeer", "Badur-Baghdad","Tiba-Al-najaf" , "Ghadeer-Karbala"];
 
 const escapeRegex = (s) =>
   String(s || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
