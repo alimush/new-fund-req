@@ -1,33 +1,62 @@
 import dbConnect from "@/lib/mongodb";
 import Permissions from "@/models/Permissions";
-import mongoose from "mongoose";
+import User from "@/models/User";
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function GET(req) {
   try {
     await dbConnect();
 
-    const { searchParams } = new URL(req.url);
-    const userId = searchParams.get("id");
+    const cookieUserId = req.cookies.get("userId")?.value;
 
-    if (!userId) {
+    if (!cookieUserId) {
       return NextResponse.json(
-        { success: false, error: "User ID required" },
-        { status: 400 }
+        { success: false, error: "Unauthorized" },
+        { status: 401 }
       );
     }
 
-    const groups = await Permissions.find({ users: userId }).lean();
+    // ✅ أهم شي: تأكد اليوزر بعده موجود
+    const user = await User.findById(cookieUserId).lean();
 
-    const permissions = [...new Set(groups.flatMap(g => g.permissions))];
+    if (!user) {
+      return NextResponse.json(
+        { success: false, error: "User deleted or not found" },
+        { status: 401 }
+      );
+    }
 
-    const companies = [...new Set(groups.flatMap(g => g.companies))];
+    // اختياري إذا بعدين تريد disable
+    if (user.isActive === false) {
+      return NextResponse.json(
+        { success: false, error: "User disabled" },
+        { status: 401 }
+      );
+    }
 
-    return NextResponse.json({ success: true, permissions, companies });
+    const groups = await Permissions.find({
+      $or: [{ users: cookieUserId }, { users: user._id }],
+    }).lean();
 
+    const permissions = [...new Set(groups.flatMap((g) => g.permissions || []))];
+    const companies = [...new Set(groups.flatMap((g) => g.companies || []))];
+
+    return NextResponse.json({
+      success: true,
+      user: {
+        id: user._id.toString(),
+        username: user.username,
+      },
+      permissions,
+      companies,
+    });
   } catch (error) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return NextResponse.json(
+      { success: false, error: error.message },
+      { status: 500 }
+    );
   }
 }

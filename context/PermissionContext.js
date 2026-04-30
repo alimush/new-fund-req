@@ -7,7 +7,18 @@ const PermissionContext = createContext();
 export function PermissionProvider({ children }) {
   const [user, setUser] = useState(null);
   const [permissions, setPermissions] = useState([]);
-  const [companies, setCompanies] = useState([]); // 🟦 الشركات
+  const [companies, setCompanies] = useState([]);
+
+  const logoutToLogin = () => {
+    localStorage.clear();
+    setUser(null);
+    setPermissions([]);
+    setCompanies([]);
+
+    if (window.location.pathname !== "/login") {
+      window.location.href = "/login";
+    }
+  };
 
   const load = async () => {
     const userId = localStorage.getItem("userId");
@@ -15,25 +26,43 @@ export function PermissionProvider({ children }) {
 
     if (!userId) return;
 
-    setUser({ id: userId, username });
+    try {
+      const res = await fetch(`/api/user-permissions?id=${userId}`, {
+        cache: "no-store",
+      });
 
-    // جلب صلاحيات + شركات اليوزر
-    const res = await fetch(`/api/user-permissions?id=${userId}`);
-    const data = await res.json();
+      if (res.status === 401) {
+        logoutToLogin();
+        return;
+      }
 
-    if (data.success) {
-      setPermissions(data.permissions || []);
-      setCompanies(data.companies || []);   // 🟦 خزن الشركات
+      const data = await res.json();
 
-      // خزن محلياً
-
+      if (data.success) {
+        setUser({ id: userId, username });
+        setPermissions(data.permissions || []);
+        setCompanies(data.companies || []);
+      } else {
+        setPermissions([]);
+        setCompanies([]);
+      }
+    } catch (err) {
+      logoutToLogin();
     }
   };
 
   useEffect(() => {
     load();
+
     window.addEventListener("userChanged", load);
-    return () => window.removeEventListener("userChanged", load);
+
+    // يفحص كل 5 ثواني إذا اليوزر بعده موجود
+    const interval = setInterval(load, 5000);
+
+    return () => {
+      window.removeEventListener("userChanged", load);
+      clearInterval(interval);
+    };
   }, []);
 
   return (
