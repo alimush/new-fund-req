@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePermissions } from "@/context/PermissionContext";
 import { useEffect, useMemo, useState } from "react";
-
+// رفع اول تعديل من خلال الماك بوك الجديده
 const cards = [
   { key: "Al-Ghadeer", name: "طلبات الغدير", logo: "/الغدير.png" },
   { key: "Badur-Baghdad", name: "طلبات بدور بغداد", logo: "/بدور_بغداد.png" },
