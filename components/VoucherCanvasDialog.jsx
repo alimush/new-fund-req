@@ -165,6 +165,7 @@ export default function VoucherCanvasDialog({
   setGlobalTextStyle,
   fieldStyles = DEFAULT_FIELD_STYLES,
   setFieldStyles,
+  onImageLoad,
 }) {
   const [selectedField, setSelectedField] = useState(null);
 
@@ -468,6 +469,7 @@ export default function VoucherCanvasDialog({
                         <img
                           src={currentImg}
                           alt="voucher"
+                          onLoad={onImageLoad}
                           draggable={false}
                           style={{
                             position: "absolute",

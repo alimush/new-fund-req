@@ -4,11 +4,13 @@ import { cookies } from "next/headers";
 import Permissions from "@/models/Permissions";
 import { PERMISSIONS } from "@/lib/permission";
 import mongoose from "mongoose";
+import { COMPANIES } from "@/lib/voucher/companies";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 const COLLECTION_NAME = "vouchers";
-const VOUCHER_COMPANIES = ["Al-Ghadeer", "Badur-Baghdad","Tiba-Al-najaf" , "Ghadeer-Karbala"];
+const VOUCHER_COMPANIES = COMPANIES.map((c) => c.key);
 
 const escapeRegex = (s) =>
   String(s || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -54,21 +56,24 @@ export async function GET(req) {
       );
     }
 
-    const { allowedCompanies, allowedPerms } = await getUserAccess(userId);
+    const { allowedPerms } = await getUserAccess(userId);
 
-    if (
-      !allowedPerms.includes(PERMISSIONS.VIEW_REPORTS) &&
-      !allowedPerms.includes(PERMISSIONS.RECEIPTS)
-    ) {
+    // 1. التحقق من الصلاحية العامة للتقارير أو الوصولات
+    const hasGeneralAccess = allowedPerms.includes(PERMISSIONS.VOUCHERS_REPORTS_VIEW) || 
+                             allowedPerms.includes(PERMISSIONS.RECEIPTS) ||
+                             allowedPerms.includes(PERMISSIONS.VIEW_ALL_REPORTS);
+
+    if (!hasGeneralAccess) {
       return NextResponse.json(
-        { success: false, error: "Forbidden: missing permission" },
+        { success: false, error: "ليس لديك صلاحية لمشاهدة التقارير" },
         { status: 403 }
       );
     }
 
-    const finalAllowedCompanies = allowedCompanies.filter((c) =>
-      VOUCHER_COMPANIES.includes(String(c))
-    );
+    // 2. فلترة الشركات بناءً على الصلاحيات الخاصة بكل شركة
+    const finalAllowedCompanies = COMPANIES.filter(c => 
+      allowedPerms.includes(c.permission) || allowedPerms.includes(PERMISSIONS.VIEW_ALL_REPORTS)
+    ).map(c => c.key);
 
     const db = mongoose.connection.db;
     const col = db.collection(COLLECTION_NAME);
@@ -78,7 +83,7 @@ export async function GET(req) {
     // filters only
     if (isFiltersOnlyRequest(searchParams)) {
       const currencies = await col.distinct("currency", {
-        companyKey: { $in: finalAllowedCompanies },
+        companyKey: { $in: finalAllowedCompanies.map(c => new RegExp(`^${escapeRegex(c)}$`, "i")) },
       });
 
       return NextResponse.json({
@@ -97,53 +102,35 @@ export async function GET(req) {
       const q = (searchParams.get("q") || "").trim();
       if (!q) return NextResponse.json({ success: true, data: [] });
 
-      const rx = new RegExp(escapeRegex(q), "i");
+      const smartOr = [
+        { voucherNo: { $regex: escapeRegex(q), $options: "i" } },
+        { requestId: { $regex: escapeRegex(q), $options: "i" } },
+        { description: { $regex: escapeRegex(q), $options: "i" } },
+        { beneficiary: { $regex: escapeRegex(q), $options: "i" } },
+        { receivedBy: { $regex: escapeRegex(q), $options: "i" } },
+        { bank: { $regex: escapeRegex(q), $options: "i" } },
+      ];
 
-      const docs = await col
-        .find(
-          {
-            companyKey: { $in: finalAllowedCompanies },
-            $or: [
-              { voucherNo: { $regex: rx } },
-              { requestId: { $regex: rx } },
-              { description: { $regex: rx } },
-              { beneficiary: { $regex: rx } },
-              { receivedBy: { $regex: rx } },
-              { bank: { $regex: rx } },
-            ],
-          },
-          {
-            projection: {
-              voucherNo: 1,
-              requestId: 1,
-              description: 1,
-              beneficiary: 1,
-              receivedBy: 1,
-              bank: 1,
-            },
-          }
-        )
-        .sort({ createdAt: -1 })
-        .limit(50)
+      const results = await col
+        .find({
+          companyKey: { $in: finalAllowedCompanies.map(c => new RegExp(`^${escapeRegex(c)}$`, "i")) },
+          $or: smartOr,
+        })
+        .limit(100)
         .toArray();
 
       const out = [];
       const seen = new Set();
 
-      for (const d of docs) {
+      for (const doc of results) {
         const candidates = [
-          { value: d.voucherNo, label: d.voucherNo, type: "voucherNo" },
-          { value: d.requestId, label: d.requestId, type: "requestId" },
-          { value: d.description, label: d.description, type: "description" },
-          { value: d.beneficiary, label: d.beneficiary, type: "beneficiary" },
-          { value: d.receivedBy, label: d.receivedBy, type: "receivedBy" },
-          { value: d.bank, label: d.bank, type: "bank" },
-        ];
+          { type: "no", value: doc.voucherNo, label: `رقم الوصل: ${doc.voucherNo}` },
+          { type: "beneficiary", value: doc.beneficiary, label: `المستفيد: ${doc.beneficiary}` },
+          { type: "receivedBy", value: doc.receivedBy, label: `استلمت من: ${doc.receivedBy}` },
+          { type: "bank", value: doc.bank, label: `البنك: ${doc.bank}` },
+        ].filter(c => c.value && String(c.value).toLowerCase().includes(q.toLowerCase()));
 
         for (const c of candidates) {
-          if (!c.value) continue;
-          if (!rx.test(String(c.value))) continue;
-
           const key = `${c.type}|${c.value}`;
           if (seen.has(key)) continue;
 
@@ -178,12 +165,11 @@ export async function GET(req) {
       Math.min(200, parseInt(searchParams.get("pageSize") || "25", 10))
     );
 
+    // Filter allowed companies based on user selection (case-insensitive)
     const companyList =
       company === "all"
         ? finalAllowedCompanies
-        : finalAllowedCompanies.includes(company)
-        ? [company]
-        : [];
+        : finalAllowedCompanies.filter(c => String(c).toLowerCase() === company.toLowerCase());
 
     if (!companyList.length) {
       return NextResponse.json({
@@ -194,7 +180,7 @@ export async function GET(req) {
     }
 
     const query = {
-      companyKey: { $in: companyList },
+      companyKey: { $in: companyList.map(c => new RegExp(`^${escapeRegex(c)}$`, "i")) },
     };
 
     if (mode !== "all") query.mode = mode;
@@ -262,55 +248,27 @@ export async function GET(req) {
     }
 
     const total = await col.countDocuments(query);
-    const totalPages = total ? Math.ceil(total / pageSize) : 0;
-
-    const rawData = await col
-      .find(query, {
-        projection: {
-          companyKey: 1,
-          mode: 1,
-          voucherNo: 1,
-          seq: 1,
-          requestId: 1,
-          currency: 1,
-          amount: 1,
-          beneficiary: 1,
-          receivedBy: 1,
-          bank: 1,
-          description: 1,
-          notes: 1,
-          createdAt: 1,
-          voucherDate: 1,
-          vDateDD: 1,
-          vDateMM: 1,
-          vDateYY: 1,
-          attachments: 1,
-          attachment: 1,
-        },
-      })
+    const results = await col
+      .find(query)
       .sort({ createdAt: -1 })
       .skip((page - 1) * pageSize)
       .limit(pageSize)
       .toArray();
 
-    const data = rawData.map((x) => ({
-      ...x,
-      attachments: Array.isArray(x.attachments)
-        ? x.attachments
-        : x.attachment
-        ? [x.attachment]
-        : [],
-    }));
-
     return NextResponse.json({
       success: true,
-      data,
-      meta: { total, totalPages, page, pageSize },
+      data: results.map(r => ({ ...r, _id: r._id.toString() })),
+      meta: {
+        total,
+        totalPages: Math.ceil(total / pageSize),
+        page,
+        pageSize,
+      },
     });
   } catch (err) {
-    console.error("❌ Voucher Reports API Error:", err);
+    console.error("Voucher Reports Error:", err);
     return NextResponse.json(
-      { success: false, error: err.message || "Server error" },
+      { success: false, error: err.message },
       { status: 500 }
     );
   }

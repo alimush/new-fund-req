@@ -3,6 +3,9 @@ import dbConnect from "@/lib/mongodb";
 import { cookies } from "next/headers";
 import Voucher from "@/models/Voucher";
 import VoucherCounter from "@/models/VoucherCounter";
+import { PERMISSIONS } from "@/lib/permission";
+import { COMPANIES } from "@/lib/voucher/companies";
+import Permissions from "@/models/Permissions";
 
 export const runtime = "nodejs";
 
@@ -26,9 +29,28 @@ const DEFAULT_FIELD_STYLES = {
   phone: { fontSize: 16, fontWeight: 700, color: "#111827" },
 };
 
+async function getUserAccess(userId) {
+  if (!userId) return { allowedPerms: [] };
+  const groups = await Permissions.find({ users: userId }).select("permissions").lean();
+  const permsSet = new Set();
+  for (const g of groups) {
+    (g.permissions || []).forEach((p) => permsSet.add(String(p).trim()));
+  }
+  return { allowedPerms: Array.from(permsSet).filter(Boolean) };
+}
+
 export async function GET(req) {
   try {
     await dbConnect();
+
+    const cookieStore = await cookies();
+    const userId = cookieStore.get("userId")?.value;
+
+    if (!userId) {
+      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    }
+
+    const { allowedPerms } = await getUserAccess(userId);
 
     const { searchParams } = new URL(req.url);
     const companyKey = searchParams.get("companyKey");
@@ -40,6 +62,14 @@ export async function GET(req) {
         { success: false, error: "companyKey and requestId are required" },
         { status: 400 }
       );
+    }
+
+    // ✅ التحقق من الصلاحية
+    const companyConfig = COMPANIES.find(c => String(c.key).toLowerCase() === String(companyKey).toLowerCase());
+    const hasAccess = (companyConfig && allowedPerms.includes(companyConfig.permission)) || allowedPerms.includes(PERMISSIONS.VIEW_ALL_REPORTS);
+
+    if (!hasAccess) {
+      return NextResponse.json({ success: false, error: "ليس لديك صلاحية لهذه الشركة" }, { status: 403 });
     }
 
     const doc = await Voucher.findOne({
@@ -137,6 +167,7 @@ export async function POST(req) {
       );
     }
 
+    const { allowedPerms } = await getUserAccess(userId);
     const body = await req.json();
 
     const {
@@ -178,6 +209,14 @@ export async function POST(req) {
         { success: false, error: "companyKey and mode are required" },
         { status: 400 }
       );
+    }
+
+    // ✅ التحقق من الصلاحية
+    const companyConfig = COMPANIES.find(c => String(c.key).toLowerCase() === String(companyKey).toLowerCase());
+    const hasAccess = (companyConfig && allowedPerms.includes(companyConfig.permission)) || allowedPerms.includes(PERMISSIONS.VIEW_ALL_REPORTS);
+
+    if (!hasAccess) {
+      return NextResponse.json({ success: false, error: "ليس لديك صلاحية لإنشاء وصولات لهذه الشركة" }, { status: 403 });
     }
 
     if (!["payment", "receipt"].includes(mode)) {

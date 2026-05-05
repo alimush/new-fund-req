@@ -4,161 +4,32 @@
 import { useMemo, useRef, useState, useEffect, useCallback } from "react";
 import { toPng } from "html-to-image";
 import VoucherCanvasDialog from "@/components/VoucherCanvasDialog";
-import { POS as POS_NEW, EXTRA as EXTRA_NEW } from "@/components/voucherConfig";
+// Shared imports
+import { 
+  only2Digits, 
+  cleanAmount, 
+  formatAmount, 
+  numberToArabicWords, 
+  waitForImages 
+} from "@/lib/voucher/utils";
 
-const TEMPLATE_SWITCH_DATE = new Date("2026-04-18T13:40:06.558+03:00");
+import {
+  DEFAULT_GLOBAL_TEXT_STYLE,
+  DEFAULT_FIELD_STYLES,
+  clampFontSize,
+  normalizeHexColor,
+  normalizeGlobalTextStyle,
+  normalizeFieldStyles
+} from "@/lib/voucher/styles";
 
-const companies = [
-  {
-    key: "Al-Ghadeer",
-    name: "شركة الغدير",
-    logo: "/الغدير.png",
-    paymentImgJpg: "/voucher.jpg",
-    receiptImgJpg: "/receipt.jpg",
-    paymentImgPng: "/voucher.png",
-    receiptImgPng: "/receipt.png",
-  },
-  {
-    key: "010",
-    name: "شركة الغدير",
-    logo: "/الغدير.png",
-    paymentImgJpg: "/voucher.jpg",
-    receiptImgJpg: "/receipt.jpg",
-    paymentImgPng: "/voucher.png",
-    receiptImgPng: "/receipt.png",
-  },
-  {
-    key: "Badur-Baghdad",
-    name: "شركة بدور بغداد",
-    logo: "/بدور_بغداد.png",
-    paymentImgJpg: "/voucher2.jpg",
-    receiptImgJpg: "/receipt2.jpg",
-    paymentImgPng: "/voucher2.png",
-    receiptImgPng: "/receipt2.png",
-  },
-  {
-    key: "Tiba-Al-najaf",
-    name: "طيبة النجف",
-    logo: "/طيبة_النجف.png",
-    paymentImgPng: "/voucherTB.png",
-    receiptImgPng: "/receiptTB.png",
-  },
-  {
-    key: "Ghadeer-Karbala",
-    name: "غدير كربلاء",
-    logo: "غدير_كربلاء.png",
-    paymentImgPng: "/voucherGH.png",
-    receiptImgPng: "/receiptGH.png",
-  },
-];
-
-const POS_OLD = {
-  date: { top: 19.2, left: 74.8 },
-  amountFixed: { top: 13.6, left: 9.0 },
-  currencyUSDBox: { top: 8.0, left: 22.3 },
-  currencyIQDBox: { top: 8.0, left: 13.0 },
-  amountWords: { top: 37.6, left: -2.0, width: 75.0 },
-  description: { top: 53.5, left: 10, width: 80, height: 15.0 },
-};
-
-const EXTRA_OLD = {
-  bank: { top: 70, left: -20, width: 54.2, height: 6.0 },
-  fxRate: { top: 20, left: 12.0, width: 30.0, height: 6.0 },
-  receivedBy: { top: 29.2, left: 18.8, width: 54.2, height: 6.0 },
-  beneficiary: { top: 85.8, left: -20, width: 54.2, height: 6.0 },
-  notes: { top: 84.0, left: 50.0, width: 40.2, height: 8.0 },
-  cb1: { top: 71.7, left: 81.2 },
-  cb2: { top: 71.7, left: 70.3 },
-};
-
-const DEFAULT_GLOBAL_TEXT_STYLE = {
-  fontSize: 16,
-  fontWeight: 700,
-  color: "#111827",
-};
-
-const DEFAULT_FIELD_STYLES = {
-  amount: { fontSize: 16, fontWeight: 800, color: "#111827" },
-  words: { fontSize: 16, fontWeight: 700, color: "#111827" },
-  desc: { fontSize: 16, fontWeight: 600, color: "#111827" },
-  bank: { fontSize: 16, fontWeight: 700, color: "#111827" },
-  fxRate: { fontSize: 16, fontWeight: 800, color: "#111827" },
-  receivedBy: { fontSize: 16, fontWeight: 600, color: "#111827" },
-  beneficiary: { fontSize: 16, fontWeight: 700, color: "#111827" },
-  notes: { fontSize: 16, fontWeight: 600, color: "#111827" },
-  chequeNo: { fontSize: 16, fontWeight: 700, color: "#111827" },
-  nationalId: { fontSize: 16, fontWeight: 700, color: "#111827" },
-  phone: { fontSize: 16, fontWeight: 700, color: "#111827" },
-  sanadNo: { fontSize: 16, fontWeight: 700, color: "#111827" },
-  date: { fontSize: 16, fontWeight: 800, color: "#111827" },
-  voucherNo: { fontSize: 11, fontWeight: 800, color: "#111827" },
-  currencyMark: { fontSize: 16, fontWeight: 800, color: "#111827" },
-};
-
-function only2Digits(val) {
-  return String(val || "").replace(/[^\d]/g, "").slice(0, 2);
-}
-
-function cleanAmount(value) {
-  return String(value || "")
-    .replace(/,/g, "")
-    .replace(/[^\d.]/g, "");
-}
-
-function formatAmount(value) {
-  const cleaned = cleanAmount(value);
-  if (!cleaned) return "";
-
-  const n = Number(cleaned);
-  if (!Number.isFinite(n)) return "";
-
-  return n.toLocaleString("en-US", {
-    maximumFractionDigits: 3,
-  });
-}
-
-function clampFontSize(value, fallback = 16) {
-  const n = String(value ?? "").replace(/[^\d]/g, "");
-  if (!n) return Number(fallback);
-  return Math.max(8, Math.min(72, Number(n)));
-}
-
-function clampFontWeight(value, fallback = 700) {
-  const n = String(value ?? "").replace(/[^\d]/g, "");
-  if (!n) return Number(fallback);
-  const num = Number(n);
-  const steps = [100, 200, 300, 400, 500, 600, 700, 800, 900];
-  return steps.reduce((prev, curr) =>
-    Math.abs(curr - num) < Math.abs(prev - num) ? curr : prev
-  );
-}
-
-function normalizeHexColor(value, fallback = "#111827") {
-  const s = String(value || "").trim();
-  return /^#([0-9a-fA-F]{6})$/.test(s) ? s : fallback;
-}
-
-function normalizeGlobalTextStyle(input = {}) {
-  return {
-    fontSize: clampFontSize(input?.fontSize, DEFAULT_GLOBAL_TEXT_STYLE.fontSize),
-    fontWeight: clampFontWeight(input?.fontWeight, DEFAULT_GLOBAL_TEXT_STYLE.fontWeight),
-    color: normalizeHexColor(input?.color, DEFAULT_GLOBAL_TEXT_STYLE.color),
-  };
-}
-
-function normalizeFieldStyles(input = {}, fallbackGlobal = DEFAULT_GLOBAL_TEXT_STYLE) {
-  const out = {};
-  for (const key of Object.keys(DEFAULT_FIELD_STYLES)) {
-    const src = input?.[key] || {};
-    const base = DEFAULT_FIELD_STYLES[key];
-    out[key] = {
-      fontSize: clampFontSize(src?.fontSize, base.fontSize ?? fallbackGlobal.fontSize),
-      fontWeight: clampFontWeight(src?.fontWeight, base.fontWeight ?? fallbackGlobal.fontWeight),
-      color: normalizeHexColor(src?.color, base.color ?? fallbackGlobal.color),
-    };
-  }
-  return out;
-}
+import {
+  COMPANIES,
+  TEMPLATE_SWITCH_DATE,
+  POS_OLD,
+  EXTRA_OLD,
+  POS_NEW,
+  EXTRA_NEW,
+} from "@/lib/voucher/companies";
 
 function buildLegacyStyles(doc) {
   const mainColor = normalizeHexColor(doc?.fontColorMain, "#111827");
@@ -195,86 +66,6 @@ function buildLegacyStyles(doc) {
   };
 
   return { global, fields };
-}
-
-function numberToArabicWords(num) {
-  num = parseInt(String(num).replace(/[^\d]/g, ""), 10);
-  if (!Number.isFinite(num) || num === 0) return "";
-
-  const ones = ["", "واحد", "اثنان", "ثلاثة", "أربعة", "خمسة", "ستة", "سبعة", "ثمانية", "تسعة"];
-  const teens = [
-    "عشرة",
-    "أحد عشر",
-    "اثنا عشر",
-    "ثلاثة عشر",
-    "أربعة عشر",
-    "خمسة عشر",
-    "ستة عشر",
-    "سبعة عشر",
-    "ثمانية عشر",
-    "تسعة عشر",
-  ];
-  const tens = ["", "", "عشرون", "ثلاثون", "أربعون", "خمسون", "ستون", "سبعون", "ثمانون", "تسعون"];
-  const hundreds = ["", "مائة", "مائتان", "ثلاثمائة", "أربعمائة", "خمسمائة", "ستمائة", "سبعمائة", "ثمانمائة", "تسعمائة"];
-
-  function below100(n) {
-    if (n < 10) return ones[n];
-    if (n === 10) return "عشرة";
-    if (n > 10 && n < 20) return teens[n - 10];
-    if (n % 10 === 0) return tens[Math.floor(n / 10)];
-    return `${ones[n % 10]} و${tens[Math.floor(n / 10)]}`;
-  }
-
-  function below1000(n) {
-    if (n < 100) return below100(n);
-    const h = Math.floor(n / 100);
-    const rest = n % 100;
-    if (rest === 0) return hundreds[h];
-    return `${hundreds[h]} و${below100(rest)}`;
-  }
-
-  function groupToWords(n, singular, dual, plural) {
-    if (n === 0) return "";
-    if (n === 1) return singular;
-    if (n === 2) return dual;
-    if (n >= 3 && n <= 10) return `${below1000(n)} ${plural}`;
-    return `${below1000(n)} ${singular}`;
-  }
-
-  const billions = Math.floor(num / 1000000000);
-  const millions = Math.floor((num % 1000000000) / 1000000);
-  const thousands = Math.floor((num % 1000000) / 1000);
-  const rest = num % 1000;
-
-  const parts = [];
-  if (billions) parts.push(groupToWords(billions, "مليار", "ملياران", "مليارات"));
-  if (millions) parts.push(groupToWords(millions, "مليون", "مليونان", "ملايين"));
-  if (thousands) parts.push(groupToWords(thousands, "ألف", "ألفان", "آلاف"));
-  if (rest) parts.push(below1000(rest));
-
-  return parts.join(" و");
-}
-
-async function waitForImages(node) {
-  if (!node) return;
-  const imgs = Array.from(node.querySelectorAll("img"));
-
-  await Promise.all(
-    imgs.map((img) => {
-      if (img.complete && img.naturalWidth > 0) return Promise.resolve();
-      return new Promise((resolve) => {
-        const done = () => resolve();
-        img.addEventListener("load", done, { once: true });
-        img.addEventListener("error", done, { once: true });
-      });
-    })
-  );
-
-  await Promise.all(
-    imgs.map((img) =>
-      typeof img.decode === "function" ? img.decode().catch(() => {}) : Promise.resolve()
-    )
-  );
 }
 
 function buildEffectiveDate(existingVoucher, yy, mm, dd) {
@@ -359,7 +150,7 @@ export default function VoucherModal({
   const [fieldStyles, setFieldStyles] = useState(DEFAULT_FIELD_STYLES);
 
   const selectedCompany = useMemo(
-    () => companies.find((c) => c.key === companyKey) || null,
+    () => COMPANIES.find((c) => c.key === companyKey) || null,
     [companyKey]
   );
 

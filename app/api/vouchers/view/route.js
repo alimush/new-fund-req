@@ -5,11 +5,16 @@ import Permissions from "@/models/Permissions";
 import { PERMISSIONS } from "@/lib/permission";
 import mongoose from "mongoose";
 import { ObjectId } from "mongodb";
+import { COMPANIES } from "@/lib/voucher/companies";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 const COLLECTION_NAME = "vouchers";
-const VOUCHER_COMPANIES = ["Al-Ghadeer", "Badur-Baghdad" , "Tiba-Al-najaf" , "Ghadeer-Karbala"];
+const VOUCHER_COMPANIES = COMPANIES.map((c) => c.key);
+
+const escapeRegex = (s) =>
+  String(s || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 const DEFAULT_GLOBAL_TEXT_STYLE = {
   fontSize: 16,
@@ -97,43 +102,49 @@ function sanitizeFieldStyles(input = {}, globalStyle = DEFAULT_GLOBAL_TEXT_STYLE
     const src = input?.[key] || {};
     const base = DEFAULT_FIELD_STYLES[key];
     out[key] = {
-      fontSize: normalizeFontSize(src?.fontSize, base.fontSize ?? globalStyle.fontSize),
-      fontWeight: normalizeFontWeight(src?.fontWeight, base.fontWeight ?? globalStyle.fontWeight),
-      color: normalizeColor(src?.color, base.color ?? globalStyle.color),
+      fontSize: normalizeFontSize(src?.fontSize, base.fontSize),
+      fontWeight: normalizeFontWeight(src?.fontWeight, base.fontWeight),
+      color: normalizeColor(src?.color, base.color),
     };
   }
   return out;
 }
 
-function sanitizeBody(body = {}) {
+function buildBody(body) {
   const globalTextStyle = sanitizeGlobalTextStyle(body.globalTextStyle || {});
   const fieldStyles = sanitizeFieldStyles(body.fieldStyles || {}, globalTextStyle);
 
   const amountStyle = fieldStyles.amount || DEFAULT_FIELD_STYLES.amount;
-  const wordsStyle = fieldStyles.words || DEFAULT_FIELD_STYLES.words;
-  const descStyle = fieldStyles.desc || DEFAULT_FIELD_STYLES.desc;
   const bankStyle = fieldStyles.bank || DEFAULT_FIELD_STYLES.bank;
 
+  const rawAmount = String(body.vAmount ?? "").replace(/,/g, "");
+  const numericAmount = isNaN(Number(rawAmount)) ? 0 : Number(rawAmount);
+
   return {
-    vDateYY: normalize2(body.vDateYY),
-    vDateMM: normalize2(body.vDateMM),
-    vDateDD: normalize2(body.vDateDD),
+    // Date Parts
+    dateParts: {
+      yy: normalize2(body.vDateYY),
+      mm: normalize2(body.vDateMM),
+      dd: normalize2(body.vDateDD),
+    },
 
-    vAmount: String(body.vAmount ?? "").trim(),
-    vWords: String(body.vWords ?? "").trim(),
-    vDesc: String(body.vDesc ?? "").trim(),
-    vCurrency: body.vCurrency === "USD" ? "USD" : "IQD",
+    // Main Fields (Mapping to original schema)
+    amount: numericAmount,
+    amountText: String(body.vAmount ?? "").trim(),
+    amountWords: String(body.vWords ?? "").trim(),
+    description: String(body.vDesc ?? "").trim(),
+    currency: body.vCurrency === "USD" ? "USD" : "IQD",
 
-    vBank: String(body.vBank ?? "").trim(),
-    vFxRate: String(body.vFxRate ?? "").trim(),
-    vReceivedBy: String(body.vReceivedBy ?? "").trim(),
-    vBeneficiary: String(body.vBeneficiary ?? "").trim(),
-    vNotes: String(body.vNotes ?? "").trim(),
+    bank: String(body.vBank ?? "").trim(),
+    fxRate: String(body.vFxRate ?? "").trim(),
+    receivedBy: String(body.vReceivedBy ?? "").trim(),
+    beneficiary: String(body.vBeneficiary ?? "").trim(),
+    notes: String(body.vNotes ?? "").trim(),
 
-    vChequeNo: String(body.vChequeNo ?? "").trim(),
-    vNationalId: String(body.vNationalId ?? "").trim(),
-    vPhone: String(body.vPhone ?? "").trim(),
-    vSanadNo: String(body.vSanadNo ?? "").trim(),
+    chequeNo: String(body.vChequeNo ?? "").trim(),
+    nationalId: String(body.vNationalId ?? "").trim(),
+    phone: String(body.vPhone ?? "").trim(),
+    sanadNo: String(body.vSanadNo ?? "").trim(),
 
     cbOne: Boolean(body.cbOne),
     cbTwo: Boolean(body.cbTwo),
@@ -141,31 +152,33 @@ function sanitizeBody(body = {}) {
     globalTextStyle,
     fieldStyles,
 
-    // legacy support
+    // Legacy Support
     fontSizeAmount: String(amountStyle.fontSize),
-    fontSizeWords: String(wordsStyle.fontSize),
-    fontSizeDesc: String(descStyle.fontSize),
+    fontSizeWords: String(fieldStyles.words?.fontSize || 16),
+    fontSizeDesc: String(fieldStyles.desc?.fontSize || 16),
     fontSizeExtra: String(bankStyle.fontSize),
 
-    fontColorMain: normalizeColor(amountStyle.color, "#111827"),
-    fontColorAccent: normalizeColor(bankStyle.color, "#111827"),
+    fontColorMain: amountStyle.color,
+    fontColorAccent: bankStyle.color,
+
+    // Keep v-prefixed fields for backward compatibility during transition if needed
+    vAmount: String(body.vAmount ?? "").trim(),
+    vWords: String(body.vWords ?? "").trim(),
+    vDesc: String(body.vDesc ?? "").trim(),
+    vCurrency: body.vCurrency === "USD" ? "USD" : "IQD",
+    vDateYY: normalize2(body.vDateYY),
+    vDateMM: normalize2(body.vDateMM),
+    vDateDD: normalize2(body.vDateDD),
   };
 }
 
-function sanitizeAttachment(att = {}) {
-  if (!att || typeof att !== "object") return null;
-
-  const key = String(att.key || "").trim();
-  const name = String(att.name || "").trim();
-  const url = String(att.url || "").trim();
-  const contentType = String(att.contentType || "").trim();
-
-  if (!key && !url) return null;
-
+function sanitizeAttachment(att) {
+  if (!att?.url) return null;
+  const contentType =
+    att.contentType || (att.url.endsWith(".pdf") ? "application/pdf" : "image/png");
   return {
-    key,
-    name,
-    url,
+    name: att.name || "Attachment",
+    url: att.url,
     contentType,
     size: Number(att.size || 0),
     uploadedAt: att.uploadedAt ? new Date(att.uploadedAt) : new Date(),
@@ -186,21 +199,18 @@ export async function GET(req) {
       );
     }
 
-    const { allowedCompanies, allowedPerms } = await getUserAccess(userId);
+    const { allowedPerms } = await getUserAccess(userId);
 
-    if (
-      !allowedPerms.includes(PERMISSIONS.VIEW_REPORTS) &&
-      !allowedPerms.includes(PERMISSIONS.RECEIPTS)
-    ) {
+    const hasGeneralAccess = allowedPerms.includes(PERMISSIONS.VIEW_REPORTS) || 
+                             allowedPerms.includes(PERMISSIONS.RECEIPTS) ||
+                             allowedPerms.includes(PERMISSIONS.VIEW_ALL_REPORTS);
+
+    if (!hasGeneralAccess) {
       return NextResponse.json(
-        { success: false, error: "Forbidden" },
+        { success: false, error: "ليس لديك صلاحية لمشاهدة هذا الوصل" },
         { status: 403 }
       );
     }
-
-    const finalAllowedCompanies = allowedCompanies.filter((c) =>
-      VOUCHER_COMPANIES.includes(String(c))
-    );
 
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id") || "";
@@ -222,15 +232,24 @@ export async function GET(req) {
     const db = mongoose.connection.db;
     const col = db.collection(COLLECTION_NAME);
 
-    const doc = await col.findOne({
-      _id: new ObjectId(id),
-      companyKey: { $in: finalAllowedCompanies },
-    });
+    const doc = await col.findOne({ _id: new ObjectId(id) });
 
     if (!doc) {
       return NextResponse.json(
         { success: false, error: "Voucher not found" },
         { status: 404 }
+      );
+    }
+
+    // ✅ التحقق من الصلاحية الخاصة بالشركة الموجودة داخل الوصل
+    const companyConfig = COMPANIES.find(c => String(c.key).toLowerCase() === String(doc.companyKey).toLowerCase());
+    const hasSpecificAccess = companyConfig && allowedPerms.includes(companyConfig.permission);
+    const isSuperAdmin = allowedPerms.includes(PERMISSIONS.VIEW_ALL_REPORTS);
+
+    if (!hasSpecificAccess && !isSuperAdmin) {
+      return NextResponse.json(
+        { success: false, error: "ليس لديك صلاحية لمشاهدة وصولات هذه الشركة" },
+        { status: 403 }
       );
     }
 
@@ -247,9 +266,9 @@ export async function GET(req) {
       },
     });
   } catch (err) {
-    console.error("❌ Voucher view API error:", err);
+    console.error("Voucher View Error:", err);
     return NextResponse.json(
-      { success: false, error: err.message || "Server error" },
+      { success: false, error: err.message },
       { status: 500 }
     );
   }
@@ -269,196 +288,74 @@ export async function PUT(req) {
       );
     }
 
-    const { allowedCompanies, allowedPerms } = await getUserAccess(userId);
+    const body = await req.json();
+    const id = body.id;
 
-    if (!allowedPerms.includes(PERMISSIONS.RECEIPTS)) {
+    if (!id || !ObjectId.isValid(id)) {
       return NextResponse.json(
-        { success: false, error: "You do not have edit permission" },
+        { success: false, error: "Invalid ID" },
+        { status: 400 }
+      );
+    }
+
+    const { allowedPerms } = await getUserAccess(userId);
+    const db = mongoose.connection.db;
+    const col = db.collection(COLLECTION_NAME);
+
+    const doc = await col.findOne({ _id: new ObjectId(id) });
+    if (!doc) {
+      return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
+    }
+
+    // ✅ التحقق من صلاحية التعديل (نفس منطق العرض)
+    const companyConfig = COMPANIES.find(c => String(c.key).toLowerCase() === String(doc.companyKey).toLowerCase());
+    const hasSpecificAccess = companyConfig && allowedPerms.includes(companyConfig.permission);
+    const isSuperAdmin = allowedPerms.includes(PERMISSIONS.VIEW_ALL_REPORTS);
+
+    if (!hasSpecificAccess && !isSuperAdmin) {
+      return NextResponse.json(
+        { success: false, error: "ليس لديك صلاحية لتعديل وصولات هذه الشركة" },
         { status: 403 }
       );
     }
 
-    const finalAllowedCompanies = allowedCompanies.filter((c) =>
-      VOUCHER_COMPANIES.includes(String(c))
-    );
-
-    const body = await req.json();
-    const deleteAttachmentKey = String(body?.deleteAttachmentKey || "").trim();
-    const id = String(body?.id || "").trim();
-
-    if (!id) {
-      return NextResponse.json(
-        { success: false, error: "Missing id" },
-        { status: 400 }
-      );
-    }
-
-    if (!ObjectId.isValid(id)) {
-      return NextResponse.json(
-        { success: false, error: "Invalid id" },
-        { status: 400 }
-      );
-    }
-
-    const db = mongoose.connection.db;
-    const col = db.collection(COLLECTION_NAME);
-
-    const existing = await col.findOne({
-      _id: new ObjectId(id),
-      companyKey: { $in: finalAllowedCompanies },
-    });
-
-    if (!existing) {
-      return NextResponse.json(
-        { success: false, error: "Voucher not found" },
-        { status: 404 }
-      );
-    }
-
-    if (deleteAttachmentKey) {
-      const oldAttachments = Array.isArray(existing.attachments)
-        ? existing.attachments
-        : existing.attachment
-        ? [existing.attachment]
-        : [];
-
-      const filteredAttachments = oldAttachments.filter(
-        (att) => String(att?.key || "") !== deleteAttachmentKey
-      );
-
-      await col.updateOne(
-        { _id: new ObjectId(id) },
-        {
-          $set: {
-            attachments: filteredAttachments,
-            updatedAt: new Date(),
-            updatedBy: userId,
-          },
-          $unset: {
-            attachment: "",
-          },
-        }
-      );
-
-      const updated = await col.findOne({ _id: new ObjectId(id) });
-
-      return NextResponse.json({
-        success: true,
-        data: {
-          ...updated,
-          attachments: Array.isArray(updated.attachments)
-            ? updated.attachments
-            : [],
-          _id: updated._id?.toString?.() || updated._id,
-        },
-      });
-    }
-
-    const attachmentOnly =
-      body?.attachment &&
-      !("vAmount" in body) &&
-      !("vWords" in body) &&
-      !("vDesc" in body) &&
-      !("vBank" in body) &&
-      !("vFxRate" in body) &&
-      !("vReceivedBy" in body) &&
-      !("vBeneficiary" in body) &&
-      !("vNotes" in body) &&
-      !("vChequeNo" in body) &&
-      !("vNationalId" in body) &&
-      !("vPhone" in body) &&
-      !("vSanadNo" in body) &&
-      !("vCurrency" in body) &&
-      !("vDateYY" in body) &&
-      !("vDateMM" in body) &&
-      !("vDateDD" in body) &&
-      !("cbOne" in body) &&
-      !("cbTwo" in body) &&
-      !("globalTextStyle" in body) &&
-      !("fieldStyles" in body) &&
-      !("fontSizeAmount" in body) &&
-      !("fontSizeWords" in body) &&
-      !("fontSizeDesc" in body) &&
-      !("fontSizeExtra" in body) &&
-      !("fontColorMain" in body) &&
-      !("fontColorAccent" in body);
-
-    let updateDoc = {
-      updatedAt: new Date(),
+    const updateData = {
+      ...buildBody(body),
       updatedBy: userId,
+      updatedAt: new Date(),
     };
 
-    if (!attachmentOnly) {
-      const payload = sanitizeBody(body);
-
-      updateDoc = {
-        ...updateDoc,
-        ...payload,
-
-        amount: payload.vAmount,
-        amountWords: payload.vWords,
-        description: payload.vDesc,
-        bank: payload.vBank,
-        fxRate: payload.vFxRate,
-        receivedBy: payload.vReceivedBy,
-        beneficiary: payload.vBeneficiary,
-        notes: payload.vNotes,
-        currency: payload.vCurrency,
-        chequeNo: payload.vChequeNo,
-        nationalId: payload.vNationalId,
-        phone: payload.vPhone,
-        sanadNo: payload.vSanadNo,
-      };
-    }
-
-    const newAttachment = sanitizeAttachment(body.attachment);
-
-    if (newAttachment) {
-      const oldAttachments = Array.isArray(existing.attachments)
-        ? existing.attachments
-        : existing.attachment
-        ? [existing.attachment]
-        : [];
-
-      const alreadyExists = oldAttachments.some(
-        (x) =>
-          String(x?.key || "") === String(newAttachment.key || "") &&
-          String(x?.name || "") === String(newAttachment.name || "")
-      );
-
-      updateDoc.attachments = alreadyExists
-        ? oldAttachments
-        : [...oldAttachments, newAttachment];
-    }
-
-    await col.updateOne(
+    console.log("📝 Updating voucher ID:", id);
+    const result = await col.findOneAndUpdate(
       { _id: new ObjectId(id) },
-      {
-        $set: updateDoc,
-        $unset: {
-          attachment: "",
-        },
+      { $set: updateData },
+      { 
+        returnDocument: "after",
+        returnOriginal: false // for older driver compatibility
       }
     );
 
-    const updated = await col.findOne({ _id: new ObjectId(id) });
+    // Handle both old and new driver return formats
+    const updatedDoc = result?.value || result;
+
+    if (!updatedDoc) {
+      console.error("❌ Update failed: Document not found or result is empty");
+      return NextResponse.json({ success: false, error: "Update failed" }, { status: 500 });
+    }
+
+    console.log("✅ Update successful for ID:", id);
 
     return NextResponse.json({
       success: true,
       data: {
-        ...updated,
-        attachments: Array.isArray(updated.attachments)
-          ? updated.attachments
-          : updated.attachment
-          ? [updated.attachment]
-          : [],
-        _id: updated._id?.toString?.() || updated._id,
+        ...updatedDoc,
+        _id: updatedDoc._id.toString(),
       },
     });
   } catch (err) {
-    console.error("❌ Voucher update API error:", err);
+    console.error("Voucher Update Error:", err);
     return NextResponse.json(
-      { success: false, error: err.message || "Server error" },
+      { success: false, error: err.message },
       { status: 500 }
     );
   }

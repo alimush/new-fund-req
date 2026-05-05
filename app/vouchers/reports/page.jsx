@@ -30,40 +30,13 @@ const Select = dynamic(() => import("react-select").then((m) => m.default), {
   ssr: false,
 });
 
-const companies = [
-  {
-    key: "Al-Ghadeer",
-    name: "شركة الغدير",
-    logo: "/الغدير.png",
-    paymentImg: "/voucher.jpg",
-    receiptImg: "/receipt.jpg",
-  },
-  {
-    key: "Badur-Baghdad",
-    name: "شركة بدور بغداد",
-    logo: "/بدور_بغداد.png",
-    paymentImg: "/voucher2.jpg",
-    receiptImg: "/receipt2.jpg",
-  },
-  {
-    key: "Tiba-Al-najaf",
-    name: "طيبة النجف",
-    logo: "/طيبة_النجف.png",
-    paymentImgPng: "/voucherTB.png",
-    receiptImgPng: "/receiptTB.png",
-  },
-  {
-    key: "Ghadeer-Karbala",
-    name: "غدير كربلاء",
-    logo: "غدير_كربلاء.png",
-    paymentImgPng: "/voucherGH.png",
-    receiptImgPng: "/receiptGH.png",
-  },
-];
+import { COMPANIES } from "@/lib/voucher/companies";
 
-
-const getCompanyName = (key) =>
-  companies.find((c) => c.key === key)?.name || key || "-";
+const getCompanyName = (key) => {
+  if (!key) return "-";
+  const found = COMPANIES.find((c) => String(c.key).toLowerCase() === String(key).toLowerCase());
+  return found ? found.name : key;
+};
 
 export default function VoucherReportsPage() {
   const [rows, setRows] = useState([]);
@@ -129,7 +102,9 @@ export default function VoucherReportsPage() {
 
   const canViewReports =
     Array.isArray(permissions) &&
-    permissions.includes(PERMISSIONS.RECEIPTS);
+    (permissions.includes(PERMISSIONS.VOUCHERS_REPORTS_VIEW) ||
+     permissions.includes(PERMISSIONS.VIEW_ALL_REPORTS) ||
+     permissions.includes(PERMISSIONS.RECEIPTS));
 
   useEffect(() => setPortalReady(true), []);
 
@@ -530,10 +505,10 @@ export default function VoucherReportsPage() {
 
   useEffect(() => {
     const onMessage = (event) => {
-      if (event?.data?.type !== "VOUCHER_UPDATED") return;
-      if (!hasSearchedRef.current) return;
-
-      fetchPage(page);
+      if (event?.data?.type === "VOUCHER_UPDATED") {
+        console.log("🔄 Received update notification from view page, refreshing rows...");
+        fetchPage(page);
+      }
     };
 
     window.addEventListener("message", onMessage);

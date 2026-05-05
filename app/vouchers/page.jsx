@@ -4,152 +4,28 @@ import { useMemo, useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence, MotionConfig } from "framer-motion";
 import { usePermissions } from "@/context/PermissionContext";
+import { PERMISSIONS } from "@/lib/permission";
 import { toPng } from "html-to-image";
 import { POS, EXTRA } from "@/components/voucherConfig";
 import VoucherCanvasDialog from "@/components/VoucherCanvasDialog";
 
-const companies = [
-  {
-    key: "Al-Ghadeer",
-    name: "شركة الغدير",
-    logo: "/الغدير.png",
-    paymentImg: "/voucher.png",
-    receiptImg: "/receipt.png",
-  },
-  {
-    key: "Badur-Baghdad",
-    name: "شركة بدور بغداد",
-    logo: "/بدور_بغداد.png",
-    paymentImg: "/voucher2.png",
-    receiptImg: "/receipt2.png",
-  },
-  {
-    key: "Tiba-Al-najaf",
-    name: "طيبة النجف",
-    logo: "/طيبة_النجف.png",
-    paymentImg: "/voucherTB.png",
-    receiptImg: "/receiptTB.png",
-  },
-  {
-    key: "Ghadeer-Karbala",
-    name: "غدير كربلاء",
-    logo: "غدير_كربلاء.png",
-    paymentImg: "/voucherGH.png",
-    receiptImg: "/receiptGH.png",
-  },
-];
+// Shared imports
+import { 
+  only2Digits, 
+  cleanAmount, 
+  formatAmount, 
+  numberToArabicWords, 
+  waitForImages 
+} from "@/lib/voucher/utils";
 
-const DEFAULT_GLOBAL_TEXT_STYLE = {
-  fontSize: 16,
-  fontWeight: 700,
-  color: "#111827",
-};
+import {
+  DEFAULT_GLOBAL_TEXT_STYLE,
+  DEFAULT_FIELD_STYLES
+} from "@/lib/voucher/styles";
 
-const DEFAULT_FIELD_STYLES = {
-  date: { fontSize: 18, fontWeight: 800, color: "#ffffff" },
-  amount: { fontSize: 16, fontWeight: 800, color: "#111827" },
-  words: { fontSize: 16, fontWeight: 700, color: "#111827" },
-  desc: { fontSize: 16, fontWeight: 600, color: "#111827" },
-  bank: { fontSize: 16, fontWeight: 700, color: "#111827" },
-  fxRate: { fontSize: 16, fontWeight: 700, color: "#111827" },
-  receivedBy: { fontSize: 16, fontWeight: 700, color: "#111827" },
-  notes: { fontSize: 16, fontWeight: 600, color: "#111827" },
-  chequeNo: { fontSize: 16, fontWeight: 700, color: "#111827" },
-  nationalId: { fontSize: 16, fontWeight: 700, color: "#111827" },
-  phone: { fontSize: 16, fontWeight: 700, color: "#111827" },
-};
-
-const only2Digits = (val) => String(val || "").replace(/[^\d]/g, "").slice(0, 2);
-
-function cleanAmount(value) {
-  return String(value || "").replace(/[^\d]/g, "");
-}
-
-function formatAmount(value) {
-  const cleaned = cleanAmount(value);
-  if (!cleaned) return "";
-  return Number(cleaned).toLocaleString("en-US");
-}
-
-function numberToArabicWords(num) {
-  num = parseInt(String(num).replace(/[^\d]/g, ""), 10);
-  if (!Number.isFinite(num) || num === 0) return "";
-
-  const ones = ["", "واحد", "اثنان", "ثلاثة", "أربعة", "خمسة", "ستة", "سبعة", "ثمانية", "تسعة"];
-  const teens = [
-    "عشرة",
-    "أحد عشر",
-    "اثنا عشر",
-    "ثلاثة عشر",
-    "أربعة عشر",
-    "خمسة عشر",
-    "ستة عشر",
-    "سبعة عشر",
-    "ثمانية عشر",
-    "تسعة عشر",
-  ];
-  const tens = ["", "", "عشرون", "ثلاثون", "أربعون", "خمسون", "ستون", "سبعون", "ثمانون", "تسعون"];
-  const hundreds = ["", "مائة", "مائتان", "ثلاثمائة", "أربعمائة", "خمسمائة", "ستمائة", "سبعمائة", "ثمانمائة", "تسعمائة"];
-
-  function below100(n) {
-    if (n < 10) return ones[n];
-    if (n === 10) return "عشرة";
-    if (n > 10 && n < 20) return teens[n - 10];
-    if (n % 10 === 0) return tens[Math.floor(n / 10)];
-    return `${ones[n % 10]} و${tens[Math.floor(n / 10)]}`;
-  }
-
-  function below1000(n) {
-    if (n < 100) return below100(n);
-    const h = Math.floor(n / 100);
-    const rest = n % 100;
-    if (rest === 0) return hundreds[h];
-    return `${hundreds[h]} و${below100(rest)}`;
-  }
-
-  function groupToWords(n, singular, dual, plural) {
-    if (n === 0) return "";
-    if (n === 1) return singular;
-    if (n === 2) return dual;
-    if (n >= 3 && n <= 10) return `${below1000(n)} ${plural}`;
-    return `${below1000(n)} ${singular}`;
-  }
-
-  const billions = Math.floor(num / 1000000000);
-  const millions = Math.floor((num % 1000000000) / 1000000);
-  const thousands = Math.floor((num % 1000000) / 1000);
-  const rest = num % 1000;
-
-  const parts = [];
-  if (billions) parts.push(groupToWords(billions, "مليار", "ملياران", "مليارات"));
-  if (millions) parts.push(groupToWords(millions, "مليون", "مليونان", "ملايين"));
-  if (thousands) parts.push(groupToWords(thousands, "ألف", "ألفان", "آلاف"));
-  if (rest) parts.push(below1000(rest));
-
-  return parts.join(" و");
-}
-
-async function waitForImages(node) {
-  if (!node) return;
-  const imgs = Array.from(node.querySelectorAll("img"));
-
-  await Promise.all(
-    imgs.map((img) => {
-      if (img.complete && img.naturalWidth > 0) return Promise.resolve();
-      return new Promise((resolve) => {
-        const done = () => resolve();
-        img.addEventListener("load", done, { once: true });
-        img.addEventListener("error", done, { once: true });
-      });
-    })
-  );
-
-  await Promise.all(
-    imgs.map((img) =>
-      typeof img.decode === "function" ? img.decode().catch(() => {}) : Promise.resolve()
-    )
-  );
-}
+import {
+  COMPANIES
+} from "@/lib/voucher/companies";
 
 export default function VoucherPage() {
   const { permissions } = usePermissions();
@@ -161,17 +37,37 @@ export default function VoucherPage() {
     if (checkedOnceRef.current) return;
     checkedOnceRef.current = true;
 
-    const ok = permissions.includes("RECEIPTS");
-    if (!ok) router.replace("/home");
+    const isSuperAdmin = permissions.includes(PERMISSIONS.VIEW_ALL_REPORTS);
+    const hasAnyCompanyPerm = COMPANIES.some(c => c.permission && permissions.includes(c.permission));
+    
+    const canEnter = isSuperAdmin || hasAnyCompanyPerm || permissions.includes(PERMISSIONS.RECEIPTS);
+
+    if (!canEnter) {
+      router.replace("/home");
+    }
   }, [permissions, router]);
 
   if (!Array.isArray(permissions)) return null;
-  if (!permissions.includes("RECEIPTS")) return null;
+  if (!permissions.includes(PERMISSIONS.RECEIPTS) && !permissions.includes(PERMISSIONS.VIEW_ALL_REPORTS)) return null;
 
   const [selectedKey, setSelectedKey] = useState(null);
+
+  const filteredCompanies = useMemo(() => {
+    if (!Array.isArray(permissions)) return [];
+    
+    // صلاحية السوبر أدمن التي تفتح كل شيء
+    const isSuperAdmin = permissions.includes(PERMISSIONS.VIEW_ALL_REPORTS);
+
+    return COMPANIES.filter((c) => {
+      if (isSuperAdmin) return true;
+      if (c.permission && permissions.includes(c.permission)) return true;
+      return false;
+    });
+  }, [permissions]);
+
   const selectedCompany = useMemo(
-    () => companies.find((c) => c.key === selectedKey) || null,
-    [selectedKey]
+    () => filteredCompanies.find((c) => c.key === selectedKey) || null,
+    [selectedKey, filteredCompanies]
   );
 
   const [openModal, setOpenModal] = useState(false);
@@ -769,7 +665,7 @@ export default function VoucherPage() {
           </motion.div>
 
           <motion.div variants={list} initial="hidden" animate="show" className="grid gap-5 md:grid-cols-2">
-            {companies.map((company) => (
+            {filteredCompanies.map((company) => (
               <CompanyCard key={company.key} company={company} />
             ))}
           </motion.div>

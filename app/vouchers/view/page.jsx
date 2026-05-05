@@ -9,147 +9,39 @@ import { toPng } from "html-to-image";
 import { Cairo } from "next/font/google";
 import VoucherDateModal from "@/components/VoucherDateModal";
 import VoucherCanvasDialog from "@/components/VoucherCanvasDialog";
-import { POS as POS_NEW, EXTRA as EXTRA_NEW } from "@/components/voucherConfig";
+// Shared imports
+import { 
+  only2Digits, 
+  cleanAmount, 
+  formatAmount, 
+  numberToArabicWords, 
+  waitForImages 
+} from "@/lib/voucher/utils";
+
+import {
+  DEFAULT_GLOBAL_TEXT_STYLE,
+  DEFAULT_FIELD_STYLES,
+  clampFontSize,
+  normalizeHexColor,
+  normalizeGlobalTextStyle,
+  normalizeFieldStyles
+} from "@/lib/voucher/styles";
+
+import {
+  COMPANIES,
+  TEMPLATE_SWITCH_DATE,
+  POS_OLD,
+  EXTRA_OLD,
+  POS_NEW,
+  EXTRA_NEW,
+} from "@/lib/voucher/companies";
 
 const cairo = Cairo({
   subsets: ["arabic"],
   weight: ["400", "600", "700", "800"],
 });
 
-const TEMPLATE_SWITCH_DATE = new Date("2026-04-18T13:40:06.558+03:00");
-const companies = [
-  {
-    key: "Al-Ghadeer",
-    name: "شركة الغدير",
-    logo: "/الغدير.png",
-    paymentImgJpg: "/voucher.jpg",
-    receiptImgJpg: "/receipt.jpg",
-    paymentImgPng: "/voucher.png",
-    receiptImgPng: "/receipt.png",
-  },
-  {
-    key: "Badur-Baghdad",
-    name: "شركة بدور بغداد",
-    logo: "/بدور_بغداد.png",
-    paymentImgJpg: "/voucher2.jpg",
-    receiptImgJpg: "/receipt2.jpg",
-    paymentImgPng: "/voucher2.png",
-    receiptImgPng: "/receipt2.png",
-  },
-  {
-    key: "Tiba-Al-najaf",
-    name: "طيبة النجف",
-    logo: "/طيبة_النجف.png",
-    paymentImgPng: "/voucherTB.png",
-    receiptImgPng: "/receiptTB.png",
-  },
-  {
-    key: "Ghadeer-Karbala",
-    name: "غدير كربلاء",
-    logo: "غدير_كربلاء.png",
-    paymentImgPng: "/voucherGH.png",
-    receiptImgPng: "/receiptGH.png",
-  },
-];
-
-const POS_OLD = {
-  date: { top: 19.2, left: 74.8 },
-  amountFixed: { top: 13.6, left: 9.0 },
-  currencyUSDBox: { top: 8.0, left: 22.3 },
-  currencyIQDBox: { top: 8.0, left: 13.0 },
-  amountWords: { top: 37.6, left: -2.0, width: 75.0 },
-  description: { top: 53.5, left: 10, width: 80, height: 15.0 },
-};
-
-const EXTRA_OLD = {
-  bank: { top: 70, left: -20, width: 54.2, height: 6.0 },
-  fxRate: { top: 20, left: 12.0, width: 30.0, height: 6.0 },
-  receivedBy: { top: 29.2, left: 18.8, width: 54.2, height: 6.0 },
-  beneficiary: { top: 85.8, left: -20, width: 54.2, height: 6.0 },
-  notes: { top: 84.0, left: 50.0, width: 40.2, height: 8.0 },
-  cb1: { top: 71.7, left: 81.2 },
-  cb2: { top: 71.7, left: 70.3 },
-};
-
 const pctStyle = (p) => ({ top: `${p.top}%`, left: `${p.left}%` });
-const only2Digits = (val) => String(val || "").replace(/[^\d]/g, "").slice(0, 2);
-
-function cleanAmount(value) {
-  return String(value || "").replace(/[^\d]/g, "");
-}
-
-function formatAmount(value) {
-  const cleaned = cleanAmount(value);
-  if (!cleaned) return "";
-  return Number(cleaned).toLocaleString("en-US");
-}
-
-function clampFontSize(value, fallback = 16) {
-  const n = String(value ?? "").replace(/[^\d]/g, "");
-  if (!n) return Number(fallback);
-  return Math.max(8, Math.min(72, Number(n)));
-}
-
-function clampFontWeight(value, fallback = 700) {
-  const n = String(value ?? "").replace(/[^\d]/g, "");
-  if (!n) return Number(fallback);
-  const num = Number(n);
-  const steps = [100, 200, 300, 400, 500, 600, 700, 800, 900];
-  return steps.reduce((prev, curr) =>
-    Math.abs(curr - num) < Math.abs(prev - num) ? curr : prev
-  );
-}
-
-function normalizeHexColor(value, fallback = "#111827") {
-  const s = String(value || "").trim();
-  return /^#([0-9a-fA-F]{6})$/.test(s) ? s : fallback;
-}
-
-const DEFAULT_GLOBAL_TEXT_STYLE = {
-  fontSize: 16,
-  fontWeight: 700,
-  color: "#111827",
-};
-
-const DEFAULT_FIELD_STYLES = {
-  amount: { fontSize: 16, fontWeight: 800, color: "#111827" },
-  words: { fontSize: 16, fontWeight: 700, color: "#111827" },
-  desc: { fontSize: 16, fontWeight: 600, color: "#111827" },
-  bank: { fontSize: 16, fontWeight: 700, color: "#111827" },
-  fxRate: { fontSize: 16, fontWeight: 800, color: "#111827" },
-  receivedBy: { fontSize: 16, fontWeight: 600, color: "#111827" },
-  beneficiary: { fontSize: 16, fontWeight: 700, color: "#111827" },
-  notes: { fontSize: 16, fontWeight: 600, color: "#111827" },
-  chequeNo: { fontSize: 16, fontWeight: 700, color: "#111827" },
-  nationalId: { fontSize: 16, fontWeight: 700, color: "#111827" },
-  phone: { fontSize: 16, fontWeight: 700, color: "#111827" },
-  sanadNo: { fontSize: 16, fontWeight: 700, color: "#111827" },
-  date: { fontSize: 16, fontWeight: 800, color: "#111827" },
-  voucherNo: { fontSize: 11, fontWeight: 800, color: "#111827" },
-  currencyMark: { fontSize: 16, fontWeight: 800, color: "#111827" },
-};
-
-function normalizeGlobalTextStyle(input = {}) {
-  return {
-    fontSize: clampFontSize(input?.fontSize, DEFAULT_GLOBAL_TEXT_STYLE.fontSize),
-    fontWeight: clampFontWeight(input?.fontWeight, DEFAULT_GLOBAL_TEXT_STYLE.fontWeight),
-    color: normalizeHexColor(input?.color, DEFAULT_GLOBAL_TEXT_STYLE.color),
-  };
-}
-
-function normalizeFieldStyles(input = {}, fallbackGlobal = DEFAULT_GLOBAL_TEXT_STYLE) {
-  const out = {};
-  for (const key of Object.keys(DEFAULT_FIELD_STYLES)) {
-    const src = input?.[key] || {};
-    const base = DEFAULT_FIELD_STYLES[key];
-    out[key] = {
-      fontSize: clampFontSize(src?.fontSize, base.fontSize ?? fallbackGlobal.fontSize),
-      fontWeight: clampFontWeight(src?.fontWeight, base.fontWeight ?? fallbackGlobal.fontWeight),
-      color: normalizeHexColor(src?.color, base.color ?? fallbackGlobal.color),
-    };
-  }
-  return out;
-}
 
 function buildLegacyStyles(doc) {
   const mainColor = normalizeHexColor(doc?.fontColorMain, "#111827");
@@ -186,86 +78,6 @@ function buildLegacyStyles(doc) {
   };
 
   return { global, fields };
-}
-
-function numberToArabicWords(num) {
-  num = parseInt(String(num).replace(/[^\d]/g, ""), 10);
-  if (!Number.isFinite(num) || num === 0) return "";
-
-  const ones = ["", "واحد", "اثنان", "ثلاثة", "أربعة", "خمسة", "ستة", "سبعة", "ثمانية", "تسعة"];
-  const teens = [
-    "عشرة",
-    "أحد عشر",
-    "اثنا عشر",
-    "ثلاثة عشر",
-    "أربعة عشر",
-    "خمسة عشر",
-    "ستة عشر",
-    "سبعة عشر",
-    "ثمانية عشر",
-    "تسعة عشر",
-  ];
-  const tens = ["", "", "عشرون", "ثلاثون", "أربعون", "خمسون", "ستون", "سبعون", "ثمانون", "تسعون"];
-  const hundreds = ["", "مائة", "مائتان", "ثلاثمائة", "أربعمائة", "خمسمائة", "ستمائة", "سبعمائة", "ثمانمائة", "تسعمائة"];
-
-  function below100(n) {
-    if (n < 10) return ones[n];
-    if (n === 10) return "عشرة";
-    if (n > 10 && n < 20) return teens[n - 10];
-    if (n % 10 === 0) return tens[Math.floor(n / 10)];
-    return `${ones[n % 10]} و${tens[Math.floor(n / 10)]}`;
-  }
-
-  function below1000(n) {
-    if (n < 100) return below100(n);
-    const h = Math.floor(n / 100);
-    const rest = n % 100;
-    if (rest === 0) return hundreds[h];
-    return `${hundreds[h]} و${below100(rest)}`;
-  }
-
-  function groupToWords(n, singular, dual, plural) {
-    if (n === 0) return "";
-    if (n === 1) return singular;
-    if (n === 2) return dual;
-    if (n >= 3 && n <= 10) return `${below1000(n)} ${plural}`;
-    return `${below1000(n)} ${singular}`;
-  }
-
-  const billions = Math.floor(num / 1000000000);
-  const millions = Math.floor((num % 1000000000) / 1000000);
-  const thousands = Math.floor((num % 1000000) / 1000);
-  const rest = num % 1000;
-
-  const parts = [];
-  if (billions) parts.push(groupToWords(billions, "مليار", "ملياران", "مليارات"));
-  if (millions) parts.push(groupToWords(millions, "مليون", "مليونان", "ملايين"));
-  if (thousands) parts.push(groupToWords(thousands, "ألف", "ألفان", "آلاف"));
-  if (rest) parts.push(below1000(rest));
-
-  return parts.join(" و");
-}
-
-async function waitForImages(node) {
-  if (!node) return;
-  const imgs = Array.from(node.querySelectorAll("img"));
-
-  await Promise.all(
-    imgs.map((img) => {
-      if (img.complete && img.naturalWidth > 0) return Promise.resolve();
-      return new Promise((resolve) => {
-        const done = () => resolve();
-        img.addEventListener("load", done, { once: true });
-        img.addEventListener("error", done, { once: true });
-      });
-    })
-  );
-
-  await Promise.all(
-    imgs.map((img) =>
-      typeof img.decode === "function" ? img.decode().catch(() => {}) : Promise.resolve()
-    )
-  );
 }
 
 function buildEffectiveDate(voucher, yy, mm, dd) {
@@ -354,7 +166,7 @@ export default function VoucherViewPage() {
   });
 
   const selectedCompany = useMemo(
-    () => companies.find((c) => c.key === companyKey) || null,
+    () => COMPANIES.find((c) => c.key === companyKey) || null,
     [companyKey]
   );
 
@@ -629,6 +441,7 @@ export default function VoucherViewPage() {
 
       try {
         if (window.opener && !window.opener.closed) {
+          console.log("🔔 Notifying reports page about update...");
           window.opener.postMessage(
             {
               type: "VOUCHER_UPDATED",
@@ -638,7 +451,7 @@ export default function VoucherViewPage() {
           );
         }
       } catch (e) {
-        console.error("Cannot notify opener:", e);
+        console.error("⚠️ Cannot notify opener:", e);
       }
     } catch (err) {
       console.error(err);
@@ -762,6 +575,7 @@ export default function VoucherViewPage() {
       const onMsg = (ev) => {
         if (ev?.data?.type !== "IFRAME_PRINT_DONE") return;
 
+        console.log("✅ Received IFRAME_PRINT_DONE, cleaning up...");
         window.removeEventListener("message", onMsg);
 
         setTimeout(() => {
@@ -786,6 +600,8 @@ export default function VoucherViewPage() {
     setEditMode(false);
   };
 
+  const [imgReady, setImgReady] = useState(false);
+
   const handleClose = () => {
     if (editMode) {
       handleCancel();
@@ -795,9 +611,20 @@ export default function VoucherViewPage() {
     else window.close();
   };
 
-  if (!Array.isArray(permissions)) return null;
-  if (!permissions.includes("RECEIPTS") && !permissions.includes("VIEW_REPORTS")) {
-    return null;
+  const isActuallyLoading = loading || !imgReady;
+
+  if (error) {
+    return (
+      <div className="flex h-screen flex-col items-center justify-center gap-4 bg-[#f8f9fa]">
+        <div className="font-extrabold text-red-600 text-xl">{error}</div>
+        <button 
+          onClick={() => router.back()}
+          className="px-6 py-2 bg-gray-800 text-white rounded-xl hover:bg-gray-700 transition shadow-sm"
+        >
+          العودة للخلف
+        </button>
+      </div>
+    );
   }
 
   const dateStyle = getStyle("date");
@@ -813,59 +640,61 @@ export default function VoucherViewPage() {
   const currencyMarkStyle = getStyle("currencyMark");
 
   return (
-    <MotionConfig transition={{ duration: 0.18, ease: [0.2, 0.8, 0.2, 1] }}>
-      <motion.div
-        className="min-h-screen px-4 py-6"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-      >
+    <MotionConfig transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}>
+      <div className={`min-h-screen bg-[#f8f9fa] ${cairo.className}`}>
         <AnimatePresence mode="wait">
-          {loading ? (
+          {isActuallyLoading ? (
             <motion.div
-              key="loading"
-              className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40"
+              key="loader"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[10000] flex flex-col items-center justify-center bg-white/80 backdrop-blur-md"
             >
-              <div className="rounded-3xl bg-white/80 backdrop-blur-xl px-8 py-7 shadow-xl text-center">
-                <div className="w-12 h-12 mx-auto border-4 border-gray-200 border-t-gray-900 rounded-full animate-spin" />
-                <div className="mt-4 text-base font-extrabold text-gray-900">
-                  جاري تحميل الوصل...
+              <div className="relative flex flex-col items-center">
+                <div className="relative h-20 w-20">
+                  <div className="absolute inset-0 rounded-full border-[3px] border-gray-100" />
+                  <motion.div 
+                    className="absolute inset-0 rounded-full border-[3px] border-t-blue-600 border-r-transparent border-b-transparent border-l-transparent"
+                    animate={{ rotate: 360 }}
+                    transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
+                  />
+                  <motion.div 
+                    className="absolute inset-2 rounded-full border-[2px] border-t-emerald-500 border-r-transparent border-b-transparent border-l-transparent"
+                    animate={{ rotate: -360 }}
+                    transition={{ repeat: Infinity, duration: 1.5, ease: "linear" }}
+                  />
                 </div>
+                
+                <motion.div 
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.2 }}
+                  className="mt-6 flex flex-col items-center gap-1"
+                >
+                  <span className="text-lg font-black bg-gradient-to-r from-gray-900 to-gray-600 bg-clip-text text-transparent">
+                    جاري تحضير الوصل
+                  </span>
+                  <span className="text-xs font-bold text-gray-400">يرجى الانتظار لحظات...</span>
+                </motion.div>
               </div>
             </motion.div>
-          ) : error ? (
+          ) : null}
+        </AnimatePresence>
+
+        {selectedCompany && voucher && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="px-4 py-6"
+          >
             <motion.div
-              key="error"
-              className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 p-4"
+              key="viewer"
+              className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/5"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
             >
-              <div className="w-full max-w-xl rounded-3xl bg-white/90 backdrop-blur-xl p-8 shadow-xl text-center">
-                <div className="text-xl font-extrabold text-red-600 mb-3">
-                  تعذر فتح الوصل
-                </div>
-                <div className="text-gray-700 font-bold mb-6">{error}</div>
-                <div className="flex items-center justify-center gap-3">
-                  <button
-                    onClick={fetchVoucher}
-                    className="px-5 py-2.5 rounded-2xl bg-gray-900 text-white font-extrabold"
-                  >
-                    إعادة المحاولة
-                  </button>
-                  <button
-                    onClick={handleClose}
-                    className="px-5 py-2.5 rounded-2xl bg-red-600 text-white font-extrabold"
-                  >
-                    إغلاق
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          ) : selectedCompany && voucher ? (
-            useOldTemplate ? (
+            {useOldTemplate ? (
               <motion.div
                 key="viewer-old"
                 className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/40"
@@ -940,6 +769,7 @@ export default function VoucherViewPage() {
                           <img
                             src={currentImg}
                             alt="voucher"
+                            onLoad={() => setImgReady(true)}
                             className="absolute inset-0 w-full h-full object-contain"
                             draggable={false}
                           />
@@ -1164,6 +994,57 @@ export default function VoucherViewPage() {
                                 }}
                               >
                                 {vNotes}
+                              </div>
+                            ) : null}
+
+                            {vPhone && currentEXTRA.phone ? (
+                              <div
+                                className={`absolute ${cairo.className}`}
+                                style={{
+                                  ...pctStyle(currentEXTRA.phone),
+                                  width: `${currentEXTRA.phone.width}%`,
+                                  fontSize: `${phoneStyle.fontSize}px`,
+                                  fontWeight: phoneStyle.fontWeight,
+                                  color: phoneStyle.color,
+                                  direction: "ltr",
+                                  textAlign: "left",
+                                }}
+                              >
+                                {vPhone}
+                              </div>
+                            ) : null}
+
+                            {vNationalId && currentEXTRA.nationalId ? (
+                              <div
+                                className={`absolute ${cairo.className}`}
+                                style={{
+                                  ...pctStyle(currentEXTRA.nationalId),
+                                  width: `${currentEXTRA.nationalId.width}%`,
+                                  fontSize: `${nationalIdStyle.fontSize}px`,
+                                  fontWeight: nationalIdStyle.fontWeight,
+                                  color: nationalIdStyle.color,
+                                  direction: "ltr",
+                                  textAlign: "left",
+                                }}
+                              >
+                                {vNationalId}
+                              </div>
+                            ) : null}
+
+                            {vSanadNo && currentEXTRA.sanadNo ? (
+                              <div
+                                className={`absolute ${cairo.className}`}
+                                style={{
+                                  ...pctStyle(currentEXTRA.sanadNo),
+                                  width: `${currentEXTRA.sanadNo.width}%`,
+                                  fontSize: `${sanadNoStyle.fontSize}px`,
+                                  fontWeight: sanadNoStyle.fontWeight,
+                                  color: sanadNoStyle.color,
+                                  direction: "ltr",
+                                  textAlign: "left",
+                                }}
+                              >
+                                {vSanadNo}
                               </div>
                             ) : null}
 
@@ -1426,6 +1307,60 @@ export default function VoucherViewPage() {
                                   outline: "none",
                                 }}
                               />
+ 
+                              {currentEXTRA.phone && (
+                                <input
+                                  ref={phoneRef}
+                                  value={vPhone}
+                                  onChange={(e) => setVPhone(e.target.value)}
+                                  className="absolute"
+                                  style={{
+                                    ...pctStyle(currentEXTRA.phone),
+                                    width: `${currentEXTRA.phone.width}%`,
+                                    height: "3%",
+                                    opacity: 0,
+                                    background: "transparent",
+                                    border: "none",
+                                    outline: "none",
+                                  }}
+                                />
+                              )}
+ 
+                              {currentEXTRA.nationalId && (
+                                <input
+                                  ref={nationalIdRef}
+                                  value={vNationalId}
+                                  onChange={(e) => setVNationalId(e.target.value)}
+                                  className="absolute"
+                                  style={{
+                                    ...pctStyle(currentEXTRA.nationalId),
+                                    width: `${currentEXTRA.nationalId.width}%`,
+                                    height: "3%",
+                                    opacity: 0,
+                                    background: "transparent",
+                                    border: "none",
+                                    outline: "none",
+                                  }}
+                                />
+                              )}
+ 
+                              {currentEXTRA.sanadNo && (
+                                <input
+                                  ref={sanadRef}
+                                  value={vSanadNo}
+                                  onChange={(e) => setVSanadNo(e.target.value)}
+                                  className="absolute"
+                                  style={{
+                                    ...pctStyle(currentEXTRA.sanadNo),
+                                    width: `${currentEXTRA.sanadNo.width}%`,
+                                    height: "3%",
+                                    opacity: 0,
+                                    background: "transparent",
+                                    border: "none",
+                                    outline: "none",
+                                  }}
+                                />
+                              )}
 
                               <input
                                 ref={beneficiaryRef}
@@ -1659,12 +1594,14 @@ export default function VoucherViewPage() {
   setGlobalTextStyle={guardSetter(setGlobalTextStyle)}
   fieldStyles={fieldStyles}
   setFieldStyles={guardSetter(setFieldStyles)}
+  onImageLoad={() => setImgReady(true)}
 />
               </motion.div>
-            )
-          ) : null}
-        </AnimatePresence>
-      </motion.div>
+            )}
+          </motion.div>
+        </motion.div>
+      )}
+      </div>
     </MotionConfig>
   );
 }

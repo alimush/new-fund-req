@@ -4,7 +4,10 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePermissions } from "@/context/PermissionContext";
 import { useEffect, useMemo, useState } from "react";
-// رفع اول تعديل من خلال الماك بوك الجديده
+import { FiFileText, FiBarChart2, FiPieChart } from "react-icons/fi";
+import { PERMISSIONS } from "@/lib/permission";
+import { COMPANIES } from "@/lib/voucher/companies";
+
 const cards = [
   { key: "Al-Ghadeer", name: "طلبات الغدير", logo: "/الغدير.png" },
   { key: "Badur-Baghdad", name: "طلبات بدور بغداد", logo: "/بدور_بغداد.png" },
@@ -35,12 +38,60 @@ const item = {
 };
 
 export default function HomePage() {
-  const { companies } = usePermissions();
+  const { companies, permissions } = usePermissions();
 
   const allowedCards = useMemo(() => {
-    if (!Array.isArray(companies)) return [];
-    return cards.filter((c) => companies.includes(c.key));
-  }, [companies]);
+    if (!Array.isArray(companies) || !Array.isArray(permissions)) return [];
+
+    const result = [...cards.filter((c) => companies.includes(c.key))];
+
+    const isSuperAdmin = permissions.includes(PERMISSIONS.VIEW_ALL_REPORTS);
+
+    // ✅ إضافة كارت "إدارة الوصولات"
+    const hasAnyVoucherPerm = COMPANIES.some(c => c.permission && permissions.includes(c.permission));
+    const canSeeVouchers = isSuperAdmin || hasAnyVoucherPerm || permissions.includes(PERMISSIONS.RECEIPTS);
+
+    if (canSeeVouchers) {
+      result.push({
+        key: "vouchers-management",
+        name: "إدارة الوصولات",
+        href: "/vouchers",
+        isIcon: true,
+        Icon: FiFileText,
+        color: "text-blue-600"
+      });
+    }
+
+    // ✅ إضافة كارت "تقارير الوصولات"
+    const canSeeVoucherReports = isSuperAdmin || permissions.includes(PERMISSIONS.VOUCHERS_REPORTS_VIEW);
+
+    if (canSeeVoucherReports) {
+      result.push({
+        key: "vouchers-reports",
+        name: "تقارير الوصولات",
+        href: "/vouchers/reports",
+        isIcon: true,
+        Icon: FiBarChart2,
+        color: "text-emerald-600"
+      });
+    }
+
+    // ✅ إضافة كارت "تقارير الطلبات" (العامة)
+    const canSeeGeneralReports = isSuperAdmin || permissions.includes(PERMISSIONS.VIEW_REPORTS);
+
+    if (canSeeGeneralReports) {
+      result.push({
+        key: "general-reports",
+        name: "تقارير الطلبات",
+        href: "/reports",
+        isIcon: true,
+        Icon: FiPieChart,
+        color: "text-purple-600"
+      });
+    }
+
+    return result;
+  }, [companies, permissions]);
 
   const [counts, setCounts] = useState({});
   const [loadingCounts, setLoadingCounts] = useState(false);
@@ -53,8 +104,14 @@ export default function HomePage() {
     const fetchCounts = async () => {
       try {
         setLoadingCounts(true);
-        const list = allowedCards.map((x) => x.key).join(",");
-        const res = await fetch(`/api/notifications/counts?companies=${encodeURIComponent(list)}`, {
+        // Only fetch counts for non-icon cards (company cards)
+        const companyList = allowedCards.filter(c => !c.isIcon).map((x) => x.key).join(",");
+        if (!companyList) {
+          setCounts({});
+          return;
+        }
+
+        const res = await fetch(`/api/notifications/counts?companies=${encodeURIComponent(companyList)}`, {
           cache: "no-store",
         });
         const data = await res.json();
@@ -71,7 +128,6 @@ export default function HomePage() {
 
     fetchCounts();
 
-    // ✅ تحديث دوري (اختياري)
     const t = setInterval(fetchCounts, 30000);
 
     return () => {
@@ -117,7 +173,8 @@ export default function HomePage() {
           const n = Number(counts?.[c.key] || 0);
 
           return (
-<Link key={idx} href={c.href || `/requests/${c.key}`} passHref>              <motion.div
+            <Link key={idx} href={c.href || `/requests/${c.key}`} passHref>
+              <motion.div
                 variants={item}
                 whileHover={{ y: -4, scale: 1.015 }}
                 whileTap={{ scale: 0.995 }}
@@ -133,7 +190,7 @@ export default function HomePage() {
                 "
               >
                 {/* ✅ Badge عداد */}
-                {!loadingCounts && n > 0 && (
+                {!loadingCounts && n > 0 && !c.isIcon && (
                   <div
                     className="
                       absolute top-4 left-4
@@ -154,21 +211,26 @@ export default function HomePage() {
                 {/* زخارف ناعمة */}
                 <div className="pointer-events-none absolute inset-0 rounded-3xl bg-gradient-to-br from-white/25 via-transparent to-transparent opacity-80" />
 
-                {/* اللوغو */}
+                {/* اللوغو أو الأيقونة */}
                 <div
                   className="
                     relative w-20 h-20 rounded-2xl
                     bg-white/55 backdrop-blur
                     ring-1 ring-white/25
                     shadow-sm overflow-hidden
+                    flex items-center justify-center
                   "
                 >
-                  <Image
-                    src={c.logo || "/12.png"}
-                    alt={`${c.name} logo`}
-                    fill
-                    className="object-contain p-2 transition-transform duration-500 group-hover:scale-105"
-                  />
+                  {c.isIcon ? (
+                    <c.Icon className={`w-10 h-10 ${c.color || "text-gray-700"} transition-transform duration-500 group-hover:scale-110`} />
+                  ) : (
+                    <Image
+                      src={c.logo || "/12.png"}
+                      alt={`${c.name} logo`}
+                      fill
+                      className="object-contain p-2 transition-transform duration-500 group-hover:scale-105"
+                    />
+                  )}
                 </div>
 
                 {/* النص */}
