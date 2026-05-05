@@ -92,7 +92,7 @@ function getModelByPageKey(pageKey) {
     case "unit-transfer":
       return {
         model: UnitTransfer,
-        searchFields: ["description", "dateDMY", "createdBy"],
+        searchFields: ["customerName", "oldUnitNo", "newUnitNo", "description", "dateDMY", "createdBy"],
         sort: { createdAt: -1 },
       };
       case "attachment-only":

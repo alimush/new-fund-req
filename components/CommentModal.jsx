@@ -89,6 +89,7 @@ export default function CommentModal({
 
   const [files, setFiles] = useState([]);
   const [uploadedFiles, setUploadedFiles] = useState([]);
+  const [localComment, setLocalComment] = useState("");
 
   const inputRef = useRef(null);
 
@@ -105,6 +106,7 @@ export default function CommentModal({
     setLocalStatus(stepStatus || "Pending");
     setSubmitting(false);
     setFiles([]);
+    setLocalComment(value || "");
 
     const attArray = Array.isArray(attachments) ? attachments.filter(Boolean) : [];
 
@@ -312,6 +314,7 @@ export default function CommentModal({
 
       const result = await onSubmit({
         attachments: uploadedAttachments,
+        comment: value !== undefined ? value : localComment,
       });
 
       const nextStatus =
@@ -617,9 +620,12 @@ export default function CommentModal({
                 ) : (
                   <textarea
                     rows={4}
-                    value={value}
+                    value={value !== undefined ? value : localComment}
                     disabled={disableAll}
-                    onChange={(e) => onChange?.(e.target.value)}
+                    onChange={(e) => {
+                      if (onChange) onChange(e.target.value);
+                      else setLocalComment(e.target.value);
+                    }}
                     placeholder="اكتب الكومنت هنا..."
                     className="
                       w-full bg-white/35 border border-white/25 rounded-3xl p-3

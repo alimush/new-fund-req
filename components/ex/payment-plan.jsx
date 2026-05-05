@@ -102,6 +102,7 @@ export default function PaymentPlanGenerator({
 
 const [attachment, setAttachment] = useState([]);     // ملفات فعلية قبل الرفع
 const [dragOver, setDragOver] = useState(false);
+const [hasPrinted, setHasPrinted] = useState(false);
 
 const addFiles = (filesArr) => {
   if (!filesArr?.length) return;
@@ -203,6 +204,7 @@ const steps = useMemo(
     });
     setServerMsg("");
     setActiveTab("Header");
+    setHasPrinted(false);
   };
 
   const POS = useMemo(
@@ -262,7 +264,7 @@ const steps = useMemo(
     return pngs;
   };
 
-  function printAllPngs(pngs) {
+  function printAllPngs(pngs, onDone) {
     if (!pngs?.length) return;
   
     const iframe = document.createElement("iframe");
@@ -282,6 +284,13 @@ const steps = useMemo(
       .join("");
   
     doc.open();
+    const callbackName = 'onPrintDone_' + Date.now();
+    window[callbackName] = () => {
+      if (onDone) onDone();
+      cleanup();
+      delete window[callbackName];
+    };
+
     doc.write(`
       <!doctype html>
       <html>
@@ -313,6 +322,12 @@ const steps = useMemo(
             const imgs = Array.from(document.images);
             let loaded = 0;
   
+            window.addEventListener("afterprint", function() {
+              if (window.parent && typeof window.parent["${callbackName}"] === "function") {
+                window.parent["${callbackName}"]();
+              }
+            });
+
             function done() {
               window.focus();
               window.print();
@@ -343,17 +358,28 @@ const steps = useMemo(
     `);
     doc.close();
   
-    setTimeout(() => {
+    const cleanup = () => {
       try {
-        document.body.removeChild(iframe);
+        if (document.body.contains(iframe)) {
+          document.body.removeChild(iframe);
+        }
       } catch {}
-    }, 3000);
+    };
+
+    setTimeout(() => {
+      if (window[callbackName]) {
+        delete window[callbackName];
+      }
+      cleanup();
+    }, 1000 * 60 * 5);
   }
   
   const doPrint = async () => {
     const pngs = await buildPagePngs();
     if (!pngs.length) return;
-    printAllPngs(pngs);
+    printAllPngs(pngs, () => {
+      setHasPrinted(true);
+    });
   };
 
   const currentStepIndex = steps.findIndex((s) => s.key === activeTab);
@@ -634,6 +660,7 @@ const steps = useMemo(
                         <button
                           type="button"
                           onClick={() => setActiveTab(s.key)}
+                          disabled={s.key === "Attachment" && !hasPrinted}
                           className={`flex items-center gap-2 px-3 py-2 w-full justify-center rounded-xl border text-sm transition
                             ${
                               active
@@ -641,7 +668,9 @@ const steps = useMemo(
                                 : done
                                 ? "bg-gray-200 text-gray-700 border-gray-300 hover:bg-gray-300"
                                 : "bg-white text-gray-700 border-gray-300 hover:bg-gray-100"
-                            }`}
+                            }
+                            ${s.key === "Attachment" && !hasPrinted ? "opacity-50 cursor-not-allowed" : ""}
+                          `}
                         >
                           <span className="hidden sm:inline">{s.label}</span>
                           <span className="sm:hidden">{idx + 1}</span>
@@ -1019,42 +1048,49 @@ const steps = useMemo(
                     مسح الكل
                   </button>
 
-                  {activeTab === "Attachment" ? (
-                    <>
+                  {activeTab === "Review" && (
                     <button
-  onClick={doPrint}
-  disabled={submitting}
-  className="px-5 py-2.5 rounded-lg flex items-center gap-2 font-extrabold bg-gray-700 hover:bg-gray-800 text-white disabled:opacity-50"
->
-  <FiPrinter /> طباعة
-</button>
-                      <button
-  onClick={handleCreate}
-  disabled={submitting || attachment.length === 0}
-  className={`px-5 py-2.5 rounded-lg flex items-center gap-2 font-extrabold text-white ${
-    submitting || attachment.length === 0
-      ? "bg-gray-400 cursor-not-allowed"
-      : "bg-gray-900 hover:bg-black"
-  }`}                      >
-                        {submitting ? (
-                          <>
-                            <Spinner /> جارِ الإنشاء...
-                          </>
-                        ) : (
-                          <>
-                            <FiCheck /> إنشاء
-                          </>
-                        )}
-                      </button>
-                    </>
+                      onClick={doPrint}
+                      disabled={submitting}
+                      className="px-5 py-2.5 rounded-lg flex items-center gap-2 font-extrabold bg-gray-700 hover:bg-gray-800 text-white disabled:opacity-50"
+                    >
+                      <FiPrinter /> طباعة
+                    </button>
+                  )}
+
+                  {activeTab === "Attachment" ? (
+                    <button
+                      onClick={handleCreate}
+                      disabled={submitting || attachment.length === 0}
+                      className={`px-5 py-2.5 rounded-lg flex items-center gap-2 font-extrabold text-white ${
+                        submitting || attachment.length === 0
+                          ? "bg-gray-400 cursor-not-allowed"
+                          : "bg-gray-900 hover:bg-black"
+                      }`}
+                    >
+                      {submitting ? (
+                        <>
+                          <Spinner /> جارِ الإنشاء...
+                        </>
+                      ) : (
+                        <>
+                          <FiCheck /> إنشاء
+                        </>
+                      )}
+                    </button>
                   ) : (
                     <motion.button
                       onClick={() => {
                         const idx = steps.findIndex((s) => s.key === activeTab);
                         setActiveTab(steps[Math.min(idx + 1, steps.length - 1)].key);
                       }}
-                      whileHover={{ scale: 1.03 }}
-                      className="px-5 py-2.5 rounded-lg bg-gray-700 text-white hover:bg-gray-800 font-extrabold"
+                      disabled={activeTab === "Review" && !hasPrinted}
+                      whileHover={{ scale: (activeTab === "Review" && !hasPrinted) ? 1 : 1.03 }}
+                      className={`px-5 py-2.5 rounded-lg font-extrabold ${
+                        (activeTab === "Review" && !hasPrinted)
+                          ? "bg-gray-400 text-gray-200 cursor-not-allowed"
+                          : "bg-gray-700 text-white hover:bg-gray-800"
+                      }`}
                     >
                       التالي →
                     </motion.button>

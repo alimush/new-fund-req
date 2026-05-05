@@ -154,6 +154,12 @@ function CommentModal({
   onAttachmentChange,
   uploading = false,
 }) {
+  const [comment, setComment] = useState("");
+
+  useEffect(() => {
+    if (open) setComment("");
+  }, [open]);
+
   return (
     <AnimatePresence>
       {open && (
@@ -186,37 +192,52 @@ function CommentModal({
             </div>
 
             <div className="p-6">
-  <div className="text-gray-700 text-sm mb-4 text-center">
-    {subtitle || "Are you sure you want to perform this action?"}
-  </div>
+              <div className="text-gray-700 text-sm mb-4 text-center">
+                {subtitle || "Are you sure you want to perform this action?"}
+              </div>
 
-  {isOperation && (
-    <div className="space-y-3">
-      <div className="text-sm font-bold text-gray-800 text-right">
-        ارفع مرفق الأوبريشن
-      </div>
+              <div className="space-y-4">
+                {isOperation && (
+                  <div className="space-y-3">
+                    <div className="text-sm font-bold text-gray-800 text-right">
+                      ارفع مرفق الأوبريشن
+                    </div>
 
-      <label className="flex items-center justify-center gap-2 w-full px-4 py-3 rounded-2xl border border-dashed border-gray-300 bg-gray-50 hover:bg-gray-100 cursor-pointer transition">
-        <FiPaperclip />
-        <span className="text-sm font-semibold text-gray-700">
-          {attachmentFile ? attachmentFile.name : "اختيار ملف"}
-        </span>
+                    <label className="flex items-center justify-center gap-2 w-full px-4 py-3 rounded-2xl border border-dashed border-gray-300 bg-gray-50 hover:bg-gray-100 cursor-pointer transition">
+                      <FiPaperclip />
+                      <span className="text-sm font-semibold text-gray-700">
+                        {attachmentFile ? attachmentFile.name : "اختيار ملف"}
+                      </span>
 
-        <input
-          type="file"
-          className="hidden"
-          onChange={(e) => onAttachmentChange?.(e.target.files?.[0] || null)}
-        />
-      </label>
+                      <input
+                        type="file"
+                        className="hidden"
+                        onChange={(e) => onAttachmentChange?.(e.target.files?.[0] || null)}
+                      />
+                    </label>
 
-      {attachmentFile && (
-        <div className="text-xs text-gray-500 break-all text-center">
-          {attachmentFile.name}
-        </div>
-      )}
-    </div>
-  )}
-</div>
+                    {attachmentFile && (
+                      <div className="text-xs text-gray-500 break-all text-center">
+                        {attachmentFile.name}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <div className="text-xs font-bold text-gray-700 text-right">أضف تعليق (اختياري)</div>
+                  <textarea
+                    className="w-full p-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-black outline-none transition text-sm text-right"
+                    rows={3}
+                    dir="rtl"
+                    placeholder="اكتب تعليقك هنا..."
+                    value={comment}
+                    onChange={(e) => setComment(e.target.value)}
+                    disabled={loading || uploading}
+                  />
+                </div>
+              </div>
+            </div>
 
             <div className="p-4 border-t flex justify-end gap-3">
               <button
@@ -228,7 +249,7 @@ function CommentModal({
               </button>
 
               <button
-                onClick={() => onSubmit("")}
+                onClick={() => onSubmit(comment)}
                 disabled={loading || uploading || (isOperation && !attachmentFile)}
                 className="px-4 py-2 rounded-xl font-bold bg-black text-white hover:bg-gray-900 flex items-center gap-2 disabled:opacity-60"
               >
@@ -1045,6 +1066,23 @@ const isOperationUser =
                                     <span>{actedName}</span>
                                   </div>
                                 )}
+                                 {hasComment && (
+                                  <div className="mt-3 space-y-2 text-xs">
+                                    <div className="flex items-start gap-2 text-gray-600 mt-2">
+                                      <div className="h-7 w-7 rounded-xl bg-gray-100 flex items-center justify-center shrink-0">
+                                        <FiMessageSquare className="text-gray-500 text-sm" />
+                                      </div>
+                                      <div className="flex-1 min-w-0">
+                                        <span className="font-semibold text-gray-700 block mb-1">
+                                          Comment:
+                                        </span>
+                                        <div className="px-3 py-2 rounded-xl bg-white/70 ring-1 ring-black/5 text-gray-800 whitespace-pre-wrap text-sm leading-relaxed max-h-32 overflow-y-auto font-medium">
+                                          {step.comment}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
                               </div>
                             </div>
 
@@ -1188,15 +1226,24 @@ const isOperationUser =
 )}
 
 {canAct && !isCancelled && isOperationUser && (
-  <div className="mt-5">
+  <div className="mt-5 flex gap-3">
     <button
       disabled={acting}
       onClick={() =>
         setActionModal({ open: true, action: "operation_submit", stepIndex: idx })
       }
-      className="w-full py-2.5 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-semibold shadow-sm disabled:opacity-60"
+      className="flex-1 py-2.5 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-semibold shadow-sm disabled:opacity-60"
     >
       تم معاينة المرفق
+    </button>
+    <button
+      disabled={acting}
+      onClick={() =>
+        setActionModal({ open: true, action: "reject", stepIndex: idx })
+      }
+      className="flex-1 py-2.5 rounded-2xl bg-red-600 hover:bg-red-700 text-white font-semibold shadow-sm disabled:opacity-60"
+    >
+      Reject
     </button>
   </div>
 )}

@@ -49,6 +49,9 @@ const UnitTransferSchema = new mongoose.Schema(
 
     // ===== Fields حسب الفورمة =====
     dateDMY: { type: String, default: "" },
+    customerName: { type: String, default: "" },
+    oldUnitNo: { type: String, default: "" },
+    newUnitNo: { type: String, default: "" },
     description: { type: String, default: "" },
 
     attachments: { type: [AttachmentSchema], default: [] },

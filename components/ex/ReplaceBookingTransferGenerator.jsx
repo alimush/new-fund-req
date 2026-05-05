@@ -202,6 +202,7 @@ export default function ReplaceBookingTransferGenerator({
 
   const [attachment, setAttachment] = useState([]);
   const [dragOver, setDragOver] = useState(false);
+  const [hasPrinted, setHasPrinted] = useState(false);
 
   const setField = (key, val) => setForm((p) => ({ ...p, [key]: val }));
 
@@ -225,6 +226,7 @@ export default function ReplaceBookingTransferGenerator({
     setAttachment([]);
     setServerMsg("");
     setActiveTab("Header");
+    setHasPrinted(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [formKey, isAttachmentOnly]);
 
@@ -233,6 +235,7 @@ export default function ReplaceBookingTransferGenerator({
     setAttachment([]);
     setServerMsg("");
     setActiveTab("Header");
+    setHasPrinted(false);
   };
 
   const addFiles = (filesArr) => {
@@ -276,7 +279,7 @@ export default function ReplaceBookingTransferGenerator({
     return dataUrl;
   };
 
-  function printAllPngs(pngs) {
+  function printAllPngs(pngs, onDone) {
     if (!pngs?.length) return;
   
     const iframe = document.createElement("iframe");
@@ -294,6 +297,13 @@ export default function ReplaceBookingTransferGenerator({
     const imgsHtml = pngs.map((src) => `<div class="page"><img src="${src}" /></div>`).join("");
   
     doc.open();
+    const callbackName = 'onPrintDone_' + Date.now();
+    window[callbackName] = () => {
+      if (onDone) onDone();
+      cleanup();
+      delete window[callbackName];
+    };
+
     doc.write(`
       <!doctype html>
       <html>
@@ -312,6 +322,11 @@ export default function ReplaceBookingTransferGenerator({
           <script>
             const imgs = Array.from(document.images);
             let loaded = 0;
+            window.addEventListener("afterprint", function() {
+              if (window.parent && typeof window.parent["${callbackName}"] === "function") {
+                window.parent["${callbackName}"]();
+              }
+            });
             function done(){
               window.focus();
               window.print();
@@ -328,17 +343,29 @@ export default function ReplaceBookingTransferGenerator({
     `);
     doc.close();
   
-    setTimeout(() => {
+    const cleanup = () => {
       try {
-        document.body.removeChild(iframe);
+        if (document.body.contains(iframe)) {
+          document.body.removeChild(iframe);
+        }
       } catch {}
-    }, 2500);
+    };
+
+    // Fallback cleanup in case afterprint isn't fired
+    setTimeout(() => {
+      if (window[callbackName]) {
+        delete window[callbackName];
+      }
+      cleanup();
+    }, 1000 * 60 * 5);
   }
   
   const doPrint = async () => {
     const png = await buildPagePng();
     if (!png) return;
-    printAllPngs([png]);
+    printAllPngs([png], () => {
+      setHasPrinted(true);
+    });
   };
   const currentStepIndex = steps.findIndex((s) => s.key === activeTab);
   const progressPercent = Math.round(((currentStepIndex + 1) / steps.length) * 100);
@@ -427,15 +454,17 @@ export default function ReplaceBookingTransferGenerator({
 )}
 
           <div className="absolute inset-0 text-gray-900">
-            {/* ✅ overlay dynamic from cfg.pos + cfg.fields */}
-            {FIELDS.map((f) => {
-              const v = form?.[f.name];
+            {/* ✅ overlay dynamic from cfg.pos */}
+            {Object.entries(POS || {}).map(([posKey, p]) => {
+              if (!p) return null;
+              
+              const fieldName = posKey.split("_")[0];
+              const f = FIELDS.find(x => x.name === fieldName);
+              
+              const v = form?.[fieldName];
               if (!v) return null;
 
-              const p = POS?.[f.name];
-              if (!p) return null;
-
-              const text = f.type === "moneyIQD" ? fmtInt(v) : String(v);
+              const text = f?.type === "moneyIQD" ? fmtInt(v) : String(v);
 
               const style = {
                 ...pct(p),
@@ -453,7 +482,7 @@ export default function ReplaceBookingTransferGenerator({
               };
 
               return (
-                <div key={f.name} className="absolute font-extrabold" style={style}>
+                <div key={posKey} className="absolute font-extrabold" style={style}>
                   {text}
                 </div>
               );
@@ -497,6 +526,7 @@ export default function ReplaceBookingTransferGenerator({
                         <button
                           type="button"
                           onClick={() => setActiveTab(s.key)}
+                          disabled={!isAttachmentOnly && !cfg?.hidePrint && s.key === "Attachment" && !hasPrinted}
                           className={`flex items-center gap-2 px-3 py-2 w-full justify-center rounded-xl border text-sm transition
                             ${
                               active
@@ -504,7 +534,9 @@ export default function ReplaceBookingTransferGenerator({
                                 : done
                                 ? "bg-gray-200 text-gray-700 border-gray-300 hover:bg-gray-300"
                                 : "bg-white text-gray-700 border-gray-300 hover:bg-gray-100"
-                            }`}
+                            }
+                            ${(!isAttachmentOnly && !cfg?.hidePrint && s.key === "Attachment" && !hasPrinted) ? "opacity-50 cursor-not-allowed" : ""}
+                          `}
                         >
                           <span className="hidden sm:inline">{s.label}</span>
                           <span className="sm:hidden">{idx + 1}</span>
@@ -809,7 +841,7 @@ export default function ReplaceBookingTransferGenerator({
     مسح الكل
   </button>
 
-  {activeTab === "Review" && (
+  {activeTab === "Review" && !cfg?.hidePrint && (
     <button
       onClick={doPrint}
       disabled={submitting}
@@ -845,8 +877,13 @@ export default function ReplaceBookingTransferGenerator({
         const idx = steps.findIndex((s) => s.key === activeTab);
         setActiveTab(steps[Math.min(idx + 1, steps.length - 1)].key);
       }}
-      whileHover={{ scale: 1.03 }}
-      className="px-5 py-2.5 rounded-lg bg-gray-700 text-white hover:bg-gray-800 font-extrabold"
+      disabled={!isAttachmentOnly && !cfg?.hidePrint && activeTab === "Review" && !hasPrinted}
+      whileHover={{ scale: (!isAttachmentOnly && !cfg?.hidePrint && activeTab === "Review" && !hasPrinted) ? 1 : 1.03 }}
+      className={`px-5 py-2.5 rounded-lg font-extrabold ${
+        (!isAttachmentOnly && !cfg?.hidePrint && activeTab === "Review" && !hasPrinted)
+          ? "bg-gray-400 text-gray-200 cursor-not-allowed"
+          : "bg-gray-700 text-white hover:bg-gray-800"
+      }`}
     >
       التالي →
     </motion.button>

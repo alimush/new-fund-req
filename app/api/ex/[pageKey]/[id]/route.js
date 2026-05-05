@@ -358,16 +358,6 @@ export async function PUT(req, ctx) {
     // ✅ Authorization (خليته robust)
     const isAuthorized = (step.users || []).some((u) => getIdStr(u) === String(userIdObj));
     if (!isAuthorized) return NextResponse.json({ success: false, error: "Not authorized" }, { status: 403 });
-    if (isOperationUser) {
-      if (action === "reject") {
-        return NextResponse.json(
-          { success: false, error: "Operation user cannot reject" },
-          { status: 403 }
-        );
-      }
-    
-    
-    }
     // ===== creator (مرن) =====
     let creatorUser = null;
 

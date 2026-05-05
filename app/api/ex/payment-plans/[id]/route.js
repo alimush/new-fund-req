@@ -403,13 +403,6 @@ export async function PUT(req, ctx) {
       return NextResponse.json({ success: false, error: "Not authorized" }, { status: 403 });
     }
 
-    if (isOperationUser && action === "reject") {
-      return NextResponse.json(
-        { success: false, error: "Operation user cannot reject" },
-        { status: 403 }
-      );
-    }
-
     if (isOperationUser && action === "operation_submit" && !attachmentMeta?.key) {
       return NextResponse.json(
         { success: false, error: "Operation attachment is required" },

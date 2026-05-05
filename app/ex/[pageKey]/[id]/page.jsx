@@ -133,6 +133,12 @@ function Section({ title, icon, children }) {
 }
 
 function CommentModal({ open, title, subtitle, submitLabel, onClose, onSubmit, loading }) {
+  const [comment, setComment] = useState("");
+
+  useEffect(() => {
+    if (open) setComment("");
+  }, [open]);
+
   return (
     <AnimatePresence>
       {open && (
@@ -166,9 +172,22 @@ function CommentModal({ open, title, subtitle, submitLabel, onClose, onSubmit, l
             </div>
 
             {/* BODY */}
-            <div className="p-6 text-center">
-              <div className="text-gray-700 text-sm mb-2">
+            <div className="p-6">
+              <div className="text-gray-700 text-sm mb-4 text-center">
                 {subtitle || "Are you sure you want to perform this action?"}
+              </div>
+
+              <div className="space-y-2">
+                <div className="text-xs font-bold text-gray-700 text-right">أضف تعليق (اختياري)</div>
+                <textarea
+                  className="w-full p-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-black outline-none transition text-sm text-right"
+                  rows={3}
+                  dir="rtl"
+                  placeholder="اكتب تعليقك هنا..."
+                  value={comment}
+                  onChange={(e) => setComment(e.target.value)}
+                  disabled={loading}
+                />
               </div>
             </div>
 
@@ -183,7 +202,7 @@ function CommentModal({ open, title, subtitle, submitLabel, onClose, onSubmit, l
               </button>
 
               <button
-                onClick={() => onSubmit("")}
+                onClick={() => onSubmit(comment)}
                 disabled={loading}
                 className="px-4 py-2 rounded-xl font-bold bg-black text-white hover:bg-gray-900 flex items-center gap-2 disabled:opacity-60"
               >
@@ -390,9 +409,16 @@ const isOperationUser =
   };
  
 
-  const submitAction = async (noteText) => {
+  const submitAction = async (payload) => {
     if (!actionModal?.action || actionModal?.stepIndex == null) return;
-  
+
+    let noteText = "";
+    if (typeof payload === "string") {
+      noteText = payload;
+    } else if (payload && typeof payload === "object") {
+      noteText = payload.comment || "";
+    }
+
     setActing(true);
     try {
       const res = await fetch(
@@ -480,20 +506,21 @@ const isOperationUser =
             <img src={TEMPLATE_IMG} alt="template" className="absolute inset-0 w-full h-full object-contain" draggable={false} />
 
             <div className="absolute inset-0 text-gray-900">
-              {FIELDS.map((f) => {
-                const v = doc?.[f.name];
-                if (!v) return null;
-
-                const p = POS?.[f.name];
+              {Object.entries(POS || {}).map(([posKey, p]) => {
                 if (!p) return null;
 
-                const positions = Array.isArray(p) ? p : [p];
+                const fieldName = posKey.split("_")[0];
+                const f = FIELDS.find((x) => x.name === fieldName);
 
+                const v = doc?.[fieldName];
+                if (!v) return null;
+
+                const positions = Array.isArray(p) ? p : [p];
                 const text = String(v);
 
                 return positions.map((pos, idx) => (
                   <div
-                    key={`${f.name}-${idx}`}
+                    key={`${posKey}-${idx}`}
                     className="absolute font-extrabold"
                     style={{
                       ...pct(pos),
@@ -536,7 +563,7 @@ const isOperationUser =
             </button>
           </div>
 
-          {planStatus === "pending" && !isAttachmentOnly && (
+          {planStatus === "pending" && !isAttachmentOnly && !cfg?.hidePrint && (
             <div className="mt-4 flex flex-wrap items-center gap-3">
               <button
                 onClick={openPreview}
@@ -866,6 +893,20 @@ const isOperationUser =
                                 </span>
                               </div>
                             )}
+
+                            {hasComment && (
+                              <div className="flex items-start gap-2 text-gray-600 mt-2">
+                                <div className="h-7 w-7 rounded-xl bg-gray-100 flex items-center justify-center shrink-0">
+                                  <FiMessageSquare className="text-gray-500 text-sm" />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <span className="font-semibold text-gray-700 block mb-1">Comment:</span>
+                                  <div className="px-3 py-2 rounded-xl bg-white/70 ring-1 ring-black/5 text-gray-800 whitespace-pre-wrap text-sm leading-relaxed max-h-32 overflow-y-auto font-medium">
+                                    {step.comment}
+                                  </div>
+                                </div>
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
@@ -1012,15 +1053,24 @@ const isOperationUser =
 )}
 
 {canAct && !isCancelled && isOperationUser && !isAttachmentOnly && (
-  <div className="mt-5">
+  <div className="mt-5 flex gap-3">
     <button
       disabled={acting}
       onClick={() =>
         setActionModal({ open: true, action: "operation_submit", stepIndex: idx })
       }
-      className="w-full py-2.5 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-semibold shadow-sm disabled:opacity-60"
+      className="flex-1 py-2.5 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-semibold shadow-sm disabled:opacity-60"
     >
 تم معاينة المرفق
+    </button>
+    <button
+      disabled={acting}
+      onClick={() =>
+        setActionModal({ open: true, action: "reject", stepIndex: idx })
+      }
+      className="flex-1 py-2.5 rounded-2xl bg-red-600 hover:bg-red-700 text-white font-semibold shadow-sm disabled:opacity-60"
+    >
+      Reject
     </button>
   </div>
 )}
