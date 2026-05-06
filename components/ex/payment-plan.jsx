@@ -74,8 +74,7 @@ export default function PaymentPlanGenerator({
     onCreate,
   }) {  const close = () => onClose?.();
 
-    const getCurrentUsername = () =>
-      (typeof window !== "undefined" && (localStorage.getItem("username") || "")) || "";
+    const getCurrentUsername = () => "";
 
     const AR_ORDINALS = [
       "الأولى",

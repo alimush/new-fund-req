@@ -169,8 +169,7 @@ export default function ReplaceBookingTransferGenerator({
 }) {
   const close = () => onClose?.();
 
-  const getCurrentUsername = () =>
-    (typeof window !== "undefined" && (localStorage.getItem("username") || "")) || "";
+  const getCurrentUsername = () => "";
 
   // ✅ config from registry
   const cfg = useMemo(() => getExForm(formKey), [formKey]);

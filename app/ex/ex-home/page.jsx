@@ -129,8 +129,7 @@ export default function ExDashboardPage() {
 
     let alive = true;
 
-    const currentUserId =
-      typeof window !== "undefined" ? localStorage.getItem("userId") || "" : "";
+    const currentUserId = user?.id || "";
 
     if (!currentUserId) {
       setCounts({});

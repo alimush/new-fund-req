@@ -3,6 +3,7 @@ import Workflow from "@/models/Workflow";
 import Permissions from "@/models/Permissions";
 import { NextResponse } from "next/server";
 import mongoose from "mongoose";
+import { getUserIdFromRequest } from "@/lib/auth/getUserIdFromRequest";
 
 export const runtime = "nodejs";
 
@@ -27,7 +28,7 @@ function sanitizeRules(rules) {
 async function requireManagePermissions(req) {
   await dbConnect();
 
-  const userId = req.headers.get("x-user-id");
+  const { userId } = getUserIdFromRequest(req);
   if (!userId) return { ok: false, status: 401, message: "Missing userId" };
 
   const groups = await Permissions.find({ users: userId }).lean();

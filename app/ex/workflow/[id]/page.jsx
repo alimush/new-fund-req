@@ -20,22 +20,19 @@ export default function ExWorkflowDetailsPage() {
   const [loadingUsers, setLoadingUsers] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  const getUserId = () => localStorage.getItem("userId") || "";
   const authHeaders = (extra = {}) => ({
     ...extra,
-    "x-user-id": getUserId(),
   });
 
   // ✅ Auth Guard
   useEffect(() => {
     const guard = async () => {
-      const userId = getUserId();
-      if (!userId) return router.replace("/login");
-
       try {
-        const res = await fetch(`/api/user-permissions?id=${encodeURIComponent(userId)}`, {
+        const res = await fetch("/api/user-permissions", {
           cache: "no-store",
         });
+
+        if (res.status === 401) return router.replace("/login");
 
         const data = await res.json();
         const perms = Array.isArray(data?.permissions) ? data.permissions : [];

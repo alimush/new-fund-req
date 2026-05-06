@@ -4,6 +4,7 @@ import Permissions from "@/models/Permissions";
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import mongoose from "mongoose";
+import { getUserIdFromRequest } from "@/lib/auth/getUserIdFromRequest";
 
 export const runtime = "nodejs";
 
@@ -12,8 +13,7 @@ const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
 async function requireManagePermissions(req) {
   await dbConnect();
 
-  // ✅ userId يجي من الفرونت (localStorage) عن طريق header
-  const userId = req.headers.get("x-user-id");
+  const { userId } = getUserIdFromRequest(req);
 
   if (!userId) {
     return {

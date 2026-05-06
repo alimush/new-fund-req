@@ -211,20 +211,17 @@ export default function ExListPage() {
   const cfg = useMemo(() => getExForm(pageKey), [pageKey]);
 
   // ✅ صلاحية Create
-  const { permissions } = usePermissions();
+  const { permissions, user } = usePermissions();
   const canCreate =
     Array.isArray(permissions) && permissions.includes(PERMISSIONS.EX_Create_Request);
 
-  // ===== User (localStorage) =====
   const currentUsername = useMemo(() => {
-    if (typeof window === "undefined") return "";
-    return localStorage.getItem("username") || "";
-  }, []);
+    return user?.username || "";
+  }, [user]);
 
   const currentUserId = useMemo(() => {
-    if (typeof window === "undefined") return "";
-    return localStorage.getItem("userId") || "";
-  }, []);
+    return user?.id || "";
+  }, [user]);
 
   // ===== Data =====
   const [items, setItems] = useState([]);

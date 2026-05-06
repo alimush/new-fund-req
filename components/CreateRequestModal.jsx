@@ -238,21 +238,17 @@ const formatInputMoney = (v) => {
       currency,
       expenseType,
       department,
-      createdBy: localStorage.getItem("username"),
       items,
       attachments: finalAttachments,
     };
   
     // CREATE
     if (mode === "create") {
-      const userId = localStorage.getItem("userId");
-  
       const res = await fetch(`/api/requests?company=${companyKey}`, {
         method: "POST",
         cache: "no-store",
         headers: {
           "Content-Type": "application/json",
-          "x-user-id": userId || "",
         },
         body: JSON.stringify(payload),
       });

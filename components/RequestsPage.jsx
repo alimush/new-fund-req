@@ -70,7 +70,7 @@ function Pager({ page, totalPages, onPage }) {
 
 export default function RequestsPage({ companyKey }) {
   const router = useRouter();
-  const { permissions, companies } = usePermissions();
+  const { permissions, companies, user } = usePermissions();
 
   const canCreate =
     Array.isArray(permissions) &&
@@ -99,20 +99,9 @@ export default function RequestsPage({ companyKey }) {
     setAccessChecked(true);
   }, [companyKey, companies, router]);
 
-  const getUserIdOrRedirect = () => {
-    const userId =
-      typeof window !== "undefined" ? localStorage.getItem("userId") : null;
-    if (!userId) {
-      router.replace("/login");
-      return null;
-    }
-    return userId;
-  };
-
   const currentUsername = useMemo(() => {
-    if (typeof window === "undefined") return "";
-    return localStorage.getItem("username") || "";
-  }, []);
+    return user?.username || "";
+  }, [user]);
 
   // ===== Search (controlled) =====
   const [searchText, setSearchText] = useState("");
@@ -247,9 +236,6 @@ export default function RequestsPage({ companyKey }) {
   // ===== Fetch =====
   const fetchAll = useCallback(async () => {
     if (!companyKey) return;
-    const userId = getUserIdOrRedirect();
-    if (!userId) return;
-
     setLoading(true);
     try {
       const base = `/api/requests?company=${encodeURIComponent(companyKey)}`;
@@ -265,8 +251,8 @@ export default function RequestsPage({ companyKey }) {
       const pendingUrl = `${base}&scope=pending${qPart}`;
 
       const [resMine, resPending] = await Promise.all([
-        fetch(mineUrl, { cache: "no-store", headers: { "x-user-id": userId } }),
-        fetch(pendingUrl, { cache: "no-store", headers: { "x-user-id": userId } }),
+        fetch(mineUrl, { cache: "no-store" }),
+        fetch(pendingUrl, { cache: "no-store" }),
       ]);
 
       if ([401, 403].includes(resMine.status) || [401, 403].includes(resPending.status)) {
@@ -789,7 +775,6 @@ export default function RequestsPage({ companyKey }) {
           open={isCreateOpen}
           onClose={() => setIsCreateOpen(false)}
           companyKey={companyKey}
-          userId={typeof window !== "undefined" ? localStorage.getItem("userId") : null}
           onCreated={async () => {
             await fetchAll();
           }}

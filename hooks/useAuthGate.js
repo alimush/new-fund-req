@@ -9,26 +9,33 @@ export default function useAuthGate() {
   const [allowed, setAllowed] = useState(false);
 
   useEffect(() => {
-    const userId =
-      typeof window !== "undefined"
-        ? localStorage.getItem("userId")
-        : null;
-
-    // صفحة اللوغن دايمًا مسموحة
     if (pathname === "/login") {
       setAllowed(true);
       return;
     }
 
-    // إذا ماكو لوغن → رجّعه للوغن
-    if (!userId) {
-      router.replace("/login");
-      setAllowed(false);
-      return;
-    }
+    const checkAuth = async () => {
+      try {
+        const res = await fetch("/api/user-permissions", { cache: "no-store" });
+        if (!res.ok) {
+          router.replace("/login");
+          setAllowed(false);
+          return;
+        }
+        const data = await res.json();
+        if (!data?.success || !data?.user?.id) {
+          router.replace("/login");
+          setAllowed(false);
+          return;
+        }
+        setAllowed(true);
+      } catch {
+        router.replace("/login");
+        setAllowed(false);
+      }
+    };
 
-    // لوغن موجود
-    setAllowed(true);
+    checkAuth();
   }, [pathname, router]);
 
   return allowed;

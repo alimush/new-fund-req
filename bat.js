@@ -1,10 +1,7 @@
 import { MongoClient } from "mongodb";
 
-const SOURCE_URI =
-  "mongodb+srv://AliMushtaq:Aaa12345@cluster0.iihipor.mongodb.net/?appName=Cluster0";
-
-const TARGET_URI =
-  "mongodb+srv://alimushtaqmcamt_db_user:pDaGJT4YdNMnIRfV@cluster01.dkc7vo.mongodb.net/?appName=Cluster01"
+const SOURCE_URI = process.env.SOURCE_MONGODB_URI || "";
+const TARGET_URI = process.env.TARGET_MONGODB_URI || "";
 
 const SOURCE_DB = "test";
 const TARGET_DB = "test";
@@ -13,6 +10,10 @@ const BATCH_SIZE = 1000;
 
 
 async function migrate() {
+  if (!SOURCE_URI || !TARGET_URI) {
+    throw new Error("Missing SOURCE_MONGODB_URI or TARGET_MONGODB_URI");
+  }
+
   const sourceClient = new MongoClient(SOURCE_URI);
   const targetClient = new MongoClient(TARGET_URI);
 

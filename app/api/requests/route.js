@@ -7,6 +7,7 @@ import { getModelForCompany } from "@/models/Request";
 import User from "@/models/User";
 import Permissions from "@/models/Permissions";
 import mongoose from "mongoose";
+import { getUserIdFromRequest } from "@/lib/auth/getUserIdFromRequest";
 import {
   buildRequestCreatedEmailHtml,
   sendWorkflowEmail,
@@ -57,8 +58,8 @@ async function hasCompanyAccess(userId, company) {
 async function requireCompanyAccess(req, company) {
   await dbConnect();
 
-  const userId = req.headers.get("x-user-id");
-  if (!userId) return { ok: false, status: 401, error: "Missing x-user-id" };
+  const { userId } = getUserIdFromRequest(req);
+  if (!userId) return { ok: false, status: 401, error: "Missing userId" };
   if (!isValidObjectId(userId))
     return { ok: false, status: 401, error: "Invalid userId" };
   if (!company) return { ok: false, status: 400, error: "Company is required" };

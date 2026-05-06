@@ -78,20 +78,14 @@ export default function PaymentPlansPage() {
   const router = useRouter();
 
   // ✅ Permission hook
-  const { permissions } = usePermissions();
+  const { permissions, user } = usePermissions();
   const canCreate =
     Array.isArray(permissions) && permissions.includes(PERMISSIONS.EX_Create_Request);
 
   // ===== User =====
-  const currentUsername = useMemo(() => {
-    if (typeof window === "undefined") return "";
-    return localStorage.getItem("username") || "";
-  }, []);
+  const currentUsername = useMemo(() => user?.username || "", [user]);
 
-  const currentUserId = useMemo(() => {
-    if (typeof window === "undefined") return "";
-    return localStorage.getItem("userId") || "";
-  }, []);
+  const currentUserId = useMemo(() => user?.id || "", [user]);
 
   // ===== Data =====
   const [items, setItems] = useState([]);
@@ -801,17 +795,14 @@ export default function PaymentPlansPage() {
           open={openCreate}
           onClose={() => setOpenCreate(false)}
           onCreate={async (form) => {
-            const username = typeof window !== "undefined" ? localStorage.getItem("username") : "";
-            const userId = typeof window !== "undefined" ? localStorage.getItem("userId") : "";
-
             const res = await fetch("/api/ex/payment-plans", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 ...form,
                 pageKey: "exceptions",
-                createdBy: username || "User",
-                createdById: userId || "",
+                createdBy: user?.username || "User",
+                createdById: user?.id || "",
               }),
             });
 

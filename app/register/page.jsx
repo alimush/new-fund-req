@@ -18,23 +18,12 @@ export default function RegisterPage() {
   const [authError, setAuthError] = useState("");
 
   // =========================
-  // ✅ Helper: show message for 401/403 + always send x-user-id
+  // ✅ Helper: show message for 401/403
   // =========================
   const apiFetch = async (url, options = {}) => {
-    const userId =
-      typeof window !== "undefined" ? localStorage.getItem("userId") : "";
-
-    if (!userId) {
-      setAuthError("❌ لازم تسوي Login أولاً.");
-      throw new Error("Missing userId");
-    }
-
     const res = await fetch(url, {
       ...options,
-      headers: {
-        ...(options.headers || {}),
-        "x-user-id": userId, // ✅ المهم
-      },
+      headers: options.headers || {},
     });
 
     if (res.status === 401) {

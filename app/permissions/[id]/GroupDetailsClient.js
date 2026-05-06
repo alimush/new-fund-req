@@ -63,20 +63,12 @@ export default function GroupDetailsClient({ groupId }) {
 
     const load = async () => {
       try {
-        const userId = localStorage.getItem("userId");
-        if (!userId) {
-          window.location.href = "/login";
-          return;
-        }
-        
         const [resGroup, resUsers] = await Promise.all([
           fetch(`/api/permissions?id=${groupId}`, {
             cache: "no-store",
-            headers: { "x-user-id": userId },
           }),
           fetch("/api/users", {
             cache: "no-store",
-            headers: { "x-user-id": userId },
           }),
         ]);
         
@@ -142,16 +134,11 @@ export default function GroupDetailsClient({ groupId }) {
   const removeUser = async (id) => {
     const updatedUsers = groupUsers.filter(u => String(u._id) !== String(id));
     setGroupUsers(updatedUsers);
-  
-    // 🔥 حفظ مباشرة في MongoDB
-    const userId = localStorage.getItem("userId");
-    if (!userId) return;
     
     await fetch("/api/permissions", {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",
-        "x-user-id": userId,
       },
       body: JSON.stringify({
         id: groupId,
@@ -184,15 +171,10 @@ export default function GroupDetailsClient({ groupId }) {
     const updatedPermissions = groupPermissions.filter(p => p !== key);
     setGroupPermissions(updatedPermissions);
   
-    // 🔥 تحديث MongoDB فوراً
-    const userId = localStorage.getItem("userId");
-    if (!userId) return;
-    
     await fetch("/api/permissions", {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",
-        "x-user-id": userId,
       },
       body: JSON.stringify({
         id: groupId,
@@ -207,12 +189,6 @@ export default function GroupDetailsClient({ groupId }) {
   const saveChanges = async () => {
     if (!groupId) return;
   
-    const userId = localStorage.getItem("userId");
-    if (!userId) {
-      window.location.href = "/login";
-      return;
-    }
-  
     try {
       setSaving(true);
   
@@ -220,7 +196,6 @@ export default function GroupDetailsClient({ groupId }) {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
-          "x-user-id": userId,
         },
         body: JSON.stringify({
           id: groupId,

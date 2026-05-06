@@ -11,10 +11,8 @@
 import mongoose from "mongoose";
 
 // ─── Connection strings ───────────────────────────────────────────────
-const OLD_URI =
-  "mongodb+srv://yusif:yusif123@cluster0.y4yjo.mongodb.net/test?retryWrites=true&w=majority";
-const NEW_URI =
-  "mongodb+srv://AliMushtaq:Aaa1234@fundreq.bh5dwbd.mongodb.net/FundRrq?retryWrites=true&w=majority&appName=FundReq";
+const OLD_URI = process.env.OLD_MONGODB_URI || "";
+const NEW_URI = process.env.NEW_MONGODB_URI || "";
 
 const DRY_RUN = process.argv.includes("--dry-run");
 
@@ -183,6 +181,10 @@ function buildNewRequest(fr, aw, companyKey, oldIdToNewId, oldIdToUsername) {
 
 // ─── Main ────────────────────────────────────────────────────────────
 async function main() {
+  if (!OLD_URI || !NEW_URI) {
+    throw new Error("Missing OLD_MONGODB_URI or NEW_MONGODB_URI");
+  }
+
   if (DRY_RUN) log("DRY RUN MODE — no writes will happen");
 
   log("Connecting to OLD database...");

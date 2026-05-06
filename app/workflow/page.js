@@ -36,13 +36,7 @@ export default function WorkflowPage() {
   // ✅ NEW: required permissions
   const [requiredPerms, setRequiredPerms] = useState([]);
 
-  // ✅ helper: userId + headers
-  const getUserId = () => localStorage.getItem("userId") || "";
-
-  const authHeaders = (extra = {}) => ({
-    ...extra,
-    "x-user-id": getUserId(),
-  });
+  const authHeaders = (extra = {}) => ({ ...extra });
 
   // ✅ options for permissions select
   const PERM_OPTIONS = useMemo(() => {
@@ -57,17 +51,15 @@ export default function WorkflowPage() {
   // =========================
   useEffect(() => {
     const guard = async () => {
-      const userId = getUserId();
-
-      if (!userId) {
-        router.replace("/login");
-        return;
-      }
-
       try {
-        const res = await fetch(`/api/user-permissions?id=${encodeURIComponent(userId)}`, {
+        const res = await fetch("/api/user-permissions", {
           cache: "no-store",
         });
+
+        if (res.status === 401) {
+          router.replace("/login");
+          return;
+        }
 
         const data = await res.json();
         const perms = Array.isArray(data?.permissions) ? data.permissions : [];

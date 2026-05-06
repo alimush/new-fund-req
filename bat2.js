@@ -4,8 +4,7 @@ import xlsx from "xlsx";
 // =====================================
 // إعدادات
 // =====================================
-const MONGODB_URI =
-  "mongodb+srv://alimushtaqmcamt_db_user:pDaGJT4YdNMnIRfV@cluster01.dkc7vo.mongodb.net/test?appName=Cluster01";
+const MONGODB_URI = process.env.MONGODB_URI || "";
 
 const EXCEL_FILE_PATH = "./requests2.xlsx";
 const SHEET_NAME = "Sheet1";
@@ -380,6 +379,10 @@ async function getWorkflowForCompany(company) {
 // =====================================
 async function run() {
   try {
+    if (!MONGODB_URI) {
+      throw new Error("Missing MONGODB_URI");
+    }
+
     console.log("🔌 Connecting to MongoDB...");
     await mongoose.connect(MONGODB_URI);
     console.log("✅ MongoDB connected");

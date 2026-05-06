@@ -8,21 +8,30 @@ export function UserProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // نحمل اليوزر المخزون بعد تسجيل الدخول
-    const stored = localStorage.getItem("user");
-    if (stored) {
-      setUser(JSON.parse(stored));
-    }
-    setLoading(false);
+    const load = async () => {
+      try {
+        const res = await fetch("/api/auth/me", { cache: "no-store" });
+        if (!res.ok) {
+          setUser(null);
+          return;
+        }
+        const data = await res.json();
+        setUser(data?.user || null);
+      } catch {
+        setUser(null);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    load();
   }, []);
 
   const saveUser = (userdata) => {
-    localStorage.setItem("user", JSON.stringify(userdata));
     setUser(userdata);
   };
 
   const logout = () => {
-    localStorage.removeItem("user");
     setUser(null);
   };
 

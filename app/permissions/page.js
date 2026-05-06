@@ -12,29 +12,22 @@ export default function PermissionsPage() {
   const [newGroupName, setNewGroupName] = useState("");
   const [saving, setSaving] = useState(false);
 
-  // ✅ helper: get userId + guard
-  const getUserIdOrRedirect = () => {
-    const userId = localStorage.getItem("userId");
-    if (!userId) {
-      window.location.href = "/login";
-      return null;
-    }
-    return userId;
-  };
-
   // 🟦 تحميل الكروبات
   useEffect(() => {
     const load = async () => {
-      const userId = getUserIdOrRedirect();
-      if (!userId) return;
-
       try {
         const res = await fetch("/api/permissions", {
           cache: "no-store",
-          headers: {
-            "x-user-id": userId, // ✅ مهم
-          },
         });
+
+        if (res.status === 401) {
+          window.location.href = "/login";
+          return;
+        }
+        if (res.status === 403) {
+          window.location.href = "/home";
+          return;
+        }
 
 
         const data = await res.json();
@@ -56,9 +49,6 @@ export default function PermissionsPage() {
       return;
     }
 
-    const userId = getUserIdOrRedirect();
-    if (!userId) return;
-
     try {
       setSaving(true);
 
@@ -66,10 +56,18 @@ export default function PermissionsPage() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-user-id": userId, // ✅ مهم
         },
         body: JSON.stringify({ name: newGroupName }),
       });
+
+      if (res.status === 401) {
+        window.location.href = "/login";
+        return;
+      }
+      if (res.status === 403) {
+        window.location.href = "/home";
+        return;
+      }
 
      
       const data = await res.json();
@@ -91,16 +89,19 @@ export default function PermissionsPage() {
   const deleteGroup = async (id) => {
     if (!confirm("هل تريد حذف هذا الكروب؟")) return;
 
-    const userId = getUserIdOrRedirect();
-    if (!userId) return;
-
     try {
       const res = await fetch(`/api/permissions?id=${id}`, {
         method: "DELETE",
-        headers: {
-          "x-user-id": userId, // ✅ مهم
-        },
       });
+
+      if (res.status === 401) {
+        window.location.href = "/login";
+        return;
+      }
+      if (res.status === 403) {
+        window.location.href = "/home";
+        return;
+      }
 
     
 

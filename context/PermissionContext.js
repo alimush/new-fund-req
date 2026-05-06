@@ -10,7 +10,6 @@ export function PermissionProvider({ children }) {
   const [companies, setCompanies] = useState([]);
 
   const logoutToLogin = () => {
-    localStorage.clear();
     setUser(null);
     setPermissions([]);
     setCompanies([]);
@@ -21,13 +20,8 @@ export function PermissionProvider({ children }) {
   };
 
   const load = async () => {
-    const userId = localStorage.getItem("userId");
-    const username = localStorage.getItem("username");
-
-    if (!userId) return;
-
     try {
-      const res = await fetch(`/api/user-permissions?id=${userId}`, {
+      const res = await fetch("/api/user-permissions", {
         cache: "no-store",
       });
 
@@ -39,10 +33,11 @@ export function PermissionProvider({ children }) {
       const data = await res.json();
 
       if (data.success) {
-        setUser({ id: userId, username });
+        setUser(data.user || null);
         setPermissions(data.permissions || []);
         setCompanies(data.companies || []);
       } else {
+        setUser(null);
         setPermissions([]);
         setCompanies([]);
       }

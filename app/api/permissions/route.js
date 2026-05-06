@@ -3,6 +3,7 @@ import Permissions from "@/models/Permissions";
 import User from "@/models/User";
 import { NextResponse } from "next/server";
 import mongoose from "mongoose";
+import { getUserIdFromRequest } from "@/lib/auth/getUserIdFromRequest";
 
 export const runtime = "nodejs";
 import { PERMISSIONS } from "@/lib/permission";
@@ -11,7 +12,7 @@ import { PERMISSIONS } from "@/lib/permission";
 // Helpers
 // =========================
 function getUserIdFromReq(req) {
-  return req.headers.get("x-user-id") || "";
+  return getUserIdFromRequest(req).userId;
 }
 
 async function requireManagePermissions(req) {
@@ -21,7 +22,7 @@ async function requireManagePermissions(req) {
     return {
       ok: false,
       res: NextResponse.json(
-        { success: false, error: "Missing x-user-id" },
+        { success: false, error: "Missing userId" },
         { status: 401 }
       ),
     };

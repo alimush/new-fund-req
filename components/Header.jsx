@@ -29,43 +29,28 @@ export default function Header({ onLogout }) {
     window.open(path, "_blank", "noopener,noreferrer");
   };
   useEffect(() => {
-    const updateUser = () => {
-      const storedUser = localStorage.getItem("username");
-      setUsername(storedUser || null);
-      if (!storedUser) setMenuOpen(false);
-    };
-    updateUser();
-    window.addEventListener("userChanged", updateUser);
-    return () => window.removeEventListener("userChanged", updateUser);
-  }, []);
+    const nextUsername = user?.username || null;
+    setUsername(nextUsername);
+    if (!nextUsername) setMenuOpen(false);
+  }, [user]);
   const canViewReports =
   Array.isArray(permissions) &&
   permissions.includes(PERMISSIONS.VIEW_REPORTS);
   
   const handleLogout = async () => {
     try {
-      // 1) امسح كل بيانات اليوزر من localStorage
-      localStorage.removeItem("userId");
-      localStorage.removeItem("username");
-      localStorage.removeItem("companies");
-      localStorage.removeItem("user");
-      localStorage.removeItem("permissions");
-  
-      // إذا تحب تمسح كل شي مرّة وحدة:
-      // localStorage.clear();
-  
-      // 2) (اختياري) امسح sessionStorage هم
+      // (اختياري) امسح sessionStorage
       sessionStorage.clear();
   
-      // 3) نادِ endpoint يمسح cookie userId (أكثر أمان)
+      // نادِ endpoint يمسح cookie userId
       await fetch("/api/logout", { method: "POST", credentials: "include" }).catch(() => {});
   
-      // 4) حدّث الحالة
+      // حدّث الحالة
       setUsername(null);
       setMenuOpen(false);
       window.dispatchEvent(new Event("userChanged"));
   
-      // 5) تحويل + منع الرجوع بالـ back لصفحات محمية
+      // تحويل + منع الرجوع بالـ back لصفحات محمية
       router.replace("/login");
       router.refresh(); // يساعد يفشل أي data cached بالـ app router
     } catch (e) {

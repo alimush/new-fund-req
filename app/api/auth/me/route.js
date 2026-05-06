@@ -1,5 +1,7 @@
 import dbConnect from "@/lib/mongodb";
 import User from "@/models/User";
+import { NextResponse } from "next/server";
+import mongoose from "mongoose";
 
 export const runtime = "nodejs";
 
@@ -7,27 +9,39 @@ export async function GET(req) {
   try {
     await dbConnect();
 
-    // 🔥 هنا تجيب الـ userId من الكوكي
     const userId = req.cookies.get("userId")?.value;
 
     if (!userId) {
-      return new Response(JSON.stringify({ user: null }), { status: 200 });
+      return NextResponse.json({ user: null }, { status: 200 });
     }
 
-    const user = await User.findById(userId).populate("group");
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return NextResponse.json({ user: null }, { status: 200 });
+    }
 
-    return new Response(
-      JSON.stringify({
+    const user = await User.findById(userId).populate("group").lean();
+    if (!user) {
+      return NextResponse.json({ user: null }, { status: 200 });
+    }
+
+    const userGroup = user.group;
+    const userPermissions =
+      userGroup && typeof userGroup === "object" && Array.isArray(userGroup.permissions)
+        ? userGroup.permissions
+        : [];
+
+    return NextResponse.json(
+      {
         user: {
-          id: user._id,
-          username: user.username,
-          group: user.group?.name || null,
+          id: String(user._id),
+          username: user.username || "",
+          group: userGroup && typeof userGroup === "object" ? userGroup.name || null : null,
         },
-        permissions: user.group?.permissions || [],
-      }),
+        permissions: userPermissions,
+      },
       { status: 200 }
     );
   } catch (err) {
-    return new Response(JSON.stringify({ user: null }), { status: 200 });
+    return NextResponse.json({ user: null }, { status: 200 });
   }
 }

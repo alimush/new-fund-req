@@ -1,17 +1,19 @@
 const { MongoClient } = require("mongodb");
 
 // 🔴 المصدر
-const sourceUri =
-  "mongodb+srv://alimushtaqmcamt_db_user:pDaGJT4YdNMnIRfV@cluster01.dkc7vo.mongodb.net/test?appName=Cluster01";
+const sourceUri = process.env.SOURCE_MONGODB_URI || "";
 
 // 🟢 الهدف
-const targetUri =
-  "mongodb+srv://AliMushtaq:Aaa12345@cluster0.iihipor.mongodb.net/?appName=Cluster0";
+const targetUri = process.env.TARGET_MONGODB_URI || "";
 
 const dbName = "test";
 const collectionName = "requests_old-data";
 
 async function run() {
+  if (!sourceUri || !targetUri) {
+    throw new Error("Missing SOURCE_MONGODB_URI or TARGET_MONGODB_URI");
+  }
+
   const sourceClient = new MongoClient(sourceUri);
   const targetClient = new MongoClient(targetUri);
 

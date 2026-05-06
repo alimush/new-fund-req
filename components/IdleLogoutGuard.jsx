@@ -20,8 +20,6 @@ export default function IdleLogoutGuard() {
 
     const touch = () => {
       lastActivityRef.current = Date.now();
-      // للتأكد حتى التنقل يعتبر نشاط
-      localStorage.setItem("lastActivityAt", String(lastActivityRef.current));
     };
 
     // ✅ اعتبر تغيير الصفحة نشاط
@@ -35,16 +33,10 @@ export default function IdleLogoutGuard() {
     if (timerRef.current) clearInterval(timerRef.current);
 
     timerRef.current = setInterval(() => {
-      const last = Number(localStorage.getItem("lastActivityAt") || 0) || lastActivityRef.current;
-      const idleFor = Date.now() - last;
+      const idleFor = Date.now() - lastActivityRef.current;
 
       if (!loggedOutRef.current && idleFor >= idleMs) {
         loggedOutRef.current = true;
-
-        // مسح بيانات الفرونت
-        localStorage.removeItem("userId");
-        localStorage.removeItem("username");
-        localStorage.removeItem("lastActivityAt");
 
         // إذا عندك كوكي بالسيرفر (اختياري)
         fetch("/api/logout", { method: "POST", credentials: "include" }).catch(() => {});

@@ -20,11 +20,8 @@ export default function WorkflowDetailsPage() {
   const [loadingUsers, setLoadingUsers] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  // ✅ helper: userId + headers
-  const getUserId = () => localStorage.getItem("userId") || "";
   const authHeaders = (extra = {}) => ({
     ...extra,
-    "x-user-id": getUserId(),
   });
 
   // =========================
@@ -32,18 +29,16 @@ export default function WorkflowDetailsPage() {
   // =========================
   useEffect(() => {
     const guard = async () => {
-      const userId = getUserId();
-
-      if (!userId) {
-        router.replace("/login");
-        return;
-      }
-
       try {
         const res = await fetch(
-          `/api/user-permissions?id=${encodeURIComponent(userId)}`,
+          "/api/user-permissions",
           { cache: "no-store" }
         );
+
+        if (res.status === 401) {
+          router.replace("/login");
+          return;
+        }
 
         const data = await res.json();
         const perms = Array.isArray(data?.permissions) ? data.permissions : [];

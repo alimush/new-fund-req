@@ -3,6 +3,7 @@ import ExWorkflow from "@/models/ExWorkflow";
 import Permissions from "@/models/Permissions";
 import { NextResponse } from "next/server";
 import mongoose from "mongoose";
+import { getUserIdFromRequest } from "@/lib/auth/getUserIdFromRequest";
 
 // ✅ يجيب الفورمات من registry (Server-side)
 import { EX_FORMS } from "@/lib/exForms/registry";
@@ -37,7 +38,7 @@ function isAllowedPageKey(k) {
 async function requireManagePermissions(req) {
   await dbConnect();
 
-  const userId = req.headers.get("x-user-id");
+  const { userId } = getUserIdFromRequest(req);
   if (!userId) return { ok: false, status: 401, message: "Missing userId" };
 
   const groups = await Permissions.find({ users: userId }).lean();
