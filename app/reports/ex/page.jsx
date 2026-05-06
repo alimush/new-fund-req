@@ -964,7 +964,7 @@ export default function ExReportsPage() {
                   setActiveIdx(-1);
                 }}
                 onKeyDown={onSmartKeyDown}
-                placeholder="اكتب للاقتراحات الذكية..."
+                placeholder="اكتب للاقتراحات ..."
                 className="w-full rounded-xl px-4 py-2.5 border border-gray-200 bg-white text-gray-900 font-extrabold text-[16px] shadow-sm outline-none focus:border-gray-300"
               />
               {suggestLoading ? (
