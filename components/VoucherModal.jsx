@@ -150,7 +150,13 @@ export default function VoucherModal({
   const [fieldStyles, setFieldStyles] = useState(DEFAULT_FIELD_STYLES);
 
   const selectedCompany = useMemo(
-    () => COMPANIES.find((c) => c.key === companyKey) || null,
+    () => {
+      const normalizedKey = String(companyKey || "").trim().toLowerCase();
+      return (
+        COMPANIES.find((c) => String(c.key).trim().toLowerCase() === normalizedKey) ||
+        null
+      );
+    },
     [companyKey]
   );
 
@@ -162,6 +168,9 @@ export default function VoucherModal({
   const fillFromRequest = useCallback(
     (reqDoc) => {
       if (!reqDoc) return;
+      // إذا عندنا وصل محفوظ مسبقًا، لا نرجع ننسخ من الطلب.
+      // حتى تبقى التعديلات على الوصل مستقلة عن داتا الطلب.
+      if (existingVoucher?._id) return;
 
       const items = Array.isArray(reqDoc?.items) ? reqDoc.items : [];
       const total = items.reduce(
@@ -180,14 +189,74 @@ export default function VoucherModal({
       setVDesc(reqDoc?.description || "");
       setVCurrency(currency);
 
-      if (!existingVoucher?._id) {
-        setVDateYY(todayYY);
-        setVDateMM(todayMM);
-        setVDateDD(todayDD);
-      }
+      setVDateYY(todayYY);
+      setVDateMM(todayMM);
+      setVDateDD(todayDD);
     },
     [existingVoucher?._id, todayYY, todayMM, todayDD]
   );
+
+  const hydrateFromVoucherDoc = useCallback((doc) => {
+    if (!doc) return;
+
+    setExistingVoucher(doc);
+    setVoucherNo(doc?.seq ?? null);
+
+    setVDateYY(doc?.vDateYY || doc?.dateParts?.yy || "");
+    setVDateMM(doc?.vDateMM || doc?.dateParts?.mm || "");
+    setVDateDD(doc?.vDateDD || doc?.dateParts?.dd || "");
+
+    const amountRaw =
+      doc?.vAmount ??
+      doc?.amountText ??
+      (typeof doc?.amount === "number" ? String(doc.amount) : "");
+    setVAmount(amountRaw ? formatAmount(amountRaw) : "");
+
+    setVWords(doc?.vWords || doc?.amountWords || "");
+    setVDesc(doc?.vDesc || doc?.description || "");
+    setVCurrency(String(doc?.vCurrency || doc?.currency || "IQD").toUpperCase());
+
+    setVBank(doc?.bank || doc?.vBank || "");
+    setVFxRate(doc?.fxRate || doc?.vFxRate || "");
+    setVReceivedBy(doc?.receivedBy || doc?.vReceivedBy || "");
+    setVBeneficiary(doc?.beneficiary || doc?.vBeneficiary || "");
+    setVNotes(doc?.notes || doc?.vNotes || "");
+
+    setVChequeNo(doc?.chequeNo || doc?.vChequeNo || "");
+    setVNationalId(doc?.nationalId || doc?.vNationalId || "");
+    setVPhone(doc?.phone || doc?.vPhone || "");
+    setVSanadNo(doc?.sanadNo || doc?.vSanadNo || "");
+
+    setCbOne(Boolean(doc?.cbOne));
+    setCbTwo(Boolean(doc?.cbTwo));
+
+    if (doc?.globalTextStyle || doc?.fieldStyles) {
+      const normalizedGlobal = normalizeGlobalTextStyle(doc?.globalTextStyle || {});
+      const normalizedFields = normalizeFieldStyles(doc?.fieldStyles || {}, normalizedGlobal);
+      setGlobalTextStyle(normalizedGlobal);
+      setFieldStyles(normalizedFields);
+    } else {
+      const legacy = buildLegacyStyles(doc);
+      setGlobalTextStyle(legacy.global);
+      setFieldStyles(legacy.fields);
+    }
+  }, []);
+
+  const loadExistingVoucher = useCallback(async () => {
+    if (!companyKey || !requestId) return null;
+    const res = await fetch(
+      `/api/vouchers?companyKey=${encodeURIComponent(companyKey)}&requestId=${encodeURIComponent(requestId)}&mode=payment`,
+      {
+        method: "GET",
+        credentials: "include",
+        cache: "no-store",
+      }
+    );
+
+    const json = await res.json().catch(() => null);
+    if (!res.ok || !json?.success) return null;
+    return json.data || null;
+  }, [companyKey, requestId]);
 
   useEffect(() => {
     setRequestData(request || null);
@@ -239,70 +308,17 @@ export default function VoucherModal({
 
     let cancelled = false;
 
-    const loadExistingVoucher = async () => {
+    const runLoadExistingVoucher = async () => {
       try {
         setLoadingVoucher(true);
-
-        const res = await fetch(
-          `/api/vouchers?companyKey=${encodeURIComponent(companyKey)}&requestId=${encodeURIComponent(requestId)}&mode=payment`,
-          {
-            method: "GET",
-            credentials: "include",
-            cache: "no-store",
-          }
-        );
-
-        const json = await res.json().catch(() => null);
+        const doc = await loadExistingVoucher();
         if (cancelled) return;
 
-        if (res.ok && json?.success) {
-          const doc = json.data || null;
-          setExistingVoucher(doc);
-
-          if (doc) {
-            setVoucherNo(doc.seq ?? null);
-
-            setVDateYY(doc?.vDateYY || "");
-            setVDateMM(doc?.vDateMM || "");
-            setVDateDD(doc?.vDateDD || "");
-
-            setVAmount(
-              doc?.vAmount !== undefined && doc?.vAmount !== null
-                ? formatAmount(doc.vAmount)
-                : ""
-            );
-            setVWords(doc?.vWords || "");
-            setVDesc(doc?.vDesc || "");
-            setVCurrency(String(doc?.vCurrency || "IQD").toUpperCase());
-
-            setVBank(doc?.bank || doc?.vBank || "");
-            setVFxRate(doc?.fxRate || doc?.vFxRate || "");
-            setVReceivedBy(doc?.receivedBy || doc?.vReceivedBy || "");
-            setVBeneficiary(doc?.beneficiary || doc?.vBeneficiary || "");
-            setVNotes(doc?.notes || doc?.vNotes || "");
-
-            setVChequeNo(doc?.chequeNo || doc?.vChequeNo || "");
-            setVNationalId(doc?.nationalId || doc?.vNationalId || "");
-            setVPhone(doc?.phone || doc?.vPhone || "");
-            setVSanadNo(doc?.sanadNo || doc?.vSanadNo || "");
-
-            setCbOne(Boolean(doc?.cbOne));
-            setCbTwo(Boolean(doc?.cbTwo));
-
-            if (doc?.globalTextStyle || doc?.fieldStyles) {
-              const normalizedGlobal = normalizeGlobalTextStyle(doc?.globalTextStyle || {});
-              const normalizedFields = normalizeFieldStyles(doc?.fieldStyles || {}, normalizedGlobal);
-              setGlobalTextStyle(normalizedGlobal);
-              setFieldStyles(normalizedFields);
-            } else {
-              const legacy = buildLegacyStyles(doc);
-              setGlobalTextStyle(legacy.global);
-              setFieldStyles(legacy.fields);
-            }
-          } else {
-            setExistingVoucher(null);
-            setVoucherNo(null);
-          }
+        if (doc) {
+          hydrateFromVoucherDoc(doc);
+        } else {
+          setExistingVoucher(null);
+          setVoucherNo(null);
         }
       } catch (err) {
         console.error("Failed to load existing voucher:", err);
@@ -311,12 +327,12 @@ export default function VoucherModal({
       }
     };
 
-    loadExistingVoucher();
+    runLoadExistingVoucher();
 
     return () => {
       cancelled = true;
     };
-  }, [open, companyKey, requestId]);
+  }, [open, companyKey, requestId, loadExistingVoucher, hydrateFromVoucherDoc]);
 
   const effectiveDate = useMemo(() => {
     return buildEffectiveDate(existingVoucher, vDateYY, vDateMM, vDateDD);
@@ -598,8 +614,11 @@ export default function VoucherModal({
       }
 
       const doc = json.data || null;
-      setExistingVoucher(doc);
-      setVoucherNo(doc?.seq ?? null);
+      if (doc) {
+        // بعد الإنشاء، نقرأ من الوصل نفسه حتى تصير كل الحقول من الداتا المخزونة فعليًا
+        const freshDoc = await loadExistingVoucher();
+        hydrateFromVoucherDoc(freshDoc || doc);
+      }
 
       await onSaved?.(doc);
       await printCurrentPreviewA4();
@@ -634,8 +653,11 @@ export default function VoucherModal({
       }
 
       const doc = json.data || null;
-      setExistingVoucher(doc);
-      setVoucherNo(doc?.seq ?? voucherNo);
+      if (doc) {
+        // بعد الحفظ، نرجع نجيب الداتا من الوصل
+        const freshDoc = await loadExistingVoucher();
+        hydrateFromVoucherDoc(freshDoc || doc);
+      }
 
       await onSaved?.(doc);
     } catch (err) {

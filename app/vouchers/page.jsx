@@ -31,35 +31,40 @@ export default function VoucherPage() {
   const { permissions } = usePermissions();
   const router = useRouter();
   const checkedOnceRef = useRef(false);
+  const isSuperAdmin = Array.isArray(permissions) && permissions.includes(PERMISSIONS.VIEW_ALL_REPORTS);
+  const hasAnyCompanyPerm =
+    Array.isArray(permissions) &&
+    COMPANIES.some((c) => c.permission && permissions.includes(c.permission));
+  const canEnter =
+    isSuperAdmin ||
+    hasAnyCompanyPerm ||
+    (Array.isArray(permissions) && permissions.includes(PERMISSIONS.RECEIPTS));
 
   useEffect(() => {
     if (!Array.isArray(permissions)) return;
     if (checkedOnceRef.current) return;
     checkedOnceRef.current = true;
 
-    const isSuperAdmin = permissions.includes(PERMISSIONS.VIEW_ALL_REPORTS);
-    const hasAnyCompanyPerm = COMPANIES.some(c => c.permission && permissions.includes(c.permission));
-    
-    const canEnter = isSuperAdmin || hasAnyCompanyPerm || permissions.includes(PERMISSIONS.RECEIPTS);
-
     if (!canEnter) {
       router.replace("/home");
     }
-  }, [permissions, router]);
+  }, [permissions, router, canEnter]);
 
   if (!Array.isArray(permissions)) return null;
-  if (!permissions.includes(PERMISSIONS.RECEIPTS) && !permissions.includes(PERMISSIONS.VIEW_ALL_REPORTS)) return null;
+  if (!canEnter) return null;
 
   const [selectedKey, setSelectedKey] = useState(null);
 
   const filteredCompanies = useMemo(() => {
     if (!Array.isArray(permissions)) return [];
     
-    // صلاحية السوبر أدمن التي تفتح كل شيء
-    const isSuperAdmin = permissions.includes(PERMISSIONS.VIEW_ALL_REPORTS);
-
     return COMPANIES.filter((c) => {
-      if (isSuperAdmin) return true;
+      if (isSuperAdmin) {
+        if (String(c.key).trim() === "010") {
+          return c.permission && permissions.includes(c.permission);
+        }
+        return true;
+      }
       if (c.permission && permissions.includes(c.permission)) return true;
       return false;
     });

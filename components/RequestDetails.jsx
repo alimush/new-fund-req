@@ -26,6 +26,7 @@ import CommentModal from "@/components/CommentModal";
 import StatusBadge from "@/components/StatusBadge";
 import { usePermissions } from "@/context/PermissionContext";
 import { PERMISSIONS } from "@/lib/permission";
+import { COMPANIES } from "@/lib/voucher/companies";
 import VoucherModal from "@/components/VoucherModal";
 import html2canvas from "html2canvas";
 import { PDFDocument } from "pdf-lib";
@@ -59,6 +60,19 @@ export default function RequestDetails({ id, companyKey }) {
   const { permissions } = usePermissions();
   const canPrint =
   Array.isArray(permissions) && permissions.includes(PERMISSIONS.PRINT_REQUEST);
+
+  const voucherCompanyConfig = COMPANIES.find(
+    (c) => String(c.key).trim().toLowerCase() === String(companyKey || "").trim().toLowerCase()
+  );
+  const isTestVoucherCompany = String(voucherCompanyConfig?.key || "").trim() === "010";
+  const canCreateVoucherForCompany =
+    Array.isArray(permissions) &&
+    (isTestVoucherCompany
+      ? voucherCompanyConfig?.permission &&
+        permissions.includes(voucherCompanyConfig.permission)
+      : permissions.includes(PERMISSIONS.VIEW_ALL_REPORTS) ||
+        (voucherCompanyConfig?.permission &&
+          permissions.includes(voucherCompanyConfig.permission)));
 
   const printRef = useRef(null);
 
@@ -1003,7 +1017,8 @@ export default function RequestDetails({ id, companyKey }) {
 
 {isFinalApproved &&
   isLastStepUser &&
-  ["Badur-Baghdad", "Al-Ghadeer", "010" , "Tiba-Al-najaf" , "Ghadeer-Karbala"].includes(companyKey) && (
+  canCreateVoucherForCompany &&
+  ["Badur-Baghdad", "Al-Ghadeer", "010", "Tiba-Al-najaf", "Ghadeer-Karbala"].includes(companyKey) && (
     <div className="mt-4 flex gap-3">
       <button
         onClick={(e) => {

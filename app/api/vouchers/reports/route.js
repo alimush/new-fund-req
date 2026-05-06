@@ -59,8 +59,14 @@ export async function GET(req) {
     const { allowedPerms } = await getUserAccess(userId);
 
     // 1. التحقق من الصلاحية العامة للتقارير أو الوصولات
-    const hasGeneralAccess = allowedPerms.includes(PERMISSIONS.VOUCHERS_REPORTS_VIEW) || 
-                             allowedPerms.includes(PERMISSIONS.RECEIPTS);
+    const hasAnyCompanyPerm = COMPANIES.some(
+      (c) => c.permission && allowedPerms.includes(c.permission)
+    );
+    const hasGeneralAccess =
+      allowedPerms.includes(PERMISSIONS.VOUCHERS_REPORTS_VIEW) ||
+      allowedPerms.includes(PERMISSIONS.RECEIPTS) ||
+      allowedPerms.includes(PERMISSIONS.VIEW_ALL_REPORTS) ||
+      hasAnyCompanyPerm;
 
     if (!hasGeneralAccess) {
       return NextResponse.json(
@@ -70,9 +76,15 @@ export async function GET(req) {
     }
 
     // 2. فلترة الشركات بناءً على الصلاحيات الخاصة بكل شركة
-    const finalAllowedCompanies = COMPANIES.filter(c => 
-      allowedPerms.includes(c.permission)
-    ).map(c => c.key);
+    const finalAllowedCompanies = allowedPerms.includes(PERMISSIONS.VIEW_ALL_REPORTS)
+      ? COMPANIES.filter(
+          (c) =>
+            String(c.key).trim() !== "010" ||
+            (c.permission && allowedPerms.includes(c.permission))
+        ).map((c) => c.key)
+      : COMPANIES.filter((c) => allowedPerms.includes(c.permission)).map(
+          (c) => c.key
+        );
 
     const db = mongoose.connection.db;
     const col = db.collection(COLLECTION_NAME);

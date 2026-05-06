@@ -66,7 +66,13 @@ export async function GET(req) {
 
     // ✅ التحقق من الصلاحية
     const companyConfig = COMPANIES.find(c => String(c.key).toLowerCase() === String(companyKey).toLowerCase());
-    const hasAccess = (companyConfig && allowedPerms.includes(companyConfig.permission)) || allowedPerms.includes(PERMISSIONS.VIEW_ALL_REPORTS);
+    const isTestCompany = String(companyConfig?.key || "").trim() === "010";
+    const hasCompanyPermission = Boolean(
+      companyConfig?.permission && allowedPerms.includes(companyConfig.permission)
+    );
+    const hasAccess = isTestCompany
+      ? hasCompanyPermission
+      : hasCompanyPermission || allowedPerms.includes(PERMISSIONS.VIEW_ALL_REPORTS);
 
     if (!hasAccess) {
       return NextResponse.json({ success: false, error: "ليس لديك صلاحية لهذه الشركة" }, { status: 403 });
@@ -213,7 +219,13 @@ export async function POST(req) {
 
     // ✅ التحقق من الصلاحية
     const companyConfig = COMPANIES.find(c => String(c.key).toLowerCase() === String(companyKey).toLowerCase());
-    const hasAccess = (companyConfig && allowedPerms.includes(companyConfig.permission)) || allowedPerms.includes(PERMISSIONS.VIEW_ALL_REPORTS);
+    const isTestCompany = String(companyConfig?.key || "").trim() === "010";
+    const hasCompanyPermission = Boolean(
+      companyConfig?.permission && allowedPerms.includes(companyConfig.permission)
+    );
+    const hasAccess = isTestCompany
+      ? hasCompanyPermission
+      : hasCompanyPermission || allowedPerms.includes(PERMISSIONS.VIEW_ALL_REPORTS);
 
     if (!hasAccess) {
       return NextResponse.json({ success: false, error: "ليس لديك صلاحية لإنشاء وصولات لهذه الشركة" }, { status: 403 });
