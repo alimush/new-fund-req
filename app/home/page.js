@@ -43,9 +43,13 @@ export default function HomePage() {
   const allowedCards = useMemo(() => {
     if (!Array.isArray(companies) || !Array.isArray(permissions)) return [];
 
-    const result = [...cards.filter((c) => companies.includes(c.key))];
-
     const isSuperAdmin = permissions.includes(PERMISSIONS.VIEW_ALL_REPORTS);
+    const hasEXPerm = permissions.includes(PERMISSIONS.EX);
+
+    const result = [...cards.filter((c) => {
+      if (c.key === "EX") return companies.includes("EX") || isSuperAdmin || hasEXPerm;
+      return companies.includes(c.key);
+    })];
 
     // ✅ إضافة كارت "إدارة الوصولات"
     const hasAnyVoucherPerm = COMPANIES.some(c => c.permission && permissions.includes(c.permission));

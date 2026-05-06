@@ -88,20 +88,16 @@ export default function ExDashboardPage() {
       } catch {}
     }
 
-    if (Array.isArray(permissions)) {
-      return permissions.includes(PERMISSIONS.EX);
-    }
-
-    if (Array.isArray(user?.permissions)) {
-      return user.permissions.includes(PERMISSIONS.EX);
-    }
-
-    return false;
-  }, [hasPermission, permissions, user]);
+    const perms = Array.isArray(permissions) ? permissions : (Array.isArray(user?.permissions) ? user.permissions : []);
+    return perms.includes(PERMISSIONS.EX) || perms.includes(PERMISSIONS.VIEW_ALL_REPORTS);
+  }, [permissions, user]);
 
   const allowedCards = useMemo(() => {
+    const isSuperAdmin = Array.isArray(permissions) && permissions.includes(PERMISSIONS.VIEW_ALL_REPORTS);
+    
     return cards.filter((card) => {
       if (!hasGeneralEX) return false;
+      if (isSuperAdmin) return true;
 
       if (typeof hasPermission === "function") {
         try {

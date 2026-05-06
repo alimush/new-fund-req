@@ -230,7 +230,7 @@ export default function Header({ onLogout }) {
   />
 )}
 
-{permissions?.includes(PERMISSIONS.EX) && (
+{(permissions?.includes(PERMISSIONS.EX) || permissions?.includes(PERMISSIONS.VIEW_ALL_REPORTS)) && (
                         <MenuItem
                           onClick={() => {
                             setMenuOpen(false);
