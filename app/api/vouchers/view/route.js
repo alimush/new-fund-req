@@ -201,9 +201,8 @@ export async function GET(req) {
 
     const { allowedPerms } = await getUserAccess(userId);
 
-    const hasGeneralAccess = allowedPerms.includes(PERMISSIONS.VIEW_REPORTS) || 
-                             allowedPerms.includes(PERMISSIONS.RECEIPTS) ||
-                             allowedPerms.includes(PERMISSIONS.VIEW_ALL_REPORTS);
+    const hasGeneralAccess = allowedPerms.includes(PERMISSIONS.VOUCHERS_REPORTS_VIEW) || 
+                             allowedPerms.includes(PERMISSIONS.RECEIPTS);
 
     if (!hasGeneralAccess) {
       return NextResponse.json(
@@ -244,9 +243,8 @@ export async function GET(req) {
     // ✅ التحقق من الصلاحية الخاصة بالشركة الموجودة داخل الوصل
     const companyConfig = COMPANIES.find(c => String(c.key).toLowerCase() === String(doc.companyKey).toLowerCase());
     const hasSpecificAccess = companyConfig && allowedPerms.includes(companyConfig.permission);
-    const isSuperAdmin = allowedPerms.includes(PERMISSIONS.VIEW_ALL_REPORTS);
 
-    if (!hasSpecificAccess && !isSuperAdmin) {
+    if (!hasSpecificAccess) {
       return NextResponse.json(
         { success: false, error: "ليس لديك صلاحية لمشاهدة وصولات هذه الشركة" },
         { status: 403 }
@@ -307,12 +305,11 @@ export async function PUT(req) {
       return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
     }
 
-    // ✅ التحقق من صلاحية التعديل (نفس منطق العرض)
+    // ✅ التحقق من صلاحية التعديل
     const companyConfig = COMPANIES.find(c => String(c.key).toLowerCase() === String(doc.companyKey).toLowerCase());
     const hasSpecificAccess = companyConfig && allowedPerms.includes(companyConfig.permission);
-    const isSuperAdmin = allowedPerms.includes(PERMISSIONS.VIEW_ALL_REPORTS);
 
-    if (!hasSpecificAccess && !isSuperAdmin) {
+    if (!hasSpecificAccess) {
       return NextResponse.json(
         { success: false, error: "ليس لديك صلاحية لتعديل وصولات هذه الشركة" },
         { status: 403 }

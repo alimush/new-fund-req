@@ -47,13 +47,13 @@ export default function HomePage() {
     const hasEXPerm = permissions.includes(PERMISSIONS.EX);
 
     const result = [...cards.filter((c) => {
-      if (c.key === "EX") return companies.includes("EX") || isSuperAdmin || hasEXPerm;
+      if (c.key === "EX") return companies.includes("EX") || hasEXPerm;
       return companies.includes(c.key);
     })];
 
     // ✅ إضافة كارت "إدارة الوصولات"
     const hasAnyVoucherPerm = COMPANIES.some(c => c.permission && permissions.includes(c.permission));
-    const canSeeVouchers = isSuperAdmin || hasAnyVoucherPerm || permissions.includes(PERMISSIONS.RECEIPTS);
+    const canSeeVouchers = hasAnyVoucherPerm || permissions.includes(PERMISSIONS.RECEIPTS);
 
     if (canSeeVouchers) {
       result.push({
@@ -67,7 +67,7 @@ export default function HomePage() {
     }
 
     // ✅ إضافة كارت "تقارير الوصولات"
-    const canSeeVoucherReports = isSuperAdmin || permissions.includes(PERMISSIONS.VOUCHERS_REPORTS_VIEW);
+    const canSeeVoucherReports = permissions.includes(PERMISSIONS.VOUCHERS_REPORTS_VIEW);
 
     if (canSeeVoucherReports) {
       result.push({

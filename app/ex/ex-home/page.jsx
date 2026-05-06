@@ -89,15 +89,12 @@ export default function ExDashboardPage() {
     }
 
     const perms = Array.isArray(permissions) ? permissions : (Array.isArray(user?.permissions) ? user.permissions : []);
-    return perms.includes(PERMISSIONS.EX) || perms.includes(PERMISSIONS.VIEW_ALL_REPORTS);
+    return perms.includes(PERMISSIONS.EX);
   }, [permissions, user]);
 
   const allowedCards = useMemo(() => {
-    const isSuperAdmin = Array.isArray(permissions) && permissions.includes(PERMISSIONS.VIEW_ALL_REPORTS);
-    
     return cards.filter((card) => {
       if (!hasGeneralEX) return false;
-      if (isSuperAdmin) return true;
 
       if (typeof hasPermission === "function") {
         try {

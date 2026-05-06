@@ -60,8 +60,7 @@ export async function GET(req) {
 
     // 1. التحقق من الصلاحية العامة للتقارير أو الوصولات
     const hasGeneralAccess = allowedPerms.includes(PERMISSIONS.VOUCHERS_REPORTS_VIEW) || 
-                             allowedPerms.includes(PERMISSIONS.RECEIPTS) ||
-                             allowedPerms.includes(PERMISSIONS.VIEW_ALL_REPORTS);
+                             allowedPerms.includes(PERMISSIONS.RECEIPTS);
 
     if (!hasGeneralAccess) {
       return NextResponse.json(
@@ -72,7 +71,7 @@ export async function GET(req) {
 
     // 2. فلترة الشركات بناءً على الصلاحيات الخاصة بكل شركة
     const finalAllowedCompanies = COMPANIES.filter(c => 
-      allowedPerms.includes(c.permission) || allowedPerms.includes(PERMISSIONS.VIEW_ALL_REPORTS)
+      allowedPerms.includes(c.permission)
     ).map(c => c.key);
 
     const db = mongoose.connection.db;
