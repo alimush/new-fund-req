@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import dynamic from "next/dynamic";
 import * as XLSX from "xlsx";
@@ -19,9 +20,8 @@ import {
   FiLayers,
   FiShield,
   FiDownload,
+  FiArrowLeft,
 } from "react-icons/fi";
-
-import { FaMoneyBillWave } from "react-icons/fa6";
 
 import { usePermissions } from "@/context/PermissionContext";
 import { PERMISSIONS } from "@/lib/permission";
@@ -31,8 +31,38 @@ const Select = dynamic(() => import("react-select").then((m) => m.default), {
   ssr: false,
 });
 
-export default function ReportsPage() {
-  const [requests, setRequests] = useState([]);
+const FORM_FILTER_ALL_LABEL = "كل النماذج";
+
+const PAYMENT_PLAN_LIST_KEY = "exceptions";
+
+function openExDetail(row) {
+  if (!row?._id) return;
+  const company = String(row.exCompanyKey || "").trim();
+  const qCompany = company ? `&company=${encodeURIComponent(company)}` : "";
+
+  if (row.isPaymentPlan) {
+    window.open(
+      `/ex/payment-plan/${row._id}?key=${encodeURIComponent(
+        PAYMENT_PLAN_LIST_KEY
+      )}${qCompany}`,
+      "_blank"
+    );
+    return;
+  }
+
+  const pk = String(row.pageKey || row.detailRouteKey || "").trim();
+  if (!pk) return;
+
+  window.open(
+    `/ex/${encodeURIComponent(pk)}/${row._id}?key=${encodeURIComponent(
+      pk
+    )}${qCompany}`,
+    "_blank"
+  );
+}
+
+export default function ExReportsPage() {
+  const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
 
   const PAGE_SIZE = 25;
@@ -46,16 +76,13 @@ export default function ReportsPage() {
 
   const [companies, setCompanies] = useState([]);
   const [users, setUsers] = useState([]);
-  const [currencies, setCurrencies] = useState([]);
+  const [formOptions, setFormOptions] = useState([]);
   const [statuses, setStatuses] = useState([]);
   const [pendingUsers, setPendingUsers] = useState([]);
 
   const [companyFilter, setCompanyFilter] = useState([]);
   const [userFilter, setUserFilter] = useState([]);
-  const [currencyFilter, setCurrencyFilter] = useState({
-    value: "all",
-    label: "كل العملات",
-  });
+  const [formFilter, setFormFilter] = useState([]);
   const [statusFilter, setStatusFilter] = useState({
     value: "all",
     label: "كل الحالات",
@@ -78,40 +105,24 @@ export default function ReportsPage() {
   const [suggestPos, setSuggestPos] = useState({ top: 0, left: 0, width: 0 });
   const [portalReady, setPortalReady] = useState(false);
 
-  const [dataSource, setDataSource] = useState({
-    value: "new",
-    label: "new data",
-  });
-
-  const dataSourceOptions = [
-    { value: "new", label: "new data" },
-    { value: "old", label: "old data" },
-  ];
-
   const hasSearchedRef = useRef(false);
 
   const { permissions } = usePermissions();
 
   const canViewReports =
-    Array.isArray(permissions) &&
-    permissions.includes(PERMISSIONS.VIEW_REPORTS);
+    Array.isArray(permissions) && permissions.includes(PERMISSIONS.VIEW_REPORTS);
 
   const canViewAllReports =
     Array.isArray(permissions) &&
     permissions.includes(PERMISSIONS.VIEW_ALL_REPORTS);
 
-    const canViewNewOldData =
-  Array.isArray(permissions) &&
-  permissions.includes(PERMISSIONS.VIEW_NEW_OLD_DATA);
+  const canExReports =
+    Array.isArray(permissions) && permissions.includes(PERMISSIONS.EX_REPORTS);
 
-  const canOpenReports = canViewReports || canViewAllReports;
+  const canOpenReports = canViewReports || canViewAllReports || canExReports;
 
   useEffect(() => setPortalReady(true), []);
-  useEffect(() => {
-    if (!canViewNewOldData) {
-      setDataSource({ value: "new", label: "new data" });
-    }
-  }, [canViewNewOldData]);
+
   const [menuTarget, setMenuTarget] = useState(null);
   useEffect(() => setMenuTarget(document.body), []);
 
@@ -179,15 +190,16 @@ export default function ReportsPage() {
   const stats = useMemo(() => {
     return {
       total: meta.total || 0,
-      approved: requests.filter((x) => x.status === "Approved").length,
-      pending: requests.filter((x) => x.status === "Pending").length,
-      rejected: requests.filter((x) => x.status === "Rejected").length,
+      approved: rows.filter((x) => x.status === "Approved").length,
+      pending: rows.filter((x) => x.status === "Pending").length,
+      rejected: rows.filter((x) => x.status === "Rejected").length,
+      cancelled: rows.filter((x) => x.status === "Cancelled").length,
     };
-  }, [requests, meta.total]);
+  }, [rows, meta.total]);
 
   const resetUiState = useCallback(() => {
     setCompanyFilter([]);
-    setCurrencyFilter({ value: "all", label: "كل العملات" });
+    setFormFilter([]);
     setStatusFilter({ value: "all", label: "كل الحالات" });
     setPendingFilter({ value: "all", label: "الكل" });
     setDate({ from: "", to: "" });
@@ -202,7 +214,7 @@ export default function ReportsPage() {
       setUserFilter([]);
     }
 
-    setRequests([]);
+    setRows([]);
     setMeta({ total: 0, totalPages: 0, page: 1, pageSize: PAGE_SIZE });
     setPage(1);
     hasSearchedRef.current = false;
@@ -213,19 +225,29 @@ export default function ReportsPage() {
 
     const loadFilters = async () => {
       try {
-        const res = await fetch(
-          `/api/reports?filters=1&source=${encodeURIComponent(
-            dataSource?.value || "new"
-          )}`,
-          { cache: "no-store" }
-        );
-
+        const res = await fetch(`/api/reports/ex?filters=1`, { cache: "no-store" });
         const json = await res.json();
         if (!json?.success) return;
 
         const f = json.filters || {};
 
-        setCompanies((f.companies || []).map((c) => ({ value: c, label: c })));
+        const rawCompanies = f.companyOptions || f.companies || [];
+        setCompanies(
+          rawCompanies.map((c) =>
+            typeof c === "object" && c !== null && c.value != null
+              ? { value: String(c.value), label: String(c.label ?? c.value) }
+              : { value: String(c), label: String(c) }
+          )
+        );
+
+        const ft = (f.formTypes || []).map((x) => ({
+          value: x.value,
+          label: x.label || x.value,
+        }));
+        setFormOptions([
+          { value: "all", label: FORM_FILTER_ALL_LABEL },
+          ...ft.filter((x) => x.value),
+        ]);
 
         const userOptions = canViewAllReports
           ? [
@@ -245,32 +267,17 @@ export default function ReportsPage() {
           }
         }
 
-        const currList = Array.from(
-          new Set(
-            (f.currencies || [])
-              .map((c) =>
-                typeof c === "object" && c !== null ? c.value || c.label : c
-              )
-              .filter(Boolean)
-          )
-        );
+        const statusLabels = {
+          Pending: "قيد الانتظار",
+          Approved: "مقبول",
+          Rejected: "مرفوض",
+          Cancelled: "ملغى",
+        };
 
-        setCurrencies([
-          { value: "all", label: "كل العملات" },
-          ...currList.map((c) => ({ value: c, label: c })),
-        ]);
-
-        const st = (f.statuses || ["Pending", "Approved", "Rejected"]).map(
+        const st = (f.statuses || ["Pending", "Approved", "Rejected", "Cancelled"]).map(
           (s) => ({
             value: s,
-            label:
-              s === "Pending"
-                ? "قيد الانتظار"
-                : s === "Approved"
-                ? "مقبول"
-                : s === "Rejected"
-                ? "مرفوض"
-                : s,
+            label: statusLabels[s] || s,
           })
         );
 
@@ -281,16 +288,12 @@ export default function ReportsPage() {
           ...(f.pendingUsers || []),
         ]);
       } catch (err) {
-        console.error("❌ Error loading reports filters:", err);
+        console.error("❌ Error loading EX reports filters:", err);
       }
     };
 
     loadFilters();
-  }, [canOpenReports, canViewAllReports, dataSource]);
-
-  useEffect(() => {
-    resetUiState();
-  }, [dataSource, resetUiState]);
+  }, [canOpenReports, canViewAllReports]);
 
   const isDigitsOnly = (s) =>
     /^\d+$/.test(String(s || "").replace(/,/g, "").trim());
@@ -325,9 +328,7 @@ export default function ReportsPage() {
     setSuggestLoading(true);
     try {
       const res = await fetch(
-        `/api/reports?suggest=1&q=${encodeURIComponent(q)}&source=${encodeURIComponent(
-          dataSource?.value || "new"
-        )}`
+        `/api/reports/ex?suggest=1&q=${encodeURIComponent(q)}`
       );
       const json = await res.json();
 
@@ -348,7 +349,7 @@ export default function ReportsPage() {
     } finally {
       setSuggestLoading(false);
     }
-  }, [smartInput, recalcSuggestPos, dataSource]);
+  }, [smartInput, recalcSuggestPos]);
 
   useEffect(() => {
     const q = smartInput.trim();
@@ -443,14 +444,22 @@ export default function ReportsPage() {
     }
   };
 
+  const formsParamValue = useCallback(() => {
+    if (
+      formFilter.length === 0 ||
+      formFilter.some((f) => f.value === "all")
+    ) {
+      return "all";
+    }
+    return formFilter.map((f) => f.value).join(",");
+  }, [formFilter]);
+
   const buildParams = useCallback(
     (pageValue) => {
       const params = new URLSearchParams();
 
       const q = smartPicked?.value ? String(smartPicked.value) : smartInput.trim();
       if (q) params.set("q", q);
-
-      params.set("source", dataSource?.value || "new");
 
       params.set(
         "company",
@@ -471,8 +480,8 @@ export default function ReportsPage() {
       );
 
       params.set("status", statusFilter?.value || "all");
-      params.set("currency", currencyFilter?.value || "all");
       params.set("pending", pendingFilter?.value || "all");
+      params.set("forms", formsParamValue());
 
       if (date.from) params.set("from", date.from);
       if (date.to) params.set("to", date.to);
@@ -486,13 +495,12 @@ export default function ReportsPage() {
       companyFilter,
       userFilter,
       statusFilter,
-      currencyFilter,
       pendingFilter,
       date,
       smartInput,
       smartPicked,
       canViewAllReports,
-      dataSource,
+      formsParamValue,
     ]
   );
 
@@ -501,11 +509,11 @@ export default function ReportsPage() {
       setLoading(true);
       try {
         const params = buildParams(pageValue);
-        const res = await fetch(`/api/reports?${params.toString()}`);
+        const res = await fetch(`/api/reports/ex?${params.toString()}`);
         const json = await res.json();
 
         if (json?.success) {
-          setRequests(json.data || []);
+          setRows(json.data || []);
           setMeta(
             json.meta || {
               total: 0,
@@ -515,7 +523,7 @@ export default function ReportsPage() {
             }
           );
         } else {
-          setRequests([]);
+          setRows([]);
           setMeta({
             total: 0,
             totalPages: 0,
@@ -524,8 +532,8 @@ export default function ReportsPage() {
           });
         }
       } catch (err) {
-        console.error("❌ Error fetching reports:", err);
-        setRequests([]);
+        console.error("❌ Error fetching EX reports:", err);
+        setRows([]);
         setMeta({
           total: 0,
           totalPages: 0,
@@ -580,28 +588,20 @@ export default function ReportsPage() {
       );
     }
 
+    if (status === "Cancelled") {
+      return (
+        <span className={`${base} bg-slate-100 text-slate-700 border-slate-200`}>
+          <FiXCircle /> ملغى
+        </span>
+      );
+    }
+
     return (
       <span className={`${base} bg-yellow-50 text-yellow-700 border-yellow-200`}>
         <FiClock /> قيد الانتظار
       </span>
     );
   };
-
-  const fmtAmount = (v) => {
-    const n = Number(v);
-    if (!Number.isFinite(n)) return "-";
-    return new Intl.NumberFormat("en-US").format(n);
-  };
-
-  const getAmount = (r) =>
-    r.amount ??
-    r.totalAmount ??
-    r.total ??
-    r.grandTotal ??
-    r.netTotal ??
-    r.requestAmount ??
-    r.value ??
-    null;
 
   const EXPORT_PAGE_SIZE = 200;
 
@@ -611,8 +611,6 @@ export default function ReportsPage() {
 
       const q = smartPicked?.value ? String(smartPicked.value) : smartInput.trim();
       if (q) params.set("q", q);
-
-      params.set("source", dataSource?.value || "new");
 
       params.set(
         "company",
@@ -633,8 +631,8 @@ export default function ReportsPage() {
       );
 
       params.set("status", statusFilter?.value || "all");
-      params.set("currency", currencyFilter?.value || "all");
       params.set("pending", pendingFilter?.value || "all");
+      params.set("forms", formsParamValue());
 
       if (date.from) params.set("from", date.from);
       if (date.to) params.set("to", date.to);
@@ -650,17 +648,16 @@ export default function ReportsPage() {
       companyFilter,
       userFilter,
       statusFilter,
-      currencyFilter,
       pendingFilter,
       date,
       canViewAllReports,
-      dataSource,
+      formsParamValue,
     ]
   );
 
   const fetchAllForExport = useCallback(async () => {
     const firstParams = buildParamsExport(1);
-    const firstRes = await fetch(`/api/reports?${firstParams.toString()}`);
+    const firstRes = await fetch(`/api/reports/ex?${firstParams.toString()}`);
     const firstJson = await firstRes.json();
 
     if (!firstJson?.success) return { all: [], totalPages: 0 };
@@ -670,7 +667,7 @@ export default function ReportsPage() {
 
     for (let p = 2; p <= totalPages; p++) {
       const params = buildParamsExport(p);
-      const res = await fetch(`/api/reports?${params.toString()}`);
+      const res = await fetch(`/api/reports/ex?${params.toString()}`);
       const json = await res.json();
       if (json?.success && Array.isArray(json.data)) {
         all.push(...json.data);
@@ -687,53 +684,34 @@ export default function ReportsPage() {
       const { all } = await fetchAllForExport();
       if (!all || all.length === 0) return;
 
-      const rows = all.map((r) => ({
-        Company: r.companyKey || "-",
+      const sheetRows = all.map((r) => ({
+        Company: r.exCompanyKey || "-",
         Code: r.requestCode || "-",
-        Type: r.requestType || "-",
+        Form: r.formTitleAr || "-",
+        Customer: r.customerSummary || "-",
+        Unit: r.unitSummary || "-",
         Requester: r.createdBy || "-",
         Status: r.status || "-",
         "Pending With": Array.isArray(r.pendingWithNames)
           ? r.pendingWithNames.join(", ")
           : "-",
-        Department: r.department || "-",
-        Currency: r.currency || "-",
-        Amount: (() => {
-          const v = getAmount(r);
-          const n = Number(v);
-          return Number.isFinite(n) ? n : "";
-        })(),
-        Description: r.description || "-",
         Date: r.createdAt ? new Date(r.createdAt).toLocaleDateString("en-GB") : "-",
       }));
 
-      const ws = XLSX.utils.json_to_sheet(rows);
-
-      const amountCol = Object.keys(rows[0] || {}).indexOf("Amount");
-      if (amountCol >= 0) {
-        const range = XLSX.utils.decode_range(ws["!ref"] || "A1:A1");
-        for (let R = range.s.r + 1; R <= range.e.r; R++) {
-          const cellAddr = XLSX.utils.encode_cell({ r: R, c: amountCol });
-          if (ws[cellAddr] && typeof ws[cellAddr].v === "number") {
-            ws[cellAddr].z = "#,##0";
-          }
-        }
-      }
+      const ws = XLSX.utils.json_to_sheet(sheetRows);
 
       const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "Reports");
+      XLSX.utils.book_append_sheet(wb, ws, "Booking reports");
       XLSX.writeFile(
         wb,
-        `Requests_Reports_${dataSource?.value || "new"}_${
-          new Date().toISOString().slice(0, 10)
-        }.xlsx`
+        `Booking_reports_${new Date().toISOString().slice(0, 10)}.xlsx`
       );
     } catch (e) {
-      console.error("❌ Export all pages error:", e);
+      console.error("❌ EX export error:", e);
     } finally {
       setLoading(false);
     }
-  }, [fetchAllForExport, dataSource]);
+  }, [fetchAllForExport]);
 
   const Card = ({ icon: Icon, title, value }) => (
     <motion.div
@@ -774,69 +752,83 @@ export default function ReportsPage() {
       <motion.div
         initial={{ y: -10, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
-        className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-5"
+        className="mb-6 md:mb-7 space-y-5"
       >
-        <div className="text-right">
-          <h1 className="text-2xl md:text-3xl font-extrabold text-gray-900 flex items-center justify-end gap-3">
-            <FiFilter className="text-blue-600" /> تقارير الطلبات
+        <div className="mx-auto max-w-3xl text-center space-y-2.5 px-1">
+          <h1 className="flex flex-wrap items-center justify-center gap-2.5 md:gap-3 text-2xl md:text-3xl font-extrabold text-gray-900 tracking-tight">
+            <FiLayers className="text-blue-600 shrink-0 text-[1.35em] md:text-[1.1em]" aria-hidden />
+            <span>تقارير طلبات الحجز</span>
           </h1>
-          <p className="text-sm text-gray-600 mt-1 font-bold">
-            فلترة ومتابعة الطلبات حسب الصلاحيات.
+          <p className="text-sm md:text-[15px] text-gray-600 font-bold leading-relaxed">
+            استبدال حجز، تنازل، إلغاء، تحويل وحدة، مرفقات، والاستثناءات — حسب صلاحياتك.
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
-          <motion.button
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.99 }}
-            onClick={handleSearch}
-            disabled={loading}
-            className={`px-4 py-2.5 rounded-xl flex items-center gap-2 shadow-sm border font-extrabold text-[14px] ${
-              loading
-                ? "bg-gray-200 text-gray-500 border-gray-200 cursor-not-allowed"
-                : "bg-gray-900 text-white border-gray-900 hover:bg-black"
-            }`}
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <Link
+            href="/ex/ex-home"
+            className="group inline-flex w-fit items-center gap-2 rounded-2xl bg-white px-3 py-2 text-sm font-extrabold text-slate-800 shadow-sm ring-1 ring-slate-200/90 transition hover:bg-slate-50 hover:ring-slate-300 mx-auto sm:mx-0"
           >
-            {loading ? (
-              <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-            ) : (
-              <>
-                <FiSearch /> بحث
-              </>
-            )}
-          </motion.button>
+            <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-100 text-slate-700 ring-1 ring-slate-200/80 transition group-hover:bg-white">
+              <FiArrowLeft className="text-base" aria-hidden />
+            </span>
+            العودة للواجهة الرئيسية
+          </Link>
 
-          <motion.button
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.99 }}
-            onClick={handleReset}
-            disabled={loading}
-            className="px-4 py-2.5 rounded-xl bg-white/80 backdrop-blur border border-gray-200 text-gray-900 flex items-center gap-2 shadow-sm hover:bg-white font-extrabold text-[14px]"
-          >
-            <FiRotateCcw /> مسح
-          </motion.button>
+          <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-end">
+            <motion.button
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.99 }}
+              onClick={handleSearch}
+              disabled={loading}
+              className={`px-4 py-2.5 rounded-xl flex items-center gap-2 shadow-sm border font-extrabold text-[14px] ${
+                loading
+                  ? "bg-gray-200 text-gray-500 border-gray-200 cursor-not-allowed"
+                  : "bg-gray-900 text-white border-gray-900 hover:bg-black"
+              }`}
+            >
+              {loading ? (
+                <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <>
+                  <FiSearch /> بحث
+                </>
+              )}
+            </motion.button>
 
-          <motion.button
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.99 }}
-            onClick={handleExportExcel}
-            disabled={loading || requests.length === 0}
-            className={`px-4 py-2.5 rounded-xl flex items-center gap-2 shadow-sm border font-extrabold text-[14px] ${
-              loading || requests.length === 0
-                ? "bg-gray-200 text-gray-500 border-gray-200 cursor-not-allowed"
-                : "bg-white/80 backdrop-blur border-gray-200 text-gray-900 hover:bg-white"
-            }`}
-          >
-            <FiDownload /> Excel
-          </motion.button>
+            <motion.button
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.99 }}
+              onClick={handleReset}
+              disabled={loading}
+              className="px-4 py-2.5 rounded-xl bg-white/80 backdrop-blur border border-gray-200 text-gray-900 flex items-center gap-2 shadow-sm hover:bg-white font-extrabold text-[14px]"
+            >
+              <FiRotateCcw /> مسح
+            </motion.button>
+
+            <motion.button
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.99 }}
+              onClick={handleExportExcel}
+              disabled={loading || rows.length === 0}
+              className={`px-4 py-2.5 rounded-xl flex items-center gap-2 shadow-sm border font-extrabold text-[14px] ${
+                loading || rows.length === 0
+                  ? "bg-gray-200 text-gray-500 border-gray-200 cursor-not-allowed"
+                  : "bg-white/80 backdrop-blur border border-gray-200 text-gray-900 hover:bg-white"
+              }`}
+            >
+              <FiDownload /> Excel
+            </motion.button>
+          </div>
         </div>
       </motion.div>
 
-      <div className="grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-3 mb-5">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-3 mb-5">
         <Card icon={FiLayers} title="المجموع" value={stats.total} />
         <Card icon={FiCheckCircle} title="مقبول" value={stats.approved} />
         <Card icon={FiClock} title="قيد الانتظار" value={stats.pending} />
         <Card icon={FiXCircle} title="مرفوض" value={stats.rejected} />
+        <Card icon={FiFilter} title="ملغى" value={stats.cancelled} />
       </div>
 
       <motion.div
@@ -861,6 +853,21 @@ export default function ReportsPage() {
               placeholder="كل الشركات المسموحة"
               value={companyFilter}
               onChange={(v) => setCompanyFilter(v || [])}
+              styles={selectStyles}
+            />
+          </div>
+
+          <div className="text-right">
+            <label className="text-[13px] text-gray-700 mb-1 flex items-center justify-end gap-2 font-extrabold">
+              <FiLayers /> نوع الفورم
+            </label>
+            <Select
+              {...selectMenuProps}
+              options={formOptions}
+              isMulti
+              placeholder={FORM_FILTER_ALL_LABEL}
+              value={formFilter}
+              onChange={(v) => handleMultiAll(v, setFormFilter, FORM_FILTER_ALL_LABEL)}
               styles={selectStyles}
             />
           </div>
@@ -892,24 +899,6 @@ export default function ReportsPage() {
               value={statusFilter}
               onChange={(v) =>
                 setStatusFilter(v || { value: "all", label: "كل الحالات" })
-              }
-              styles={selectStyles}
-              isSearchable
-              components={noClearComponents}
-            />
-          </div>
-
-          <div className="text-right">
-            <label className="text-[13px] text-gray-700 mb-1 flex items-center justify-end gap-2 font-extrabold">
-              <FaMoneyBillWave /> العملة
-            </label>
-            <Select
-              {...selectMenuProps}
-              options={currencies}
-              placeholder="كل العملات"
-              value={currencyFilter}
-              onChange={(v) =>
-                setCurrencyFilter(v || { value: "all", label: "كل العملات" })
               }
               styles={selectStyles}
               isSearchable
@@ -959,29 +948,9 @@ export default function ReportsPage() {
             />
           </div>
 
-          {canViewNewOldData && (
-  <div className="text-right">
-    <label className="text-[13px] text-gray-700 mb-1 flex items-center justify-end gap-2 font-extrabold">
-      <FiLayers /> مصدر البيانات
-    </label>
-    <Select
-      {...selectMenuProps}
-      options={dataSourceOptions}
-      placeholder="اختر المصدر"
-      value={dataSource}
-      onChange={(v) =>
-        setDataSource(v || { value: "new", label: "new data" })
-      }
-      styles={selectStyles}
-      isSearchable={false}
-      components={noClearComponents}
-    />
-  </div>
-)}
-
           <div className="text-right lg:col-span-2">
             <label className="text-[13px] text-gray-700 mb-1 flex items-center justify-end gap-2 font-extrabold">
-              <FiSearch /> بحث موحّد (كود / وصف)
+              <FiSearch /> بحث موحّد (كود / عميل / وحدة)
             </label>
 
             <div className="relative flex gap-2">
@@ -995,9 +964,12 @@ export default function ReportsPage() {
                   setActiveIdx(-1);
                 }}
                 onKeyDown={onSmartKeyDown}
-                placeholder="اكتب كود أو وصف..."
+                placeholder="اكتب للاقتراحات الذكية..."
                 className="w-full rounded-xl px-4 py-2.5 border border-gray-200 bg-white text-gray-900 font-extrabold text-[16px] shadow-sm outline-none focus:border-gray-300"
               />
+              {suggestLoading ? (
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 border-2 border-gray-300 border-t-blue-600 rounded-full animate-spin" />
+              ) : null}
             </div>
           </div>
         </div>
@@ -1039,7 +1011,7 @@ export default function ReportsPage() {
             <div className="w-12 h-12 border-4 border-gray-200 border-t-blue-600 rounded-full animate-spin" />
             <p className="mt-4 text-gray-700 font-extrabold text-lg">جاري التحميل</p>
           </motion.div>
-        ) : requests.length > 0 ? (
+        ) : rows.length > 0 ? (
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
@@ -1052,15 +1024,13 @@ export default function ReportsPage() {
                   <tr className="bg-white/80 backdrop-blur border-b border-white/40">
                     {[
                       "الشركة",
-                      "كود الريكويست",
-                      "نوع الطلب",
+                      "كود الطلب",
+                      "الفورم",
+                      "العميل",
+                      "الوحدة",
                       "مقدم الطلب",
                       "الحالة",
                       "قيد الانتظار عند",
-                      "القسم",
-                      "العملة",
-                      "المبلغ",
-                      "الوصف",
                       "التاريخ",
                     ].map((h, i) => (
                       <th
@@ -1074,32 +1044,30 @@ export default function ReportsPage() {
                 </thead>
 
                 <tbody className="divide-y divide-white/30">
-                  {requests.map((r, idx) => (
+                  {rows.map((r, idx) => (
                     <motion.tr
-                      key={r._id}
+                      key={String(r._id)}
                       whileHover={{ backgroundColor: "rgba(2,132,199,0.08)" }}
                       transition={{ duration: 0.12 }}
-                      onClick={() =>
-                        window.open(
-                          `/requests/${r.companyKey}/${r._id}?source=${encodeURIComponent(
-                            dataSource?.value || "new"
-                          )}`,
-                          "_blank"
-                        )
-                      
-                      }
+                      onClick={() => openExDetail(r)}
                       className={`cursor-pointer ${
                         idx % 2 === 0 ? "bg-white/30" : "bg-white/20"
                       } hover:bg-white/45`}
                     >
                       <td className="px-6 py-4 text-right font-extrabold text-slate-900 whitespace-nowrap">
-                        {r.companyKey || "-"}
+                        {r.exCompanyKey || "-"}
                       </td>
                       <td className="px-6 py-4 text-right font-mono text-slate-900 whitespace-nowrap">
                         {r.requestCode || "-"}
                       </td>
                       <td className="px-6 py-4 text-right whitespace-nowrap">
-                        {r.requestType || "-"}
+                        {r.formTitleAr || "-"}
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <div className="max-w-[220px] truncate">{r.customerSummary || "-"}</div>
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <div className="max-w-[180px] truncate">{r.unitSummary || "-"}</div>
                       </td>
                       <td className="px-6 py-4 text-right whitespace-nowrap">
                         {r.createdBy || "-"}
@@ -1107,7 +1075,6 @@ export default function ReportsPage() {
                       <td className="px-6 py-4 text-right whitespace-nowrap">
                         {badge(r.status)}
                       </td>
-
                       <td className="px-6 py-4 text-right">
                         <div className="max-w-[240px] truncate">
                           {Array.isArray(r.pendingWithNames) &&
@@ -1116,27 +1083,6 @@ export default function ReportsPage() {
                             : "-"}
                         </div>
                       </td>
-
-                      <td className="px-6 py-4 text-right whitespace-nowrap">
-                        {r.department || "-"}
-                      </td>
-                      <td className="px-6 py-4 text-right whitespace-nowrap font-extrabold">
-                        {r.currency || "-"}
-                      </td>
-
-                      <td className="px-6 py-4 text-right font-extrabold text-slate-900 whitespace-nowrap">
-                        {(() => {
-                          const v = getAmount(r);
-                          return v == null ? "-" : fmtAmount(v);
-                        })()}
-                      </td>
-
-                      <td className="px-6 py-4 text-right">
-                        <div className="max-w-[320px] truncate text-slate-700">
-                          {r.description || "-"}
-                        </div>
-                      </td>
-
                       <td className="px-6 py-4 text-right whitespace-nowrap text-slate-700">
                         {r.createdAt
                           ? new Date(r.createdAt).toLocaleDateString("en-GB")
@@ -1170,7 +1116,7 @@ export default function ReportsPage() {
             animate={{ opacity: 1 }}
             className="text-center text-slate-700 font-extrabold py-16 rounded-3xl border border-white/30 bg-white/55 backdrop-blur-xl shadow-[0_18px_55px_-28px_rgba(0,0,0,0.25)] text-lg"
           >
-            No data (press Search).
+            لا توجد نتائج — اضغط بحث.
           </motion.div>
         )}
       </AnimatePresence>

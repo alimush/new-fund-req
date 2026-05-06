@@ -82,6 +82,8 @@ const PaymentPlanSchema = new Schema(
       type: [AttachmentSchema],
       default: [],
     },
+
+    requestCode: { type: String, trim: true, sparse: true, unique: true },
   },
   { timestamps: true }
 );

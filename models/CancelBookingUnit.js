@@ -22,10 +22,13 @@ const CancelBookingUnitSchema = new mongoose.Schema(
 
     attachments: { type: Array, default: [] },
 
+    requestCode: { type: String, trim: true, sparse: true, unique: true },
+
     workflow: {
       key: { type: String, default: "" },
       name: { type: String, default: "" },
       steps: { type: Array, default: [] },
+      mergeDocAttachmentsThroughStep: { type: Number, default: null },
     },
   },
   { timestamps: true }

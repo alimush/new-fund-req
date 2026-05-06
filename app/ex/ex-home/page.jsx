@@ -5,7 +5,7 @@ import { motion } from "framer-motion";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FiGrid } from "react-icons/fi";
+import { FiGrid, FiLayers } from "react-icons/fi";
 
 import { usePermissions } from "@/context/PermissionContext";
 import { PERMISSIONS } from "@/lib/permission";
@@ -70,6 +70,15 @@ export default function ExCompaniesHomePage() {
   const hasGeneralEX = useMemo(() => {
     const perms = Array.isArray(permissions) ? permissions : [];
     return perms.includes(PERMISSIONS.EX);
+  }, [permissions]);
+
+  const canOpenExReportsPage = useMemo(() => {
+    const perms = Array.isArray(permissions) ? permissions : [];
+    return (
+      perms.includes(PERMISSIONS.EX_REPORTS) ||
+      perms.includes(PERMISSIONS.VIEW_REPORTS) ||
+      perms.includes(PERMISSIONS.VIEW_ALL_REPORTS)
+    );
   }, [permissions]);
 
   /** حالياً: عرض بدور بغداد فقط ضمن شاشة الشركات */
@@ -171,6 +180,20 @@ export default function ExCompaniesHomePage() {
         >
           اختر الشركة ثم النموذج — حالياً متاحة بدور بغداد
         </motion.p>
+
+        {canOpenExReportsPage ? (
+          <div className="mt-4 flex justify-center">
+            <Link
+              href="/reports/ex"
+              className="group inline-flex items-center gap-2 rounded-2xl bg-white px-4 py-2.5 text-sm font-extrabold text-slate-800 shadow-sm ring-1 ring-slate-200/90 transition hover:bg-slate-50 hover:ring-slate-300"
+            >
+              <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-100 text-slate-700 ring-1 ring-slate-200/80 transition group-hover:bg-white">
+                <FiLayers className="text-lg" />
+              </span>
+              التقارير
+            </Link>
+          </div>
+        ) : null}
 
         <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
           <div className="rounded-2xl bg-slate-50/90 p-2.5 text-center ring-1 ring-slate-200 shadow-sm">

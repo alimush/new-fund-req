@@ -31,6 +31,12 @@ import StatusBadge from "@/components/StatusBadge";
 
 const norm = (v) => String(v ?? "").trim().toLowerCase();
 
+function displayPaymentPlanRef(r) {
+  if (r?.requestCode) return r.requestCode;
+  const id = String(r?._id || "");
+  return id.length > 10 ? `…${id.slice(-6)}` : id || "—";
+}
+
 function paginate(items, page, pageSize) {
   const list = Array.isArray(items) ? items : [];
   const total = list.length;
@@ -216,6 +222,7 @@ export default function PaymentPlansPage() {
     const out = [];
     for (const r of items || []) {
       const parts = [
+        r.requestCode,
         r.customer,
         r.unitNo,
         r.createdBy,
@@ -261,6 +268,7 @@ export default function PaymentPlansPage() {
 
     return (items || []).filter((r) => {
       const hay = [
+        r.requestCode,
         r.customer,
         r.unitNo,
         r.createdBy,
@@ -453,8 +461,11 @@ export default function PaymentPlansPage() {
               {r?.unitNo ? `Unit: ${r.unitNo}` : "-"}
             </div>
   
-            <div className="mt-3 text-[12px] font-mono font-semibold text-gray-700/85 transition-colors duration-300 group-hover:text-gray-800">
-              {r?._id}
+            <div className="mt-3 inline-flex w-fit max-w-full items-center gap-2 rounded-lg border border-indigo-400/25 bg-gradient-to-r from-indigo-600/[0.1] to-violet-600/[0.08] px-2.5 py-1.5 ring-1 ring-indigo-500/12">
+              <span className="text-[9px] font-black uppercase text-indigo-900/55 shrink-0">رمز</span>
+              <span className="truncate font-mono text-[11px] font-black tracking-tight text-gray-900">
+                {displayPaymentPlanRef(r)}
+              </span>
             </div>
           </div>
   

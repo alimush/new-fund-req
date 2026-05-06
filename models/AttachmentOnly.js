@@ -37,6 +37,8 @@ const Schema = new mongoose.Schema(
 
     attachments: { type: [FileSchema], default: [] },
 
+    requestCode: { type: String, trim: true, sparse: true, unique: true },
+
     status: { type: String, default: "" },
     currentStep: { type: Number, default: -1 },
 
@@ -47,6 +49,7 @@ const Schema = new mongoose.Schema(
       key: { type: String, default: "attachment-only" },
       name: { type: String, default: "" },
       steps: { type: [WorkflowStepSchema], default: [] },
+      mergeDocAttachmentsThroughStep: { type: Number, default: null },
     },
   },
   { timestamps: true }

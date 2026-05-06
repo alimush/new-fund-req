@@ -21,6 +21,7 @@ import {
   FiPaperclip,
   FiFileText,
   FiDownload,
+  FiHash,
 } from "react-icons/fi";
 import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { getExForm } from "@/lib/exForms/registry";
@@ -29,6 +30,12 @@ import { usePermissions } from "@/context/PermissionContext";
 import { PERMISSIONS } from "@/lib/permission";
 import { DEFAULT_EX_BOOKING_COMPANY } from "@/lib/exForms/exCompanies";
 const pct = (p) => ({ top: `${p.top}%`, left: `${p.left}%` });
+
+function displayExRef(doc) {
+  if (doc?.requestCode) return doc.requestCode;
+  const id = String(doc?._id || "");
+  return id.length > 10 ? `…${id.slice(-6)}` : id || "—";
+}
 
 async function waitForImages(node) {
   const imgs = Array.from(node.querySelectorAll("img"));
@@ -291,6 +298,43 @@ const downloadFile = async (file) => {
   setTimeout(() => URL.revokeObjectURL(a.href), 2500);
 };
 
+/**
+ * After operation_submit the server puts only the operation file on the next step.
+ * We stop merging doc.attachments into steps *after* that handoff so original request
+ * files stay scoped through the operation step only (still visible there via this merge).
+ */
+function computeRequestAttachmentsCutoffStepIdx(steps, docAttachments, workflowMeta) {
+  const fromServer = workflowMeta?.mergeDocAttachmentsThroughStep;
+  if (Number.isFinite(Number(fromServer))) return Number(fromServer);
+
+  const docs = Array.isArray(docAttachments) ? docAttachments.filter(Boolean) : [];
+  if (!docs.length || !Array.isArray(steps)) return Number.POSITIVE_INFINITY;
+
+  const docKeys = new Set(docs.map((f) => String(f?.key || "").trim()).filter(Boolean));
+  const docUrls = new Set(docs.map((f) => String(f?.url || "").trim()).filter(Boolean));
+
+  const isDocFile = (f) => {
+    const k = String(f?.key || "").trim();
+    const u = String(f?.url || "").trim();
+    return (k && docKeys.has(k)) || (u && docUrls.has(u));
+  };
+
+  for (let i = 0; i < steps.length - 1; i++) {
+    const cur = steps[i];
+    if (String(cur?.status || "").toLowerCase() !== "approved") continue;
+
+    const nextFiles = Array.isArray(steps[i + 1]?.tagAttachments)
+      ? steps[i + 1].tagAttachments.filter(Boolean)
+      : [];
+    if (!nextFiles.length) continue;
+
+    const allNonDoc = nextFiles.every((f) => !isDocFile(f));
+    if (allNonDoc) return i;
+  }
+
+  return Number.POSITIVE_INFINITY;
+}
+
 export default function ExDetailsPage() {
   const router = useRouter();
   const params = useParams();
@@ -379,6 +423,11 @@ const isOperationUser =
 
   const workflowSteps = useMemo(() => (Array.isArray(workflow?.steps) ? workflow.steps : []), [workflow]);
 
+  const requestAttachmentsCutoffStepIdx = useMemo(
+    () => computeRequestAttachmentsCutoffStepIdx(workflowSteps, doc?.attachments, workflow),
+    [workflowSteps, doc?.attachments, workflow]
+  );
+
   const buildPngs = async () => {
     const node = pageRef.current;
     if (!node) return [];
@@ -413,14 +462,14 @@ const isOperationUser =
     }
   };
 
-  const getStepFiles = (step) => {
+  const getStepFiles = (step, stepIdx) => {
     const files = [];
-  
+
     // مرفقات الستيب
     if (Array.isArray(step?.tagAttachments) && step.tagAttachments.length) {
       files.push(...step.tagAttachments.filter(Boolean));
     }
-  
+
     if (step?.tag && !files.some((f) => f?.url === step.tag)) {
       files.push({
         url: step.tag,
@@ -429,18 +478,24 @@ const isOperationUser =
         size: 0,
       });
     }
-  
-    // مرفقات الطلب الأصلي
-    if (Array.isArray(doc?.attachments) && doc.attachments.length) {
+
+    // مرفقات الطلب الأصلي — لا تُعرض على خطوات ما بعد تسليم الأوبريشن (انظر computeRequestAttachmentsCutoffStepIdx)
+    const includeRequestAttachments =
+      Number.isFinite(stepIdx) &&
+      Array.isArray(doc?.attachments) &&
+      doc.attachments.length > 0 &&
+      stepIdx <= requestAttachmentsCutoffStepIdx;
+
+    if (includeRequestAttachments) {
       for (const f of doc.attachments) {
         if (!f) continue;
-  
+
         const exists = files.some(
           (x) =>
             (x?.key && f?.key && String(x.key) === String(f.key)) ||
             (x?.url && f?.url && String(x.url) === String(f.url))
         );
-  
+
         if (!exists) {
           files.push({
             key: f?.key || "",
@@ -452,7 +507,7 @@ const isOperationUser =
         }
       }
     }
-  
+
     return files;
   };
  
@@ -655,6 +710,12 @@ const isOperationUser =
             </button>
           </div>
 
+          <div className="mt-4 inline-flex max-w-full items-center gap-2 rounded-xl border border-emerald-500/25 bg-gradient-to-r from-emerald-500/[0.11] to-teal-500/[0.07] px-3 py-2 ring-1 ring-emerald-600/12 backdrop-blur-sm">
+            <FiHash className="text-emerald-800/55 shrink-0 text-sm" />
+            <span className="text-[10px] font-black uppercase text-emerald-900/55 shrink-0">رمز الطلب</span>
+            <span className="break-all font-mono text-[13px] font-black text-gray-900">{displayExRef(doc)}</span>
+          </div>
+
           {planStatus === "pending" && !isAttachmentOnly && !cfg?.hidePrint && (
             <div className="mt-4 flex flex-wrap items-center gap-3">
               <button
@@ -690,7 +751,6 @@ const isOperationUser =
             </h2>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm text-gray-700">
-            <Info label="ID" value={doc?._id} icon={<FiInfo />} />
 <Info label="Status" value={doc?.status} icon={<FiInfo />} />
 <Info label="Created By" value={doc?.createdBy} icon={<FiUser />} />
 <Info
@@ -867,7 +927,7 @@ const isOperationUser =
 
         <div className="flex items-start gap-6 overflow-x-auto py-6 px-1">
           {workflowSteps.map((step, idx) => {
-            const stepFiles = getStepFiles(step);
+            const stepFiles = getStepFiles(step, idx);
             const planStatus = String(doc?.status || "").toLowerCase();
             const stepStatus = String(step?.status || "Pending");
             const stepStatusLower = stepStatus.toLowerCase();

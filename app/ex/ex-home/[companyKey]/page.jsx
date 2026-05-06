@@ -14,6 +14,7 @@ import {
   FiPaperclip,
   FiGrid,
   FiArrowLeft,
+  FiLayers,
 } from "react-icons/fi";
 
 import { usePermissions } from "@/context/PermissionContext";
@@ -73,6 +74,15 @@ export default function ExCompanyFormsPage() {
   const hasGeneralEX = useMemo(() => {
     const perms = Array.isArray(permissions) ? permissions : [];
     return perms.includes(PERMISSIONS.EX);
+  }, [permissions]);
+
+  const canOpenExReportsPage = useMemo(() => {
+    const perms = Array.isArray(permissions) ? permissions : [];
+    return (
+      perms.includes(PERMISSIONS.EX_REPORTS) ||
+      perms.includes(PERMISSIONS.VIEW_REPORTS) ||
+      perms.includes(PERMISSIONS.VIEW_ALL_REPORTS)
+    );
   }, [permissions]);
 
   const allowedCards = useMemo(() => {
@@ -208,14 +218,27 @@ export default function ExCompanyFormsPage() {
     <div className="min-h-screen px-6 pb-10 pt-8">
       <div className="mx-auto mb-5 max-w-6xl rounded-3xl border border-slate-200/70 bg-slate-100/70 px-4 py-4 shadow-xl backdrop-blur">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <button
-            type="button"
-            onClick={() => router.push("/ex/ex-home")}
-            className="inline-flex items-center gap-2 rounded-2xl bg-slate-50/90 px-3 py-2 text-sm font-extrabold text-gray-800 ring-1 ring-slate-200 shadow-sm transition hover:bg-white"
-          >
-            <FiArrowLeft />
-            رجوع
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => router.push("/ex/ex-home")}
+              className="inline-flex items-center gap-2 rounded-2xl bg-slate-50/90 px-3 py-2 text-sm font-extrabold text-gray-800 ring-1 ring-slate-200 shadow-sm transition hover:bg-white"
+            >
+              <FiArrowLeft />
+              رجوع
+            </button>
+            {canOpenExReportsPage ? (
+              <Link
+                href="/reports/ex"
+                className="group inline-flex items-center gap-2 rounded-2xl bg-white px-3 py-2 text-sm font-extrabold text-slate-800 shadow-sm ring-1 ring-slate-200/90 transition hover:bg-slate-50 hover:ring-slate-300"
+              >
+                <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-100 text-slate-700 ring-1 ring-slate-200/80 transition group-hover:bg-white">
+                  <FiLayers className="text-base" />
+                </span>
+                التقارير
+              </Link>
+            ) : null}
+          </div>
           <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-2xl bg-white/80 ring-1 ring-slate-200 shadow-sm">
             <Image
               src={companyDef.logo || "/12.png"}

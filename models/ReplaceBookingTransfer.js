@@ -30,6 +30,8 @@ const WorkflowSnapshotSchema = new mongoose.Schema(
     key: { type: String, default: "" },
     name: { type: String, default: "" },
     steps: { type: [StepSchema], default: [] },
+    /** Pending steps with index > this value do not receive merged doc.attachments (after operation_submit handoff). */
+    mergeDocAttachmentsThroughStep: { type: Number, default: null },
   },
   { _id: false }
 );
@@ -61,6 +63,8 @@ const ReplaceBookingTransferSchema = new mongoose.Schema(
     newUnitNo: { type: String, default: "" },
 
     attachments: { type: [AttachmentSchema], default: [] },
+
+    requestCode: { type: String, trim: true, sparse: true, unique: true },
   },
   { timestamps: true }
 );

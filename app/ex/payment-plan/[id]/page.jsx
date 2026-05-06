@@ -19,7 +19,10 @@ import {
   FiXCircle,
   FiSend,
   FiMessageSquare,
-  FiPaperclip, FiFileText, FiDownload 
+  FiPaperclip,
+  FiFileText,
+  FiDownload,
+  FiHash,
 } from "react-icons/fi";
 import { useRouter, useParams, useSearchParams } from "next/navigation";
 import StatusBadge from "@/components/StatusBadge";
@@ -28,6 +31,12 @@ import { PERMISSIONS } from "@/lib/permission";
 import { DEFAULT_EX_BOOKING_COMPANY } from "@/lib/exForms/exCompanies";
 /* =================== HARD KEY (مؤقتاً) =================== */
 const PAGE_KEY = "exceptions";
+
+function displayPaymentPlanRef(plan) {
+  if (plan?.requestCode) return plan.requestCode;
+  const id = String(plan?._id || "");
+  return id.length > 10 ? `…${id.slice(-6)}` : id || "—";
+}
 
 /* =================== نفس ثوابت الـ Generator =================== */
 const TEMPLATE_IMG = "/payment-plan-a4.jpg";
@@ -750,6 +759,14 @@ const isOperationUser =
             </button>
           </div>
 
+          <div className="mt-4 inline-flex max-w-full items-center gap-2 rounded-xl border border-emerald-500/25 bg-gradient-to-r from-emerald-500/[0.11] to-teal-500/[0.07] px-3 py-2 ring-1 ring-emerald-600/12 backdrop-blur-sm">
+            <FiHash className="text-emerald-800/55 shrink-0 text-sm" />
+            <span className="text-[10px] font-black uppercase text-emerald-900/55 shrink-0">رمز الطلب</span>
+            <span className="break-all font-mono text-[13px] font-black text-gray-900">
+              {displayPaymentPlanRef(plan)}
+            </span>
+          </div>
+
           {/* Action Buttons */}
           {!isLastStepUser && (
   <div className="mt-4 flex flex-wrap items-center gap-3">
@@ -788,10 +805,6 @@ const isOperationUser =
             </h2>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm text-gray-700">
-              <div className="rounded-2xl transition-all duration-300 hover:-translate-y-1 hover:bg-white/45 hover:shadow-[0_12px_30px_-15px_rgba(0,0,0,0.35)]">
-                <Info label="ID" value={plan?._id} icon={<FiInfo />} />
-              </div>
-
               <div className="rounded-2xl transition-all duration-300 hover:-translate-y-1 hover:bg-white/45 hover:shadow-[0_12px_30px_-15px_rgba(0,0,0,0.35)]">
                 <Info label="الزبون" value={plan?.customer} icon={<FiUser />} />
               </div>

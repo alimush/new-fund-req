@@ -27,6 +27,8 @@ const WaiverReservationSchema = new mongoose.Schema(
     createdBy: String,
     createdById: String,
     attachments: { type: Array, default: [] },
+
+    requestCode: { type: String, trim: true, sparse: true, unique: true },
   },
   { timestamps: true }
 );

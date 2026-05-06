@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePermissions } from "@/context/PermissionContext";
 import { useEffect, useMemo, useState } from "react";
-import { FiFileText, FiBarChart2, FiPieChart, FiGrid, FiZap } from "react-icons/fi";
+import { FiFileText, FiBarChart2, FiPieChart, FiGrid, FiZap, FiLayers } from "react-icons/fi";
 import { PERMISSIONS } from "@/lib/permission";
 import { COMPANIES } from "@/lib/voucher/companies";
 import { useRouter } from "next/navigation";
@@ -94,6 +94,19 @@ export default function HomePage() {
         isIcon: true,
         Icon: FiPieChart,
         color: "text-purple-600"
+      });
+    }
+
+    const canSeeExReports = permissions.includes(PERMISSIONS.EX_REPORTS);
+
+    if (canSeeExReports) {
+      result.push({
+        key: "ex-reports",
+        name: "تقارير طلبات الحجز",
+        href: "/reports/ex",
+        isIcon: true,
+        Icon: FiLayers,
+        color: "text-indigo-600",
       });
     }
 

@@ -95,6 +95,47 @@ function buildEmailAttachmentsFromRequest(doc) {
       path: encodeURI(String(f.url)),
     }));
 }
+
+/** Pending steps with index > this do not get doc.attachments merged (set when operation_submit advances). */
+function getMergeDocAttachmentsThroughStep(doc) {
+  const raw = doc?.workflow?.mergeDocAttachmentsThroughStep;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
+}
+
+function setMergeDocAttachmentsThroughStep(doc, completedOperationStepIndex) {
+  if (!doc.workflow) doc.workflow = {};
+  doc.workflow.mergeDocAttachmentsThroughStep = completedOperationStepIndex;
+}
+
+function maybeSyncRequestAttachmentsToStep(step, doc, stepIndex) {
+  const cutoff = getMergeDocAttachmentsThroughStep(doc);
+  if (cutoff !== null && Number(stepIndex) > cutoff) return;
+  syncRequestAttachmentsToStep(step, doc);
+}
+
+/** Final-approve email: files already on the step minus original request attachments (operation uploads only when handoff happened). */
+function buildFinalApproveEmailAttachmentsExcludeRequest(snapshotFiles, doc) {
+  const reqFiles = normalizeRequestAttachments(doc);
+  const docKeys = new Set(reqFiles.map((f) => String(f.key || "").trim()).filter(Boolean));
+  const docUrls = new Set(reqFiles.map((f) => String(f.url || "").trim()).filter(Boolean));
+
+  const out = [];
+  let idx = 0;
+  for (const f of Array.isArray(snapshotFiles) ? snapshotFiles : []) {
+    if (!f?.url) continue;
+    const k = String(f.key || "").trim();
+    const u = String(f.url || "").trim();
+    if ((k && docKeys.has(k)) || (u && docUrls.has(u))) continue;
+    idx++;
+    out.push({
+      filename: f?.name || `attachment-${idx}`,
+      path: encodeURI(String(f.url)),
+    });
+  }
+  return out;
+}
+
 function syncRequestAttachmentsToStep(step, doc) {
   if (!step) return;
 
@@ -212,7 +253,7 @@ async function ensureDocWorkflowStable(doc, forcedKey, fallbackKey) {
   doc.currentStep = newWorkflow.steps.length ? 0 : -1;
 
   if (doc.currentStep >= 0 && doc.workflow?.steps?.[doc.currentStep]) {
-    syncRequestAttachmentsToStep(doc.workflow.steps[doc.currentStep], doc);
+    maybeSyncRequestAttachmentsToStep(doc.workflow.steps[doc.currentStep], doc, doc.currentStep);
   }
 
   await doc.save();
@@ -389,7 +430,7 @@ export async function PUT(req, ctx) {
     const step = doc.workflow?.steps?.[stepIndex];
     if (!step) return NextResponse.json({ success: false, error: "Invalid workflow step" }, { status: 400 });
     if (step.status !== "Pending") return NextResponse.json({ success: false, error: "Step already processed" }, { status: 400 });
-    syncRequestAttachmentsToStep(step, doc);
+    maybeSyncRequestAttachmentsToStep(step, doc, stepIndex);
     // ✅ Authorization (خليته robust)
     const isAuthorized = (step.users || []).some((u) => getIdStr(u) === String(userIdObj));
     if (!isAuthorized) return NextResponse.json({ success: false, error: "Not authorized" }, { status: 403 });
@@ -457,7 +498,6 @@ const emailDocFields = {
     )}?key=${encodeURIComponent(pageKey)}`;
 
     let emailResult = null;
-    const requestEmailAttachments = buildEmailAttachmentsFromRequest(doc);
 
     const attachToStepIfNeeded = () => {
       if (clearTag) {
@@ -482,6 +522,10 @@ const emailDocFields = {
     };
     /* ================= APPROVE ================= */
     if (action === "approve" || action === "operation_submit") {
+      const snapshotAttachmentsForFinalEmail = JSON.parse(
+        JSON.stringify(Array.isArray(step.tagAttachments) ? step.tagAttachments : [])
+      );
+
       step.status = "Approved";
       step.actedBy = userIdObj;
       step.actedAt = new Date();
@@ -494,6 +538,11 @@ const emailDocFields = {
       if (stepIndex === lastIdx) {
         doc.status = "Approved";
         doc.currentStep = -1;
+
+        const hadOperationHandoff = getMergeDocAttachmentsThroughStep(doc) !== null;
+        const finalApproveAttachments = hadOperationHandoff
+          ? buildFinalApproveEmailAttachmentsExcludeRequest(snapshotAttachmentsForFinalEmail, doc)
+          : buildEmailAttachmentsFromRequest(doc);
 
         const extraEmails = await getFinalApproveEmails(pageKey);
 
@@ -521,51 +570,70 @@ const emailDocFields = {
               toEmails: [creatorUser.email],
               subject: `${pageKey} Approved | ${String(doc._id).slice(-6)}`,
               html: creatorHtml,
+              attachments: finalApproveAttachments,
             });
           } catch (e) {
             console.error("❌ Email send failed (creator final approve):", e?.message || e);
           }
         }
-        
-     // 2) للإيميلات الإضافية بعبارة "زميلنا"
-if (extraEmails.length > 0) {
-  const extraHtml = buildExWorkflowActionEmailHtml({
-    action: "approve",
-    planId: String(doc._id),
-    pageKey,
-    stepFrom: stepIndex,
-    stepTo: stepIndex,
-    note,
-    actorName,
-    greetingName: "زميلنا",
-    toUserName: "",
-    planUrl: docUrl,
-    showRoutingLine: false,
-    showDetailsButton: false,
-    docTitle,
-    docTypeAr,
-    ...emailDocFields,
-  });
 
-  try {
-    emailResult = await sendWorkflowEmail({
-      toEmails: extraEmails,
-      subject: `${pageKey} Approved | ${String(doc._id).slice(-6)}`,
-      html: extraHtml,
-      attachments: requestEmailAttachments,
-    });
-  } catch (e) {
-    console.error("❌ Email send failed (extra final approve):", e?.message || e);
-    emailResult = { error: e?.message || "email_failed" };
-  }
-}
+        // 2) للإيميلات الإضافية بعبارة "زميلنا"
+        if (extraEmails.length > 0) {
+          const extraHtml = buildExWorkflowActionEmailHtml({
+            action: "approve",
+            planId: String(doc._id),
+            pageKey,
+            stepFrom: stepIndex,
+            stepTo: stepIndex,
+            note,
+            actorName,
+            greetingName: "زميلنا",
+            toUserName: "",
+            planUrl: docUrl,
+            showRoutingLine: false,
+            showDetailsButton: false,
+            docTitle,
+            docTypeAr,
+            ...emailDocFields,
+          });
+
+          try {
+            emailResult = await sendWorkflowEmail({
+              toEmails: extraEmails,
+              subject: `${pageKey} Approved | ${String(doc._id).slice(-6)}`,
+              html: extraHtml,
+              attachments: finalApproveAttachments,
+            });
+          } catch (e) {
+            console.error("❌ Email send failed (extra final approve):", e?.message || e);
+            emailResult = { error: e?.message || "email_failed" };
+          }
+        }
       } else {
         // ✅ Next step
         const nextIndex = stepIndex + 1;
         doc.currentStep = nextIndex;
         resetStepToPendingClean(doc.workflow.steps[nextIndex]);
         doc.status = "Pending";
-        syncRequestAttachmentsToStep(doc.workflow.steps[nextIndex], doc);
+        const nextSt = doc.workflow.steps[nextIndex];
+
+        // الأوبريشن: للستيب الجاي فقط الملف اللي رفعوه هو؛ باقي المرفقات على الستيب الحالي فقط
+        if (action === "operation_submit" && attachmentMeta?.key) {
+          nextSt.tagAttachments = [
+            {
+              key: attachmentMeta.key,
+              url: attachmentMeta.url || "",
+              name: attachmentMeta.name || "",
+              type: attachmentMeta.type || "",
+              size: Number(attachmentMeta.size || 0),
+              uploadedAt: new Date(),
+            },
+          ];
+          nextSt.tag = attachmentMeta.url || attachmentMeta.key || "";
+          setMergeDocAttachmentsThroughStep(doc, stepIndex);
+        } else {
+          maybeSyncRequestAttachmentsToStep(nextSt, doc, nextIndex);
+        }
         const nextStepUsers = doc.workflow.steps[nextIndex]?.users || [];
         const nextUserIds = nextStepUsers.map(getIdStr).filter(Boolean);
 

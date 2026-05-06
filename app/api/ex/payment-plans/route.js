@@ -17,6 +17,7 @@ import {
   assertUserMayAccessExCompany,
   normalizeRequestedExCompany,
 } from "@/lib/exForms/exCompanyAccess.server";
+import { nextExRequestCode } from "@/lib/exRequestCode.server";
 
 export const runtime = "nodejs";
 
@@ -252,7 +253,24 @@ export async function POST(req) {
       currentStep: workflow?.steps?.length ? 0 : -1,
     };
 
-    const doc = await PaymentPlan.create(docBody);
+    let doc = null;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const requestCode = await nextExRequestCode(company, pageKey);
+      try {
+        doc = await PaymentPlan.create({ ...docBody, requestCode });
+        break;
+      } catch (e) {
+        if (e?.code === 11000 && String(e?.message || "").includes("requestCode")) continue;
+        throw e;
+      }
+    }
+
+    if (!doc) {
+      return NextResponse.json(
+        { success: false, error: "Could not generate unique requestCode, try again." },
+        { status: 409 }
+      );
+    }
 
     const savedDoc = await PaymentPlan.findById(doc._id)
       .populate({

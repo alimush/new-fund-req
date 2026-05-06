@@ -100,6 +100,12 @@ function pickFirst(obj, keys = []) {
   return "";
 }
 
+function displayExRef(r) {
+  if (r?.requestCode) return r.requestCode;
+  const id = String(r?._id || "");
+  return id.length > 10 ? `…${id.slice(-6)}` : id || "—";
+}
+
 function buildCardLines(r, cfg) {
   const fields = Array.isArray(cfg?.fields) ? cfg.fields : [];
 
@@ -119,6 +125,7 @@ function buildCardLines(r, cfg) {
     "__v",
     "updatedAt",
     "createdAt",
+    "requestCode",
   ]);
 
   // ✅ formatter بسيط للقيم
@@ -355,6 +362,7 @@ export default function ExListPage() {
 
     const fields = Array.isArray(cfg?.fields) ? cfg.fields.map((f) => f?.name).filter(Boolean) : [];
     const baseKeys = [
+      "requestCode",
       "customerName",
       "oldUnitNo",
       "newUnitNo",
@@ -448,6 +456,7 @@ export default function ExListPage() {
 
     const fields = Array.isArray(cfg?.fields) ? cfg.fields.map((f) => f?.name).filter(Boolean) : [];
     const baseKeys = [
+      "requestCode",
       "customerName",
       "oldUnitNo",
       "newUnitNo",
@@ -628,8 +637,11 @@ export default function ExListPage() {
               )}
             </div>
 
-            <div className="mt-3 text-[12px] font-mono font-semibold text-gray-700/85">
-              {r._id}
+            <div className="mt-3 inline-flex w-fit max-w-full items-center gap-2 rounded-lg border border-indigo-400/25 bg-gradient-to-r from-indigo-600/[0.1] to-violet-600/[0.08] px-2.5 py-1.5 ring-1 ring-indigo-500/12">
+              <span className="text-[9px] font-black uppercase text-indigo-900/55 shrink-0">رمز</span>
+              <span className="truncate font-mono text-[11px] font-black tracking-tight text-gray-900">
+                {displayExRef(r)}
+              </span>
             </div>
           </div>
 

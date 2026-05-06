@@ -20,6 +20,7 @@ import {
   normalizeRequestedExCompany,
 } from "@/lib/exForms/exCompanyAccess.server";
 import { sendWorkflowEmail, buildExWorkflowActionEmailHtml } from "@/lib/email/exWorkflowEmail";
+import { nextExRequestCode } from "@/lib/exRequestCode.server";
 
 import ReplaceBookingTransfer from "@/models/ReplaceBookingTransfer";
 import WaiverReservation from "@/models/WaiverReservation";
@@ -80,34 +81,34 @@ function getModelByPageKey(pageKey) {
     case "replace-booking-transfer":
       return {
         model: ReplaceBookingTransfer,
-        searchFields: ["customerName", "oldUnitNo", "newUnitNo", "salesEmp", "createdBy"],
+        searchFields: ["requestCode", "customerName", "oldUnitNo", "newUnitNo", "salesEmp", "createdBy"],
         sort: { createdAt: -1 },
       };
 
     case "waiver-reservation":
       return {
         model: WaiverReservation,
-        searchFields: ["customerName", "customerNo", "unitNo", "receiptNo", "transfereeName", "createdBy"],
+        searchFields: ["requestCode", "customerName", "customerNo", "unitNo", "receiptNo", "transfereeName", "createdBy"],
         sort: { createdAt: -1 },
       };
 
     case "cancel-booking-unit":
       return {
         model: CancelBookingUnit,
-        searchFields: ["customerName", "unitNo", "amountNumber", "phone", "createdBy"],
+        searchFields: ["requestCode", "customerName", "unitNo", "amountNumber", "phone", "createdBy"],
         sort: { createdAt: -1 },
       };
 
     case "unit-transfer":
       return {
         model: UnitTransfer,
-        searchFields: ["customerName", "oldUnitNo", "newUnitNo", "description", "dateDMY", "createdBy"],
+        searchFields: ["requestCode", "customerName", "oldUnitNo", "newUnitNo", "description", "dateDMY", "createdBy"],
         sort: { createdAt: -1 },
       };
       case "attachment-only":
         return {
           model: AttachmentOnly,
-          searchFields: ["title", "createdBy"],
+          searchFields: ["requestCode", "title", "createdBy"],
           sort: { createdAt: -1 },
         };
     default:
@@ -260,19 +261,38 @@ export async function POST(req, ctx) {
       return NextResponse.json({ success: false, error: pkGate.message }, { status: pkGate.status });
     }
 
-    const { exCompanyKey: _xc, company: _qc, ...bodyRest } = body;
+    const { exCompanyKey: _xc, company: _qc, requestCode: _ignoreClientCode, ...bodyRest } = body;
 
     const isAttachmentOnly = pageKey === "attachment-only";
-    const doc = await Model.create({
-      ...bodyRest,
-      pageKey,
-      exCompanyKey: company,
-      status: isAttachmentOnly ? "" : "Pending",
-currentStep: isAttachmentOnly ? -1 : 0,
-createdBy: auth.user?.username || body.createdBy || "User",
-createdById: String(auth.userId),
-      attachments: Array.isArray(body.attachments) ? body.attachments : [],
-    });
+
+    let doc = null;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const requestCode = await nextExRequestCode(company, pageKey);
+      try {
+        doc = await Model.create({
+          ...bodyRest,
+          pageKey,
+          exCompanyKey: company,
+          requestCode,
+          status: isAttachmentOnly ? "" : "Pending",
+          currentStep: isAttachmentOnly ? -1 : 0,
+          createdBy: auth.user?.username || body.createdBy || "User",
+          createdById: String(auth.userId),
+          attachments: Array.isArray(body.attachments) ? body.attachments : [],
+        });
+        break;
+      } catch (e) {
+        if (e?.code === 11000 && String(e?.message || "").includes("requestCode")) continue;
+        throw e;
+      }
+    }
+
+    if (!doc) {
+      return NextResponse.json(
+        { success: false, error: "Could not generate unique requestCode, try again." },
+        { status: 409 }
+      );
+    }
 
     await ensureDocWorkflowStable(doc, pageKey);
     if (pageKey === "attachment-only") {

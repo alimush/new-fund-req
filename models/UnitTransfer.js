@@ -30,6 +30,7 @@ const WorkflowSnapshotSchema = new mongoose.Schema(
     key: { type: String, default: "" },
     name: { type: String, default: "" },
     steps: { type: [StepSchema], default: [] },
+    mergeDocAttachmentsThroughStep: { type: Number, default: null },
   },
   { _id: false }
 );
@@ -56,6 +57,8 @@ const UnitTransferSchema = new mongoose.Schema(
     description: { type: String, default: "" },
 
     attachments: { type: [AttachmentSchema], default: [] },
+
+    requestCode: { type: String, trim: true, sparse: true, unique: true },
   },
   { timestamps: true }
 );
