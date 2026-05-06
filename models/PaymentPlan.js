@@ -73,6 +73,7 @@ const PaymentPlanSchema = new Schema(
     rows: { type: [RowSchema], default: [] },
 
     pageKey: { type: String, default: "exceptions" },
+    exCompanyKey: { type: String, default: "Badur-Baghdad", index: true },
     workflow: { type: WorkflowSchema, default: () => ({}) },
     status: { type: String, default: "Pending" },
     currentStep: { type: Number, default: -1 },

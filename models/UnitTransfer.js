@@ -37,6 +37,7 @@ const WorkflowSnapshotSchema = new mongoose.Schema(
 const UnitTransferSchema = new mongoose.Schema(
   {
     pageKey: { type: String, default: "unit-transfer", index: true },
+    exCompanyKey: { type: String, default: "Badur-Baghdad", index: true },
 
     status: { type: String, default: "Pending", index: true },
     currentStep: { type: Number, default: 0 },

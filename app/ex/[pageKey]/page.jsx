@@ -13,12 +13,17 @@ import {
   FiFilter,
   FiRefreshCcw,
 } from "react-icons/fi";
-import { useRouter, useParams } from "next/navigation";
+import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { getExForm } from "@/lib/exForms/registry";
 
 // ✅ Permissions
 import { usePermissions } from "@/context/PermissionContext";
 import { PERMISSIONS } from "@/lib/permission";
+import {
+  DEFAULT_EX_BOOKING_COMPANY,
+  isPageKeyAllowedForExCompany,
+  resolveExBookingCompaniesForUser,
+} from "@/lib/exForms/exCompanies";
 
 // ✅ نفس اللي تستخدمه بصفحة Requests
 import StatusBadge from "@/components/StatusBadge";
@@ -206,12 +211,15 @@ function buildCardLines(r, cfg) {
 export default function ExListPage() {
   const router = useRouter();
   const params = useParams();
+  const searchParams = useSearchParams();
 
   const pageKey = String(params?.pageKey || "").trim();
+  const company =
+    String(searchParams.get("company") || "").trim() || DEFAULT_EX_BOOKING_COMPANY;
   const cfg = useMemo(() => getExForm(pageKey), [pageKey]);
 
   // ✅ صلاحية Create
-  const { permissions, user } = usePermissions();
+  const { permissions, user, companies } = usePermissions();
   const canCreate =
     Array.isArray(permissions) && permissions.includes(PERMISSIONS.EX_Create_Request);
 
@@ -222,6 +230,17 @@ export default function ExListPage() {
   const currentUserId = useMemo(() => {
     return user?.id || "";
   }, [user]);
+
+  useEffect(() => {
+    if (!pageKey) return;
+    const userCompanies = Array.isArray(companies) ? companies : [];
+    const bookingCos = resolveExBookingCompaniesForUser(userCompanies);
+    const okCo = bookingCos.some((c) => c.key === company);
+    const okForm = isPageKeyAllowedForExCompany(company, pageKey);
+    if (!okCo || !okForm) {
+      router.replace("/ex/ex-home");
+    }
+  }, [pageKey, company, companies, router]);
 
   // ===== Data =====
   const [items, setItems] = useState([]);
@@ -309,7 +328,9 @@ export default function ExListPage() {
     if (!pageKey) return;
     setLoading(true);
     try {
-      const res = await fetch(`/api/ex/${encodeURIComponent(pageKey)}`, {
+      const qs = new URLSearchParams();
+      qs.set("company", company);
+      const res = await fetch(`/api/ex/${encodeURIComponent(pageKey)}?${qs.toString()}`, {
         cache: "no-store",
         credentials: "include",
       });
@@ -320,7 +341,7 @@ export default function ExListPage() {
     } finally {
       setLoading(false);
     }
-  }, [pageKey]);
+  }, [pageKey, company]);
 
   useEffect(() => {
     if (!pageKey) return;
@@ -557,7 +578,14 @@ export default function ExListPage() {
 
     return (
       <div
-        onClick={() => router.push(`/ex/${encodeURIComponent(r?.pageKey || pageKey)}/${r._id}`)}
+        onClick={() => {
+          const rowKey = String(r?.pageKey || pageKey).trim();
+          router.push(
+            `/ex/${encodeURIComponent(rowKey)}/${r._id}?key=${encodeURIComponent(
+              rowKey
+            )}&company=${encodeURIComponent(company)}`
+          );
+        }}
         className="
           group relative cursor-pointer rounded-2xl
           bg-white/60 backdrop-blur-xl
@@ -716,7 +744,9 @@ export default function ExListPage() {
           <div className="flex items-center gap-3">
             <button
               type="button"
-              onClick={() => router.push("/ex/ex-home")}
+              onClick={() =>
+                router.push(`/ex/ex-home/${encodeURIComponent(company)}`)
+              }
               className="inline-flex items-center gap-2 px-3 py-2 rounded-2xl bg-white/45 backdrop-blur-xl ring-1 ring-white/35 text-gray-900 shadow-sm hover:bg-white/60"
             >
               <FiArrowLeft /> Back
@@ -1061,7 +1091,9 @@ export default function ExListPage() {
           onClose={() => setOpenCreate(false)}
           formKey={pageKey}
           onCreate={async (payload) => {
-            const res = await fetch(`/api/ex/${encodeURIComponent(pageKey)}`, {
+            const qs = new URLSearchParams();
+            qs.set("company", company);
+            const res = await fetch(`/api/ex/${encodeURIComponent(pageKey)}?${qs.toString()}`, {
               method: "POST",
               credentials: "include",
               cache: "no-store",
@@ -1069,6 +1101,7 @@ export default function ExListPage() {
               body: JSON.stringify({
                 ...payload,
                 pageKey,
+                exCompanyKey: company,
                 createdBy: currentUsername || "User",
                 createdById: currentUserId || "",
               }),

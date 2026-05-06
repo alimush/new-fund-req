@@ -8,6 +8,7 @@ import { FiFileText, FiBarChart2, FiPieChart, FiGrid, FiZap } from "react-icons/
 import { PERMISSIONS } from "@/lib/permission";
 import { COMPANIES } from "@/lib/voucher/companies";
 import { useRouter } from "next/navigation";
+import { ExBadgeInlineSpinner } from "@/components/ex/ExBadgeInlineSpinner";
 
 const cards = [
   { key: "Al-Ghadeer", name: "طلبات الغدير", logo: "/الغدير.png" },
@@ -255,7 +256,13 @@ export default function HomePage() {
                   ring-2 ring-white/75
                 "
               >
-                {!countsLoaded ? "..." : totalPending > 99 ? "99+" : totalPending}
+                {!countsLoaded ? (
+                  <ExBadgeInlineSpinner />
+                ) : totalPending > 99 ? (
+                  "99+"
+                ) : (
+                  totalPending
+                )}
               </span>
             </div>
           </div>

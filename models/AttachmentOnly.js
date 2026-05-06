@@ -28,6 +28,7 @@ const WorkflowStepSchema = new mongoose.Schema(
 const Schema = new mongoose.Schema(
   {
     pageKey: { type: String, default: "attachment-only", index: true },
+    exCompanyKey: { type: String, default: "Badur-Baghdad", index: true },
 
     title: { type: String, default: "اتاج" },
 

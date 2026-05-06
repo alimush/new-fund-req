@@ -8,6 +8,15 @@ import ExWorkflow from "@/models/ExWorkflow";
 import User from "@/models/User";
 import Permissions from "@/models/Permissions";
 import { sendWorkflowEmail, buildExWorkflowActionEmailHtml } from "@/lib/email/exWorkflowEmail";
+import {
+  DEFAULT_EX_BOOKING_COMPANY,
+  exCompanyMongoFilter,
+} from "@/lib/exForms/exCompanies";
+import {
+  assertExCompanyAndPageKey,
+  assertUserMayAccessExCompany,
+  normalizeRequestedExCompany,
+} from "@/lib/exForms/exCompanyAccess.server";
 
 export const runtime = "nodejs";
 
@@ -139,7 +148,7 @@ async function buildWorkflowForKey(key) {
 
 /* ======================= GET ======================= */
 
-export async function GET() {
+export async function GET(req) {
   const auth = await requireExPermission();
   if (!auth.ok) {
     return NextResponse.json({ success: false, error: auth.message }, { status: auth.status });
@@ -148,7 +157,20 @@ export async function GET() {
   try {
     await dbConnect();
 
-    const data = await PaymentPlan.find()
+    const { searchParams } = new URL(req.url);
+    const company = normalizeRequestedExCompany(searchParams, null, DEFAULT_EX_BOOKING_COMPANY);
+
+    const mayCo = await assertUserMayAccessExCompany(auth.userId, company);
+    if (!mayCo.ok) {
+      return NextResponse.json({ success: false, error: mayCo.message }, { status: mayCo.status });
+    }
+
+    const pkGate = assertExCompanyAndPageKey(auth.userId, company, "exceptions");
+    if (!pkGate.ok) {
+      return NextResponse.json({ success: false, error: pkGate.message }, { status: pkGate.status });
+    }
+
+    const data = await PaymentPlan.find(exCompanyMongoFilter(company))
       .sort({ createdAt: -1 })
       .populate({
         path: "createdById",
@@ -178,6 +200,19 @@ export async function POST(req) {
   try {
     await dbConnect();
     const body = await req.json().catch(() => ({}));
+
+    const { searchParams } = new URL(req.url);
+    const company = normalizeRequestedExCompany(searchParams, body, DEFAULT_EX_BOOKING_COMPANY);
+
+    const mayCo = await assertUserMayAccessExCompany(auth.userId, company);
+    if (!mayCo.ok) {
+      return NextResponse.json({ success: false, error: mayCo.message }, { status: mayCo.status });
+    }
+
+    const pkGate = assertExCompanyAndPageKey(auth.userId, company, "exceptions");
+    if (!pkGate.ok) {
+      return NextResponse.json({ success: false, error: pkGate.message }, { status: pkGate.status });
+    }
 
     const createdBy = auth.user?.username || "User";
     const createdByIdObj = toObjId(auth.userId);
@@ -211,6 +246,7 @@ export async function POST(req) {
       createdById: createdByIdObj || null,
 
       pageKey,
+      exCompanyKey: company,
       workflow,
       status: "Pending",
       currentStep: workflow?.steps?.length ? 0 : -1,
@@ -253,7 +289,7 @@ export async function POST(req) {
 
           const planUrl = `${String(baseDomain).replace(/\/+$/, "")}/ex/payment-plans/${encodeURIComponent(
             String(doc._id)
-          )}?key=${encodeURIComponent(pageKey)}`;
+          )}?key=${encodeURIComponent(pageKey)}&company=${encodeURIComponent(company)}`;
 
           const html = buildExWorkflowActionEmailHtml({
             action: "created",

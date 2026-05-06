@@ -21,10 +21,11 @@ import {
   FiMessageSquare,
   FiPaperclip, FiFileText, FiDownload 
 } from "react-icons/fi";
-import { useRouter, useParams } from "next/navigation";
+import { useRouter, useParams, useSearchParams } from "next/navigation";
 import StatusBadge from "@/components/StatusBadge";
 import { usePermissions } from "@/context/PermissionContext";
 import { PERMISSIONS } from "@/lib/permission";
+import { DEFAULT_EX_BOOKING_COMPANY } from "@/lib/exForms/exCompanies";
 /* =================== HARD KEY (مؤقتاً) =================== */
 const PAGE_KEY = "exceptions";
 
@@ -308,7 +309,11 @@ const downloadFile = async (file) => {
 export default function PaymentPlanDetailsPage() {
   const router = useRouter();
   const params = useParams();
+  const searchParams = useSearchParams();
   const id = params?.id;
+
+  const company =
+    String(searchParams.get("company") || "").trim() || DEFAULT_EX_BOOKING_COMPANY;
 
   const [status, setStatus] = useState("loading");
   const [plan, setPlan] = useState(null);
@@ -351,10 +356,15 @@ const isOperationUser =
         setStatus("loading");
         setErrMsg("");
 
-        const res = await fetch(`/api/ex/payment-plans/${id}?key=${encodeURIComponent(PAGE_KEY)}`, {
+        const res = await fetch(
+          `/api/ex/payment-plans/${id}?key=${encodeURIComponent(
+            PAGE_KEY
+          )}&company=${encodeURIComponent(company)}`,
+          {
           cache: "no-store",
           credentials: "include",
-        });
+          }
+        );
         const j = await res.json().catch(() => ({}));
         if (!alive) return;
 
@@ -381,7 +391,7 @@ const isOperationUser =
     return () => {
       alive = false;
     };
-  }, [id]);
+  }, [id, company]);
 
   const cleanedRows = useMemo(() => {
     return (plan?.rows || [])
@@ -556,7 +566,9 @@ const isOperationUser =
       }
   
       const res = await fetch(
-        `/api/ex/payment-plans/${id}?key=${encodeURIComponent(PAGE_KEY)}`,
+        `/api/ex/payment-plans/${id}?key=${encodeURIComponent(
+          PAGE_KEY
+        )}&company=${encodeURIComponent(company)}`,
         {
           method: "PUT",
           credentials: "include",
@@ -566,6 +578,7 @@ const isOperationUser =
             note: noteText || "",
             stepIndex: actionModal.stepIndex,
             key: PAGE_KEY,
+            company,
             attachmentMeta,
             clearTag: false,
           }),
@@ -724,7 +737,13 @@ const isOperationUser =
             </h1>
 
             <button
-              onClick={() => router.back()}
+              onClick={() =>
+                router.push(
+                  `/ex/payment-plan?key=${encodeURIComponent(PAGE_KEY)}&company=${encodeURIComponent(
+                    company
+                  )}`
+                )
+              }
               className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gray-800 text-white hover:bg-gray-900 shadow"
             >
               <FiArrowLeft /> Back

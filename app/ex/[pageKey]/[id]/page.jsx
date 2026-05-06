@@ -22,11 +22,12 @@ import {
   FiFileText,
   FiDownload,
 } from "react-icons/fi";
-import { useRouter, useParams } from "next/navigation";
+import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { getExForm } from "@/lib/exForms/registry";
 import StatusBadge from "@/components/StatusBadge";
 import { usePermissions } from "@/context/PermissionContext";
 import { PERMISSIONS } from "@/lib/permission";
+import { DEFAULT_EX_BOOKING_COMPANY } from "@/lib/exForms/exCompanies";
 const pct = (p) => ({ top: `${p.top}%`, left: `${p.left}%` });
 
 async function waitForImages(node) {
@@ -132,7 +133,19 @@ function Section({ title, icon, children }) {
   );
 }
 
-function CommentModal({ open, title, subtitle, submitLabel, onClose, onSubmit, loading }) {
+function CommentModal({
+  open,
+  title,
+  subtitle,
+  submitLabel,
+  onClose,
+  onSubmit,
+  loading,
+  isOperation = false,
+  attachmentFile = null,
+  onAttachmentChange,
+  uploading = false,
+}) {
   const [comment, setComment] = useState("");
 
   useEffect(() => {
@@ -177,17 +190,42 @@ function CommentModal({ open, title, subtitle, submitLabel, onClose, onSubmit, l
                 {subtitle || "Are you sure you want to perform this action?"}
               </div>
 
-              <div className="space-y-2">
-                <div className="text-xs font-bold text-gray-700 text-right">أضف تعليق (اختياري)</div>
-                <textarea
-                  className="w-full p-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-black outline-none transition text-sm text-right"
-                  rows={3}
-                  dir="rtl"
-                  placeholder="اكتب تعليقك هنا..."
-                  value={comment}
-                  onChange={(e) => setComment(e.target.value)}
-                  disabled={loading}
-                />
+              <div className="space-y-4">
+                {isOperation && (
+                  <div className="space-y-3">
+                    <div className="text-sm font-bold text-gray-800 text-right">ارفع مرفق الأوبريشن</div>
+
+                    <label className="flex cursor-pointer items-center justify-center gap-2 rounded-2xl border border-dashed border-gray-300 bg-gray-50 px-4 py-3 transition hover:bg-gray-100">
+                      <FiPaperclip />
+                      <span className="text-sm font-semibold text-gray-700">
+                        {attachmentFile ? attachmentFile.name : "اختيار ملف"}
+                      </span>
+
+                      <input
+                        type="file"
+                        className="hidden"
+                        onChange={(e) => onAttachmentChange?.(e.target.files?.[0] || null)}
+                      />
+                    </label>
+
+                    {attachmentFile && (
+                      <div className="break-all text-center text-xs text-gray-500">{attachmentFile.name}</div>
+                    )}
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <div className="text-xs font-bold text-gray-700 text-right">أضف تعليق (اختياري)</div>
+                  <textarea
+                    className="w-full rounded-2xl border border-gray-200 p-3 text-sm outline-none transition focus:ring-2 focus:ring-black text-right"
+                    rows={3}
+                    dir="rtl"
+                    placeholder="اكتب تعليقك هنا..."
+                    value={comment}
+                    onChange={(e) => setComment(e.target.value)}
+                    disabled={loading || uploading}
+                  />
+                </div>
               </div>
             </div>
 
@@ -203,12 +241,12 @@ function CommentModal({ open, title, subtitle, submitLabel, onClose, onSubmit, l
 
               <button
                 onClick={() => onSubmit(comment)}
-                disabled={loading}
-                className="px-4 py-2 rounded-xl font-bold bg-black text-white hover:bg-gray-900 flex items-center gap-2 disabled:opacity-60"
+                disabled={loading || uploading || (isOperation && !attachmentFile)}
+                className="flex items-center gap-2 rounded-xl bg-black px-4 py-2 font-bold text-white hover:bg-gray-900 disabled:opacity-60"
               >
-                {loading ? (
+                {loading || uploading ? (
                   <>
-                    <span className="w-4 h-4 border-2 border-white/70 border-t-transparent rounded-full animate-spin"></span>
+                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/70 border-t-transparent"></span>
                     Processing
                   </>
                 ) : (
@@ -256,6 +294,7 @@ const downloadFile = async (file) => {
 export default function ExDetailsPage() {
   const router = useRouter();
   const params = useParams();
+  const searchParams = useSearchParams();
   const id = params?.id;
   const { permissions } = usePermissions();
 
@@ -263,6 +302,8 @@ const isOperationUser =
   Array.isArray(permissions) && permissions.includes(PERMISSIONS.OPERATION);
 
   const pageKey = String(params?.pageKey || "").trim();
+  const company =
+    String(searchParams.get("company") || "").trim() || DEFAULT_EX_BOOKING_COMPANY;
   const cfg = useMemo(() => getExForm(pageKey), [pageKey]);
 
   const TEMPLATE_IMG = cfg?.template?.url || cfg?.template?.img || "/fallback-a4.jpg";
@@ -283,6 +324,8 @@ const isOperationUser =
   const [building, setBuilding] = useState(false);
 
   const [actionModal, setActionModal] = useState({ open: false, action: null, stepIndex: null });
+  const [opAttachment, setOpAttachment] = useState(null);
+  const [uploadingOpAttachment, setUploadingOpAttachment] = useState(false);
 
   const pageRef = useRef(null);
 
@@ -296,10 +339,15 @@ const isOperationUser =
         setStatus("loading");
         setErrMsg("");
 
-        const res = await fetch(`/api/ex/${encodeURIComponent(pageKey)}/${id}?key=${encodeURIComponent(pageKey)}`, {
+        const res = await fetch(
+          `/api/ex/${encodeURIComponent(pageKey)}/${id}?key=${encodeURIComponent(
+            pageKey
+          )}&company=${encodeURIComponent(company)}`,
+          {
           cache: "no-store",
           credentials: "include",
-        });
+          }
+        );
 
         const j = await res.json().catch(() => ({}));
         if (!alive) return;
@@ -327,7 +375,7 @@ const isOperationUser =
     return () => {
       alive = false;
     };
-  }, [id, pageKey]);
+  }, [id, pageKey, company]);
 
   const workflowSteps = useMemo(() => (Array.isArray(workflow?.steps) ? workflow.steps : []), [workflow]);
 
@@ -409,20 +457,62 @@ const isOperationUser =
   };
  
 
-  const submitAction = async (payload) => {
+  const submitAction = async (noteTextRaw) => {
     if (!actionModal?.action || actionModal?.stepIndex == null) return;
 
-    let noteText = "";
-    if (typeof payload === "string") {
-      noteText = payload;
-    } else if (payload && typeof payload === "object") {
-      noteText = payload.comment || "";
-    }
+    const noteText = typeof noteTextRaw === "string" ? noteTextRaw : "";
 
     setActing(true);
     try {
+      let attachmentMeta = null;
+
+      if (actionModal.action === "operation_submit" && opAttachment) {
+        setUploadingOpAttachment(true);
+        try {
+          const presignRes = await fetch("/api/upload/presign", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              fileName: opAttachment.name,
+              fileType: opAttachment.type,
+              prefix: `ex-operation-${pageKey}`,
+            }),
+          });
+
+          const presignJson = await presignRes.json();
+
+          if (!presignRes.ok || !presignJson?.url || !presignJson?.key) {
+            throw new Error(presignJson?.error || "Failed to get upload URL");
+          }
+
+          const uploadRes = await fetch(presignJson.url, {
+            method: "PUT",
+            body: opAttachment,
+            headers: {
+              "Content-Type": opAttachment.type || "application/octet-stream",
+            },
+          });
+
+          if (!uploadRes.ok) {
+            throw new Error("Failed to upload operation attachment");
+          }
+
+          attachmentMeta = {
+            key: presignJson.key,
+            url: presignJson.getUrl || "",
+            name: opAttachment.name || "",
+            type: opAttachment.type || "",
+            size: opAttachment.size || 0,
+          };
+        } finally {
+          setUploadingOpAttachment(false);
+        }
+      }
+
       const res = await fetch(
-        `/api/ex/${encodeURIComponent(pageKey)}/${id}?key=${encodeURIComponent(pageKey)}`,
+        `/api/ex/${encodeURIComponent(pageKey)}/${id}?key=${encodeURIComponent(
+          pageKey
+        )}&company=${encodeURIComponent(company)}`,
         {
           method: "PUT",
           credentials: "include",
@@ -432,12 +522,13 @@ const isOperationUser =
             note: noteText || "",
             stepIndex: actionModal.stepIndex,
             key: pageKey,
-            attachmentMeta: null,
+            company,
+            attachmentMeta,
             clearTag: false,
           }),
         }
       );
-  
+
       const j = await res.json().catch(() => ({}));
       if (!res.ok || !j?.success) {
         if (res.status === 409) {
@@ -448,10 +539,11 @@ const isOperationUser =
         alert(j?.error || "Action failed");
         return;
       }
-  
+
       setDoc(j.data);
       setWorkflow(j.workflow ?? j.data?.workflow ?? null);
       setActionModal({ open: false, action: null, stepIndex: null });
+      setOpAttachment(null);
     } catch (e) {
       alert(e?.message || "Submit failed");
     } finally {
@@ -1150,26 +1242,32 @@ const isOperationUser =
         </AnimatePresence>
 
         <CommentModal
-  open={!!actionModal?.open}
-  title={
-    actionModal?.action === "approve"
-      ? "Approve Step"
-      : actionModal?.action === "reject"
-      ? "Reject Step"
-      : "Submit Step"
-  }
-  subtitle={
-    actionModal?.action === "operation_submit"
-      ? "سيتم إرسال الخطوة والانتقال للخطوة التالية"
-      : "Submit"
-  }
-  submitLabel="Submit"
-  onClose={() =>
-    acting ? null : setActionModal({ open: false, action: null, stepIndex: null })
-  }
-  onSubmit={submitAction}
-  loading={acting}
-/>
+          open={!!actionModal?.open}
+          title={
+            actionModal?.action === "approve"
+              ? "Approve Step"
+              : actionModal?.action === "reject"
+              ? "Reject Step"
+              : "Submit Step"
+          }
+          subtitle={
+            actionModal?.action === "operation_submit"
+              ? "ارفع مرفق الأوبريشن ثم أرسل للخطوة التالية"
+              : "Submit"
+          }
+          submitLabel="Submit"
+          onClose={() => {
+            if (acting) return;
+            setActionModal({ open: false, action: null, stepIndex: null });
+            setOpAttachment(null);
+          }}
+          onSubmit={submitAction}
+          loading={acting}
+          uploading={uploadingOpAttachment}
+          isOperation={actionModal?.action === "operation_submit"}
+          attachmentFile={opAttachment}
+          onAttachmentChange={setOpAttachment}
+        />
       </div>
     </motion.div>
   );

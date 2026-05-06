@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 const CancelBookingUnitSchema = new mongoose.Schema(
   {
     pageKey: { type: String, default: "cancel-booking-unit", index: true },
+    exCompanyKey: { type: String, default: "Badur-Baghdad", index: true },
 
     // بيانات الفورمة
     customerName: { type: String, default: "" },

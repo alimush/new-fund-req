@@ -15,6 +15,14 @@ import UnitTransfer from "@/models/UnitTransfer";
 import AttachmentOnly from "@/models/AttachmentOnly";
 import { sendWorkflowEmail, buildExWorkflowActionEmailHtml } from "@/lib/email/exWorkflowEmail";
 import { getExForm } from "@/lib/exForms/registry";
+import {
+  DEFAULT_EX_BOOKING_COMPANY,
+  documentMatchesExCompany,
+} from "@/lib/exForms/exCompanies";
+import {
+  assertUserMayAccessExCompany,
+  normalizeRequestedExCompany,
+} from "@/lib/exForms/exCompanyAccess.server";
 export const runtime = "nodejs";
 
 /* ================= Helpers (مثل payment-plan) ================= */
@@ -229,6 +237,7 @@ export async function GET(req, ctx) {
 
     const { searchParams } = new URL(req.url);
     const keyFromQuery = String(searchParams.get("key") || "").trim();
+    const company = normalizeRequestedExCompany(searchParams, null, DEFAULT_EX_BOOKING_COMPANY);
 
     const cookieStore = await awaitMaybe(cookies());
     const userId = cookieStore.get("userId")?.value;
@@ -239,6 +248,11 @@ export async function GET(req, ctx) {
     const currentUser = await User.findById(userIdObj).select("_id username name email arabicName").lean();
     if (!currentUser) return NextResponse.json({ success: false, error: "User not found" }, { status: 401 });
 
+    const mayCo = await assertUserMayAccessExCompany(String(userIdObj), company);
+    if (!mayCo.ok) {
+      return NextResponse.json({ success: false, error: mayCo.message }, { status: mayCo.status });
+    }
+
     let doc = await Model.findById(id);
     if (!doc) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
 
@@ -248,6 +262,13 @@ export async function GET(req, ctx) {
     .populate({ path: "workflow.steps.users", model: "User", select: "username name email arabicName", strictPopulate: false })
     .populate({ path: "workflow.steps.actedBy", model: "User", select: "username name email arabicName", strictPopulate: false })
       .lean();
+
+    if (!documentMatchesExCompany(doc2, company)) {
+      return NextResponse.json(
+        { success: false, error: "Document does not belong to this company" },
+        { status: 404 }
+      );
+    }
 
     return NextResponse.json({
       success: true,
@@ -298,6 +319,7 @@ export async function PUT(req, ctx) {
     const keyFromQuery = String(searchParams.get("key") || "").trim();
 
     const body = await req.json().catch(() => ({}));
+    const company = normalizeRequestedExCompany(searchParams, body, DEFAULT_EX_BOOKING_COMPANY);
     const {
       action,
       note,
@@ -326,11 +348,24 @@ export async function PUT(req, ctx) {
     if (!currentUser) return NextResponse.json({ success: false, error: "User not found" }, { status: 401 });
     const currentUserPerms = await getUserPermissions(userIdObj);
     const isOperationUser = currentUserPerms.includes(PERMISSIONS.OPERATION);
+
+    const mayCo = await assertUserMayAccessExCompany(String(userIdObj), company);
+    if (!mayCo.ok) {
+      return NextResponse.json({ success: false, error: mayCo.message }, { status: mayCo.status });
+    }
+
     // ===== Load doc =====
     let doc = await Model.findById(id);
     if (!doc) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
 
     doc = await ensureDocWorkflowStable(doc, forcedKey, pageKeyParam);
+
+    if (!documentMatchesExCompany(doc, company)) {
+      return NextResponse.json(
+        { success: false, error: "Document does not belong to this company" },
+        { status: 404 }
+      );
+    }
 
     if (doc.currentStep === -1) {
       return NextResponse.json({ success: false, error: "Request is closed" }, { status: 400 });
@@ -358,6 +393,21 @@ export async function PUT(req, ctx) {
     // ✅ Authorization (خليته robust)
     const isAuthorized = (step.users || []).some((u) => getIdStr(u) === String(userIdObj));
     if (!isAuthorized) return NextResponse.json({ success: false, error: "Not authorized" }, { status: 403 });
+
+    if (action === "operation_submit" && !isOperationUser) {
+      return NextResponse.json(
+        { success: false, error: "Operation submit requires OPERATION permission" },
+        { status: 403 }
+      );
+    }
+
+    if (isOperationUser && action === "operation_submit" && !attachmentMeta?.key) {
+      return NextResponse.json(
+        { success: false, error: "Operation attachment is required" },
+        { status: 400 }
+      );
+    }
+
     // ===== creator (مرن) =====
     let creatorUser = null;
 

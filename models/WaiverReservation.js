@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 const WaiverReservationSchema = new mongoose.Schema(
   {
     pageKey: { type: String, index: true },
+    exCompanyKey: { type: String, default: "Badur-Baghdad", index: true },
 
     customerName: String,
     customerNo: String,

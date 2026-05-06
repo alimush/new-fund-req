@@ -10,6 +10,14 @@ import ExWorkflow from "@/models/ExWorkflow";
 import User from "@/models/User";
 
 import { sendWorkflowEmail, buildExWorkflowActionEmailHtml } from "@/lib/email/exWorkflowEmail";
+import {
+  DEFAULT_EX_BOOKING_COMPANY,
+  documentMatchesExCompany,
+} from "@/lib/exForms/exCompanies";
+import {
+  assertUserMayAccessExCompany,
+  normalizeRequestedExCompany,
+} from "@/lib/exForms/exCompanyAccess.server";
 
 export const runtime = "nodejs";
 
@@ -259,6 +267,7 @@ export async function GET(req, ctx) {
 
     const { searchParams } = new URL(req.url);
     const key = String(searchParams.get("key") || "").trim();
+    const company = normalizeRequestedExCompany(searchParams, null, DEFAULT_EX_BOOKING_COMPANY);
 
     const cookieStore = await awaitMaybe(cookies());
     const userId = cookieStore.get("userId")?.value;
@@ -271,6 +280,11 @@ export async function GET(req, ctx) {
 
     if (!currentUser) {
       return NextResponse.json({ success: false, error: "User not found" }, { status: 401 });
+    }
+
+    const mayCo = await assertUserMayAccessExCompany(String(userId), company);
+    if (!mayCo.ok) {
+      return NextResponse.json({ success: false, error: mayCo.message }, { status: mayCo.status });
     }
 
     let plan = await PaymentPlan.findById(id);
@@ -294,6 +308,13 @@ export async function GET(req, ctx) {
       strictPopulate: false,
     })
       .lean();
+
+    if (!documentMatchesExCompany(plan2, company)) {
+      return NextResponse.json(
+        { success: false, error: "Document does not belong to this company" },
+        { status: 404 }
+      );
+    }
 
     return NextResponse.json({
       success: true,
@@ -328,6 +349,7 @@ export async function PUT(req, ctx) {
     const keyFromQuery = String(searchParams.get("key") || "").trim();
 
     const body = await req.json().catch(() => ({}));
+    const company = normalizeRequestedExCompany(searchParams, body, DEFAULT_EX_BOOKING_COMPANY);
     const {
       action,
       note,
@@ -364,12 +386,24 @@ export async function PUT(req, ctx) {
     const currentUserPerms = await getUserPermissions(userIdObj);
     const isOperationUser = currentUserPerms.includes(PERMISSIONS.OPERATION);
 
+    const mayCo = await assertUserMayAccessExCompany(String(userIdObj), company);
+    if (!mayCo.ok) {
+      return NextResponse.json({ success: false, error: mayCo.message }, { status: mayCo.status });
+    }
+
     let plan = await PaymentPlan.findById(id);
     if (!plan) {
       return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
     }
 
     plan = await ensurePlanWorkflowStable(plan, forcedKey);
+
+    if (!documentMatchesExCompany(plan, company)) {
+      return NextResponse.json(
+        { success: false, error: "Document does not belong to this company" },
+        { status: 404 }
+      );
+    }
 
     if (plan.currentStep === -1) {
       return NextResponse.json({ success: false, error: "Request is closed" }, { status: 400 });
@@ -433,7 +467,7 @@ export async function PUT(req, ctx) {
     };
     const planUrl = `${String(baseDomain).replace(/\/+$/, "")}/ex/payment-plans/${encodeURIComponent(
       String(plan._id)
-    )}?key=${encodeURIComponent(pageKey)}`;
+    )}?key=${encodeURIComponent(pageKey)}&company=${encodeURIComponent(company)}`;
 
     let emailResult = null;
 

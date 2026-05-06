@@ -37,6 +37,7 @@ const WorkflowSnapshotSchema = new mongoose.Schema(
 const ReplaceBookingTransferSchema = new mongoose.Schema(
   {
     pageKey: { type: String, default: "replace-booking-transfer", index: true },
+    exCompanyKey: { type: String, default: "Badur-Baghdad", index: true },
 
     status: { type: String, default: "Pending", index: true },
     currentStep: { type: Number, default: 0 },

@@ -10,6 +10,15 @@ import Permissions from "@/models/Permissions";
 import User from "@/models/User";
 
 import { getExForm } from "@/lib/exForms/registry";
+import {
+  DEFAULT_EX_BOOKING_COMPANY,
+  exCompanyMongoFilter,
+} from "@/lib/exForms/exCompanies";
+import {
+  assertExCompanyAndPageKey,
+  assertUserMayAccessExCompany,
+  normalizeRequestedExCompany,
+} from "@/lib/exForms/exCompanyAccess.server";
 import { sendWorkflowEmail, buildExWorkflowActionEmailHtml } from "@/lib/email/exWorkflowEmail";
 
 import ReplaceBookingTransfer from "@/models/ReplaceBookingTransfer";
@@ -184,19 +193,29 @@ export async function GET(req, ctx) {
 
     const { searchParams } = new URL(req.url);
     const qRaw = String(searchParams.get("q") || "").trim();
+    const company = normalizeRequestedExCompany(searchParams, null, DEFAULT_EX_BOOKING_COMPANY);
+
+    const mayCo = await assertUserMayAccessExCompany(auth.userId, company);
+    if (!mayCo.ok) {
+      return NextResponse.json({ success: false, error: mayCo.message }, { status: mayCo.status });
+    }
+
+    const pkGate = assertExCompanyAndPageKey(auth.userId, company, pageKey);
+    if (!pkGate.ok) {
+      return NextResponse.json({ success: false, error: pkGate.message }, { status: pkGate.status });
+    }
 
     const searchFields = reg.searchFields || [];
 
-    const filter = {
-      pageKey,
-      ...(qRaw
-        ? {
-            $or: searchFields.map((f) => ({
-              [f]: { $regex: escapeRegExp(qRaw), $options: "i" },
-            })),
-          }
-        : {}),
-    };
+    const filterParts = [{ pageKey }, exCompanyMongoFilter(company)];
+    if (qRaw) {
+      filterParts.push({
+        $or: searchFields.map((f) => ({
+          [f]: { $regex: escapeRegExp(qRaw), $options: "i" },
+        })),
+      });
+    }
+    const filter = filterParts.length === 1 ? filterParts[0] : { $and: filterParts };
 
     const list = await Model.find(filter).sort(reg.sort || { createdAt: -1 }).lean();
 
@@ -228,10 +247,26 @@ export async function POST(req, ctx) {
 
     const Model = reg.model;
     const body = await req.json().catch(() => ({}));
+    const { searchParams } = new URL(req.url);
+    const company = normalizeRequestedExCompany(searchParams, body, DEFAULT_EX_BOOKING_COMPANY);
+
+    const mayCo = await assertUserMayAccessExCompany(auth.userId, company);
+    if (!mayCo.ok) {
+      return NextResponse.json({ success: false, error: mayCo.message }, { status: mayCo.status });
+    }
+
+    const pkGate = assertExCompanyAndPageKey(auth.userId, company, pageKey);
+    if (!pkGate.ok) {
+      return NextResponse.json({ success: false, error: pkGate.message }, { status: pkGate.status });
+    }
+
+    const { exCompanyKey: _xc, company: _qc, ...bodyRest } = body;
+
     const isAttachmentOnly = pageKey === "attachment-only";
     const doc = await Model.create({
-      ...body,
+      ...bodyRest,
       pageKey,
+      exCompanyKey: company,
       status: isAttachmentOnly ? "" : "Pending",
 currentStep: isAttachmentOnly ? -1 : 0,
 createdBy: auth.user?.username || body.createdBy || "User",
@@ -293,7 +328,9 @@ createdById: String(auth.userId),
     
       const docUrl = `${String(baseDomain).replace(/\/+$/, "")}/ex/${encodeURIComponent(
         pageKey
-      )}/${encodeURIComponent(String(doc._id))}?key=${encodeURIComponent(pageKey)}`;
+      )}/${encodeURIComponent(String(doc._id))}?key=${encodeURIComponent(
+        pageKey
+      )}&company=${encodeURIComponent(company)}`;
     
       const html = buildExWorkflowActionEmailHtml({
         action: "created",
@@ -379,7 +416,9 @@ createdById: String(auth.userId),
 
           const docUrl = `${String(baseDomain).replace(/\/+$/, "")}/ex/${encodeURIComponent(
             pageKey
-          )}/${encodeURIComponent(String(doc._id))}?key=${encodeURIComponent(pageKey)}`;
+          )}/${encodeURIComponent(String(doc._id))}?key=${encodeURIComponent(
+            pageKey
+          )}&company=${encodeURIComponent(company)}`;
 
           const docTitle = cfg?.title || pageKey;
           const docTypeAr = cfg?.title || "المستند";

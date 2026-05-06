@@ -14,12 +14,17 @@ import {
   FiChevronLeft,
   FiChevronRight,
 } from "react-icons/fi";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import PaymentPlanA4_Generator from "@/components/ex/payment-plan";
 
 // ✅ Permissions
 import { usePermissions } from "@/context/PermissionContext";
 import { PERMISSIONS } from "@/lib/permission";
+import {
+  DEFAULT_EX_BOOKING_COMPANY,
+  isPageKeyAllowedForExCompany,
+  resolveExBookingCompaniesForUser,
+} from "@/lib/exForms/exCompanies";
 
 // ✅ نفس صفحة Requests
 import StatusBadge from "@/components/StatusBadge";
@@ -74,11 +79,17 @@ function Pager({ page, totalPages, onPage }) {
   );
 }
 
+const PAYMENT_PLAN_PAGE_KEY = "exceptions";
+
 export default function PaymentPlansPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  const company =
+    String(searchParams.get("company") || "").trim() || DEFAULT_EX_BOOKING_COMPANY;
 
   // ✅ Permission hook
-  const { permissions, user } = usePermissions();
+  const { permissions, user, companies } = usePermissions();
   const canCreate =
     Array.isArray(permissions) && permissions.includes(PERMISSIONS.EX_Create_Request);
 
@@ -86,6 +97,16 @@ export default function PaymentPlansPage() {
   const currentUsername = useMemo(() => user?.username || "", [user]);
 
   const currentUserId = useMemo(() => user?.id || "", [user]);
+
+  useEffect(() => {
+    const userCompanies = Array.isArray(companies) ? companies : [];
+    const bookingCos = resolveExBookingCompaniesForUser(userCompanies);
+    const okCo = bookingCos.some((c) => c.key === company);
+    const okForm = isPageKeyAllowedForExCompany(company, PAYMENT_PLAN_PAGE_KEY);
+    if (!okCo || !okForm) {
+      router.replace("/ex/ex-home");
+    }
+  }, [company, companies, router]);
 
   // ===== Data =====
   const [items, setItems] = useState([]);
@@ -170,7 +191,12 @@ export default function PaymentPlansPage() {
   const fetchAll = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/ex/payment-plans`, { cache: "no-store" });
+      const qs = new URLSearchParams();
+      qs.set("company", company);
+      const res = await fetch(`/api/ex/payment-plans?${qs.toString()}`, {
+        cache: "no-store",
+        credentials: "include",
+      });
       const j = await res.json().catch(() => ({}));
       setItems(j?.success && Array.isArray(j.data) ? j.data : []);
     } catch {
@@ -178,7 +204,7 @@ export default function PaymentPlansPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [company]);
 
   useEffect(() => {
     fetchAll();
@@ -375,7 +401,13 @@ export default function PaymentPlansPage() {
   
     return (
       <div
-        onClick={() => router.push(`/ex/payment-plan/${r._id}`)}
+        onClick={() =>
+          router.push(
+            `/ex/payment-plan/${r._id}?key=${encodeURIComponent(
+              PAYMENT_PLAN_PAGE_KEY
+            )}&company=${encodeURIComponent(company)}`
+          )
+        }
         className="
           group relative cursor-pointer overflow-hidden rounded-2xl
           bg-white/55 backdrop-blur-xl
@@ -513,7 +545,9 @@ export default function PaymentPlansPage() {
           <div className="flex items-center gap-3">
             <button
               type="button"
-              onClick={() => router.push("/ex/ex-home")}
+              onClick={() =>
+                router.push(`/ex/ex-home/${encodeURIComponent(company)}`)
+              }
               className="inline-flex items-center gap-2 px-3 py-2 rounded-2xl bg-white/45 backdrop-blur-xl ring-1 ring-white/35 text-gray-900 shadow-sm hover:bg-white/60"
             >
               <FiArrowLeft /> Back
@@ -795,12 +829,16 @@ export default function PaymentPlansPage() {
           open={openCreate}
           onClose={() => setOpenCreate(false)}
           onCreate={async (form) => {
-            const res = await fetch("/api/ex/payment-plans", {
+            const qs = new URLSearchParams();
+            qs.set("company", company);
+            const res = await fetch(`/api/ex/payment-plans?${qs.toString()}`, {
               method: "POST",
+              credentials: "include",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 ...form,
-                pageKey: "exceptions",
+                pageKey: PAYMENT_PLAN_PAGE_KEY,
+                exCompanyKey: company,
                 createdBy: user?.username || "User",
                 createdById: user?.id || "",
               }),
