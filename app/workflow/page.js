@@ -14,11 +14,13 @@ import {
 } from "react-icons/fi";
 import Select from "react-select";
 import { useRouter } from "next/navigation";
+import { useToast } from "@/components/ui/ToastProvider";
 
 // ✅ هذني حسب الكود اللي انت كاتبه
 import { PERMISSIONS, PERMISSION_LABELS } from "@/lib/permission";
 
 export default function WorkflowPage() {
+  const { showToast } = useToast();
   const router = useRouter();
 
   const [authorized, setAuthorized] = useState(false);
@@ -154,11 +156,20 @@ export default function WorkflowPage() {
 
   // CREATE WORKFLOW
   const createWorkflow = async () => {
-    if (!name.trim()) return alert("اكتب اسم الـ Workflow");
-    if (!company) return alert("اختر الشركة");
+    if (!name.trim()) {
+      showToast("اكتب اسم الـ Workflow", "error");
+      return;
+    }
+    if (!company) {
+      showToast("اختر الشركة", "error");
+      return;
+    }
 
     const normCode = normalizeCode(code);
-    if (!normCode) return alert("اكتب كود للـ Workflow (مثلاً: ALGHDEER-1 أو ALGHDEER-2)");
+    if (!normCode) {
+      showToast("اكتب كود للـ Workflow (مثلاً: ALGHDEER-1)", "error");
+      return;
+    }
 
     const res = await fetch("/api/workflow", {
       method: "POST",
@@ -186,10 +197,10 @@ export default function WorkflowPage() {
       setCompany("");
       setCode("");
       setRequiredPerms([]);
-
+      showToast("تم إنشاء الـ Workflow بنجاح", "success");
       router.push(`/workflow/${data.workflow._id}`);
     } else {
-      alert(data.error || "فشل إنشاء Workflow");
+      showToast(data.error || "فشل إنشاء Workflow", "error");
     }
   };
 
@@ -208,10 +219,10 @@ export default function WorkflowPage() {
     const data = await res.json();
 
     if (data.success) {
-      alert("✔️ تم حذف الـ Workflow");
+      showToast("تم حذف الـ Workflow", "success");
       loadWorkflows();
     } else {
-      alert(data.error || "فشل حذف Workflow");
+      showToast(data.error || "فشل حذف Workflow", "error");
     }
   };
 
@@ -224,24 +235,36 @@ export default function WorkflowPage() {
   if (!authorized) return null;
 
   return (
-    <div className="p-10 min-h-screen bg-gradient-to-br from-gray-100 to-gray-300">
+    <div className="min-h-screen p-6 md:p-10">
+      <div className="mx-auto w-full max-w-7xl">
       {/* HEADER */}
-      <div className="flex justify-between items-center mb-10">
-        <h1 className="text-3xl font-bold text-gray-800 flex items-center gap-3">
-          <FiLayers className="text-blue-600" /> Workflow Management
-        </h1>
+      <div className="mb-8 rounded-3xl border border-white/70 bg-white/70 p-6 shadow-xl backdrop-blur">
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h1 className="flex items-center gap-3 text-3xl font-bold text-gray-800">
+              <FiLayers className="text-blue-600" /> Workflow Management
+            </h1>
+            <p className="mt-2 text-sm text-gray-600">
+              صمّم الـ workflows للشركات وخلي التحكم بالصلاحيات أوضح.
+            </p>
+          </div>
 
-        <button
-          onClick={() => setOpenModal(true)}
-          className="flex items-center gap-2 bg-gray-900 text-white px-5 py-2 rounded-xl hover:bg-black/80 shadow"
-        >
-          <FiPlus /> Create Workflow
-        </button>
+          <button
+            onClick={() => setOpenModal(true)}
+            className="flex items-center justify-center gap-2 rounded-xl bg-gray-900 px-5 py-2 text-white shadow transition hover:-translate-y-0.5 hover:bg-black/80"
+          >
+            <FiPlus /> Create Workflow
+          </button>
+        </div>
       </div>
 
       {/* LIST */}
       {loading ? (
         <p className="text-gray-700 text-lg">Loading...</p>
+      ) : workflows.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-gray-300 bg-white/70 p-10 text-center shadow-sm">
+          <p className="text-lg italic text-gray-600">No workflows found yet.</p>
+        </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-7">
           {workflows.map((wf) => (
@@ -250,7 +273,7 @@ export default function WorkflowPage() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               whileHover={{ scale: 1.03 }}
-              className="relative bg-white/90 p-6 rounded-2xl shadow-lg border border-gray-200"
+              className="relative rounded-2xl border border-gray-200 bg-white/90 p-6 shadow-lg transition hover:-translate-y-1 hover:shadow-2xl"
             >
               <button
                 onClick={() => deleteWorkflow(wf._id)}
@@ -296,11 +319,11 @@ export default function WorkflowPage() {
 
       {/* MODAL */}
       {openModal && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <motion.div
             initial={{ scale: 0.8, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            className="relative bg-white p-8 rounded-2xl w-full max-w-lg shadow-2xl"
+            className="relative w-full max-w-lg rounded-2xl border border-gray-200 bg-white p-8 shadow-2xl"
           >
             <button
               onClick={() => setOpenModal(false)}
@@ -365,6 +388,7 @@ export default function WorkflowPage() {
           </motion.div>
         </div>
       )}
+      </div>
     </div>
   );
 }

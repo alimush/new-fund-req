@@ -316,21 +316,69 @@ export async function PUT(req) {
       );
     }
 
-    const updateData = {
-      ...buildBody(body),
-      updatedBy: userId,
-      updatedAt: new Date(),
-    };
+    const now = new Date();
+    let result;
 
-    console.log("📝 Updating voucher ID:", id);
-    const result = await col.findOneAndUpdate(
-      { _id: new ObjectId(id) },
-      { $set: updateData },
-      { 
-        returnDocument: "after",
-        returnOriginal: false // for older driver compatibility
+    // Attachment-only update path (upload from reports page)
+    if (body?.attachment) {
+      const cleanAttachment = sanitizeAttachment(body.attachment);
+      if (!cleanAttachment) {
+        return NextResponse.json(
+          { success: false, error: "Invalid attachment payload" },
+          { status: 400 }
+        );
       }
-    );
+
+      result = await col.findOneAndUpdate(
+        { _id: new ObjectId(id) },
+        {
+          $push: { attachments: cleanAttachment },
+          $set: { updatedBy: userId, updatedAt: now },
+        },
+        {
+          returnDocument: "after",
+          returnOriginal: false, // for older driver compatibility
+        }
+      );
+    } else if (body?.deleteAttachmentKey) {
+      // Attachment delete path
+      const deleteKey = String(body.deleteAttachmentKey || "").trim();
+      if (!deleteKey) {
+        return NextResponse.json(
+          { success: false, error: "Invalid attachment key" },
+          { status: 400 }
+        );
+      }
+
+      result = await col.findOneAndUpdate(
+        { _id: new ObjectId(id) },
+        {
+          $pull: { attachments: { key: deleteKey } },
+          $set: { updatedBy: userId, updatedAt: now },
+        },
+        {
+          returnDocument: "after",
+          returnOriginal: false, // for older driver compatibility
+        }
+      );
+    } else {
+      // Full voucher edit path
+      const updateData = {
+        ...buildBody(body),
+        updatedBy: userId,
+        updatedAt: now,
+      };
+
+      console.log("📝 Updating voucher ID:", id);
+      result = await col.findOneAndUpdate(
+        { _id: new ObjectId(id) },
+        { $set: updateData },
+        {
+          returnDocument: "after",
+          returnOriginal: false, // for older driver compatibility
+        }
+      );
+    }
 
     // Handle both old and new driver return formats
     const updatedDoc = result?.value || result;
@@ -346,6 +394,11 @@ export async function PUT(req) {
       success: true,
       data: {
         ...updatedDoc,
+        attachments: Array.isArray(updatedDoc.attachments)
+          ? updatedDoc.attachments
+          : updatedDoc.attachment
+          ? [updatedDoc.attachment]
+          : [],
         _id: updatedDoc._id.toString(),
       },
     });

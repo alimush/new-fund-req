@@ -64,18 +64,15 @@ export default function Header({ onLogout }) {
       animate={{ y: 0, opacity: 1 }}
       exit={{ y: "-100%", opacity: 0 }}
       transition={{ duration: 0.5, ease: "easeInOut" }}
-      className="sticky top-0 z-50 w-full
-                 backdrop-blur-xl border-b border-gray-800/60
-                 bg-gradient-to-b from-gray-800 via-gray-750 to-gray-900
-                 shadow-[0_4px_24px_rgba(0,0,0,0.7)]"
+      className="sticky top-0 z-50 w-full border-b border-gray-700/70 bg-gradient-to-b from-gray-900 via-gray-850 to-gray-900/95 backdrop-blur-xl shadow-[0_10px_28px_-18px_rgba(0,0,0,0.75)]"
     >
       {/* 🔹 استخدم grid بدون max-w حتى تبقى أقصى اليمين واليسار */}
-      <div className="w-full grid grid-cols-3 items-center px-6 h-16">
+      <div className="grid h-16 w-full grid-cols-3 items-center px-4 sm:px-6">
         {/* يسار */}
         <div className="flex flex-col items-start leading-tight relative">
           <span
             className={`font-bold text-2xl tracking-tight
-                        bg-gradient-to-r from-gray-300 via-gray-100 to-white
+                        bg-gradient-to-r from-gray-200 via-gray-100 to-white
                         text-transparent bg-clip-text ${poppins.className}`}
           >
             SPC
@@ -116,11 +113,10 @@ export default function Header({ onLogout }) {
                 {/* بطاقة اليوزر */}
                 <motion.div
                   whileHover={{ scale: 1.04 }}
-                  className="flex items-center gap-2 px-3 py-1.5 rounded-xl
-                             bg-gray-800/80 border border-gray-600 shadow-sm"
+                  className="flex items-center gap-2 rounded-xl border border-gray-600/80 bg-gray-800/80 px-3 py-1.5 shadow-sm"
                 >
-                  <FaUserCircle className="text-gray-200 text-2xl" />
-                  <span className="text-sm font-medium text-gray-100">
+                  <FaUserCircle className="text-2xl text-gray-200" />
+                  <span className="text-sm font-semibold text-gray-100">
                     {username}
                   </span>
                 </motion.div>
@@ -152,8 +148,7 @@ export default function Header({ onLogout }) {
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -10 }}
                       transition={{ duration: 0.35, ease: "easeInOut" }}
-                      className="absolute right-0 top-12 w-56 overflow-hidden rounded-2xl
-                                 border border-gray-600 bg-gray-800 shadow-xl"
+                      className="absolute right-0 top-12 w-56 overflow-hidden rounded-2xl border border-gray-600/80 bg-gray-900/95 shadow-xl backdrop-blur"
                     >
                       <div className="p-1">
                         <MenuItem
@@ -272,10 +267,10 @@ function MenuItem({ onClick, icon, label, danger = false }) {
       whileHover={{ scale: 1.01 }}
       onClick={onClick}
       className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm rounded-xl transition
-        ${danger ? "text-red-400 hover:bg-red-900/40" : "text-gray-200 hover:bg-gray-700"}`}
+        ${danger ? "text-red-400 hover:bg-red-900/30" : "text-gray-200 hover:bg-gray-700/70"}`}
     >
       <span className="text-base">{icon}</span>
-      <span className="font-medium">{label}</span>
+      <span className="font-semibold">{label}</span>
     </motion.button>
   );
 }

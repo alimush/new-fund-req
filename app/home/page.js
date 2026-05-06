@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePermissions } from "@/context/PermissionContext";
 import { useEffect, useMemo, useState } from "react";
-import { FiFileText, FiBarChart2, FiPieChart } from "react-icons/fi";
+import { FiFileText, FiBarChart2, FiPieChart, FiGrid, FiZap } from "react-icons/fi";
 import { PERMISSIONS } from "@/lib/permission";
 import { COMPANIES } from "@/lib/voucher/companies";
 
@@ -38,7 +38,7 @@ const item = {
 };
 
 export default function HomePage() {
-  const { companies, permissions } = usePermissions();
+  const { companies, permissions, user } = usePermissions();
 
   const allowedCards = useMemo(() => {
     if (!Array.isArray(companies) || !Array.isArray(permissions)) return [];
@@ -99,6 +99,20 @@ export default function HomePage() {
 
   const [counts, setCounts] = useState({});
   const [loadingCounts, setLoadingCounts] = useState(false);
+  const [countsLoaded, setCountsLoaded] = useState(false);
+
+  const companyCards = useMemo(
+    () => allowedCards.filter((c) => !c.isIcon),
+    [allowedCards]
+  );
+  const toolCards = useMemo(
+    () => allowedCards.filter((c) => c.isIcon),
+    [allowedCards]
+  );
+
+  const totalPending = useMemo(() => {
+    return companyCards.reduce((sum, c) => sum + Number(counts?.[c.key] || 0), 0);
+  }, [companyCards, counts]);
 
   useEffect(() => {
     if (!allowedCards.length) return;
@@ -112,6 +126,7 @@ export default function HomePage() {
         const companyList = allowedCards.filter(c => !c.isIcon).map((x) => x.key).join(",");
         if (!companyList) {
           setCounts({});
+          setCountsLoaded(true);
           return;
         }
 
@@ -126,7 +141,10 @@ export default function HomePage() {
       } catch {
         if (alive) setCounts({});
       } finally {
-        if (alive) setLoadingCounts(false);
+        if (alive) {
+          setLoadingCounts(false);
+          setCountsLoaded(true);
+        }
       }
     };
 
@@ -141,14 +159,14 @@ export default function HomePage() {
   }, [allowedCards]);
 
   return (
-    <div>
+    <div className="min-h-screen px-6 pb-10 pt-8">
       {/* الهيدر */}
-      <div className="max-w-6xl mx-auto mb-10 text-center mt-16 relative">
+      <div className="mx-auto mb-5 max-w-6xl rounded-3xl border border-slate-200/70 bg-slate-100/70 px-4 py-4 shadow-xl backdrop-blur">
         <motion.h1
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, ease: "easeOut" }}
-          className="text-3xl md:text-4xl font-bold 
+          className="text-center text-xl font-extrabold md:text-2xl
                      bg-gradient-to-r from-gray-400 via-gray-600 to-slate-800
                      text-transparent bg-clip-text"
         >
@@ -159,31 +177,88 @@ export default function HomePage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.3, duration: 0.6, ease: "easeOut" }}
-          className="mt-2 bg-gradient-to-r from-gray-500 via-gray-600 to-gray-800 
+          className="mt-1 text-center text-xs md:text-sm bg-gradient-to-r from-gray-500 via-gray-600 to-gray-800 
                      text-transparent bg-clip-text"
         >
           اختر الشركة لعرض تفاصيل الطلبات
         </motion.p>
+
+        <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
+          <div className="rounded-2xl bg-slate-50/90 p-2.5 text-center ring-1 ring-slate-200 shadow-sm">
+            <p className="text-[11px] font-bold text-gray-500">المستخدم</p>
+            <p className="mt-1 truncate text-sm font-extrabold text-gray-900">
+              {user?.username || "User"}
+            </p>
+          </div>
+          <div className="rounded-2xl bg-slate-50/90 p-2.5 text-center ring-1 ring-slate-200 shadow-sm">
+            <p className="text-[11px] font-bold text-gray-500">الشركات</p>
+            <p className="mt-1 text-sm font-extrabold text-gray-900">{companyCards.length}</p>
+          </div>
+          <div className="rounded-2xl bg-slate-50/90 p-2.5 text-center ring-1 ring-slate-200 shadow-sm">
+            <p className="text-[11px] font-bold text-gray-500">طلبات قيد الانتظار</p>
+            <div className="mt-1 flex items-center justify-center">
+              <span
+                className="
+                  inline-flex min-h-[28px] min-w-[34px] items-center justify-center
+                  rounded-full px-2.5
+                  bg-gradient-to-r from-rose-600 to-red-600 text-white
+                  text-xs font-black tracking-wide tabular-nums
+                  shadow-[0_10px_22px_-10px_rgba(220,38,38,0.9)]
+                  ring-2 ring-white/75
+                "
+              >
+                {!countsLoaded ? "..." : totalPending > 99 ? "99+" : totalPending}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {companyCards.length > 0 && toolCards.length > 0 && (
+          <div className="mt-4 rounded-2xl bg-slate-50/80 p-3 ring-1 ring-slate-200 shadow-sm">
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              {toolCards.map((card) => (
+                <Link
+                  key={`chip-${card.key}`}
+                  href={card.href || "/home"}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-white/95 px-3 py-1.5 text-xs font-extrabold text-gray-800 ring-1 ring-slate-200 shadow-sm transition hover:-translate-y-0.5 hover:bg-white"
+                >
+                  {card.Icon ? (
+                    <card.Icon className={card.color || "text-gray-700"} />
+                  ) : (
+                    <FiZap className="text-gray-700" />
+                  )}
+                  {card.name}
+                </Link>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* الكروت */}
-      <motion.div
-        className="max-w-6xl mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6"
-        variants={container}
-        initial="hidden"
-        animate="show"
-      >
-        {allowedCards.map((c, idx) => {
-          const n = Number(counts?.[c.key] || 0);
+      {companyCards.length > 0 && (
+        <>
+          {/* كروت الشركات */}
+          <div className="mx-auto mb-4 flex max-w-6xl items-center gap-2 text-sm font-extrabold text-gray-700">
+            <FiGrid className="text-gray-600" />
+            الشركات
+          </div>
+          <motion.div
+            className="mx-auto grid max-w-6xl grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3"
+            variants={container}
+            initial="hidden"
+            animate="show"
+          >
+            {companyCards.map((c, idx) => {
+              const n = Number(counts?.[c.key] || 0);
 
-          return (
-            <Link key={idx} href={c.href || `/requests/${c.key}`} passHref>
-              <motion.div
-                variants={item}
-                whileHover={{ y: -4, scale: 1.015 }}
-                whileTap={{ scale: 0.995 }}
-                transition={{ duration: 0.2, ease: "easeOut" }}
-                className="
+              return (
+                <Link key={idx} href={c.href || `/requests/${c.key}`} passHref>
+                  <motion.div
+                    variants={item}
+                    whileHover={{ y: -4, scale: 1.015 }}
+                    whileTap={{ scale: 0.995 }}
+                    transition={{ duration: 0.2, ease: "easeOut" }}
+                    className="
                   group relative cursor-pointer rounded-3xl p-6
                   bg-white/40 backdrop-blur-2xl
                   ring-1 ring-white/25
@@ -192,60 +267,116 @@ export default function HomePage() {
                   transition-all duration-300
                   text-center flex flex-col items-center
                 "
-              >
-                {/* ✅ Badge عداد */}
-                {!loadingCounts && n > 0 && !c.isIcon && (
-                  <div
-                    className="
-                      absolute top-4 left-4
-                      min-w-[34px] h-[28px] px-2
-                      rounded-full
-                      bg-red-600 text-white
-                      flex items-center justify-center
-                      text-sm font-extrabold
-                      shadow-md
-                      ring-2 ring-white/70
-                    "
-                    title="طلبات تحتاج إجراء منك"
                   >
-                    {n > 99 ? "99+" : n}
-                  </div>
-                )}
+                    {/* ✅ Badge عداد */}
+                    {n > 0 && !c.isIcon && (
+                      <div
+                        className="
+                      absolute left-4 top-4 z-20
+                      inline-flex min-h-[30px] min-w-[34px] items-center justify-center
+                      rounded-full px-2.5
+                      bg-gradient-to-r from-rose-600 to-red-600 text-white
+                      text-xs font-black tracking-wide tabular-nums
+                      shadow-[0_10px_22px_-10px_rgba(220,38,38,0.9)]
+                      ring-2 ring-white/75
+                      transition-transform duration-300 group-hover:scale-105
+                    "
+                        title="طلبات تحتاج إجراء منك"
+                      >
+                        <span className="absolute inset-0 rounded-full bg-white/20 opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
+                        <span className="relative">{n > 99 ? "99+" : n}</span>
+                      </div>
+                    )}
 
-                {/* زخارف ناعمة */}
-                <div className="pointer-events-none absolute inset-0 rounded-3xl bg-gradient-to-br from-white/25 via-transparent to-transparent opacity-80" />
+                    {/* زخارف ناعمة */}
+                    <div className="pointer-events-none absolute inset-0 rounded-3xl bg-gradient-to-br from-white/35 via-white/10 to-transparent opacity-90" />
 
-                {/* اللوغو أو الأيقونة */}
-                <div
-                  className="
+                    {/* اللوغو أو الأيقونة */}
+                    <div
+                      className="
                     relative w-20 h-20 rounded-2xl
-                    bg-white/55 backdrop-blur
-                    ring-1 ring-white/25
-                    shadow-sm overflow-hidden
+                    bg-white/50 backdrop-blur
+                    ring-1 ring-white/30
+                    shadow-md overflow-hidden
                     flex items-center justify-center
+                    transition-all duration-300 group-hover:scale-[1.03]
                   "
-                >
-                  {c.isIcon ? (
-                    <c.Icon className={`w-10 h-10 ${c.color || "text-gray-700"} transition-transform duration-500 group-hover:scale-110`} />
-                  ) : (
-                    <Image
-                      src={c.logo || "/12.png"}
-                      alt={`${c.name} logo`}
-                      fill
-                      className="object-contain p-2 transition-transform duration-500 group-hover:scale-105"
-                    />
-                  )}
-                </div>
+                    >
+                      {c.isIcon ? (
+                        <c.Icon className={`w-10 h-10 ${c.color || "text-gray-700"} transition-transform duration-500 group-hover:scale-110`} />
+                      ) : (
+                        <Image
+                          src={c.logo || "/12.png"}
+                          alt={`${c.name} logo`}
+                          fill
+                          className="object-contain p-2 transition-transform duration-500 group-hover:scale-105"
+                        />
+                      )}
+                    </div>
 
-                {/* النص */}
-                <h2 className="mt-4 text-lg font-bold tracking-tight text-gray-900">
-                  {c.name}
-                </h2>
-              </motion.div>
-            </Link>
-          );
-        })}
-      </motion.div>
+                    {/* النص */}
+                    <h2 className="mt-4 text-lg font-extrabold tracking-tight text-gray-900">
+                      {c.name}
+                    </h2>
+                    <p className="mt-1 text-xs font-semibold text-gray-600/90">
+                      اضغط لفتح التفاصيل
+                    </p>
+                  </motion.div>
+                </Link>
+              );
+            })}
+          </motion.div>
+        </>
+      )}
+
+      {companyCards.length === 0 && (
+        <div className="mx-auto max-w-6xl rounded-2xl border border-dashed border-gray-300 bg-white/70 p-10 text-center text-gray-600">
+          لا توجد شركات مرتبطة بهذا المستخدم حالياً.
+        </div>
+      )}
+
+      {companyCards.length === 0 && toolCards.length > 0 && (
+        <>
+          <motion.div
+            className="mx-auto mt-6 grid max-w-6xl grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3"
+            variants={container}
+            initial="hidden"
+            animate="show"
+          >
+            {toolCards.map((c, idx) => (
+              <Link key={`${c.key}-${idx}`} href={c.href || "/home"} passHref>
+                <motion.div
+                  variants={item}
+                  whileHover={{ y: -4, scale: 1.015 }}
+                  whileTap={{ scale: 0.995 }}
+                  transition={{ duration: 0.2, ease: "easeOut" }}
+                  className="group relative flex cursor-pointer flex-col items-center rounded-3xl bg-white/45 p-6 text-center shadow-[0_18px_45px_-25px_rgba(0,0,0,0.35)] ring-1 ring-white/35 transition-all duration-300 hover:bg-white/60 hover:ring-white/45"
+                >
+                  <div className="pointer-events-none absolute inset-0 rounded-3xl bg-gradient-to-br from-white/35 via-white/10 to-transparent opacity-90" />
+                  <div className="relative flex h-20 w-20 items-center justify-center rounded-2xl bg-white/70 shadow-md ring-1 ring-white/40 backdrop-blur transition-all duration-300 group-hover:scale-[1.03]">
+                    {c.Icon ? (
+                      <c.Icon
+                        className={`h-10 w-10 ${
+                          c.color || "text-gray-700"
+                        } transition-transform duration-500 group-hover:scale-110`}
+                      />
+                    ) : (
+                      <FiZap className="h-10 w-10 text-gray-700" />
+                    )}
+                  </div>
+                  <h2 className="mt-4 text-lg font-extrabold tracking-tight text-gray-900">
+                    {c.name}
+                  </h2>
+                  <p className="mt-1 text-xs font-semibold text-gray-600/90">
+                    اضغط لفتح الأداة
+                  </p>
+                </motion.div>
+              </Link>
+            ))}
+          </motion.div>
+        </>
+      )}
+
     </div>
   );
 }

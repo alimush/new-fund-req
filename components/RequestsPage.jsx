@@ -508,17 +508,11 @@ export default function RequestsPage({ companyKey }) {
 
   return (
     <div className="min-h-screen w-full text-[15px] font-bold text-slate-900">
-      <div className="fixed inset-0 -z-10 bg-gradient-to-br from-slate-50 via-slate-100 to-slate-200" />
-      <div className="fixed inset-0 -z-10 opacity-70">
-        <div className="absolute -top-24 -left-24 h-96 w-96 rounded-full bg-blue-200/40 blur-3xl" />
-        <div className="absolute top-28 right-10 h-80 w-80 rounded-full bg-purple-200/35 blur-3xl" />
-        <div className="absolute bottom-10 left-1/3 h-80 w-80 rounded-full bg-amber-200/30 blur-3xl" />
-      </div>
-
-      <div className="mx-auto max-w-6xl px-6 py-6 space-y-6">
+      <div className="mx-auto max-w-7xl px-4 py-6 space-y-6 sm:px-6">
         {/* Header */}
+        <div className="rounded-3xl bg-white/45 p-4 shadow-[0_18px_45px_-25px_rgba(0,0,0,0.35)] ring-1 ring-white/35 backdrop-blur-2xl sm:p-5">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 min-w-0">
             <button
               type="button"
               onClick={() => router.push("/home")}
@@ -527,13 +521,13 @@ export default function RequestsPage({ companyKey }) {
               <FiArrowLeft /> Back
             </button>
 
-            <div className="flex flex-col gap-1">
+            <div className="flex min-w-0 flex-col gap-1">
               <h1 className="text-2xl sm:text-3xl font-black text-gray-900 tracking-tight">
                 Fund Requests
               </h1>
               <div className="flex items-center gap-2 text-sm text-gray-800/80">
                 <span className="font-semibold">الشركة:</span>
-                <span className="px-2.5 py-1 rounded-xl bg-white/55 backdrop-blur ring-1 ring-white/30 text-gray-900 font-extrabold">
+                <span className="max-w-[180px] truncate px-2.5 py-1 rounded-xl bg-white/55 backdrop-blur ring-1 ring-white/30 text-gray-900 font-extrabold sm:max-w-none">
                   {companyKey}
                 </span>
               </div>
@@ -549,9 +543,10 @@ export default function RequestsPage({ companyKey }) {
             </button>
           )}
         </div>
+        </div>
 
         {/* Search */}
-        <div className="rounded-3xl bg-white/40 backdrop-blur-2xl ring-1 ring-white/30 shadow-sm p-4 sm:p-5">
+        <div className="rounded-3xl bg-white/50 backdrop-blur-2xl ring-1 ring-white/35 shadow-sm p-4 sm:p-5">
           <div className="flex flex-col sm:flex-row gap-3 sm:items-center">
             <div className="relative w-full sm:flex-1" ref={searchBoxRef}>
               <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-600/70" />
@@ -652,8 +647,8 @@ export default function RequestsPage({ companyKey }) {
         ) : null}
 
         {/* Stats */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div className="rounded-3xl bg-white/40 backdrop-blur-2xl ring-1 ring-white/30 p-4 shadow-[0_16px_45px_-30px_rgba(0,0,0,0.45)]">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="rounded-3xl bg-white/50 backdrop-blur-2xl ring-1 ring-white/35 p-4 shadow-[0_16px_45px_-30px_rgba(0,0,0,0.45)]">
             <div className="text-[13px] font-bold text-gray-700/80">طلباتي الموافق عليها</div>
             <div className="mt-2 flex items-center justify-between">
               <div className="text-3xl font-black text-gray-900">{stats.approved}</div>
@@ -663,7 +658,7 @@ export default function RequestsPage({ companyKey }) {
             </div>
           </div>
 
-          <div className="rounded-3xl bg-white/40 backdrop-blur-2xl ring-1 ring-white/30 p-4 shadow-[0_16px_45px_-30px_rgba(0,0,0,0.45)]">
+          <div className="rounded-3xl bg-white/50 backdrop-blur-2xl ring-1 ring-white/35 p-4 shadow-[0_16px_45px_-30px_rgba(0,0,0,0.45)]">
             <div className="text-[13px] font-bold text-gray-700/80">طلباتي قيد الانتظار</div>
             <div className="mt-2 flex items-center justify-between">
               <div className="text-3xl font-black text-gray-900">{stats.pending}</div>
@@ -673,7 +668,7 @@ export default function RequestsPage({ companyKey }) {
             </div>
           </div>
 
-          <div className="rounded-3xl bg-white/40 backdrop-blur-2xl ring-1 ring-white/30 p-4 shadow-[0_16px_45px_-30px_rgba(0,0,0,0.45)]">
+          <div className="rounded-3xl bg-white/50 backdrop-blur-2xl ring-1 ring-white/35 p-4 shadow-[0_16px_45px_-30px_rgba(0,0,0,0.45)]">
             <div className="text-[13px] font-bold text-gray-700/80">مجموع طلباتي</div>
             <div className="mt-2 flex items-center justify-between">
               <div className="text-3xl font-black text-gray-900">{stats.total}</div>

@@ -4,6 +4,7 @@ import HeaderWrapper from "../components/Header";
 import { PermissionProvider } from "@/context/PermissionContext";
 import { UserProvider } from "@/context/UserContext";
 import AuthGate from "@/components/AuthGate";
+import { ToastProvider } from "@/components/ui/ToastProvider";
 
 
 const geistSans = Geist({
@@ -35,17 +36,16 @@ export default function RootLayout({ children }) {
           <div className="absolute bottom-10 left-1/3 h-80 w-80 rounded-full bg-amber-200/30 blur-3xl" />
         </div>
 
-        <UserProvider>
-          <PermissionProvider>
-          <AuthGate>
-              <HeaderWrapper />
-
-
-              <main className="p-6">{children}</main>
-            </AuthGate>
-
-          </PermissionProvider>
-        </UserProvider>
+        <ToastProvider>
+          <UserProvider>
+            <PermissionProvider>
+              <AuthGate>
+                <HeaderWrapper />
+                <main className="p-6">{children}</main>
+              </AuthGate>
+            </PermissionProvider>
+          </UserProvider>
+        </ToastProvider>
       </body>
     </html>
   );

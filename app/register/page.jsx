@@ -1,8 +1,10 @@
 "use client";
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useToast } from "@/components/ui/ToastProvider";
 
 export default function RegisterPage() {
+  const { showToast } = useToast();
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState(""); // ✅ NEW
   const [password, setPassword] = useState("");
@@ -73,11 +75,12 @@ export default function RegisterPage() {
         setEmail(""); // ✅
         setPassword("");
         fetchUsers(search);
-        setSuccessMsg("✅ User created successfully!");
+        setSuccessMsg("User created successfully");
+        showToast("تم إنشاء المستخدم بنجاح", "success");
         setTimeout(() => setSuccessMsg(""), 2000);
       } else {
         const data = await res.json().catch(() => ({}));
-        alert(data.error || "❌ Failed to register user");
+        showToast(data.error || "فشل إنشاء المستخدم", "error");
       }
     } catch (err) {
       console.error("Error register:", err);
@@ -92,6 +95,7 @@ export default function RegisterPage() {
       await apiFetch(`/api/users?id=${id}`, { method: "DELETE" });
       fetchUsers(search);
       setIsModalOpen(false);
+      showToast("تم حذف المستخدم", "success");
     } catch (err) {
       console.error("Error delete:", err);
     }
@@ -121,12 +125,13 @@ export default function RegisterPage() {
 
       if (res.ok) {
         fetchUsers(search);
-        setSuccessMsg("✅ User updated successfully!");
+        setSuccessMsg("User updated successfully");
+        showToast("تم تحديث المستخدم بنجاح", "success");
         setTimeout(() => setSuccessMsg(""), 2000);
         setIsModalOpen(false);
       } else {
         const data = await res.json().catch(() => ({}));
-        alert(data.error || "❌ Failed to update user");
+        showToast(data.error || "فشل تحديث المستخدم", "error");
       }
     } catch (err) {
       console.error("Error edit:", err);
@@ -135,27 +140,28 @@ export default function RegisterPage() {
 
   return (
     <div
-      className="flex min-h-screen items-center justify-center 
-                 bg-gradient-to-br from-gray-50 via-gray-100 to-gray-200 relative overflow-hidden"
+      className="relative min-h-screen overflow-hidden p-6 md:p-10"
     >
       {/* زخارف خلفية */}
       <div className="absolute -top-40 -left-32 w-[30rem] h-[30rem] rounded-full bg-gray-300/20 blur-3xl" />
       <div className="absolute -bottom-40 -right-32 w-[28rem] h-[28rem] rounded-full bg-slate-400/20 blur-3xl" />
 
       <motion.div
-        className="relative bg-white/50 shadow-xl rounded-2xl p-8 w-full max-w-md 
-                   text-gray-800 backdrop-blur-xl border border-gray-200/60"
+        className="relative mx-auto w-full max-w-6xl rounded-3xl border border-gray-200/60 bg-white/65 p-6 text-gray-800 shadow-2xl backdrop-blur-xl md:p-8"
         initial={{ opacity: 0, y: -50 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.8, ease: "easeOut" }}
       >
         <h1
-          className="text-2xl font-bold text-center 
+          className="mb-2 text-center text-2xl font-bold 
                      bg-gradient-to-r from-gray-600 via-slate-700 to-gray-900 
-                     text-transparent bg-clip-text mb-6"
+                     bg-clip-text text-transparent"
         >
           Users Management
         </h1>
+        <p className="mb-6 text-center text-sm text-gray-600">
+          إدارة المستخدمين مع واجهة أوضح وتجربة أسرع.
+        </p>
 
         {/* ✅ رسالة صلاحيات/دخول */}
         <AnimatePresence>
@@ -172,21 +178,22 @@ export default function RegisterPage() {
           )}
         </AnimatePresence>
 
-        {/* 🔍 البحث */}
-        <input
-          type="text"
-          placeholder="🔍 Search by username"
-          value={search}
-          onChange={(e) => {
-            setSearch(e.target.value);
-            fetchUsers(e.target.value);
-          }}
-          className="w-full border border-gray-300 rounded-lg p-3 mb-4 
-                     outline-none focus:ring-2 focus:ring-gray-400 bg-white/70"
-        />
+        <div className="grid gap-6 lg:grid-cols-2">
+          <div className="rounded-2xl border border-gray-200/80 bg-white/80 p-5 shadow-sm">
+            {/* 🔍 البحث */}
+            <input
+              type="text"
+              placeholder="🔍 Search by username"
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                fetchUsers(e.target.value);
+              }}
+              className="mb-4 w-full rounded-lg border border-gray-300 bg-white/90 p-3 outline-none focus:ring-2 focus:ring-gray-400"
+            />
 
-        {/* ➕ إضافة */}
-        <form onSubmit={handleRegister} className="space-y-4 mb-6">
+            {/* ➕ إضافة */}
+            <form onSubmit={handleRegister} className="space-y-4">
           <input
             type="text"
             placeholder="Username"
@@ -237,36 +244,38 @@ export default function RegisterPage() {
           >
             Add User
           </motion.button>
-        </form>
+            </form>
+          </div>
 
-        {/* ✅ رسالة نجاح */}
-        <AnimatePresence>
-          {successMsg && (
-            <motion.div
-              className="mb-4 text-green-600 font-medium text-center"
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.3 }}
-            >
-              {successMsg}
-            </motion.div>
-          )}
-        </AnimatePresence>
+          <div className="rounded-2xl border border-gray-200/80 bg-white/80 p-5 shadow-sm">
+            {/* ✅ رسالة نجاح */}
+            <AnimatePresence>
+              {successMsg && (
+                <motion.div
+                  className="mb-4 text-center font-medium text-green-600"
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  transition={{ duration: 0.3 }}
+                >
+                  {successMsg}
+                </motion.div>
+              )}
+            </AnimatePresence>
 
-        {/* 📋 قائمة المستخدمين */}
-        <h2 className="text-lg font-semibold text-gray-700 mb-2">
-          Registered Users
-        </h2>
+            {/* 📋 قائمة المستخدمين */}
+            <h2 className="mb-2 text-lg font-semibold text-gray-700">
+              Registered Users
+            </h2>
 
-        <ul className="space-y-2 max-h-64 overflow-y-auto">
+            <ul className="max-h-[28rem] space-y-2 overflow-y-auto pr-1">
           {users.length > 0 ? (
             users.map((u) => (
               <li
                 key={u._id}
-                className="flex justify-between items-center p-3 
+                className="flex items-center justify-between rounded-lg border border-gray-200 
                            bg-white/60 rounded-lg border border-gray-200 
-                           text-sm text-gray-700 backdrop-blur-sm"
+                           p-3 text-sm text-gray-700 backdrop-blur-sm transition hover:bg-white"
               >
                 <div className="min-w-0">
                   <div className="font-medium truncate">{u.username}</div>
@@ -293,7 +302,9 @@ export default function RegisterPage() {
           ) : (
             <p className="text-gray-500 text-sm">No users found.</p>
           )}
-        </ul>
+            </ul>
+          </div>
+        </div>
       </motion.div>
 
       {/* 🟢 مودال التفاصيل والتعديل */}

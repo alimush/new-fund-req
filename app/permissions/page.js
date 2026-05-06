@@ -2,8 +2,12 @@
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { FiShield, FiUsers, FiPlus, FiTrash2, FiX, FiLayers } from "react-icons/fi";
+import { useToast } from "@/components/ui/ToastProvider";
+import { useRouter } from "next/navigation";
 
 export default function PermissionsPage() {
+  const router = useRouter();
+  const { showToast } = useToast();
   const [groups, setGroups] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -21,11 +25,11 @@ export default function PermissionsPage() {
         });
 
         if (res.status === 401) {
-          window.location.href = "/login";
+          router.replace("/login");
           return;
         }
         if (res.status === 403) {
-          window.location.href = "/home";
+          router.replace("/home");
           return;
         }
 
@@ -40,12 +44,12 @@ export default function PermissionsPage() {
     };
 
     load();
-  }, []);
+  }, [router]);
 
   // 🟦 إنشاء كروب
   const createGroup = async () => {
     if (!newGroupName.trim()) {
-      alert("اكتب اسم الكروب");
+      showToast("اكتب اسم الكروب", "error");
       return;
     }
 
@@ -61,11 +65,11 @@ export default function PermissionsPage() {
       });
 
       if (res.status === 401) {
-        window.location.href = "/login";
+        router.replace("/login");
         return;
       }
       if (res.status === 403) {
-        window.location.href = "/home";
+        router.replace("/home");
         return;
       }
 
@@ -75,8 +79,9 @@ export default function PermissionsPage() {
         setGroups((prev) => [...prev, data.data]);
         setNewGroupName("");
         setPopupOpen(false);
+        showToast("تم إنشاء الكروب بنجاح", "success");
       } else {
-        alert(data.error || "Failed to create group");
+        showToast(data.error || "فشل إنشاء الكروب", "error");
       }
     } catch (err) {
       console.error("❌ Create group error:", err);
@@ -95,11 +100,11 @@ export default function PermissionsPage() {
       });
 
       if (res.status === 401) {
-        window.location.href = "/login";
+        router.replace("/login");
         return;
       }
       if (res.status === 403) {
-        window.location.href = "/home";
+        router.replace("/home");
         return;
       }
 
@@ -108,8 +113,9 @@ export default function PermissionsPage() {
       const data = await res.json();
       if (data.success) {
         setGroups((prev) => prev.filter((g) => g._id !== id));
+        showToast("تم حذف الكروب", "success");
       } else {
-        alert(data.error || "Failed to delete group");
+        showToast(data.error || "فشل حذف الكروب", "error");
       }
     } catch (err) {
       console.error("❌ Delete group error:", err);
@@ -117,31 +123,39 @@ export default function PermissionsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-100 via-gray-200 to-gray-300 p-8">
+    <div className="min-h-screen p-6 md:p-8">
+      <div className="mx-auto w-full max-w-7xl">
       {/* HEADER */}
-      <div className="flex items-center justify-between mb-10">
+      <div className="mb-8 rounded-3xl border border-white/70 bg-white/70 p-6 shadow-xl backdrop-blur">
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div>
         <h1 className="text-3xl font-bold flex items-center gap-3 text-gray-900">
           <FiShield className="text-blue-600" />
           Permission Groups
         </h1>
+        <p className="mt-2 text-sm text-gray-600">
+          إدارة الكروبات، الصلاحيات، والشركات من مكان واحد.
+        </p>
+        </div>
 
         <button
           onClick={() => setPopupOpen(true)}
-          className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gray-900 text-white hover:bg-black/90 shadow-lg"
+          className="flex items-center justify-center gap-2 rounded-xl bg-gray-900 px-5 py-2.5 text-white shadow-lg transition hover:-translate-y-0.5 hover:bg-black/90"
         >
           <FiPlus /> Add Group
         </button>
       </div>
+      </div>
 
       {/* GROUPS LIST */}
       {loading ? (
-        <div className="flex justify-center mt-20 text-gray-600">
+        <div className="mt-20 flex justify-center text-gray-600">
           Loading groups...
         </div>
       ) : groups.length === 0 ? (
-        <p className="text-gray-600 text-center text-lg italic">
-          No groups created yet.
-        </p>
+        <div className="rounded-2xl border border-dashed border-gray-300 bg-white/70 p-10 text-center shadow-sm">
+          <p className="text-lg italic text-gray-600">No groups created yet.</p>
+        </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-7">
           {groups.map((g) => (
@@ -151,10 +165,8 @@ export default function PermissionsPage() {
               animate={{ opacity: 1, y: 0 }}
               whileHover={{ scale: 1.03 }}
               transition={{ duration: 0.25 }}
-              onClick={() => (window.location.href = `/permissions/${g._id}`)}
-              className="group cursor-pointer p-7 rounded-3xl bg-white/90
-                         border border-gray-200 shadow-lg hover:shadow-2xl
-                         hover:bg-white transition relative overflow-hidden"
+              onClick={() => router.push(`/permissions/${g._id}`)}
+              className="group relative cursor-pointer overflow-hidden rounded-3xl border border-gray-200/80 bg-white/90 p-7 shadow-lg transition hover:-translate-y-1 hover:shadow-2xl hover:bg-white"
             >
               {/* DELETE BUTTON */}
               <button
@@ -170,7 +182,7 @@ export default function PermissionsPage() {
 
               {/* GROUP NAME */}
               <div className="mb-6">
-                <h2 className="text-2xl font-bold text-gray-900 tracking-wide">
+                <h2 className="text-2xl font-bold tracking-wide text-gray-900">
                   {g.name}
                 </h2>
                 <p className="text-sm text-gray-500 mt-1">
@@ -231,13 +243,13 @@ export default function PermissionsPage() {
       <AnimatePresence>
         {popupOpen && (
           <motion.div
-            className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
           >
             <motion.div
-              className="bg-white rounded-2xl shadow-2xl p-7 w-full max-w-md"
+              className="w-full max-w-md rounded-2xl border border-gray-200 bg-white p-7 shadow-2xl"
               initial={{ scale: 0.85, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.85, opacity: 0 }}
@@ -285,6 +297,7 @@ export default function PermissionsPage() {
           </motion.div>
         )}
       </AnimatePresence>
+      </div>
     </div>
   );
 }

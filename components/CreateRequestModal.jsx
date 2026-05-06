@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useToast } from "@/components/ui/ToastProvider";
 import { FiX } from "react-icons/fi";
 import {
     FiPaperclip,
@@ -31,6 +32,7 @@ export default function CreateRequestModal({
   initialData = null,    // بيانات الريكويست
   requestId = null,      // id عند التعديل
 }) {
+  const { showToast } = useToast();
   // تبويبات نموذج الإنشاء + الأيقونات
   const steps = [
     { key: "Basic Info", label: "Basic Info", icon: null },
@@ -1131,9 +1133,10 @@ const formatInputMoney = (v) => {
                       await handleCreate();
                       onClose?.();
                       onCreated?.(); // ✅ يرجّع يجلب البيانات بالصفحة
+                      showToast(mode === "edit" ? "تم حفظ التغييرات بنجاح" : "تم إنشاء الطلب بنجاح", "success");
                     } catch (e) {
                       console.error(e);
-                      alert(mode === "edit" ? "❌ فشل تعديل الريكويست" : "❌ فشل إنشاء الريكويست");
+                      showToast(mode === "edit" ? "فشل تعديل الطلب" : "فشل إنشاء الطلب", "error");
                     } finally {
                       setIsCreating(false);
                     }

@@ -379,31 +379,33 @@ export default function RequestDetails({ id, companyKey }) {
 
   return (
     <motion.div
-      className="min-h-screen bg-gradient-to-br p-6 md:p-10"
+      className="min-h-screen p-4 sm:p-6 md:p-10"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.6 }}
     >
+      <div className="mx-auto w-full max-w-7xl">
       {/* =================== HEADER =================== */}
-      <div className="mb-10">
-        <div className="flex items-center justify-between">
-          <StatusBadge status={request.status} />
-
-          {/* ✅ أوضح: عنوان أكبر + وزن أعلى */}
-          <h1 className="text-3xl md:text-4xl font-extrabold text-gray-900 flex items-center gap-3 tracking-tight">
-            <FiInfo className="text-blue-600" /> Fund Request Details
-          </h1>
+      <div className="mb-8 rounded-3xl border border-white/70 bg-white/70 p-4 shadow-xl backdrop-blur sm:p-6">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex min-w-0 items-center gap-3">
+            <StatusBadge status={request.status} />
+            {/* ✅ أوضح: عنوان أكبر + وزن أعلى */}
+            <h1 className="flex items-center gap-3 text-2xl font-extrabold tracking-tight text-gray-900 sm:text-3xl md:text-4xl">
+              <FiInfo className="text-blue-600" /> Fund Request Details
+            </h1>
+          </div>
 
           <button
             onClick={() => router.back()}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gray-900 text-white hover:bg-black shadow"
+            className="flex items-center justify-center gap-2 rounded-xl bg-gray-900 px-5 py-2.5 text-white shadow transition hover:-translate-y-0.5 hover:bg-black"
           >
             <FiArrowLeft /> Back
           </button>
         </div>
 
         {/* 🔽 Action Buttons */}
-        <div className="mt-4 flex flex-wrap items-center gap-3">
+        <div className="mt-5 flex flex-wrap items-center gap-3">
   {canCancel && (
     <button
       onClick={async () => {
@@ -479,9 +481,9 @@ export default function RequestDetails({ id, companyKey }) {
       </div>
 
       {/* =================== SUMMARY =================== */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-10">
+      <div className="mb-10 grid grid-cols-1 gap-6 lg:grid-cols-2">
         <motion.div
-          className="rounded-3xl bg-white/35 backdrop-blur-2xl ring-1 ring-white/25 shadow-[0_18px_45px_-25px_rgba(0,0,0,0.35)] p-6"
+          className="rounded-3xl bg-white/55 p-6 shadow-[0_18px_45px_-25px_rgba(0,0,0,0.35)] ring-1 ring-white/35 backdrop-blur-2xl"
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
         >
@@ -551,7 +553,7 @@ export default function RequestDetails({ id, companyKey }) {
         </motion.div>
 
         <motion.div
-          className="rounded-3xl bg-white/35 backdrop-blur-2xl ring-1 ring-white/25 shadow-[0_18px_45px_-25px_rgba(0,0,0,0.35)] p-6"
+          className="rounded-3xl bg-white/55 p-6 shadow-[0_18px_45px_-25px_rgba(0,0,0,0.35)] ring-1 ring-white/35 backdrop-blur-2xl"
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
         >
@@ -1153,6 +1155,7 @@ export default function RequestDetails({ id, companyKey }) {
       >
         <PrintableRequestPDF companyKey={companyKey} request={request} />
       </div>
+      </div>
     </motion.div>
   );
 }
@@ -1180,7 +1183,7 @@ function Info({ label, value, icon }) {
 function Section({ title, icon, children }) {
   return (
     <motion.div
-      className="p-6 mb-8 rounded-3xl bg-white/35 backdrop-blur-2xl ring-1 ring-white/25 shadow-[0_18px_45px_-25px_rgba(0,0,0,0.35)] overflow-hidden"
+      className="mb-8 overflow-hidden rounded-3xl bg-white/55 p-6 shadow-[0_18px_45px_-25px_rgba(0,0,0,0.35)] ring-1 ring-white/35 backdrop-blur-2xl"
       initial={{ opacity: 0, y: 30 }}
       animate={{ opacity: 1, y: 0 }}
     >
