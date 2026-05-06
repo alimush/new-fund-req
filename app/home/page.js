@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState } from "react";
 import { FiFileText, FiBarChart2, FiPieChart, FiGrid, FiZap } from "react-icons/fi";
 import { PERMISSIONS } from "@/lib/permission";
 import { COMPANIES } from "@/lib/voucher/companies";
+import { useRouter } from "next/navigation";
 
 const cards = [
   { key: "Al-Ghadeer", name: "طلبات الغدير", logo: "/الغدير.png" },
@@ -38,6 +39,7 @@ const item = {
 };
 
 export default function HomePage() {
+  const router = useRouter();
   const { companies, permissions, user } = usePermissions();
 
   const allowedCards = useMemo(() => {
@@ -110,11 +112,33 @@ export default function HomePage() {
     [allowedCards]
   );
 
+  const permissionsReady = Boolean(user?.id);
+
+  const shouldRedirectToExHome = useMemo(() => {
+    if (!permissionsReady || !Array.isArray(companies) || !Array.isArray(permissions)) {
+      return false;
+    }
+    const normalizedCompanies = companies.map((c) => String(c || "").trim());
+    const hasOnlyEXCompany =
+      normalizedCompanies.length === 1 && normalizedCompanies[0] === "EX";
+    const hasAnyNonEXCard = companyCards.some((c) => String(c.key) !== "EX");
+    return hasOnlyEXCompany && !hasAnyNonEXCard;
+  }, [permissionsReady, companies, permissions, companyCards]);
+
   const totalPending = useMemo(() => {
     return companyCards.reduce((sum, c) => sum + Number(counts?.[c.key] || 0), 0);
   }, [companyCards, counts]);
 
   useEffect(() => {
+    if (!shouldRedirectToExHome) return;
+    const t = setTimeout(() => {
+      router.replace("/ex/ex-home");
+    }, 400);
+    return () => clearTimeout(t);
+  }, [shouldRedirectToExHome, router]);
+
+  useEffect(() => {
+    if (!permissionsReady || shouldRedirectToExHome) return;
     if (!allowedCards.length) return;
 
     let alive = true;
@@ -156,7 +180,31 @@ export default function HomePage() {
       alive = false;
       clearInterval(t);
     };
-  }, [allowedCards]);
+  }, [allowedCards, permissionsReady, shouldRedirectToExHome]);
+
+  if (!permissionsReady) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 px-6">
+        <div
+          className="h-12 w-12 animate-spin rounded-full border-4 border-slate-200 border-t-slate-600"
+          aria-hidden
+        />
+        <p className="text-sm font-semibold text-slate-600">جاري التحميل...</p>
+      </div>
+    );
+  }
+
+  if (shouldRedirectToExHome) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 px-6">
+        <div
+          className="h-12 w-12 animate-spin rounded-full border-4 border-slate-200 border-t-indigo-600"
+          aria-hidden
+        />
+        <p className="text-sm font-semibold text-slate-600">جاري فتح صفحة طلبات الحجز...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen px-6 pb-10 pt-8">

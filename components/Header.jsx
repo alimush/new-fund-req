@@ -23,7 +23,10 @@ export default function Header({ onLogout }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [username, setUsername] = useState(null);
   
-  const { permissions, user } = usePermissions();
+  const { permissions, user, companies } = usePermissions();
+  const isExOnlyUser = Array.isArray(companies)
+    && companies.length === 1
+    && String(companies[0] || "").trim() === "EX";
 
   const openNewTab = (path) => {
     window.open(path, "_blank", "noopener,noreferrer");
@@ -210,7 +213,7 @@ export default function Header({ onLogout }) {
   />
 )}
 
-{permissions?.includes(PERMISSIONS.EX) && (
+{permissions?.includes(PERMISSIONS.EX) && !isExOnlyUser && (
                         <MenuItem
                           onClick={() => {
                             setMenuOpen(false);
