@@ -8,6 +8,13 @@ import { PERMISSIONS } from "@/lib/permission";
 import { toPng } from "html-to-image";
 import { POS, EXTRA } from "@/components/voucherConfig";
 import VoucherCanvasDialog from "@/components/VoucherCanvasDialog";
+import {
+  FiPrinter,
+  FiChevronRight,
+  FiFileText,
+  FiArrowUpCircle,
+  FiArrowDownCircle,
+} from "react-icons/fi";
 
 // Shared imports
 import { 
@@ -559,88 +566,129 @@ export default function VoucherPage() {
       <motion.button
         type="button"
         variants={card}
-        whileHover={{ y: -2 }}
-        whileTap={{ scale: 0.995 }}
+        whileHover={{ y: -3 }}
+        whileTap={{ scale: 0.997 }}
         onClick={() => setSelectedKey(company.key)}
         className={[
-          "w-full text-right rounded-[28px] p-7 outline-none",
-          "bg-white/70 backdrop-blur ring-1 ring-black/5 shadow-sm",
-          "hover:shadow-md",
-          active ? "ring-2 ring-black/20" : "",
+          "group relative w-full h-full min-h-[156px] text-right rounded-2xl p-5 md:p-6 outline-none transition-shadow duration-200",
+          "bg-white/90 backdrop-blur-md shadow-[0_2px_12px_-4px_rgba(0,0,0,0.08)]",
+          "ring-1 ring-slate-200/90 hover:ring-slate-300 hover:shadow-[0_12px_40px_-16px_rgba(15,23,42,0.18)]",
+          active
+            ? "ring-2 ring-indigo-500/80 shadow-[0_12px_36px_-14px_rgba(79,70,229,0.35)] bg-white"
+            : "",
         ].join(" ")}
       >
-        <div className="flex items-center justify-between gap-5">
-          <div className="h-16 w-16 rounded-3xl bg-white ring-1 ring-black/10 shadow-sm overflow-hidden flex items-center justify-center">
-            <img
-              src={company.logo}
-              alt={company.name}
-              className="h-full w-full object-contain p-2.5"
-              draggable={false}
-            />
-          </div>
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-1 rounded-t-2xl bg-gradient-to-l from-indigo-500/0 via-indigo-400/40 to-violet-500/0 opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
+        {active ? (
+          <div className="pointer-events-none absolute inset-x-0 top-0 h-1 rounded-t-2xl bg-gradient-to-l from-indigo-500 to-violet-500" />
+        ) : null}
 
-          <div className="flex-1 min-w-0">
-            <div className="text-lg font-extrabold text-gray-900 truncate">{company.name}</div>
-            <div className="text-sm font-semibold text-gray-600 mt-1">
-              اضغط للاختيار ثم اطبع وصل صرف أو قبض
+        <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between sm:gap-5">
+          <div className="flex items-center gap-4 sm:flex-1 sm:min-w-0">
+            <div
+              className={[
+                "mx-auto shrink-0 flex h-[72px] w-[72px] items-center justify-center overflow-hidden rounded-2xl bg-slate-50 shadow-inner ring-1 transition-colors duration-200 sm:mx-0",
+                active ? "ring-indigo-200 bg-indigo-50/50" : "ring-slate-200/80 group-hover:bg-white",
+              ].join(" ")}
+            >
+              <img
+                src={company.logo}
+                alt={company.name}
+                className="h-full w-full object-contain p-3"
+                draggable={false}
+              />
             </div>
 
-            <AnimatePresence>
-              {active && (
-                <motion.div
-                  variants={panel}
-                  initial="hidden"
-                  animate="show"
-                  exit="exit"
-                  className="mt-3 inline-flex items-center gap-2 rounded-2xl bg-black/5 px-3.5 py-1.5 text-xs font-extrabold text-gray-800"
-                >
-                  ✅ تم اختيار الشركة
-                </motion.div>
-              )}
-            </AnimatePresence>
+            <div className="min-w-0 flex-1 text-center sm:text-right">
+              <div className="text-base font-extrabold leading-snug text-slate-900 md:text-lg">
+                {company.name}
+              </div>
+              <p className="mt-1.5 text-[13px] font-semibold leading-relaxed text-slate-500 md:text-sm">
+                اختيار الشركة ثم طباعة وصل صرف أو قبض
+              </p>
+
+              <AnimatePresence>
+                {active ? (
+                  <motion.div
+                    variants={panel}
+                    initial="hidden"
+                    animate="show"
+                    exit="exit"
+                    className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-indigo-50 px-3 py-1 text-[11px] font-extrabold text-indigo-800 ring-1 ring-indigo-100"
+                  >
+                    <span className="inline-flex h-1.5 w-1.5 rounded-full bg-indigo-500" aria-hidden />
+                    مختارة
+                  </motion.div>
+                ) : null}
+              </AnimatePresence>
+            </div>
           </div>
 
-          <div className="h-12 w-12 rounded-3xl bg-black text-white flex items-center justify-center font-black">
-            ›
+          <div
+            className={[
+              "flex h-11 w-11 shrink-0 items-center justify-center self-center rounded-xl text-lg font-bold transition-colors duration-200 sm:self-auto",
+              active
+                ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/25"
+                : "bg-slate-100 text-slate-500 ring-1 ring-slate-200 group-hover:bg-slate-900 group-hover:text-white group-hover:ring-slate-900",
+            ].join(" ")}
+            aria-hidden
+          >
+            <FiChevronRight className="text-xl opacity-90" />
           </div>
         </div>
       </motion.button>
     );
   };
 
-  const ActionButton = ({ title, subtitle, onClick }) => {
+  const ActionButton = ({ title, subtitle, onClick, accent }) => {
     if (!selectedCompany) return null;
+
+    const barGradient =
+      accent === "payment" ? "from-emerald-400 to-teal-600" : "from-sky-400 to-blue-600";
+    const iconGradient =
+      accent === "payment"
+        ? "from-emerald-500 to-teal-600 shadow-emerald-600/35"
+        : "from-sky-500 to-blue-600 shadow-blue-600/35";
+
+    const Icon = accent === "payment" ? FiArrowUpCircle : FiArrowDownCircle;
 
     return (
       <motion.button
         type="button"
         onClick={onClick}
         variants={card}
-        whileHover={{ y: -2 }}
-        whileTap={{ scale: 0.995 }}
+        whileHover={{ y: -3 }}
+        whileTap={{ scale: 0.997 }}
         className={[
-          "w-full rounded-[28px] p-7 text-right outline-none",
-          "bg-white/80 backdrop-blur ring-1 ring-black/5 shadow-sm",
-          "hover:shadow-md",
+          "relative w-full overflow-hidden rounded-2xl p-5 text-right outline-none md:p-6",
+          "bg-white shadow-[0_2px_14px_-4px_rgba(0,0,0,0.08)] ring-1 ring-slate-200/90",
+          "transition-all duration-200 hover:ring-slate-300 hover:shadow-[0_14px_44px_-18px_rgba(15,23,42,0.2)]",
         ].join(" ")}
       >
-        <div className="flex items-center justify-between gap-5">
-          <div className="h-14 w-14 rounded-3xl bg-gray-50 ring-1 ring-black/10 shadow-sm overflow-hidden flex items-center justify-center">
-            <img
-              src={selectedCompany.logo}
-              alt={selectedCompany.name}
-              className="h-full w-full object-contain p-2.5"
-              draggable={false}
-            />
+        <div
+          className={`pointer-events-none absolute inset-y-4 left-0 w-1 rounded-full bg-gradient-to-b ${barGradient}`}
+        />
+
+        <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between sm:gap-5 ps-2">
+          <div className="flex items-center gap-4 sm:flex-1">
+            <div
+              className={`mx-auto flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br text-white shadow-lg ring-2 ring-white/60 sm:mx-0 ${iconGradient}`}
+            >
+              <Icon className="text-2xl" strokeWidth={2} />
+            </div>
+
+            <div className="min-w-0 flex-1 text-center sm:text-right">
+              <div className="text-base font-extrabold text-slate-900 md:text-[17px]">{title}</div>
+              <p className="mt-1 text-[13px] font-semibold leading-relaxed text-slate-500 md:text-sm">
+                {subtitle}
+              </p>
+            </div>
           </div>
 
-          <div className="flex-1 min-w-0">
-            <div className="text-base font-extrabold text-gray-900">{title}</div>
-            <div className="text-sm font-semibold text-gray-600 mt-1">{subtitle}</div>
-          </div>
-
-          <div className="h-12 w-12 rounded-3xl bg-gray-900 text-white flex items-center justify-center">
-            🖨️
+          <div
+            className={`flex h-12 w-12 shrink-0 items-center justify-center self-center rounded-xl bg-gradient-to-br text-white shadow-md sm:self-auto ${iconGradient}`}
+          >
+            <FiPrinter className="text-lg" strokeWidth={2} />
           </div>
         </div>
       </motion.button>
@@ -654,28 +702,47 @@ export default function VoucherPage() {
 
   return (
     <MotionConfig reducedMotion="user" transition={{ duration: t.dur, ease: t.ease }}>
-      <motion.div variants={wrap} initial="hidden" animate="show" className="min-h-screen px-5 py-10">
-        <div className="mx-auto max-w-4xl">
-          <motion.div variants={panel} initial="hidden" animate="show" className="mb-8 flex items-center justify-between gap-3">
-            <div className="text-right">
-              <div className="text-3xl font-extrabold text-gray-900">إدارة الوصولات</div>
-              <div className="text-base font-semibold text-gray-600 mt-2">
-                اختر الشركة ثم اطبع وصل صرف / قبض بحجم A5
-              </div>
+      <motion.div
+        variants={wrap}
+        initial="hidden"
+        animate="show"
+        className="min-h-screen bg-gradient-to-b from-slate-100/90 via-white to-slate-50/80 px-4 py-8 sm:px-6 sm:py-10"
+      >
+        <div className="mx-auto max-w-5xl">
+          <motion.div
+            variants={panel}
+            initial="hidden"
+            animate="show"
+            className="mb-8 flex items-center gap-4 rounded-3xl border border-slate-200/80 bg-white/90 p-6 shadow-[0_8px_40px_-20px_rgba(15,23,42,0.12)] backdrop-blur-sm sm:gap-5 sm:p-7"
+          >
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-lg shadow-indigo-500/30 ring-2 ring-white/90 sm:h-14 sm:w-14">
+              <FiFileText className="text-xl sm:text-2xl" strokeWidth={2} />
             </div>
-
-            <div className="h-12 w-12 rounded-3xl bg-white/70 ring-1 ring-black/5 shadow-sm flex items-center justify-center font-black text-gray-900">
-              V
+            <div className="min-w-0 flex-1 text-right">
+              <h1 className="text-2xl font-extrabold tracking-tight text-slate-900 sm:text-3xl">
+                إدارة الوصولات
+              </h1>
+              <p className="mt-2 text-sm font-semibold leading-relaxed text-slate-600 sm:text-base">
+                اختر الشركة ثم اطبع وصل صرف أو قبض بحجم A5
+              </p>
             </div>
           </motion.div>
 
-          <motion.div variants={list} initial="hidden" animate="show" className="grid gap-5 md:grid-cols-2">
+          <p className="mb-4 text-right text-xs font-extrabold uppercase tracking-wider text-slate-400">
+            الشركات
+          </p>
+          <motion.div
+            variants={list}
+            initial="hidden"
+            animate="show"
+            className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5 xl:grid-cols-3 xl:gap-5 auto-rows-fr"
+          >
             {filteredCompanies.map((company) => (
               <CompanyCard key={company.key} company={company} />
             ))}
           </motion.div>
 
-          <div className="mt-7">
+          <div className="mt-8">
             <AnimatePresence mode="wait" initial={false}>
               {!selectedCompany ? (
                 <motion.div
@@ -684,9 +751,11 @@ export default function VoucherPage() {
                   initial="hidden"
                   animate="show"
                   exit="exit"
-                  className="text-center text-base font-bold text-gray-700"
+                  className="rounded-2xl border border-dashed border-slate-300/90 bg-slate-50/90 px-5 py-8 text-center"
                 >
-                  👆 اختَر شركة حتى تظهر أزرار الطباعة
+                  <p className="mx-auto max-w-md text-sm font-bold leading-relaxed text-slate-600">
+                    اختر شركة من الأعلى لتفعيل أزرار طباعة وصل الصرف والقبض
+                  </p>
                 </motion.div>
               ) : (
                 <motion.div
@@ -695,11 +764,14 @@ export default function VoucherPage() {
                   initial="hidden"
                   animate="show"
                   exit="exit"
-                  className="rounded-[30px] bg-white/70 backdrop-blur ring-1 ring-black/5 shadow-sm p-6"
+                  className="overflow-hidden rounded-3xl border border-slate-200/90 bg-white/95 p-6 shadow-[0_12px_48px_-24px_rgba(15,23,42,0.18)] backdrop-blur-sm md:p-7"
                 >
-                  <div className="flex items-center justify-between mb-5">
-                    <div className="text-base font-extrabold text-gray-900">
-                      الشركة المختارة: <span className="font-black">{selectedCompany.name}</span>
+                  <div className="mb-6 flex flex-col gap-4 border-b border-slate-100 pb-5 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="text-right">
+                      <p className="text-[11px] font-extrabold uppercase tracking-wide text-slate-400">
+                        الشركة المفعّلة
+                      </p>
+                      <p className="mt-1 text-lg font-black text-slate-900">{selectedCompany.name}</p>
                     </div>
 
                     <motion.button
@@ -707,21 +779,31 @@ export default function VoucherPage() {
                       onClick={() => setSelectedKey(null)}
                       whileHover={{ y: -1 }}
                       whileTap={{ scale: 0.995 }}
-                      className="text-xs font-bold px-4 py-2.5 rounded-2xl bg-white hover:bg-gray-50 ring-1 ring-black/5"
+                      className="rounded-xl bg-slate-100 px-4 py-2.5 text-xs font-extrabold text-slate-800 ring-1 ring-slate-200/90 transition hover:bg-white"
                     >
                       تغيير الشركة
                     </motion.button>
                   </div>
 
-                  <motion.div variants={list} initial="hidden" animate="show" className="grid gap-5 md:grid-cols-2">
+                  <p className="mb-4 text-right text-xs font-extrabold uppercase tracking-wider text-slate-400">
+                    الطباعة
+                  </p>
+                  <motion.div
+                    variants={list}
+                    initial="hidden"
+                    animate="show"
+                    className="grid grid-cols-1 gap-4 md:grid-cols-2 md:gap-5"
+                  >
                     <ActionButton
+                      accent="payment"
                       title="وصل صرف"
-                      subtitle="يفتح بوب أب وتكتب داخل الوصل ثم تطبع (A5)"
+                      subtitle="نافذة الإدخال ثم الطباعة بحجم A5"
                       onClick={openPayment}
                     />
                     <ActionButton
+                      accent="receipt"
                       title="وصل قبض"
-                      subtitle="يفتح بوب أب نفس الإدخالات ثم تطبع (A5)"
+                      subtitle="نفس خطوات الصرف ثم الطباعة بحجم A5"
                       onClick={openReceipt}
                     />
                   </motion.div>
