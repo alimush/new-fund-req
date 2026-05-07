@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { motion } from "framer-motion";
 import {
   FiArrowLeft,
@@ -74,6 +74,32 @@ export default function RequestDetails({ id, companyKey }) {
     ? COMPANIES.filter((c) => c?.permission && permissions.includes(c.permission))
     : [];
   const userVoucherCompanyKey = userVoucherCompanies[0]?.key || "";
+  const pickVoucherCompanyByRequest = useMemo(() => {
+    const reqCompany = String(companyKey || "").trim().toLowerCase();
+    const has = (k) =>
+      userVoucherCompanies.some(
+        (c) => String(c?.key || "").trim().toLowerCase() === String(k || "").trim().toLowerCase()
+      );
+
+    // إذا الطلب على الغدير و المستخدم عنده الغدير الفرعي -> خليه على الغدير الفرعي
+    if (reqCompany === "al-ghadeer" && has("Ghadeer-Najaf-Sub")) {
+      return "Ghadeer-Najaf-Sub";
+    }
+
+    // إذا الطلب على بدور النجف -> خليه على بدور النجف
+    if (
+      (reqCompany === "badur-al-najaf" || reqCompany === "badur-al-najaf".toLowerCase()) &&
+      has("Badur-Al-Najaf")
+    ) {
+      return "Badur-Al-Najaf";
+    }
+
+    // fallback: نفس الشركة إذا مسموحة للمستخدم
+    if (has(companyKey)) return companyKey;
+
+    // fallback أخير: أول صلاحية وصولات عند المستخدم
+    return userVoucherCompanyKey;
+  }, [companyKey, userVoucherCompanies, userVoucherCompanyKey]);
   const isTestVoucherCompany = String(voucherCompanyConfig?.key || "").trim() === "010";
   const canCreateVoucherForCompany =
     Array.isArray(permissions) &&
@@ -84,9 +110,9 @@ export default function RequestDetails({ id, companyKey }) {
         (voucherCompanyConfig?.permission &&
           permissions.includes(voucherCompanyConfig.permission)));
   const effectiveVoucherCompanyKey =
-    canCreateVoucherForCompany || !userVoucherCompanyKey
+    canCreateVoucherForCompany || !pickVoucherCompanyByRequest
       ? companyKey
-      : userVoucherCompanyKey;
+      : pickVoucherCompanyByRequest;
 
   const printRef = useRef(null);
 
