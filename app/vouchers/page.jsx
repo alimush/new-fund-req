@@ -67,6 +67,9 @@ export default function VoucherPage() {
     
     return COMPANIES.filter((c) => {
       if (isSuperAdmin) {
+        if (String(c.key).trim() === "Badur-Baghdad-Safebox-Istishar") {
+          return c.permission && permissions.includes(c.permission);
+        }
         if (String(c.key).trim() === "010") {
           return c.permission && permissions.includes(c.permission);
         }
