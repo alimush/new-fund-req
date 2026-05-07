@@ -1145,6 +1145,8 @@ export default function RequestDetails({ id, companyKey }) {
 {isFinalApproved &&
   isLastStepUser &&
   canDelegateVoucher &&
+  !step?.voucherProcessedBy &&
+  !step?.voucherProcessedAt &&
   ["Badur-Baghdad", "Al-Ghadeer", "010", "Tiba-Al-najaf", "Ghadeer-Karbala"].includes(companyKey) && (
     <div
       className="mt-3 rounded-2xl border border-indigo-200 bg-indigo-50/70 p-3"

@@ -355,6 +355,13 @@ if (action === "update") {
         );
       }
 
+      if (step?.voucherProcessedBy || step?.voucherProcessedAt) {
+        return NextResponse.json(
+          { success: false, error: "Cannot delegate after voucher has been issued" },
+          { status: 400 }
+        );
+      }
+
       const canDelegate = currentUserPerms.includes(PERMISSIONS.VOUCHER_DELEGATE);
       if (!canDelegate) {
         return NextResponse.json(
