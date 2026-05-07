@@ -91,6 +91,7 @@ export default function VoucherModal({
   onClose,
   request,
   companyKey,
+  requestCompanyKey,
   requestId,
   onSaved,
 }) {
@@ -245,7 +246,9 @@ export default function VoucherModal({
   const loadExistingVoucher = useCallback(async () => {
     if (!companyKey || !requestId) return null;
     const res = await fetch(
-      `/api/vouchers?companyKey=${encodeURIComponent(companyKey)}&requestId=${encodeURIComponent(requestId)}&mode=payment`,
+      `/api/vouchers?companyKey=${encodeURIComponent(companyKey)}&requestCompanyKey=${encodeURIComponent(
+        requestCompanyKey || companyKey
+      )}&requestId=${encodeURIComponent(requestId)}&mode=payment`,
       {
         method: "GET",
         credentials: "include",
@@ -256,7 +259,7 @@ export default function VoucherModal({
     const json = await res.json().catch(() => null);
     if (!res.ok || !json?.success) return null;
     return json.data || null;
-  }, [companyKey, requestId]);
+  }, [companyKey, requestId, requestCompanyKey]);
 
   useEffect(() => {
     setRequestData(request || null);
@@ -332,7 +335,7 @@ export default function VoucherModal({
     return () => {
       cancelled = true;
     };
-  }, [open, companyKey, requestId, loadExistingVoucher, hydrateFromVoucherDoc]);
+  }, [open, companyKey, requestId, requestCompanyKey, loadExistingVoucher, hydrateFromVoucherDoc]);
 
   const effectiveDate = useMemo(() => {
     return buildEffectiveDate(existingVoucher, vDateYY, vDateMM, vDateDD);
@@ -352,6 +355,8 @@ export default function VoucherModal({
       ? selectedCompany.paymentImgJpg
       : selectedCompany.paymentImgPng;
   }, [selectedCompany, useOldTemplate]);
+  const isLockedAfterCreate = Boolean(existingVoucher?._id);
+  const noop = () => {};
 
   const onYYChange = (e) => {
     const v = only2Digits(e.target.value);
@@ -554,6 +559,7 @@ export default function VoucherModal({
   
     return {
       companyKey,
+      requestCompanyKey: requestCompanyKey || companyKey,
       companyName: selectedCompany?.name || companyKey,
       mode: "payment",
       requestId,
@@ -696,10 +702,10 @@ export default function VoucherModal({
       open={open}
       onClose={onClose}
       onPrintOnly={printCurrentPreviewA4}
-      onReset={handleReset}
+      onReset={isLockedAfterCreate ? noop : handleReset}
       isPrinting={printing || saving || loadingVoucher || loadingRequest}
       selectedCompany={selectedCompany}
-      hasBeenCreated={Boolean(existingVoucher?._id)}
+      hasBeenCreated={isLockedAfterCreate}
       printOnlyButtonText="طباعة"
       printingOnlyButtonText="جاري الطباعة..."
       createButtonText="إنشاء"
@@ -744,39 +750,39 @@ export default function VoucherModal({
       bankRef={bankRef}
       beneficiaryRef={beneficiaryRef}
       notesRef={notesRef}
-      onYYChange={onYYChange}
-      onMMChange={onMMChange}
-      onDDChange={onDDChange}
-      onDateKeyDown={onDateKeyDown}
-      setVCurrency={setVCurrency}
-      setVAmount={setVAmount}
-      setVWords={setVWords}
-      setVDesc={setVDesc}
-      setVFxRate={setVFxRate}
-      setVReceivedBy={setVReceivedBy}
-      setVBank={setVBank}
-      setVBeneficiary={setVBeneficiary}
-      setVNotes={setVNotes}
-      setCbOne={setCbOne}
-      setCbTwo={setCbTwo}
+      onYYChange={isLockedAfterCreate ? noop : onYYChange}
+      onMMChange={isLockedAfterCreate ? noop : onMMChange}
+      onDDChange={isLockedAfterCreate ? noop : onDDChange}
+      onDateKeyDown={isLockedAfterCreate ? noop : onDateKeyDown}
+      setVCurrency={isLockedAfterCreate ? noop : setVCurrency}
+      setVAmount={isLockedAfterCreate ? noop : setVAmount}
+      setVWords={isLockedAfterCreate ? noop : setVWords}
+      setVDesc={isLockedAfterCreate ? noop : setVDesc}
+      setVFxRate={isLockedAfterCreate ? noop : setVFxRate}
+      setVReceivedBy={isLockedAfterCreate ? noop : setVReceivedBy}
+      setVBank={isLockedAfterCreate ? noop : setVBank}
+      setVBeneficiary={isLockedAfterCreate ? noop : setVBeneficiary}
+      setVNotes={isLockedAfterCreate ? noop : setVNotes}
+      setCbOne={isLockedAfterCreate ? noop : setCbOne}
+      setCbTwo={isLockedAfterCreate ? noop : setCbTwo}
       vChequeNo={vChequeNo}
       chequeNoRef={chequeNoRef}
-      setVChequeNo={setVChequeNo}
+      setVChequeNo={isLockedAfterCreate ? noop : setVChequeNo}
       vNationalId={vNationalId}
       vPhone={vPhone}
       vSanadNo={vSanadNo}
       nationalIdRef={nationalIdRef}
       phoneRef={phoneRef}
       sanadRef={sanadRef}
-      setVNationalId={setVNationalId}
-      setVPhone={setVPhone}
-      setVSanadNo={setVSanadNo}
+      setVNationalId={isLockedAfterCreate ? noop : setVNationalId}
+      setVPhone={isLockedAfterCreate ? noop : setVPhone}
+      setVSanadNo={isLockedAfterCreate ? noop : setVSanadNo}
       cleanAmount={cleanAmount}
       formatAmount={formatAmount}
       globalTextStyle={globalTextStyle}
-      setGlobalTextStyle={setGlobalTextStyle}
+      setGlobalTextStyle={isLockedAfterCreate ? noop : setGlobalTextStyle}
       fieldStyles={fieldStyles}
-      setFieldStyles={setFieldStyles}
+      setFieldStyles={isLockedAfterCreate ? noop : setFieldStyles}
     />
   );
 }

@@ -113,11 +113,13 @@ export default function RequestsPage({ companyKey }) {
   // ===== Data =====
   const [myRequests, setMyRequests] = useState([]);
   const [pendingApprovals, setPendingApprovals] = useState([]);
+  const [delegatedRequests, setDelegatedRequests] = useState([]);
   const [loading, setLoading] = useState(false);
 
   // ===== Pagination =====
   const [pageMy, setPageMy] = useState(1);
   const [pagePending, setPagePending] = useState(1);
+  const [pageDelegated, setPageDelegated] = useState(1);
 
   // ===== Modal =====
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -185,7 +187,7 @@ export default function RequestsPage({ companyKey }) {
   }, [showSuggest, closeSuggest]);
 
   const suggestionPool = useMemo(() => {
-    const all = [...(pendingApprovals || []), ...(myRequests || [])];
+    const all = [...(pendingApprovals || []), ...(myRequests || []), ...(delegatedRequests || [])];
     const set = new Set();
     const out = [];
     for (const r of all) {
@@ -209,7 +211,7 @@ export default function RequestsPage({ companyKey }) {
       }
     }
     return out;
-  }, [pendingApprovals, myRequests]);
+  }, [pendingApprovals, myRequests, delegatedRequests]);
 
   const computeSuggestions = useCallback(
     (text) => {
@@ -249,25 +251,36 @@ export default function RequestsPage({ companyKey }) {
 
       const mineUrl = `${base}&scope=mine${stPart}${qPart}`;
       const pendingUrl = `${base}&scope=pending${qPart}`;
+      const delegatedUrl = `${base}&scope=delegated${qPart}`;
 
-      const [resMine, resPending] = await Promise.all([
+      const [resMine, resPending, resDelegated] = await Promise.all([
         fetch(mineUrl, { cache: "no-store" }),
         fetch(pendingUrl, { cache: "no-store" }),
+        fetch(delegatedUrl, { cache: "no-store" }),
       ]);
 
-      if ([401, 403].includes(resMine.status) || [401, 403].includes(resPending.status)) {
+      if (
+        [401, 403].includes(resMine.status) ||
+        [401, 403].includes(resPending.status) ||
+        [401, 403].includes(resDelegated.status)
+      ) {
         router.replace("/home");
         return;
       }
 
       const jMine = await resMine.json();
       const jPending = await resPending.json();
+      const jDelegated = await resDelegated.json();
 
       setMyRequests(jMine?.success && Array.isArray(jMine?.data) ? jMine.data : []);
       setPendingApprovals(jPending?.success && Array.isArray(jPending?.data) ? jPending.data : []);
+      setDelegatedRequests(
+        jDelegated?.success && Array.isArray(jDelegated?.data) ? jDelegated.data : []
+      );
     } catch {
       setMyRequests([]);
       setPendingApprovals([]);
+      setDelegatedRequests([]);
     } finally {
       setLoading(false);
     }
@@ -284,12 +297,17 @@ export default function RequestsPage({ companyKey }) {
     if (!accessChecked || accessDenied) return;
     setPageMy(1);
     setPagePending(1);
+    setPageDelegated(1);
     fetchAll();
   }, [appliedSearch, myStatus]); // eslint-disable-line
 
   // ===== Pagination computed + clamp =====
   const myPaged = useMemo(() => paginate(myRequests, pageMy, PAGE_SIZE), [myRequests, pageMy]);
   const pendingPaged = useMemo(() => paginate(pendingApprovals, pagePending, PAGE_SIZE), [pendingApprovals, pagePending]);
+  const delegatedPaged = useMemo(
+    () => paginate(delegatedRequests, pageDelegated, PAGE_SIZE),
+    [delegatedRequests, pageDelegated]
+  );
 
   useEffect(() => {
     if (pageMy > myPaged.totalPages) setPageMy(myPaged.totalPages);
@@ -298,6 +316,9 @@ export default function RequestsPage({ companyKey }) {
   useEffect(() => {
     if (pagePending > pendingPaged.totalPages) setPagePending(pendingPaged.totalPages);
   }, [pagePending, pendingPaged.totalPages]);
+  useEffect(() => {
+    if (pageDelegated > delegatedPaged.totalPages) setPageDelegated(delegatedPaged.totalPages);
+  }, [pageDelegated, delegatedPaged.totalPages]);
 
   // ===== Stats (من طلباتي الحالية بعد فلتر السيرفر) =====
   const stats = useMemo(() => {
@@ -623,6 +644,7 @@ export default function RequestsPage({ companyKey }) {
                   setMyStatus("all");
                   setPageMy(1);
                   setPagePending(1);
+                  setPageDelegated(1);
                   setShowSuggest(false);
                   setSuggestions([]);
                   setActiveIdx(-1);
@@ -763,6 +785,38 @@ export default function RequestsPage({ companyKey }) {
             )}
           </SectionShell>
         </div>
+
+        {delegatedRequests.length > 0 && (
+          <SectionShell
+            title="طلبات مخوّل عليها للصرف"
+            subtitle="Requests delegated to you for voucher actions"
+            icon={FiCheckCircle}
+            right={
+              <span className="text-[13px] font-extrabold text-gray-800/70">
+                {delegatedPaged.total} items
+              </span>
+            }
+          >
+            {loading ? (
+              <div className="py-10 text-center font-extrabold text-gray-800/70">Loading...</div>
+            ) : (
+              <>
+                <ScrollBox>
+                  <div className="space-y-3">
+                    {delegatedPaged.items.map((r) => (
+                      <RequestCard key={r._id} r={r} />
+                    ))}
+                  </div>
+                </ScrollBox>
+                <Pager
+                  page={delegatedPaged.page}
+                  totalPages={delegatedPaged.totalPages}
+                  onPage={setPageDelegated}
+                />
+              </>
+            )}
+          </SectionShell>
+        )}
       </div>
 
       {canCreate && (

@@ -174,6 +174,7 @@ export default function VoucherAttachModal({
           companyKey,
           requestId,
           stepIndex,
+          isVoucherAttachment: true,
           attachments: uploadedAttachments,
         }),
       });

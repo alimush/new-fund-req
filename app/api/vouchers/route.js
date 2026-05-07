@@ -6,6 +6,7 @@ import VoucherCounter from "@/models/VoucherCounter";
 import { PERMISSIONS } from "@/lib/permission";
 import { COMPANIES } from "@/lib/voucher/companies";
 import Permissions from "@/models/Permissions";
+import { getModelForCompany } from "@/models/Request";
 
 export const runtime = "nodejs";
 
@@ -54,6 +55,7 @@ export async function GET(req) {
 
     const { searchParams } = new URL(req.url);
     const companyKey = searchParams.get("companyKey");
+    const requestCompanyKey = searchParams.get("requestCompanyKey") || companyKey;
     const requestId = searchParams.get("requestId");
     const mode = searchParams.get("mode") || "payment";
 
@@ -70,9 +72,24 @@ export async function GET(req) {
     const hasCompanyPermission = Boolean(
       companyConfig?.permission && allowedPerms.includes(companyConfig.permission)
     );
-    const hasAccess = isTestCompany
+    let hasAccess = isTestCompany
       ? hasCompanyPermission
       : hasCompanyPermission || allowedPerms.includes(PERMISSIONS.VIEW_ALL_REPORTS);
+
+    // ✅ إذا المستخدم مخوّل على آخر step لنفس الطلب، اسمح له يشوف الوصل
+    if (!hasAccess && requestId) {
+      const RequestModel = getModelForCompany(requestCompanyKey);
+      const requestDoc = await RequestModel.findOne({
+        _id: requestId,
+        companyKey: requestCompanyKey,
+      })
+        .select("status currentStep workflow.steps.users workflow.steps.status workflow.steps.voucherDelegateTo")
+        .lean();
+
+      if (requestDoc && canActOnVoucherStep(requestDoc, userId)) {
+        hasAccess = true;
+      }
+    }
 
     if (!hasAccess) {
       return NextResponse.json({ success: false, error: "ليس لديك صلاحية لهذه الشركة" }, { status: 403 });
@@ -158,6 +175,29 @@ function sanitizeFieldStyles(input = {}) {
   return result;
 }
 
+function canActOnVoucherStep(requestDoc, userId) {
+  if (!requestDoc || !userId) return false;
+  const steps = requestDoc?.workflow?.steps || [];
+  if (!steps.length) return false;
+  const lastIdx = steps.length - 1;
+  const step = steps[lastIdx];
+  if (!step) return false;
+
+  const isFinalApproved =
+    String(requestDoc.status || "") === "Approved" &&
+    Number(requestDoc.currentStep) === lastIdx &&
+    String(step.status || "") === "Approved";
+  if (!isFinalApproved) return false;
+
+  const currentId = String(userId);
+  const inStep = (step.users || []).some((u) => String(u) === currentId);
+  if (!inStep) return false;
+
+  const delegatedTo = step?.voucherDelegateTo ? String(step.voucherDelegateTo) : "";
+  if (delegatedTo) return delegatedTo === currentId;
+  return true;
+}
+
 export async function POST(req) {
   try {
     await dbConnect();
@@ -178,6 +218,7 @@ export async function POST(req) {
 
     const {
       companyKey,
+      requestCompanyKey = null,
       companyName,
       mode,
       requestId = null,
@@ -223,9 +264,25 @@ export async function POST(req) {
     const hasCompanyPermission = Boolean(
       companyConfig?.permission && allowedPerms.includes(companyConfig.permission)
     );
-    const hasAccess = isTestCompany
+    let hasAccess = isTestCompany
       ? hasCompanyPermission
       : hasCompanyPermission || allowedPerms.includes(PERMISSIONS.VIEW_ALL_REPORTS);
+
+    // ✅ استثناء: إذا المستخدم مخوَّل على آخر step لهذا الطلب، نسمح له حتى بدون صلاحية الوصولات
+    if (!hasAccess && requestId) {
+      const requestCompany = safeString(requestCompanyKey || companyKey);
+      const RequestModel = getModelForCompany(requestCompany);
+      const requestDoc = await RequestModel.findOne({
+        _id: requestId,
+        companyKey: requestCompany,
+      })
+        .select("status currentStep workflow.steps.users workflow.steps.status workflow.steps.voucherDelegateTo")
+        .lean();
+
+      if (requestDoc && canActOnVoucherStep(requestDoc, userId)) {
+        hasAccess = true;
+      }
+    }
 
     if (!hasAccess) {
       return NextResponse.json({ success: false, error: "ليس لديك صلاحية لإنشاء وصولات لهذه الشركة" }, { status: 403 });
@@ -236,6 +293,50 @@ export async function POST(req) {
         { success: false, error: "Invalid mode" },
         { status: 400 }
       );
+    }
+
+    // ✅ لنفس الطلب/الشركة/النوع: إنشاء مرة واحدة فقط
+    if (requestId) {
+      const existingVoucher = await Voucher.findOne({
+        companyKey: safeString(companyKey),
+        requestId: safeString(requestId),
+        mode,
+      })
+        .sort({ createdAt: -1 })
+        .lean();
+
+      if (existingVoucher) {
+        return NextResponse.json({
+          success: true,
+          message: "Voucher already exists for this request",
+          data: existingVoucher,
+        });
+      }
+    }
+
+    if (requestId) {
+      const requestCompany = safeString(requestCompanyKey || companyKey);
+      const RequestModel = getModelForCompany(requestCompany);
+      const requestDoc = await RequestModel.findOne({
+        _id: requestId,
+        companyKey: requestCompany,
+      })
+        .select("status currentStep workflow.steps.users workflow.steps.status workflow.steps.voucherDelegateTo")
+        .lean();
+
+      if (!requestDoc) {
+        return NextResponse.json(
+          { success: false, error: "Request not found for voucher" },
+          { status: 404 }
+        );
+      }
+
+      if (!canActOnVoucherStep(requestDoc, userId)) {
+        return NextResponse.json(
+          { success: false, error: "You are not allowed to issue voucher for this request" },
+          { status: 403 }
+        );
+      }
     }
 
     const counter = await VoucherCounter.findOneAndUpdate(
@@ -295,6 +396,21 @@ export async function POST(req) {
       createdByUserId: userId,
       createdByName,
     });
+
+    if (requestId) {
+      const requestCompany = safeString(requestCompanyKey || companyKey);
+      const RequestModel = getModelForCompany(requestCompany);
+      const requestDoc = await RequestModel.findOne({ _id: requestId, companyKey: requestCompany });
+      const steps = requestDoc?.workflow?.steps || [];
+      const lastIdx = steps.length - 1;
+      if (requestDoc && lastIdx >= 0) {
+        requestDoc.workflow.steps[lastIdx].voucherProcessedBy = userId;
+        requestDoc.workflow.steps[lastIdx].voucherProcessedAt = new Date();
+        requestDoc.workflow.steps[lastIdx].voucherProcessedByUsername = createdByName || "";
+        requestDoc.markModified(`workflow.steps.${lastIdx}`);
+        await requestDoc.save();
+      }
+    }
 
     return NextResponse.json({
       success: true,

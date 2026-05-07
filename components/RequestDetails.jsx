@@ -18,6 +18,7 @@ import {
   FiLayers,
 FiEdit,
 FiUploadCloud,
+FiUserCheck,
 } from "react-icons/fi";
 import { GrCurrency } from "react-icons/gr";
 
@@ -52,6 +53,8 @@ export default function RequestDetails({ id, companyKey }) {
   const [activeStep, setActiveStep] = useState(null);
   const [showVoucherAttachModal, setShowVoucherAttachModal] = useState(false);
   const [showVoucherModal, setShowVoucherModal] = useState(false);
+  const [delegateUserId, setDelegateUserId] = useState("");
+  const [delegating, setDelegating] = useState(false);
 
   const fmt = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
 
@@ -60,10 +63,17 @@ export default function RequestDetails({ id, companyKey }) {
   const { permissions } = usePermissions();
   const canPrint =
   Array.isArray(permissions) && permissions.includes(PERMISSIONS.PRINT_REQUEST);
+  const canDelegateVoucher =
+    Array.isArray(permissions) &&
+    permissions.includes(PERMISSIONS.VOUCHER_DELEGATE);
 
   const voucherCompanyConfig = COMPANIES.find(
     (c) => String(c.key).trim().toLowerCase() === String(companyKey || "").trim().toLowerCase()
   );
+  const userVoucherCompanies = Array.isArray(permissions)
+    ? COMPANIES.filter((c) => c?.permission && permissions.includes(c.permission))
+    : [];
+  const userVoucherCompanyKey = userVoucherCompanies[0]?.key || "";
   const isTestVoucherCompany = String(voucherCompanyConfig?.key || "").trim() === "010";
   const canCreateVoucherForCompany =
     Array.isArray(permissions) &&
@@ -73,6 +83,10 @@ export default function RequestDetails({ id, companyKey }) {
       : permissions.includes(PERMISSIONS.VIEW_ALL_REPORTS) ||
         (voucherCompanyConfig?.permission &&
           permissions.includes(voucherCompanyConfig.permission)));
+  const effectiveVoucherCompanyKey =
+    canCreateVoucherForCompany || !userVoucherCompanyKey
+      ? companyKey
+      : userVoucherCompanyKey;
 
   const printRef = useRef(null);
 
@@ -133,6 +147,21 @@ export default function RequestDetails({ id, companyKey }) {
     setAccessDenied(false);
     setAccessChecked(true);
   }, [request, currentUser]);
+
+  useEffect(() => {
+    const steps = request?.workflow?.steps || [];
+    if (!steps.length) {
+      setDelegateUserId("");
+      return;
+    }
+    const lastStep = steps[steps.length - 1];
+    const delegated = lastStep?.voucherDelegateTo;
+    const delegatedId =
+      typeof delegated === "string"
+        ? delegated
+        : String(delegated?._id || delegated?.id || "");
+    setDelegateUserId(delegatedId || "");
+  }, [request]);
 
   const handleDownloadPDF = async () => {
     if (!printRef.current || !request) return;
@@ -390,6 +419,25 @@ export default function RequestDetails({ id, companyKey }) {
 
   const projectName =
     request?.projectName || request?._oldProjectName || request?.project || "-";
+
+  const getId = (v) => {
+    if (!v) return "";
+    if (typeof v === "string") return v;
+    return String(v?._id || v?.id || v?.userId || "");
+  };
+  const getUsername = (v) => {
+    if (!v) return "";
+    if (typeof v === "string") return String(v).trim();
+    return String(v?.username || v?.userName || "").trim();
+  };
+  const sameUser = (a, b) => {
+    const aid = getId(a);
+    const bid = getId(b);
+    if (aid && bid) return aid === bid;
+    const au = getUsername(a);
+    const bu = getUsername(b);
+    return !!au && !!bu && au === bu;
+  };
 
   return (
     <motion.div
@@ -794,21 +842,45 @@ export default function RequestDetails({ id, companyKey }) {
                     request.status === "Approved" &&
                     step.status === "Approved";
 
+                  const delegatedToId = getId(step?.voucherDelegateTo);
+                  const delegatedToUsername = String(step?.voucherDelegateToUsername || "").trim();
+                  const processedByUsername = String(step?.voucherProcessedByUsername || "").trim();
+                  const currentUserId = getId(currentUser);
+                  const currentUsername = String(currentUser?.username || "").trim();
+
                   const isLastStepUser =
                     isLast &&
                     currentUser &&
                     step.users?.some(
-                      (u) =>
-                        String(u.username) === String(currentUser?.username)
+                      (u) => sameUser(u, currentUser)
                     );
 
+                  const canOpenVoucherActions =
+                    isFinalApproved &&
+                    isLastStepUser &&
+                    (
+                      !delegatedToId ||
+                      sameUser(step?.voucherDelegateTo, currentUser) ||
+                      (delegatedToUsername &&
+                        delegatedToUsername === currentUsername)
+                    );
+                  const isDelegatedCurrentUser =
+                    !!delegatedToId &&
+                    (sameUser(step?.voucherDelegateTo, currentUser) ||
+                      (delegatedToUsername && delegatedToUsername === currentUsername));
+                  const canUseVoucherByPermissionOrDelegation =
+                    canCreateVoucherForCompany || isDelegatedCurrentUser;
+
                   const isCurrent = idx === request.currentStep;
+                  const canApproveFinalStep =
+                    !isLast || (isLast && canDelegateVoucher);
 
                   const canAct =
                     (request.status === "Pending" ||
                       request.status === "Rejected") &&
                     isCurrent &&
                     step.status === "Pending" &&
+                    canApproveFinalStep &&
                     currentUser &&
                     step.users?.some(
                       (user) =>
@@ -940,10 +1012,24 @@ export default function RequestDetails({ id, companyKey }) {
                         {/* USERS */}
                         <div className="relative space-y-3">
                           {(step.users || []).map((user) => {
+                            const userId = getId(user);
                             const acted =
                               step.status !== "Pending" &&
                               step.actedBy &&
-                              String(step.actedBy._id) === String(user._id);
+                              sameUser(step.actedBy, user);
+                            const isDelegated =
+                              (
+                                (!!delegatedToId && sameUser(step?.voucherDelegateTo, user)) ||
+                                (delegatedToUsername &&
+                                  delegatedToUsername === String(user?.username || "").trim())
+                              );
+                            const isVoucherProcessed =
+                              !!step?.voucherProcessedBy &&
+                              (
+                                sameUser(step?.voucherProcessedBy, user) ||
+                                (processedByUsername &&
+                                  processedByUsername === String(user?.username || "").trim())
+                              );
 
                             const rowBase =
                               "flex items-center gap-3 p-3 rounded-2xl " +
@@ -969,6 +1055,20 @@ export default function RequestDetails({ id, companyKey }) {
                                   <p className="text-[14px] font-extrabold text-gray-900">
                                     {user.username}
                                   </p>
+                                  <div className="mt-1 flex flex-wrap items-center gap-2">
+                                    {isDelegated && (
+                                      <span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-bold text-indigo-700 ring-1 ring-indigo-200">
+                                        <FiUserCheck className="text-[11px]" />
+                                        مخوّل
+                                      </span>
+                                    )}
+                                    {isVoucherProcessed && (
+                                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700 ring-1 ring-emerald-200">
+                                        <FiCheckCircle className="text-[11px]" />
+                                        صرف
+                                      </span>
+                                    )}
+                                  </div>
                                   {acted && (
                                     <p className="text-[12px] text-gray-700 font-semibold">
                                       Took Action
@@ -1016,8 +1116,8 @@ export default function RequestDetails({ id, companyKey }) {
                         )}
 
 {isFinalApproved &&
-  isLastStepUser &&
-  canCreateVoucherForCompany &&
+  canOpenVoucherActions &&
+  canUseVoucherByPermissionOrDelegation &&
   ["Badur-Baghdad", "Al-Ghadeer", "010", "Tiba-Al-najaf", "Ghadeer-Karbala"].includes(companyKey) && (
     <div className="mt-4 flex gap-3">
       <button
@@ -1040,6 +1140,80 @@ export default function RequestDetails({ id, companyKey }) {
   <FiUploadCloud />
   رفق الوصل
 </button>
+    </div>
+  )}
+{isFinalApproved &&
+  isLastStepUser &&
+  canDelegateVoucher &&
+  ["Badur-Baghdad", "Al-Ghadeer", "010", "Tiba-Al-najaf", "Ghadeer-Karbala"].includes(companyKey) && (
+    <div
+      className="mt-3 rounded-2xl border border-indigo-200 bg-indigo-50/70 p-3"
+      onClick={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
+    >
+      <p className="text-xs font-extrabold text-indigo-800 mb-2">تخويل مستخدم للصرف/رفع الوصل</p>
+      <div className="flex flex-col sm:flex-row gap-2">
+        <select
+          value={delegateUserId}
+          onClick={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+          onChange={(e) => {
+            e.stopPropagation();
+            setDelegateUserId(e.target.value);
+          }}
+          className="flex-1 rounded-xl border border-indigo-200 bg-white px-3 py-2 text-sm font-bold text-gray-900 outline-none"
+        >
+          <option value="">اختر مستخدم</option>
+          {(step.users || []).map((u) => (
+            <option key={getId(u) || getUsername(u)} value={getId(u) || getUsername(u)}>
+              {u.username}
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          onClick={async (e) => {
+            e.stopPropagation();
+            if (!delegateUserId) {
+              alert("اختَر مستخدم للتخويل");
+              return;
+            }
+            setDelegating(true);
+            try {
+              const res = await fetch(`/api/requests/${id}?company=${companyKey}`, {
+                method: "PUT",
+                credentials: "include",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  action: "delegate_voucher",
+                  stepIndex: idx,
+                  delegateToUserId: delegateUserId.length === 24 ? delegateUserId : "",
+                  delegateToUsername: delegateUserId.length === 24 ? "" : delegateUserId,
+                }),
+              });
+              const json = await res.json().catch(() => ({}));
+              if (!res.ok || !json?.success) {
+                throw new Error(json?.error || "فشل التخويل");
+              }
+              await fetchData();
+              setDelegateUserId("");
+            } catch (err) {
+              alert(err?.message || "تعذر تنفيذ التخويل");
+            } finally {
+              setDelegating(false);
+            }
+          }}
+          disabled={!delegateUserId || delegating}
+          className="rounded-xl bg-indigo-600 px-3 py-2 text-sm font-extrabold text-white hover:bg-indigo-700 disabled:opacity-60"
+        >
+          {delegating ? "جاري التخويل..." : "تخويل"}
+        </button>
+      </div>
+      {delegatedToId && (
+        <p className="mt-2 text-[12px] font-semibold text-indigo-700">
+          تم التخويل بواسطة {step?.voucherDelegatedBy?.username || "-"}.
+        </p>
+      )}
     </div>
   )}
                       </motion.div>
@@ -1121,7 +1295,8 @@ export default function RequestDetails({ id, companyKey }) {
         open={showVoucherModal}
         onClose={() => setShowVoucherModal(false)}
         request={request}
-        companyKey={companyKey}
+        companyKey={effectiveVoucherCompanyKey}
+        requestCompanyKey={companyKey}
         requestId={id}
         onSaved={async () => {
           await fetchData();

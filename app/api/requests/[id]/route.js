@@ -8,6 +8,8 @@ import User from "@/models/User";
 import Permissions from "@/models/Permissions";
 import { getModelForCompany } from "@/models/Request";
 import RequestOldData from "@/models/RequestOldData";
+import { PERMISSIONS } from "@/lib/permission";
+import { COMPANIES } from "@/lib/voucher/companies";
 
 import { buildWorkflowActionEmailHtml, sendWorkflowEmail } from "@/lib/email/workflowEmail";
 
@@ -47,6 +49,38 @@ function resetStepToPendingClean(st) {
 
   if (Array.isArray(st.tagAttachments)) st.tagAttachments = [];
   if (typeof st.tag !== "undefined") st.tag = "";
+  st.voucherDelegateTo = null;
+  st.voucherDelegatedBy = null;
+  st.voucherDelegatedAt = null;
+  st.voucherDelegateToUsername = "";
+  st.voucherDelegatedByUsername = "";
+  st.voucherProcessedBy = null;
+  st.voucherProcessedAt = null;
+  st.voucherProcessedByUsername = "";
+}
+
+async function getUserPermissions(userId) {
+  if (!userId || !Types.ObjectId.isValid(String(userId))) return [];
+  const groups = await Permissions.find({ users: new Types.ObjectId(String(userId)) })
+    .select("permissions")
+    .lean();
+  const set = new Set();
+  for (const g of groups) {
+    (g.permissions || []).forEach((p) => set.add(String(p).trim()));
+  }
+  return Array.from(set).filter(Boolean);
+}
+
+function canUserCreateVoucherForCompany(companyKey, userPerms = []) {
+  const companyConfig = COMPANIES.find(
+    (c) => String(c.key || "").trim().toLowerCase() === String(companyKey || "").trim().toLowerCase()
+  );
+  const isTestCompany = String(companyConfig?.key || "").trim() === "010";
+  const hasCompanyPermission = Boolean(
+    companyConfig?.permission && userPerms.includes(companyConfig.permission)
+  );
+  if (isTestCompany) return hasCompanyPermission;
+  return hasCompanyPermission || userPerms.includes(PERMISSIONS.VIEW_ALL_REPORTS);
 }
 
 /* ======================= GET ======================= */
@@ -78,7 +112,10 @@ export async function GET(req, { params }) {
     const Model = source === "old" ? RequestOldData : getModelForCompany(company);
     const request = await Model.findById(id)
       .populate({ path: "workflow.steps.users", model: "User", strictPopulate: false })
-      .populate({ path: "workflow.steps.actedBy", model: "User", strictPopulate: false });
+      .populate({ path: "workflow.steps.actedBy", model: "User", strictPopulate: false })
+      .populate({ path: "workflow.steps.voucherDelegateTo", model: "User", strictPopulate: false })
+      .populate({ path: "workflow.steps.voucherDelegatedBy", model: "User", strictPopulate: false })
+      .populate({ path: "workflow.steps.voucherProcessedBy", model: "User", strictPopulate: false });
 
     if (!request) {
       return NextResponse.json({ success: false, error: "Request not found" }, { status: 404 });
@@ -124,7 +161,7 @@ export async function GET(req, { params }) {
 export async function PUT(req, { params }) {
   try {
     await dbConnect();
-    const id = params.id;
+    const { id } = await params;
 
     const { searchParams } = new URL(req.url);
     let company = searchParams.get("company");
@@ -172,6 +209,7 @@ export async function PUT(req, { params }) {
     
     const currentUser = await User.findById(userId).select("username").lean();
     const currentUsername = currentUser?.username || "";
+    const currentUserPerms = await getUserPermissions(userId);
     
     const isOwner = String(request.createdBy || "") === String(currentUsername);
     
@@ -248,7 +286,7 @@ if (action === "update") {
   return NextResponse.json({ success: true, data: request });
 }
     /* ================= VALID ACTION ================= */
-    if (action !== "approve" && action !== "reject") {
+    if (action !== "approve" && action !== "reject" && action !== "delegate_voucher") {
       return NextResponse.json({ success: false, error: "Invalid action" }, { status: 400 });
     }
 
@@ -277,12 +315,76 @@ if (action === "update") {
       return NextResponse.json({ success: false, error: "Request is cancelled" }, { status: 400 });
     }
 
-    if (step.status !== "Pending") {
+    if (action !== "delegate_voucher" && step.status !== "Pending") {
       return NextResponse.json({ success: false, error: "Step already processed" }, { status: 400 });
     }
 
     // authorization (هنا step.users عادة ObjectId)
     const isAuthorized = (step.users || []).some((u) => String(u) === String(userId));
+    if (action === "delegate_voucher") {
+      let delegateToUserId = String(body?.delegateToUserId || "").trim();
+      const delegateToUsername = String(body?.delegateToUsername || "").trim();
+
+      if (!Types.ObjectId.isValid(delegateToUserId)) {
+        if (!delegateToUsername) {
+          return NextResponse.json(
+            { success: false, error: "Invalid delegated user" },
+            { status: 400 }
+          );
+        }
+        const byUsername = await User.findOne({ username: delegateToUsername })
+          .select("_id username")
+          .lean();
+        if (!byUsername?._id) {
+          return NextResponse.json(
+            { success: false, error: "Delegated username not found" },
+            { status: 404 }
+          );
+        }
+        delegateToUserId = String(byUsername._id);
+      }
+
+      const lastIdx = request.workflow.steps.length - 1;
+      const isFinalApprovedStep =
+        request.status === "Approved" && stepIndex === lastIdx && step.status === "Approved";
+
+      if (!isFinalApprovedStep) {
+        return NextResponse.json(
+          { success: false, error: "Delegation is allowed only on final approved step" },
+          { status: 400 }
+        );
+      }
+
+      const canDelegate = currentUserPerms.includes(PERMISSIONS.VOUCHER_DELEGATE);
+      if (!canDelegate) {
+        return NextResponse.json(
+          { success: false, error: "Missing voucher delegation permission" },
+          { status: 403 }
+        );
+      }
+
+      const userInsideStep = (step.users || []).some(
+        (u) => String(u) === String(delegateToUserId)
+      );
+      if (!userInsideStep) {
+        return NextResponse.json(
+          { success: false, error: "Delegated user must be inside this step users" },
+          { status: 400 }
+        );
+      }
+
+      const delegateUserDoc = await User.findById(delegateToUserId).select("username").lean();
+
+      step.voucherDelegateTo = new Types.ObjectId(delegateToUserId);
+      step.voucherDelegatedBy = new Types.ObjectId(String(userId));
+      step.voucherDelegatedAt = new Date();
+      step.voucherDelegateToUsername = String(delegateUserDoc?.username || "").trim();
+      step.voucherDelegatedByUsername = String(currentUsername || "").trim();
+      request.markModified(`workflow.steps.${stepIndex}`);
+      await request.save();
+      return NextResponse.json({ success: true, data: request });
+    }
+
     if (!isAuthorized) {
       return NextResponse.json(
         { success: false, error: "You are not authorized to act on this step" },
@@ -313,13 +415,20 @@ if (action === "update") {
 
     /* ================= APPROVE ================= */
     if (action === "approve") {
+      const lastIdx = request.workflow.steps.length - 1;
+      const isLastStep = stepIndex === lastIdx;
+      if (isLastStep && !currentUserPerms.includes(PERMISSIONS.VOUCHER_DELEGATE)) {
+        return NextResponse.json(
+          { success: false, error: "Only delegated-permission user can approve final step" },
+          { status: 403 }
+        );
+      }
+
       step.status = "Approved";
       step.actedBy = userId;
       step.actedAt = new Date();
       step.comment = note || "";
       applyStepAttachment();
-
-      const lastIdx = request.workflow.steps.length - 1;
 
       if (stepIndex === lastIdx) {
         request.status = "Approved";

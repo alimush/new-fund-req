@@ -509,8 +509,68 @@ export async function GET(req) {
       return NextResponse.json({ success: true, data: list });
     }
 
+    // =========================
+    // ✅ LIST: delegated voucher requests إلي
+    // =========================
+    if (scope === "delegated") {
+      const uid = new mongoose.Types.ObjectId(userId);
+
+      const pipeline = [
+        { $match: { status: { $in: ["Approved", "approved"] } } },
+        {
+          $addFields: {
+            _lastIdx: { $subtract: [{ $size: "$workflow.steps" }, 1] },
+          },
+        },
+        {
+          $addFields: {
+            _step: { $arrayElemAt: ["$workflow.steps", "$_lastIdx"] },
+          },
+        },
+        {
+          $match: {
+            $expr: { $eq: ["$currentStep", "$_lastIdx"] },
+            "_step.status": { $in: ["Approved", "approved"] },
+            $or: [
+              { "_step.voucherDelegateTo": uid },
+              { "_step.voucherDelegateToUsername": username || "__no_user__" },
+            ],
+          },
+        },
+        { $sort: { createdAt: -1 } },
+        { $project: { _step: 0, _lastIdx: 0 } },
+      ];
+
+      const list = await Model.aggregate(pipeline);
+
+      if (q) {
+        const tq = q.toLowerCase();
+        const out = list.filter((r) => {
+          const text = [
+            r.requestCode,
+            r.company,
+            r.companyKey,
+            r.requestType,
+            r.description,
+            r.expenseType,
+            r.currency,
+            r.department,
+            r.createdBy,
+            r._id,
+          ]
+            .filter(Boolean)
+            .join(" ")
+            .toLowerCase();
+          return text.includes(tq);
+        });
+        return NextResponse.json({ success: true, data: out });
+      }
+
+      return NextResponse.json({ success: true, data: list });
+    }
+
     return NextResponse.json(
-      { success: false, error: "Invalid scope. Use scope=mine or scope=pending" },
+      { success: false, error: "Invalid scope. Use scope=mine or scope=pending or scope=delegated" },
       { status: 400 }
     );
   } catch (err) {

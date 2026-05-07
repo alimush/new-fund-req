@@ -5,6 +5,32 @@ import { cookies } from "next/headers";
 
 import dbConnect from "@/lib/mongodb";
 import { getModelForCompany } from "@/models/Request";
+import User from "@/models/User";
+
+function canActOnVoucherStep(requestDoc, userId, stepIndex) {
+  if (!requestDoc || !userId) return false;
+  const steps = requestDoc?.workflow?.steps || [];
+  if (!steps.length) return false;
+  const idx = Number(stepIndex);
+  const lastIdx = steps.length - 1;
+  if (idx !== lastIdx) return false;
+  const step = steps[idx];
+  if (!step) return false;
+
+  const isFinalApproved =
+    String(requestDoc.status || "") === "Approved" &&
+    Number(requestDoc.currentStep) === idx &&
+    String(step.status || "") === "Approved";
+  if (!isFinalApproved) return false;
+
+  const currentId = String(userId);
+  const inStep = (step.users || []).some((u) => String(u) === currentId);
+  if (!inStep) return false;
+
+  const delegatedTo = step?.voucherDelegateTo ? String(step.voucherDelegateTo) : "";
+  if (delegatedTo) return delegatedTo === currentId;
+  return true;
+}
 
 export const runtime = "nodejs";
 
@@ -20,7 +46,7 @@ export async function POST(req) {
     }
 
     const body = await req.json();
-    const { companyKey, requestId, stepIndex, attachments } = body;
+    const { companyKey, requestId, stepIndex, attachments, isVoucherAttachment } = body;
 
     if (!companyKey || !requestId || stepIndex === null || stepIndex === undefined) {
       return NextResponse.json(
@@ -105,6 +131,27 @@ export async function POST(req) {
       );
     }
 
+    const step = requestDoc.workflow?.steps?.[idx];
+    const isRegularStepAuthorized =
+      String(requestDoc.status || "") !== "Cancelled" &&
+      Number(requestDoc.currentStep) === idx &&
+      String(step?.status || "") === "Pending" &&
+      (step?.users || []).some((u) => String(u) === String(userId));
+
+    if (isVoucherAttachment) {
+      if (!canActOnVoucherStep(requestDoc, userId, idx)) {
+        return NextResponse.json(
+          { success: false, error: "You are not allowed to upload voucher attachment on this step" },
+          { status: 403 }
+        );
+      }
+    } else if (!isRegularStepAuthorized) {
+      return NextResponse.json(
+        { success: false, error: "You are not allowed to upload attachment on this step" },
+        { status: 403 }
+      );
+    }
+
     const oldAttachments = Array.isArray(requestDoc.workflow.steps[idx].tagAttachments)
       ? requestDoc.workflow.steps[idx].tagAttachments
       : [];
@@ -113,6 +160,12 @@ export async function POST(req) {
 
     requestDoc.workflow.steps[idx].tagAttachments = mergedAttachments;
     requestDoc.workflow.steps[idx].tag = mergedAttachments[0]?.url || "";
+    if (isVoucherAttachment) {
+      requestDoc.workflow.steps[idx].voucherProcessedBy = userId;
+      requestDoc.workflow.steps[idx].voucherProcessedAt = new Date();
+      const actor = await User.findById(userId).select("username").lean();
+      requestDoc.workflow.steps[idx].voucherProcessedByUsername = String(actor?.username || "");
+    }
 
     await requestDoc.save();
 

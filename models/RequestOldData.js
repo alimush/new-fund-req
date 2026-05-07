@@ -38,6 +38,26 @@ const StepSchema = new mongoose.Schema(
       type: [AttachmentSchema],
       default: [],
     },
+    voucherDelegateTo: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    voucherDelegatedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    voucherDelegatedAt: { type: Date, default: null },
+    voucherDelegateToUsername: { type: String, default: "", trim: true },
+    voucherDelegatedByUsername: { type: String, default: "", trim: true },
+    voucherProcessedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    voucherProcessedAt: { type: Date, default: null },
+    voucherProcessedByUsername: { type: String, default: "", trim: true },
   },
   { _id: false }
 );
