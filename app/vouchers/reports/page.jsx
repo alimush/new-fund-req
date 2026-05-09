@@ -19,6 +19,7 @@ import {
   FiHash,
   FiUser,
   FiCreditCard,
+  FiTrash2,
 } from "react-icons/fi";
 
 import { FaMoneyBillWave } from "react-icons/fa6";
@@ -91,6 +92,7 @@ export default function VoucherReportsPage() {
   const [activeIdx, setActiveIdx] = useState(-1);
   const [portalReady, setPortalReady] = useState(false);
   const [uploadingId, setUploadingId] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
   const fileInputRefs = useRef({});
   const inputRef = useRef(null);
   const suggestBoxRef = useRef(null);
@@ -348,6 +350,51 @@ export default function VoucherReportsPage() {
       attachments: [],
     });
   }, []);
+
+  const handleDeleteVoucher = useCallback(
+    async (row, e) => {
+      e?.stopPropagation?.();
+      if (!row?._id) return;
+      const ok = window.confirm(
+        `تأكيد حذف الوصل رقم ${row.voucherNo || String(row.seq ?? "").padStart(5, "0")}؟ سيعاد العداد -1 إذا كان هذا آخر رقم صادر.`
+      );
+      if (!ok) return;
+
+      try {
+        setDeletingId(row._id);
+        const res = await fetch(
+          `/api/vouchers/view?id=${encodeURIComponent(row._id)}`,
+          { method: "DELETE", credentials: "include" }
+        );
+        const json = await res.json();
+        if (!json?.success) {
+          throw new Error(json?.error || "فشل حذف الوصل");
+        }
+
+        const nextRows = rows.filter((x) => x._id !== row._id);
+        setRows(nextRows);
+        setMeta((prev) => {
+          const newTotal = Math.max(0, (prev.total || 0) - 1);
+          const ps = prev.pageSize || PAGE_SIZE;
+          const newTotalPages = Math.max(1, Math.ceil(newTotal / ps));
+          return {
+            ...prev,
+            total: newTotal,
+            totalPages: newTotalPages,
+          };
+        });
+        if (nextRows.length === 0 && page > 1) {
+          setPage(page - 1);
+        }
+      } catch (err) {
+        console.error("❌ Delete voucher error:", err);
+        alert(err.message || "فشل حذف الوصل");
+      } finally {
+        setDeletingId(null);
+      }
+    },
+    [page, rows]
+  );
 
   const handleDeleteAttachment = useCallback(async (rowId, attachmentKey) => {
     try {
@@ -1087,6 +1134,7 @@ export default function VoucherReportsPage() {
                       "الوصف",
                       "الاتاج",
                       "التاريخ",
+                      "حذف الوصل",
                     ].map((h, i) => (
                       <th
                         key={`${h}-${i}`}
@@ -1210,6 +1258,29 @@ export default function VoucherReportsPage() {
                           : r.createdAt
                           ? new Date(r.createdAt).toLocaleDateString("en-GB")
                           : "-"}
+                      </td>
+
+                      <td
+                        className="px-6 py-4 text-right whitespace-nowrap"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <button
+                          type="button"
+                          onClick={(e) => handleDeleteVoucher(r, e)}
+                          disabled={deletingId === r._id}
+                          className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border text-[13px] font-extrabold transition ${
+                            deletingId === r._id
+                              ? "bg-gray-200 text-gray-500 border-gray-200 cursor-not-allowed"
+                              : "border-red-200 bg-red-50 text-red-700 hover:bg-red-100"
+                          }`}
+                        >
+                          {deletingId === r._id ? (
+                            <span className="w-3.5 h-3.5 border-2 border-red-400 border-t-transparent rounded-full animate-spin" />
+                          ) : (
+                            <FiTrash2 className="text-base" />
+                          )}
+                          حذف
+                        </button>
                       </td>
                     </motion.tr>
                   ))}

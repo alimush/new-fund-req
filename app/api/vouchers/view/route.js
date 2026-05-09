@@ -6,6 +6,7 @@ import { PERMISSIONS } from "@/lib/permission";
 import mongoose from "mongoose";
 import { ObjectId } from "mongodb";
 import { COMPANIES } from "@/lib/voucher/companies";
+import VoucherCounter from "@/models/VoucherCounter";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -404,6 +405,90 @@ export async function PUT(req) {
     });
   } catch (err) {
     console.error("Voucher Update Error:", err);
+    return NextResponse.json(
+      { success: false, error: err.message },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(req) {
+  try {
+    await dbConnect();
+
+    const cookieStore = await cookies();
+    const userId = cookieStore.get("userId")?.value;
+
+    if (!userId) {
+      return NextResponse.json(
+        { success: false, error: "Unauthorized" },
+        { status: 401 }
+      );
+    }
+
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id") || "";
+
+    if (!id || !ObjectId.isValid(id)) {
+      return NextResponse.json(
+        { success: false, error: "Invalid ID" },
+        { status: 400 }
+      );
+    }
+
+    const { allowedPerms } = await getUserAccess(userId);
+    const db = mongoose.connection.db;
+    const col = db.collection(COLLECTION_NAME);
+
+    const doc = await col.findOne({ _id: new ObjectId(id) });
+    if (!doc) {
+      return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
+    }
+
+    const companyConfig = COMPANIES.find(
+      (c) => String(c.key).toLowerCase() === String(doc.companyKey).toLowerCase()
+    );
+    const hasSpecificAccess =
+      companyConfig && allowedPerms.includes(companyConfig.permission);
+
+    if (!hasSpecificAccess) {
+      return NextResponse.json(
+        { success: false, error: "ليس لديك صلاحية لحذف وصولات هذه الشركة" },
+        { status: 403 }
+      );
+    }
+
+    const companyKey = String(doc.companyKey || "").trim();
+    const mode = doc.mode === "receipt" ? "receipt" : "payment";
+    const deletedSeq = Number(doc.seq);
+
+    const delResult = await col.deleteOne({ _id: new ObjectId(id) });
+    if (!delResult.deletedCount) {
+      return NextResponse.json(
+        { success: false, error: "فشل الحذف" },
+        { status: 500 }
+      );
+    }
+
+    // إرجاع العداد -1 فقط إذا كان هذا الوصل هو آخر رقم صادر (يتطابق مع العداد)
+    if (Number.isFinite(deletedSeq) && companyKey) {
+      const counterUpdate = await VoucherCounter.findOneAndUpdate(
+        { companyKey, mode, seq: deletedSeq },
+        { $inc: { seq: -1 } },
+        { new: true }
+      ).lean();
+
+      if (counterUpdate && counterUpdate.seq < 0) {
+        await VoucherCounter.updateOne(
+          { companyKey, mode },
+          { $set: { seq: 0 } }
+        );
+      }
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (err) {
+    console.error("Voucher Delete Error:", err);
     return NextResponse.json(
       { success: false, error: err.message },
       { status: 500 }
