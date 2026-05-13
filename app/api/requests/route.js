@@ -531,9 +531,25 @@ export async function GET(req) {
           $match: {
             $expr: { $eq: ["$currentStep", "$_lastIdx"] },
             "_step.status": { $in: ["Approved", "approved"] },
-            $or: [
-              { "_step.voucherDelegateTo": uid },
-              { "_step.voucherDelegateToUsername": username || "__no_user__" },
+            $and: [
+              {
+                $or: [
+                  { "_step.voucherDelegateTo": uid },
+                  { "_step.voucherDelegateToUsername": username || "__no_user__" },
+                ],
+              },
+              {
+                $or: [
+                  { "_step.voucherProcessedBy": null },
+                  { "_step.voucherProcessedBy": { $exists: false } },
+                ],
+              },
+              {
+                $or: [
+                  { "_step.voucherProcessedAt": null },
+                  { "_step.voucherProcessedAt": { $exists: false } },
+                ],
+              },
             ],
           },
         },

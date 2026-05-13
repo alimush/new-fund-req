@@ -788,8 +788,8 @@ export default function RequestsPage({ companyKey }) {
 
         {delegatedRequests.length > 0 && (
           <SectionShell
-            title="طلبات مخوّل عليها للصرف"
-            subtitle="Requests delegated to you for voucher actions"
+            title="قيد الانتظار للصرف"
+            subtitle="طلبات مخوّلة لك لإصدار الوصل أو رفع المرفق"
             icon={FiCheckCircle}
             right={
               <span className="text-[13px] font-extrabold text-gray-800/70">

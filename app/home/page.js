@@ -244,7 +244,7 @@ export default function HomePage() {
             <p className="mt-1 text-sm font-extrabold text-gray-900">{companyCards.length}</p>
           </div>
           <div className="rounded-2xl bg-slate-50/90 p-2.5 text-center ring-1 ring-slate-200 shadow-sm">
-            <p className="text-[11px] font-bold text-gray-500">طلبات قيد الانتظار</p>
+            <p className="text-[11px] font-bold text-gray-500">طلبات بانتظارك (موافقة أو صرف)</p>
             <div className="mt-1 flex items-center justify-center">
               <span
                 className="
@@ -336,7 +336,7 @@ export default function HomePage() {
                       ring-2 ring-white/75
                       transition-transform duration-300 group-hover:scale-105
                     "
-                        title="طلبات تحتاج إجراء منك"
+                        title="موافقات بانتظارك أو طلبات بانتظار إجراء الصرف (الوصل)"
                       >
                         <span className="absolute inset-0 rounded-full bg-white/20 opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
                         <span className="relative">{n > 99 ? "99+" : n}</span>

@@ -184,6 +184,15 @@ export default function Header({ onLogout }) {
                         <MenuItem
                           onClick={() => {
                             setMenuOpen(false);
+                            router.push("/admin/requests-workflow");
+                          }}
+                          icon={<GoWorkflow className="text-gray-200" />}
+                          label="وورك فلو الطلبات"
+                        />)}
+                         {permissions?.includes(PERMISSIONS.MANAGE_PERMISSIONS) && (
+                        <MenuItem
+                          onClick={() => {
+                            setMenuOpen(false);
                             router.push("ex/workflow");
                           }}
                           icon={<GoWorkflow className="text-gray-200" />}
