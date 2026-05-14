@@ -11,6 +11,7 @@ import { usePermissions } from "@/context/PermissionContext";
 import { PERMISSIONS } from "@/lib/permission";
 import { IoReceipt } from "react-icons/io5";
 import { FaFileInvoice } from "react-icons/fa";
+import { FiClock } from "react-icons/fi";
 
 const poppins = Poppins({
   subsets: ["latin"],
@@ -244,6 +245,16 @@ export default function Header({ onLogout }) {
 )}
 
 
+{permissions?.includes(PERMISSIONS.RECEIPTS) && (
+  <MenuItem
+    onClick={() => {
+      setMenuOpen(false);
+      router.push("/receipts/disbursement");
+    }}
+    icon={<FiClock className="text-gray-200" />}
+    label="تتبع صرف الطلبات"
+  />
+)}
 {permissions?.includes(PERMISSIONS.RECEIPTS) && (
   <MenuItem
     onClick={() => {

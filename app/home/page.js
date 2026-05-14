@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePermissions } from "@/context/PermissionContext";
 import { useEffect, useMemo, useState } from "react";
-import { FiFileText, FiBarChart2, FiPieChart, FiGrid, FiZap } from "react-icons/fi";
+import { FiFileText, FiBarChart2, FiPieChart, FiGrid, FiZap, FiClock } from "react-icons/fi";
 import { PERMISSIONS } from "@/lib/permission";
 import { COMPANIES } from "@/lib/voucher/companies";
 import { useRouter } from "next/navigation";
@@ -80,6 +80,17 @@ export default function HomePage() {
         isIcon: true,
         Icon: FiBarChart2,
         color: "text-emerald-600"
+      });
+    }
+
+    if (permissions.includes(PERMISSIONS.RECEIPTS)) {
+      result.push({
+        key: "receipts-disbursement",
+        name: "تتبع صرف الطلبات",
+        href: "/receipts/disbursement",
+        isIcon: true,
+        Icon: FiClock,
+        color: "text-amber-600"
       });
     }
 

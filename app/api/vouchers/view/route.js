@@ -7,6 +7,7 @@ import mongoose from "mongoose";
 import { ObjectId } from "mongodb";
 import { COMPANIES } from "@/lib/voucher/companies";
 import VoucherCounter from "@/models/VoucherCounter";
+import { getModelForCompany } from "@/models/Request";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -468,6 +469,29 @@ export async function DELETE(req) {
         { success: false, error: "فشل الحذف" },
         { status: 500 }
       );
+    }
+
+    const ridRaw = doc.requestId != null ? String(doc.requestId).trim() : "";
+    if (ridRaw && ObjectId.isValid(ridRaw)) {
+      try {
+        const otherVouchers = await col.countDocuments({
+          $or: [{ requestId: ridRaw }, { requestId: new ObjectId(ridRaw) }],
+        });
+        if (otherVouchers === 0) {
+          const RequestModel = getModelForCompany(companyKey);
+          const reqDoc = await RequestModel.findById(ridRaw);
+          if (reqDoc?.workflow?.steps?.length) {
+            const lastIdx = reqDoc.workflow.steps.length - 1;
+            reqDoc.workflow.steps[lastIdx].voucherProcessedBy = null;
+            reqDoc.workflow.steps[lastIdx].voucherProcessedAt = null;
+            reqDoc.workflow.steps[lastIdx].voucherProcessedByUsername = "";
+            reqDoc.markModified(`workflow.steps.${lastIdx}`);
+            await reqDoc.save();
+          }
+        }
+      } catch (e) {
+        console.error("Clear request voucher state after voucher delete:", e);
+      }
     }
 
     // إرجاع العداد -1 فقط إذا كان هذا الوصل هو آخر رقم صادر (يتطابق مع العداد)
