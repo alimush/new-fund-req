@@ -249,7 +249,7 @@ export default function Header({ onLogout }) {
   <MenuItem
     onClick={() => {
       setMenuOpen(false);
-      router.push("/receipts/disbursement");
+      openNewTab("/receipts/disbursement");
     }}
     icon={<FiClock className="text-gray-200" />}
     label="تتبع صرف الطلبات"

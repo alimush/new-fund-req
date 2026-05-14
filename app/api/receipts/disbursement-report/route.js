@@ -14,6 +14,10 @@ function isValidObjectId(id) {
   return mongoose.Types.ObjectId.isValid(String(id || ""));
 }
 
+function escapeRegex(s) {
+  return String(s || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 async function getAuthContext() {
   const cookieStore = await cookies();
   const userId = cookieStore.get("userId")?.value;
@@ -70,7 +74,7 @@ function voucherLookupByRequestPipeline() {
     },
     { $sort: { createdAt: -1 } },
     { $limit: 1 },
-    { $project: { voucherNo: 1, seq: 1 } },
+    { $project: { voucherNo: 1, seq: 1, createdByUserId: 1, createdAt: 1 } },
   ];
 }
 
@@ -142,6 +146,8 @@ function buildPendingPipeline({ uid, username, from, to }) {
         as: "__vrow",
       },
     },
+    // طلب مربوط بوصل = يعتبر مصروفاً حتى لو ما مُسجَّل على آخر خطوة (سكيمة قديمة)
+    { $match: { "__vrow.0": { $exists: false } } },
     {
       $project: {
         _id: 1,
@@ -185,6 +191,11 @@ function buildDonePipeline({ uid, userIdStr, username, from, to }) {
   ];
   if (uname) processedOr.push({ "_step.voucherProcessedByUsername": uname });
 
+  const issuerOr = [
+    { "__v.0.createdByUserId": userIdStr },
+    { "__v.0.createdByUserId": uid },
+  ];
+
   const pipeline = [];
 
   pipeline.push(
@@ -197,36 +208,51 @@ function buildDonePipeline({ uid, userIdStr, username, from, to }) {
     { $match: { $expr: { $gte: ["$_lastIdx", 0] } } },
     { $addFields: { _step: { $arrayElemAt: ["$workflow.steps", "$_lastIdx"] } } },
     {
-      $match: {
-        $expr: { $eq: ["$currentStep", "$_lastIdx"] },
-        "_step.status": { $in: ["Approved", "approved"] },
-        $or: processedOr,
-      },
-    }
-  );
-
-  const procMatch = {};
-  if (from) procMatch.$gte = from;
-  if (to) procMatch.$lte = to;
-  if (Object.keys(procMatch).length) {
-    pipeline.push({ $match: { "_step.voucherProcessedAt": procMatch } });
-  }
-
-  // لا تعرض طلباً في «صرفتها أنا» إن لم يبقَ وصل مرتبط به (مثلاً بعد حذف الوصل)
-  pipeline.push(
-    {
       $lookup: {
         from: "vouchers",
         let: { rid: { $toString: "$_id" } },
         pipeline: voucherLookupByRequestPipeline(),
-        as: "__voucherStillExists",
+        as: "__v",
       },
     },
-    { $match: { "__voucherStillExists.0": { $exists: true } } }
+    {
+      $match: {
+        $expr: { $eq: ["$currentStep", "$_lastIdx"] },
+        "_step.status": { $in: ["Approved", "approved"] },
+        "__v.0": { $exists: true },
+        $or: [{ $or: processedOr }, { $or: issuerOr }],
+      },
+    }
   );
 
+  if (from || to) {
+    const range = {};
+    if (from) range.$gte = from;
+    if (to) range.$lte = to;
+    pipeline.push({
+      $match: {
+        $or: [{ "_step.voucherProcessedAt": range }, { "__v.0.createdAt": range }],
+      },
+    });
+  }
+
   pipeline.push(
-    { $sort: { "_step.voucherProcessedAt": -1, createdAt: -1 } },
+    {
+      $addFields: {
+        _sortDisburse: {
+          $ifNull: [
+            "$_step.voucherProcessedAt",
+            {
+              $let: {
+                vars: { d: { $arrayElemAt: ["$__v", 0] } },
+                in: "$$d.createdAt",
+              },
+            },
+          ],
+        },
+      },
+    },
+    { $sort: { _sortDisburse: -1, createdAt: -1 } },
     {
       $project: {
         _id: 1,
@@ -243,17 +269,29 @@ function buildDonePipeline({ uid, userIdStr, username, from, to }) {
         items: 1,
         workflow: 1,
         currentStep: 1,
-        voucherProcessedAt: "$_step.voucherProcessedAt",
-        voucherProcessedByUsername: "$_step.voucherProcessedByUsername",
+        voucherProcessedAt: {
+          $ifNull: [
+            "$_step.voucherProcessedAt",
+            {
+              $let: {
+                vars: { d: { $arrayElemAt: ["$__v", 0] } },
+                in: "$$d.createdAt",
+              },
+            },
+          ],
+        },
+        voucherProcessedByUsername: {
+          $ifNull: ["$_step.voucherProcessedByUsername", ""],
+        },
         voucherNo: {
           $let: {
-            vars: { d: { $arrayElemAt: ["$__voucherStillExists", 0] } },
+            vars: { d: { $arrayElemAt: ["$__v", 0] } },
             in: "$$d.voucherNo",
           },
         },
         voucherSeq: {
           $let: {
-            vars: { d: { $arrayElemAt: ["$__voucherStillExists", 0] } },
+            vars: { d: { $arrayElemAt: ["$__v", 0] } },
             in: "$$d.seq",
           },
         },
@@ -327,6 +365,110 @@ function serializeRow(row, companyKey) {
   };
 }
 
+/** نفس حقول البحث النصي في التقرير (تقريباً) بعد مرحلة الـ$project */
+function buildSuggestRowMatch(sq) {
+  const s = String(sq || "").trim();
+  const rx = new RegExp(escapeRegex(s), "i");
+  const or = [
+    { requestCode: rx },
+    { description: rx },
+    { requestType: rx },
+    { createdBy: rx },
+    { department: rx },
+    { currency: rx },
+    { companyKey: rx },
+    { voucherNo: rx },
+    {
+      $expr: {
+        $regexMatch: {
+          input: { $ifNull: [{ $toString: "$voucherSeq" }, ""] },
+          regex: escapeRegex(s),
+          options: "i",
+        },
+      },
+    },
+    {
+      $expr: {
+        $regexMatch: {
+          input: { $toString: "$_id" },
+          regex: escapeRegex(s),
+          options: "i",
+        },
+      },
+    },
+  ];
+  if (isValidObjectId(s)) {
+    try {
+      or.push({ _id: new mongoose.Types.ObjectId(s) });
+    } catch {
+      /* ignore */
+    }
+  }
+  return { $match: { $or: or } };
+}
+
+/**
+ * اقتراحات ضمن نفس صلاحية التقرير: صفوف تمرّ بـ pending/done pipeline للمستخدم الحالي،
+ * ثم تطابق نصّي على الحقول الظاهرة (لا بحث عام في vouchers/طلبات خارج نطاق التقرير).
+ */
+async function buildDisbursementSuggest(ctx, companyFilter, qRaw, tabRaw, fromRaw, toRaw) {
+  const sq = String(qRaw || "").trim();
+  if (!sq || !ctx.companies.length) return [];
+
+  let companiesToScan = ctx.companies;
+  if (companyFilter && companyFilter !== "all") {
+    if (!ctx.companies.includes(companyFilter)) {
+      throw Object.assign(new Error("لا صلاحية لهذه الشركة"), { status: 403 });
+    }
+    companiesToScan = [companyFilter];
+  }
+
+  const tab = String(tabRaw || "pending").toLowerCase() === "done" ? "done" : "pending";
+  const from = parseDateStart(fromRaw);
+  const to = parseDateEnd(toRaw);
+  const userIdStr = String(ctx.userId);
+  const pipelineFn =
+    tab === "done"
+      ? () => buildDonePipeline({ uid: ctx.uid, userIdStr, username: ctx.username, from, to })
+      : () => buildPendingPipeline({ uid: ctx.uid, username: ctx.username, from, to });
+
+  const matchStage = buildSuggestRowMatch(sq);
+  const out = [];
+  const seen = new Set();
+
+  for (const companyKey of companiesToScan) {
+    if (out.length >= 32) break;
+    try {
+      const Model = getModelForCompany(companyKey);
+      const pipeline = [...pipelineFn(), matchStage, { $limit: 24 }];
+      const docs = await Model.aggregate(pipeline);
+      for (const d of docs) {
+        const id = String(d._id);
+        if (seen.has(id)) continue;
+        seen.add(id);
+        const code = String(d.requestCode || "").trim();
+        const desc = String(d.description || "").slice(0, 48);
+        const ck = d.companyKey || companyKey;
+        const vn = displayVoucherNo(d.voucherNo, d.voucherSeq);
+        if (tab === "done" && vn) {
+          const val = String(vn || code || id).trim();
+          const label = `وصل ${vn} — ${ck}${desc ? " — " + desc : ""}`;
+          out.push({ type: "voucher", value: val, label });
+        } else {
+          const val = code || id;
+          const label = `طلب ${code || id} — ${ck}${desc ? " — " + desc : ""}`;
+          out.push({ type: "request", value: val, label });
+        }
+        if (out.length >= 32) break;
+      }
+    } catch (e) {
+      console.error(`buildDisbursementSuggest aggregate ${companyKey}:`, e?.message || e);
+    }
+  }
+
+  return out;
+}
+
 export async function GET(req) {
   try {
     await dbConnect();
@@ -343,6 +485,30 @@ export async function GET(req) {
       );
     }
 
+    const { searchParams } = new URL(req.url);
+
+    if (searchParams.get("suggest") === "1") {
+      try {
+        const companyFilter = String(searchParams.get("company") || "all").trim();
+        const sq = String(searchParams.get("q") || "").trim();
+        const data = await buildDisbursementSuggest(
+          ctx,
+          companyFilter,
+          sq,
+          searchParams.get("tab"),
+          searchParams.get("from"),
+          searchParams.get("to")
+        );
+        return NextResponse.json({ success: true, data });
+      } catch (e) {
+        const st = e?.status === 403 ? 403 : 500;
+        return NextResponse.json(
+          { success: false, error: e?.message || "Server error" },
+          { status: st }
+        );
+      }
+    }
+
     if (!ctx.companies.length) {
       return NextResponse.json({
         success: true,
@@ -351,7 +517,6 @@ export async function GET(req) {
       });
     }
 
-    const { searchParams } = new URL(req.url);
     const tab = String(searchParams.get("tab") || "pending").toLowerCase();
     const companyFilter = String(searchParams.get("company") || "all").trim();
     const q = String(searchParams.get("q") || "").trim();

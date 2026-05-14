@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import dynamic from "next/dynamic";
+import { createPortal } from "react-dom";
 
 import {
   FiSearch,
@@ -40,20 +41,19 @@ function fmtDate(v) {
 
 export default function ReceiptsDisbursementPage() {
   const router = useRouter();
-  const { permissions, companies } = usePermissions();
-  const checked = useRef(false);
+  const { permissions, companies, user } = usePermissions();
 
   const canView =
-    Array.isArray(permissions) && permissions.includes(PERMISSIONS.RECEIPTS);
+    Boolean(user?.id) &&
+    Array.isArray(permissions) &&
+    permissions.includes(PERMISSIONS.RECEIPTS);
 
   useEffect(() => {
-    if (!Array.isArray(permissions)) return;
-    if (checked.current) return;
-    checked.current = true;
-    if (!permissions.includes(PERMISSIONS.RECEIPTS)) {
+    if (!user?.id) return;
+    if (!Array.isArray(permissions) || !permissions.includes(PERMISSIONS.RECEIPTS)) {
       router.replace("/home");
     }
-  }, [permissions, router]);
+  }, [user?.id, permissions, router]);
 
   const [tab, setTab] = useState("pending");
   const [companyFilter, setCompanyFilter] = useState({
@@ -65,13 +65,25 @@ export default function ReceiptsDisbursementPage() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [metaCompanies, setMetaCompanies] = useState([]);
+  const [hasSearched, setHasSearched] = useState(false);
 
   const filtersRef = useRef({ q: "", from: "", to: "" });
-  filtersRef.current = { q, from: date.from, to: date.to };
+
+  const [portalReady, setPortalReady] = useState(false);
+  const [smartOptions, setSmartOptions] = useState([]);
+  const [showSuggest, setShowSuggest] = useState(false);
+  const [activeIdx, setActiveIdx] = useState(-1);
+  const [suggestLoading, setSuggestLoading] = useState(false);
+  const inputRef = useRef(null);
+  const suggestBoxRef = useRef(null);
+  const [suggestPos, setSuggestPos] = useState({ top: 0, left: 0, width: 0 });
 
   const [menuTarget, setMenuTarget] = useState(null);
   useEffect(() => {
     setMenuTarget(document.body);
+  }, []);
+  useEffect(() => {
+    setPortalReady(true);
   }, []);
 
   const selectMenuProps = useMemo(
@@ -201,12 +213,150 @@ export default function ReceiptsDisbursementPage() {
     }
   }, [canView, tab, companyFilter]);
 
+  const recalcSuggestPos = useCallback(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    setSuggestPos({
+      left: r.left,
+      top: r.bottom + 8,
+      width: r.width,
+    });
+  }, []);
+
+  const fetchSuggestions = useCallback(async () => {
+    const query = q.trim();
+    if (!query || !canView) {
+      setSmartOptions([]);
+      setShowSuggest(false);
+      setActiveIdx(-1);
+      return;
+    }
+
+    try {
+      setSuggestLoading(true);
+      const company = companyFilter?.value || "all";
+      const params = new URLSearchParams();
+      params.set("suggest", "1");
+      params.set("q", query);
+      params.set("tab", tab);
+      if (date.from) params.set("from", date.from);
+      if (date.to) params.set("to", date.to);
+      if (company && company !== "all") params.set("company", company);
+
+      const res = await fetch(`/api/receipts/disbursement-report?${params.toString()}`, {
+        credentials: "include",
+        cache: "no-store",
+      });
+      const json = await res.json();
+      if (json?.success) {
+        const arr = Array.isArray(json.data) ? json.data : [];
+        setSmartOptions(arr);
+        if (arr.length > 0) {
+          recalcSuggestPos();
+          setShowSuggest(true);
+          setActiveIdx(-1);
+        } else {
+          setShowSuggest(false);
+          setActiveIdx(-1);
+        }
+      }
+    } catch (err) {
+      console.error("disbursement suggest:", err);
+    } finally {
+      setSuggestLoading(false);
+    }
+  }, [q, canView, companyFilter, tab, date.from, date.to, recalcSuggestPos]);
+
   useEffect(() => {
     if (!canView) return;
-    fetchData();
-  }, [canView, tab, companyFilter, fetchData]);
+    setRows([]);
+    setHasSearched(false);
+    setShowSuggest(false);
+    setSmartOptions([]);
+    setActiveIdx(-1);
+  }, [canView, tab, companyFilter?.value]);
+
+  useEffect(() => {
+    const query = q.trim();
+    if (!query) {
+      setSmartOptions([]);
+      setShowSuggest(false);
+      setActiveIdx(-1);
+      return;
+    }
+    const t = setTimeout(() => {
+      fetchSuggestions();
+    }, 250);
+    return () => clearTimeout(t);
+  }, [q, fetchSuggestions]);
+
+  useEffect(() => {
+    if (!showSuggest) return;
+    recalcSuggestPos();
+    const onScrollOrResize = () => recalcSuggestPos();
+    window.addEventListener("scroll", onScrollOrResize, true);
+    window.addEventListener("resize", onScrollOrResize);
+    return () => {
+      window.removeEventListener("scroll", onScrollOrResize, true);
+      window.removeEventListener("resize", onScrollOrResize);
+    };
+  }, [showSuggest, recalcSuggestPos]);
+
+  useEffect(() => {
+    const onDown = (e) => {
+      const inp = inputRef.current;
+      const box = suggestBoxRef.current;
+      const insideInput = inp && inp.contains(e.target);
+      const insideBox = box && box.contains(e.target);
+      if (!insideInput && !insideBox) {
+        setShowSuggest(false);
+        setActiveIdx(-1);
+      }
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, []);
+
+  const pickSuggestion = (opt) => {
+    if (!opt) return;
+    setQ(String(opt.value || opt.label || ""));
+    setShowSuggest(false);
+    setActiveIdx(-1);
+  };
+
+  const onSmartKeyDown = (e) => {
+    if (!showSuggest || smartOptions.length === 0) {
+      if (e.key === "Enter") return;
+      return;
+    }
+
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setActiveIdx((i) => Math.min(i + 1, smartOptions.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActiveIdx((i) => Math.max(i - 1, -1));
+    } else if (e.key === "Enter") {
+      if (activeIdx >= 0 && smartOptions[activeIdx]) {
+        e.preventDefault();
+        pickSuggestion(smartOptions[activeIdx]);
+      }
+    } else if (e.key === "Escape") {
+      setShowSuggest(false);
+      setActiveIdx(-1);
+    }
+  };
 
   const handleSearch = () => {
+    filtersRef.current = {
+      q: q.trim(),
+      from: date.from,
+      to: date.to,
+    };
+    setHasSearched(true);
+    setShowSuggest(false);
+    setActiveIdx(-1);
     fetchData();
   };
 
@@ -215,6 +365,12 @@ export default function ReceiptsDisbursementPage() {
     setCompanyFilter({ value: "all", label: "كل الشركات" });
     setQ("");
     setDate({ from: "", to: "" });
+    filtersRef.current = { q: "", from: "", to: "" };
+    setRows([]);
+    setHasSearched(false);
+    setSmartOptions([]);
+    setShowSuggest(false);
+    setActiveIdx(-1);
   };
 
   const Card = ({ icon: Icon, title, value }) => (
@@ -242,7 +398,15 @@ export default function ReceiptsDisbursementPage() {
     </motion.div>
   );
 
-  if (!Array.isArray(permissions)) return null;
+  if (!user?.id) {
+    return (
+      <div className="flex min-h-[50vh] flex-col items-center justify-center gap-3 p-8">
+        <div className="h-10 w-10 animate-spin rounded-full border-4 border-gray-200 border-t-blue-600" />
+        <p className="text-sm font-extrabold text-gray-600">جاري التحميل…</p>
+      </div>
+    );
+  }
+
   if (!canView) return null;
 
   return (
@@ -375,19 +539,63 @@ export default function ReceiptsDisbursementPage() {
             />
           </div>
 
-          <div className="text-right lg:col-span-2">
+          <div className="relative text-right lg:col-span-2">
             <label className="mb-1 flex items-center justify-end gap-2 text-[13px] font-extrabold text-gray-700">
               <FiSearch /> بحث موحّد
             </label>
-            <input
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="رمز، وصف، نوع، عملة…"
-              className="w-full rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-[16px] font-extrabold text-gray-900 shadow-sm outline-none focus:border-gray-300"
-            />
+            <div className="relative">
+              <input
+                ref={inputRef}
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                onFocus={() => {
+                  if (smartOptions.length > 0) {
+                    recalcSuggestPos();
+                    setShowSuggest(true);
+                  }
+                }}
+                onKeyDown={onSmartKeyDown}
+                placeholder="رمز، وصف، نوع، رقم وصل…"
+                className="w-full rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-[16px] font-extrabold text-gray-900 shadow-sm outline-none focus:border-gray-300"
+              />
+              {suggestLoading && (
+                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-gray-700" />
+              )}
+            </div>
           </div>
         </div>
       </motion.div>
+
+      {portalReady &&
+        showSuggest &&
+        smartOptions.length > 0 &&
+        createPortal(
+          <div
+            ref={suggestBoxRef}
+            style={{
+              position: "fixed",
+              left: suggestPos.left,
+              top: suggestPos.top,
+              width: suggestPos.width,
+              zIndex: 99999,
+            }}
+            className="max-h-[min(70vh,320px)] overflow-y-auto rounded-2xl border border-gray-200 bg-white shadow-2xl"
+          >
+            {smartOptions.slice(0, 14).map((opt, idx) => (
+              <button
+                key={`${opt.type || "x"}-${opt.value}-${idx}`}
+                type="button"
+                onClick={() => pickSuggestion(opt)}
+                className={`w-full px-4 py-3 text-right text-[14px] font-extrabold ${
+                  idx === activeIdx ? "bg-gray-100" : "bg-white"
+                } hover:bg-gray-100`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>,
+          document.body
+        )}
 
       <AnimatePresence mode="wait">
         {loading ? (
@@ -481,7 +689,7 @@ export default function ReceiptsDisbursementPage() {
               </div>
             </div>
           </motion.div>
-        ) : (
+        ) : hasSearched ? (
           <motion.div
             key="empty"
             initial={{ opacity: 0 }}
@@ -489,6 +697,15 @@ export default function ReceiptsDisbursementPage() {
             className="rounded-3xl border border-white/30 bg-white/55 py-16 text-center text-lg font-extrabold text-slate-700 shadow-[0_18px_55px_-28px_rgba(0,0,0,0.25)] backdrop-blur-xl"
           >
             لا توجد نتائج لهذه الفلاتر.
+          </motion.div>
+        ) : (
+          <motion.div
+            key="prompt"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="rounded-3xl border border-white/30 bg-white/55 py-16 text-center text-lg font-extrabold text-slate-600 shadow-[0_18px_55px_-28px_rgba(0,0,0,0.2)] backdrop-blur-xl"
+          >
+            اضغط زر «بحث» لعرض النتائج.
           </motion.div>
         )}
       </AnimatePresence>
