@@ -516,7 +516,11 @@ export async function GET(req) {
       const uid = new mongoose.Types.ObjectId(userId);
 
       const pipeline = [
-        { $match: { status: { $in: ["Approved", "approved"] } } },
+        {
+          $match: {
+            status: { $in: ["Approved", "approved"], $nin: ["Cancelled", "cancelled"] },
+          },
+        },
         {
           $addFields: {
             _lastIdx: { $subtract: [{ $size: "$workflow.steps" }, 1] },

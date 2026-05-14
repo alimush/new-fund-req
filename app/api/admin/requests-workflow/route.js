@@ -1,35 +1,14 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import dbConnect from "@/lib/mongodb";
-import Permissions from "@/models/Permissions";
 import { getModelForCompany } from "@/models/Request";
-import { PERMISSIONS } from "@/lib/permission";
+import {
+  buildAdminWorkflowListQuery,
+  getAdminWorkflowAccess,
+} from "@/lib/adminRequestsWorkflowCommon";
 import mongoose from "mongoose";
 
 export const runtime = "nodejs";
-
-const escapeRegex = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
-async function getUserAccess(userId) {
-  if (!userId) return { allowedCompanies: [], hasManage: false };
-
-  const groups = await Permissions.find({ users: userId })
-    .select("companies permissions")
-    .lean();
-
-  const companiesSet = new Set();
-  const permsSet = new Set();
-
-  for (const g of groups) {
-    (g.companies || []).forEach((c) => companiesSet.add(String(c).trim()));
-    (g.permissions || []).forEach((p) => permsSet.add(String(p).trim()));
-  }
-
-  return {
-    allowedCompanies: Array.from(companiesSet).filter(Boolean),
-    hasManage: permsSet.has(PERMISSIONS.MANAGE_PERMISSIONS),
-  };
-}
 
 async function listMerged(companyList, queryBase, select, page, pageSize) {
   const docsByCompany = await Promise.all(
@@ -78,6 +57,8 @@ async function listPagedSingleCompany(companyKey, queryBase, select, page, pageS
 
 function toListRow(doc) {
   const steps = doc?.workflow?.steps;
+  const last = Array.isArray(steps) && steps.length ? steps[steps.length - 1] : null;
+  const hasVoucherOut = Boolean(last?.voucherProcessedAt);
   return {
     _id: doc._id,
     companyKey: doc.companyKey,
@@ -89,12 +70,14 @@ function toListRow(doc) {
     createdAt: doc.createdAt,
     workflowName: doc?.workflow?.name || "",
     stepsCount: Array.isArray(steps) ? steps.length : 0,
+    hasVoucherOut,
   };
 }
 
 /**
  * GET — قائمة طلبات (للمستخدمين بصلاحية MANAGE_PERMISSIONS فقط)
- * Query: company (اختياري), requestCode (اختياري، جزئي), page, pageSize
+ * Query: company (اختياري), requestCode (اختياري، جزئي), disbursed=yes|no (اختياري),
+ * lastStepUser=ObjectId (اختياري: طلبات آخر خطوة فيها مستخدم واحد فقط وهذا المعرّف)
  */
 export async function GET(req) {
   try {
@@ -107,7 +90,7 @@ export async function GET(req) {
     }
 
     const userId = new mongoose.Types.ObjectId(userIdRaw);
-    const { allowedCompanies, hasManage } = await getUserAccess(userId);
+    const { allowedCompanies, hasManage } = await getAdminWorkflowAccess(userId);
 
     if (!hasManage) {
       return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
@@ -125,6 +108,8 @@ export async function GET(req) {
     const { searchParams } = new URL(req.url);
     const companyParam = String(searchParams.get("company") || "").trim();
     const codeQ = String(searchParams.get("requestCode") || "").trim();
+    const disbursed = String(searchParams.get("disbursed") || "").trim();
+    const lastStepUser = String(searchParams.get("lastStepUser") || "").trim();
 
     const page = Math.max(1, parseInt(searchParams.get("page") || "1", 10));
     const pageSize = Math.min(
@@ -143,10 +128,7 @@ export async function GET(req) {
       companyList = [companyParam];
     }
 
-    const queryBase = {};
-    if (codeQ) {
-      queryBase.requestCode = { $regex: escapeRegex(codeQ), $options: "i" };
-    }
+    const queryBase = buildAdminWorkflowListQuery({ codeQ, disbursed, lastStepUserId: lastStepUser });
 
     const select =
       "requestCode description status currentStep createdBy createdAt workflow.name workflow.steps";

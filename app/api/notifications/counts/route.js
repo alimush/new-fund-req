@@ -59,7 +59,11 @@ async function countPendingApprovals(Model, uid) {
 async function countDelegatedVoucherPending(Model, uid, username) {
   const uname = String(username || "").trim();
   const rows = await Model.aggregate([
-    { $match: { status: { $in: ["Approved", "approved"] } } },
+    {
+      $match: {
+        status: { $in: ["Approved", "approved"], $nin: ["Cancelled", "cancelled"] },
+      },
+    },
     {
       $addFields: {
         _lastIdx: { $subtract: [{ $size: { $ifNull: ["$workflow.steps", []] } }, 1] },

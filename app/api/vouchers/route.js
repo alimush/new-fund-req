@@ -177,6 +177,7 @@ function sanitizeFieldStyles(input = {}) {
 
 function canActOnVoucherStep(requestDoc, userId) {
   if (!requestDoc || !userId) return false;
+  if (String(requestDoc.status || "").toLowerCase() === "cancelled") return false;
   const steps = requestDoc?.workflow?.steps || [];
   if (!steps.length) return false;
   const lastIdx = steps.length - 1;

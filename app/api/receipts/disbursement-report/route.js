@@ -78,6 +78,11 @@ function voucherLookupByRequestPipeline() {
   ];
 }
 
+/** استبعاد الطلبات الملغاة من تقارير/قوائم الصرف */
+const STATUS_MATCH_APPROVED_NOT_CANCELLED = {
+  status: { $in: ["Approved", "approved"], $nin: ["Cancelled", "cancelled"] },
+};
+
 function buildPendingPipeline({ uid, username, from, to }) {
   const uname = String(username || "").trim();
   const delegateOr = [{ "_step.voucherDelegateTo": uid }];
@@ -108,7 +113,7 @@ function buildPendingPipeline({ uid, username, from, to }) {
   }
 
   pipeline.push(
-    { $match: { status: { $in: ["Approved", "approved"] } } },
+    { $match: STATUS_MATCH_APPROVED_NOT_CANCELLED },
     {
       $addFields: {
         _lastIdx: { $subtract: [{ $size: { $ifNull: ["$workflow.steps", []] } }, 1] },
@@ -199,7 +204,7 @@ function buildDonePipeline({ uid, userIdStr, username, from, to }) {
   const pipeline = [];
 
   pipeline.push(
-    { $match: { status: { $in: ["Approved", "approved"] } } },
+    { $match: STATUS_MATCH_APPROVED_NOT_CANCELLED },
     {
       $addFields: {
         _lastIdx: { $subtract: [{ $size: { $ifNull: ["$workflow.steps", []] } }, 1] },

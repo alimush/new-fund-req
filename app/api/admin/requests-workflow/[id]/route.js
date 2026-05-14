@@ -5,6 +5,7 @@ import dbConnect from "@/lib/mongodb";
 import Permissions from "@/models/Permissions";
 import { getModelForCompany } from "@/models/Request";
 import { PERMISSIONS } from "@/lib/permission";
+import { mergeAdminWorkflowSteps } from "@/lib/adminRequestsWorkflowCommon";
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
@@ -68,58 +69,6 @@ function buildPublicUrl(key) {
   const bucket = process.env.S3_BUCKET_NAME;
   const region = process.env.S3_REGION;
   return `https://${bucket}.s3.${region}.amazonaws.com/${key}`;
-}
-
-function mergeWorkflowSteps(oldSteps, incomingSteps) {
-  const prev = Array.isArray(oldSteps) ? oldSteps : [];
-
-  return incomingSteps.map((s, idx) => {
-    const userIds = (Array.isArray(s.users) ? s.users : [])
-      .map((id) => String(id).trim())
-      .filter((id) => isValidObjectId(id));
-
-    if (userIds.length === 0) {
-      const err = new Error("EMPTY_STEP_USERS");
-      err.code = "EMPTY_STEP_USERS";
-      throw err;
-    }
-
-    const oidUsers = userIds.map((id) => new mongoose.Types.ObjectId(id));
-    const old = prev[idx];
-
-    if (old && typeof old.toObject === "function") {
-      const o = old.toObject({ flattenMaps: true });
-      o.users = oidUsers;
-      delete o._id;
-      return o;
-    }
-
-    if (old) {
-      const o = { ...old };
-      o.users = oidUsers;
-      delete o._id;
-      return o;
-    }
-
-    return {
-      users: oidUsers,
-      status: "Pending",
-      actedBy: null,
-      actedAt: null,
-      comment: "",
-      tag: "",
-      attachment: null,
-      tagAttachments: [],
-      voucherDelegateTo: null,
-      voucherDelegatedBy: null,
-      voucherDelegatedAt: null,
-      voucherDelegateToUsername: "",
-      voucherDelegatedByUsername: "",
-      voucherProcessedBy: null,
-      voucherProcessedAt: null,
-      voucherProcessedByUsername: "",
-    };
-  });
 }
 
 export async function GET(req, { params }) {
@@ -252,7 +201,7 @@ export async function PUT(req, { params }) {
 
     let merged;
     try {
-      merged = mergeWorkflowSteps(request.workflow?.steps, wf.steps);
+      merged = mergeAdminWorkflowSteps(request.workflow?.steps, wf.steps);
     } catch (e) {
       if (e.code === "EMPTY_STEP_USERS") {
         return NextResponse.json(
