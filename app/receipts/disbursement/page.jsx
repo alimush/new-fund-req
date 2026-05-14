@@ -404,12 +404,13 @@ export default function ReceiptsDisbursementPage() {
             className="relative z-0 overflow-hidden rounded-3xl border border-white/30 bg-white/55 shadow-[0_18px_55px_-28px_rgba(0,0,0,0.35)] backdrop-blur-xl"
           >
             <div className="relative overflow-x-auto">
-              <table className="min-w-[1000px] w-full text-[15px] font-bold text-slate-800 md:text-[16px]">
+              <table className="min-w-[1120px] w-full text-[15px] font-bold text-slate-800 md:text-[16px]">
                 <thead className="sticky top-0 z-10">
                   <tr className="border-b border-white/40 bg-white/80 backdrop-blur">
                     {[
                       "الشركة",
                       "كود الطلب",
+                      "رقم الوصل",
                       "نوع الطلب",
                       "المبلغ",
                       "الوصف",
@@ -448,6 +449,9 @@ export default function ReceiptsDisbursementPage() {
                       </td>
                       <td className="whitespace-nowrap px-6 py-4 text-right font-mono text-slate-900">
                         {r.requestCode || "-"}
+                      </td>
+                      <td className="whitespace-nowrap px-6 py-4 text-right font-mono text-sm font-extrabold text-slate-800">
+                        {r.voucherNo || "-"}
                       </td>
                       <td className="whitespace-nowrap px-6 py-4 text-right">{r.requestType || "-"}</td>
                       <td className="whitespace-nowrap px-6 py-4 text-right font-extrabold text-slate-900">

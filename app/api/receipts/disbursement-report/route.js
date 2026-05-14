@@ -55,6 +55,25 @@ function parseDateEnd(v) {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+/** مطابقة requestId في vouchers (نص أو ObjectId) */
+function voucherLookupByRequestPipeline() {
+  return [
+    {
+      $match: {
+        $expr: {
+          $or: [
+            { $eq: ["$requestId", "$$rid"] },
+            { $eq: [{ $toString: { $ifNull: ["$requestId", ""] } }, "$$rid"] },
+          ],
+        },
+      },
+    },
+    { $sort: { createdAt: -1 } },
+    { $limit: 1 },
+    { $project: { voucherNo: 1, seq: 1 } },
+  ];
+}
+
 function buildPendingPipeline({ uid, username, from, to }) {
   const uname = String(username || "").trim();
   const delegateOr = [{ "_step.voucherDelegateTo": uid }];
@@ -116,6 +135,14 @@ function buildPendingPipeline({ uid, username, from, to }) {
     },
     { $sort: { createdAt: -1 } },
     {
+      $lookup: {
+        from: "vouchers",
+        let: { rid: { $toString: "$_id" } },
+        pipeline: voucherLookupByRequestPipeline(),
+        as: "__vrow",
+      },
+    },
+    {
       $project: {
         _id: 1,
         requestCode: 1,
@@ -131,6 +158,18 @@ function buildPendingPipeline({ uid, username, from, to }) {
         items: 1,
         workflow: 1,
         currentStep: 1,
+        voucherNo: {
+          $let: {
+            vars: { d: { $arrayElemAt: ["$__vrow", 0] } },
+            in: "$$d.voucherNo",
+          },
+        },
+        voucherSeq: {
+          $let: {
+            vars: { d: { $arrayElemAt: ["$__vrow", 0] } },
+            in: "$$d.seq",
+          },
+        },
       },
     }
   );
@@ -179,20 +218,7 @@ function buildDonePipeline({ uid, userIdStr, username, from, to }) {
       $lookup: {
         from: "vouchers",
         let: { rid: { $toString: "$_id" } },
-        pipeline: [
-          {
-            $match: {
-              $expr: {
-                $or: [
-                  { $eq: ["$requestId", "$$rid"] },
-                  { $eq: [{ $toString: { $ifNull: ["$requestId", ""] } }, "$$rid"] },
-                ],
-              },
-            },
-          },
-          { $limit: 1 },
-          { $project: { _id: 1 } },
-        ],
+        pipeline: voucherLookupByRequestPipeline(),
         as: "__voucherStillExists",
       },
     },
@@ -219,6 +245,18 @@ function buildDonePipeline({ uid, userIdStr, username, from, to }) {
         currentStep: 1,
         voucherProcessedAt: "$_step.voucherProcessedAt",
         voucherProcessedByUsername: "$_step.voucherProcessedByUsername",
+        voucherNo: {
+          $let: {
+            vars: { d: { $arrayElemAt: ["$__voucherStillExists", 0] } },
+            in: "$$d.voucherNo",
+          },
+        },
+        voucherSeq: {
+          $let: {
+            vars: { d: { $arrayElemAt: ["$__voucherStillExists", 0] } },
+            in: "$$d.seq",
+          },
+        },
       },
     }
   );
@@ -226,9 +264,18 @@ function buildDonePipeline({ uid, userIdStr, username, from, to }) {
   return pipeline;
 }
 
+function displayVoucherNo(voucherNo, seq) {
+  const v = String(voucherNo ?? "").trim();
+  if (v) return v;
+  const n = Number(seq);
+  if (Number.isFinite(n)) return String(n).padStart(5, "0");
+  return "";
+}
+
 function textMatchesRow(row, q) {
   const tq = String(q || "").trim().toLowerCase();
   if (!tq) return true;
+  const vn = displayVoucherNo(row.voucherNo, row.voucherSeq);
   const text = [
     row.requestCode,
     row.companyKey,
@@ -238,6 +285,7 @@ function textMatchesRow(row, q) {
     row.department,
     row.createdBy,
     row._id,
+    vn,
   ]
     .filter(Boolean)
     .join(" ")
@@ -275,6 +323,7 @@ function serializeRow(row, companyKey) {
     totalAmount: Number.isFinite(totalAmount) ? totalAmount : null,
     voucherProcessedAt: row.voucherProcessedAt || null,
     voucherProcessedByUsername: row.voucherProcessedByUsername || "",
+    voucherNo: displayVoucherNo(row.voucherNo, row.voucherSeq) || null,
   };
 }
 
