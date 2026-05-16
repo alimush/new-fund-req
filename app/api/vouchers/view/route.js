@@ -178,13 +178,16 @@ function sanitizeAttachment(att) {
   if (!att?.url) return null;
   const contentType =
     att.contentType || (att.url.endsWith(".pdf") ? "application/pdf" : "image/png");
-  return {
+  const key = String(att.key || "").trim();
+  const out = {
     name: att.name || "Attachment",
     url: att.url,
     contentType,
     size: Number(att.size || 0),
     uploadedAt: att.uploadedAt ? new Date(att.uploadedAt) : new Date(),
   };
+  if (key) out.key = key;
+  return out;
 }
 
 export async function GET(req) {
@@ -342,25 +345,47 @@ export async function PUT(req) {
           returnOriginal: false, // for older driver compatibility
         }
       );
-    } else if (body?.deleteAttachmentKey) {
-      // Attachment delete path
+    } else if (body?.deleteAttachmentKey || body?.deleteAttachmentUrl) {
       const deleteKey = String(body.deleteAttachmentKey || "").trim();
-      if (!deleteKey) {
+      const deleteUrl = String(body.deleteAttachmentUrl || "").trim();
+      if (!deleteKey && !deleteUrl) {
         return NextResponse.json(
-          { success: false, error: "Invalid attachment key" },
+          { success: false, error: "معرّف الاتاج غير صالح" },
           { status: 400 }
+        );
+      }
+
+      const existing = await col.findOne({ _id: new ObjectId(id) });
+      if (!existing) {
+        return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
+      }
+
+      const before = Array.isArray(existing.attachments) ? existing.attachments : [];
+      const nextAttachments = before.filter((a) => {
+        if (deleteKey && String(a?.key || "").trim() === deleteKey) return false;
+        if (deleteUrl && String(a?.url || "").trim() === deleteUrl) return false;
+        return true;
+      });
+
+      if (nextAttachments.length === before.length) {
+        return NextResponse.json(
+          { success: false, error: "لم يُعثر على الاتاج المطلوب" },
+          { status: 404 }
         );
       }
 
       result = await col.findOneAndUpdate(
         { _id: new ObjectId(id) },
         {
-          $pull: { attachments: { key: deleteKey } },
-          $set: { updatedBy: userId, updatedAt: now },
+          $set: {
+            attachments: nextAttachments,
+            updatedBy: userId,
+            updatedAt: now,
+          },
         },
         {
           returnDocument: "after",
-          returnOriginal: false, // for older driver compatibility
+          returnOriginal: false,
         }
       );
     } else {

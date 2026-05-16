@@ -820,39 +820,6 @@ export default function VoucherPage() {
           open={openModal}
           onClose={() => setOpenModal(false)}
           onPrint={saveVoucherAndPrint}
-          onReset={() => {
-            setVoucherNo(null);
-            setPendingPrint(false);
-
-            setVDateYY("");
-            setVDateMM("");
-            setVDateDD("");
-
-            setVAmount("");
-            setVWords("");
-            setVDesc("");
-            setVCurrency("IQD");
-
-            setVBank("");
-            setVFxRate("");
-            setVReceivedBy("");
-            setVBeneficiary("");
-            setVNotes("");
-
-            setVChequeNo("");
-            setVNationalId("");
-            setVPhone("");
-            setVSanadNo("");
-
-            setCbOne(false);
-            setCbTwo(false);
-
-            setGlobalTextStyle(DEFAULT_GLOBAL_TEXT_STYLE);
-            setFieldStyles(DEFAULT_FIELD_STYLES);
-
-            setActiveField("date");
-            yyRef.current?.focus();
-          }}
           isPrinting={isPrinting}
           selectedCompany={selectedCompany}
           isPayment={isPayment}

@@ -381,31 +381,6 @@ export default function VoucherModal({
     if (which === "dd" && !vDateDD) mmRef.current?.focus();
   };
 
-  const clearExtras = useCallback(() => {
-    setVBank("");
-    setVFxRate("");
-    setVReceivedBy("");
-    setVBeneficiary("");
-    setVNotes("");
-    setVChequeNo("");
-    setVNationalId("");
-    setVPhone("");
-    setVSanadNo("");
-    setCbOne(false);
-    setCbTwo(false);
-  }, []);
-
-  const handleReset = useCallback(() => {
-    if (requestData) fillFromRequest(requestData);
-    clearExtras();
-
-    if (!existingVoucher?._id) {
-      setVoucherNo(null);
-      setGlobalTextStyle(DEFAULT_GLOBAL_TEXT_STYLE);
-      setFieldStyles(DEFAULT_FIELD_STYLES);
-    }
-  }, [requestData, fillFromRequest, clearExtras, existingVoucher?._id]);
-
   const printCurrentPreviewA4 = async () => {
     if (!paperRef.current) return;
 
@@ -702,7 +677,6 @@ export default function VoucherModal({
       open={open}
       onClose={onClose}
       onPrintOnly={printCurrentPreviewA4}
-      onReset={isLockedAfterCreate ? noop : handleReset}
       isPrinting={printing || saving || loadingVoucher || loadingRequest}
       selectedCompany={selectedCompany}
       hasBeenCreated={isLockedAfterCreate}

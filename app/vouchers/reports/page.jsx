@@ -61,6 +61,12 @@ export default function VoucherReportsPage() {
     rowName: "",
     attachments: [],
   });
+  const [deleteAttConfirm, setDeleteAttConfirm] = useState({
+    open: false,
+    rowId: null,
+    att: null,
+  });
+  const [deletingAttKey, setDeletingAttKey] = useState(null);
 
   const [companyFilter, setCompanyFilter] = useState({
     value: "all",
@@ -396,36 +402,60 @@ export default function VoucherReportsPage() {
     [page, rows]
   );
 
-  const handleDeleteAttachment = useCallback(async (rowId, attachmentKey) => {
-    try {
-      const ok = window.confirm("تأكيد حذف الاتاج؟");
-      if (!ok) return;
+  const attachmentMatches = useCallback((a, att) => {
+    if (!a || !att) return false;
+    const k = String(att.key || "").trim();
+    const u = String(att.url || "").trim();
+    if (k && String(a.key || "").trim() === k) return true;
+    if (u && String(a.url || "").trim() === u) return true;
+    return false;
+  }, []);
 
+  const requestDeleteAttachment = useCallback((rowId, att) => {
+    if (!rowId || !att) return;
+    const key = String(att.key || "").trim();
+    const url = String(att.url || "").trim();
+    if (!key && !url) {
+      alert("لا يمكن تحديد هذا الاتاج للحذف.");
+      return;
+    }
+    setDeleteAttConfirm({ open: true, rowId, att });
+  }, []);
+
+  const handleDeleteAttachmentConfirmed = useCallback(async () => {
+    const { rowId, att } = deleteAttConfirm;
+    if (!rowId || !att) return;
+
+    const deleteKey = String(att.key || "").trim();
+    const deleteUrl = String(att.url || "").trim();
+    const matchId = deleteKey || deleteUrl;
+    if (!matchId) return;
+
+    try {
+      setDeletingAttKey(matchId);
       const res = await fetch("/api/vouchers/view", {
         method: "PUT",
         credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          id: rowId,
-          deleteAttachmentKey: attachmentKey,
+          id: String(rowId),
+          ...(deleteKey ? { deleteAttachmentKey: deleteKey } : {}),
+          ...(deleteUrl ? { deleteAttachmentUrl: deleteUrl } : {}),
         }),
       });
 
       const json = await res.json();
-
       if (!json?.success) {
         throw new Error(json?.error || "فشل حذف الاتاج");
       }
 
       setRows((prev) =>
         prev.map((x) =>
-          x._id === rowId
+          String(x._id) === String(rowId)
             ? {
                 ...x,
                 attachments: (Array.isArray(x.attachments) ? x.attachments : []).filter(
-                  (a) => a.key !== attachmentKey
+                  (a) => !attachmentMatches(a, att)
                 ),
               }
             : x
@@ -435,14 +465,18 @@ export default function VoucherReportsPage() {
       setAttachmentsModal((prev) => ({
         ...prev,
         attachments: (Array.isArray(prev.attachments) ? prev.attachments : []).filter(
-          (a) => a.key !== attachmentKey
+          (a) => !attachmentMatches(a, att)
         ),
       }));
+
+      setDeleteAttConfirm({ open: false, rowId: null, att: null });
     } catch (err) {
-      console.error("❌ Delete attachment error:", err);
+      console.error("Delete attachment error:", err);
       alert(err.message || "فشل حذف الاتاج");
+    } finally {
+      setDeletingAttKey(null);
     }
-  }, []);
+  }, [deleteAttConfirm, attachmentMatches]);
 
   const onSmartKeyDown = (e) => {
     if (!showSuggest || smartOptions.length === 0) {
@@ -1359,14 +1393,14 @@ export default function VoucherReportsPage() {
                       <div className="flex items-center gap-2">
                         <button
                           type="button"
+                          disabled={Boolean(deletingAttKey)}
                           onClick={() =>
-                            handleDeleteAttachment(attachmentsModal.rowId, att.key)
+                            requestDeleteAttachment(attachmentsModal.rowId, att)
                           }
-                          className="px-3 py-2 rounded-xl border border-red-200 bg-red-50 text-red-700 text-[13px] font-extrabold hover:bg-red-100"
+                          className="px-3 py-2 rounded-xl border border-red-200 bg-red-50 text-red-700 text-[13px] font-extrabold hover:bg-red-100 disabled:opacity-50"
                         >
-                          حذف
+                          حذف الاتاج
                         </button>
-
                         <a
                           href={att?.url ? encodeURI(att.url) : "#"}
                           target="_blank"
@@ -1393,6 +1427,57 @@ export default function VoucherReportsPage() {
                   </div>
                 )}
               </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {deleteAttConfirm.open && deleteAttConfirm.att && (
+          <motion.div
+            className="fixed inset-0 z-[100000] bg-black/45 flex items-center justify-center p-4"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() =>
+              !deletingAttKey &&
+              setDeleteAttConfirm({ open: false, rowId: null, att: null })
+            }
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl border border-gray-200 text-right"
+            >
+              <h3 className="text-lg font-extrabold text-gray-900">تأكيد حذف الاتاج</h3>
+              <p className="mt-3 text-sm text-gray-600 leading-relaxed">
+                هل تريد حذف الملف التالي من هذا الوصل؟ لا يمكن التراجع عن هذه العملية.
+              </p>
+              <p className="mt-2 rounded-xl bg-gray-50 border border-gray-200 px-3 py-2 text-sm font-extrabold text-gray-900 truncate">
+                {deleteAttConfirm.att.name || "ملف مرفق"}
+              </p>
+              <motion.div className="mt-6 flex flex-row-reverse gap-3">
+                <button
+                  type="button"
+                  disabled={Boolean(deletingAttKey)}
+                  onClick={handleDeleteAttachmentConfirmed}
+                  className="flex-1 rounded-xl bg-red-600 py-2.5 text-sm font-extrabold text-white hover:bg-red-700 disabled:opacity-50"
+                >
+                  {deletingAttKey ? "جاري الحذف…" : "تأكيد الحذف"}
+                </button>
+                <button
+                  type="button"
+                  disabled={Boolean(deletingAttKey)}
+                  onClick={() =>
+                    setDeleteAttConfirm({ open: false, rowId: null, att: null })
+                  }
+                  className="flex-1 rounded-xl border border-gray-300 bg-white py-2.5 text-sm font-extrabold text-gray-800 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  إلغاء
+                </button>
+              </motion.div>
             </motion.div>
           </motion.div>
         )}

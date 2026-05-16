@@ -1516,7 +1516,6 @@ export default function VoucherViewPage() {
   open={true}
   onClose={handleClose}
   onPrintOnly={printCurrentPreviewA4}
-  onReset={editMode ? handleCancel : () => {}}
   isPrinting={isPrinting || isSaving}
   selectedCompany={selectedCompany}
   hasBeenCreated={true}

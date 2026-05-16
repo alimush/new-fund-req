@@ -70,7 +70,6 @@ export default function VoucherCanvasDialog({
   open,
   onClose,
   onPrint,
-  onReset,
   isPrinting,
   selectedCompany,
   isPayment,
@@ -441,10 +440,7 @@ export default function VoucherCanvasDialog({
   </button>
 
   <button
-    onClick={() => {
-      onReset?.();
-      onClose?.();
-    }}
+    onClick={() => onClose?.()}
     className="flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-red-600 text-white shadow-sm font-extrabold hover:bg-red-700 hover:shadow-md active:scale-[0.97] transition-all duration-150"
   >
     <FiX className="text-lg" />
@@ -1028,16 +1024,6 @@ export default function VoucherCanvasDialog({
                             تعديل ملاحظات
                           </button>
 
-                          <button
-                            type="button"
-                            onClick={() => {
-                              onReset?.();
-                              yyRef.current?.focus();
-                            }}
-                            className="px-5 py-2.5 rounded-2xl bg-red-50 text-red-600 ring-1 ring-red-200 font-extrabold shadow-sm hover:bg-red-100 hover:ring-red-300 active:scale-[0.96] transition-all duration-150"
-                          >
-                            🗑️ مسح البيانات
-                          </button>
                         </div>
                       </div>
                     </div>
