@@ -12,6 +12,7 @@ import {
   buildRequestCreatedEmailHtml,
   sendWorkflowEmail,
 } from "@/lib/email/workflowEmail";
+import { pendingApprovalMongoExtraMatch } from "@/lib/workflow/canApproveAtStep";
 export const runtime = "nodejs";
 
 // =========================
@@ -404,7 +405,7 @@ export async function GET(req) {
       );
     }
 
-    const { userId, username } = auth;
+    const { userId, username, permissions: userPermissions } = auth;
     const Model = getModelForCompany(company);
 
     // ✅ Single request
@@ -474,6 +475,7 @@ export async function GET(req) {
           $match: {
             "_step.status": { $in: ["Pending", "pending"] },
             "_step.users": { $in: [uid] },
+            ...pendingApprovalMongoExtraMatch(userPermissions),
           },
         },
         { $sort: { createdAt: -1 } },

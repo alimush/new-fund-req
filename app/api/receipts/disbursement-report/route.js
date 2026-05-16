@@ -6,6 +6,7 @@ import Permissions from "@/models/Permissions";
 import mongoose from "mongoose";
 import { getModelForCompany } from "@/models/Request";
 import { PERMISSIONS } from "@/lib/permission";
+import { userCanApproveOnLastStep } from "@/lib/workflow/canApproveAtStep";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -83,14 +84,15 @@ const STATUS_MATCH_APPROVED_NOT_CANCELLED = {
   status: { $in: ["Approved", "approved"], $nin: ["Cancelled", "cancelled"] },
 };
 
-function buildPendingPipeline({ uid, username, from, to }) {
+function buildPendingPipeline({ uid, username, from, to, permissions = [] }) {
   const uname = String(username || "").trim();
   const delegateOr = [{ "_step.voucherDelegateTo": uid }];
   if (uname) delegateOr.push({ "_step.voucherDelegateToUsername": uname });
 
-  const canActOr = [
-    ...delegateOr,
-    {
+  // مخوّل للصرف يرى الطلب دائماً؛ باقي أعضاء آخر خطوة فقط إن كانوا يقدرون يوافقون/يخوّلون
+  const canActOr = [...delegateOr];
+  if (userCanApproveOnLastStep(permissions)) {
+    canActOr.push({
       $and: [
         {
           $or: [
@@ -100,8 +102,8 @@ function buildPendingPipeline({ uid, username, from, to }) {
         },
         { "_step.users": { $in: [uid] } },
       ],
-    },
-  ];
+    });
+  }
 
   const pipeline = [];
 
@@ -435,7 +437,14 @@ async function buildDisbursementSuggest(ctx, companyFilter, qRaw, tabRaw, fromRa
   const pipelineFn =
     tab === "done"
       ? () => buildDonePipeline({ uid: ctx.uid, userIdStr, username: ctx.username, from, to })
-      : () => buildPendingPipeline({ uid: ctx.uid, username: ctx.username, from, to });
+      : () =>
+          buildPendingPipeline({
+            uid: ctx.uid,
+            username: ctx.username,
+            from,
+            to,
+            permissions: ctx.permissions,
+          });
 
   const matchStage = buildSuggestRowMatch(sq);
   const out = [];
@@ -543,7 +552,14 @@ export async function GET(req) {
     const pipelineFn =
       tab === "done"
         ? () => buildDonePipeline({ uid: ctx.uid, userIdStr, username: ctx.username, from, to })
-        : () => buildPendingPipeline({ uid: ctx.uid, username: ctx.username, from, to });
+        : () =>
+            buildPendingPipeline({
+              uid: ctx.uid,
+              username: ctx.username,
+              from,
+              to,
+              permissions: ctx.permissions,
+            });
 
     const merged = [];
 

@@ -5,6 +5,7 @@ import Permissions from "@/models/Permissions";
 import User from "@/models/User";
 import { getModelForCompany } from "@/models/Request";
 import { Types } from "mongoose";
+import { pendingApprovalMongoExtraMatch } from "@/lib/workflow/canApproveAtStep";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,8 +25,14 @@ async function hasCompanyAccess(userId, company) {
   return !!exists;
 }
 
-/** نفس منطق scope=pending في /api/requests — موافقات بانتظارك */
-async function countPendingApprovals(Model, uid) {
+async function getUserPermissions(userId) {
+  const uid = new Types.ObjectId(userId);
+  const groups = await Permissions.find({ users: uid }).select("permissions").lean();
+  return [...new Set(groups.flatMap((g) => g.permissions || []).map(String))];
+}
+
+/** نفس منطق scope=pending في /api/requests — موافقات بانتظارك (من يقدر يوافق فقط) */
+async function countPendingApprovals(Model, uid, userPermissions = []) {
   const rows = await Model.aggregate([
     {
       $match: {
@@ -44,6 +51,7 @@ async function countPendingApprovals(Model, uid) {
       $match: {
         "_currStep.status": { $in: ["Pending", "pending"] },
         $or: [{ "_currStep.users": uid }, { "_currStep.users._id": uid }],
+        ...pendingApprovalMongoExtraMatch(userPermissions),
       },
     },
     { $group: { _id: "$_id" } },
@@ -136,6 +144,7 @@ export async function GET(req) {
     const uid = new Types.ObjectId(userId);
     const me = await User.findById(uid).select("username").lean();
     const username = String(me?.username || "").trim();
+    const userPermissions = await getUserPermissions(userId);
 
     const counts = {};
 
@@ -150,7 +159,7 @@ export async function GET(req) {
       const Model = getModelForCompany(company);
 
       const [nApproval, nVoucher] = await Promise.all([
-        countPendingApprovals(Model, uid),
+        countPendingApprovals(Model, uid, userPermissions),
         countDelegatedVoucherPending(Model, uid, username),
       ]);
 
