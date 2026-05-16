@@ -5,6 +5,10 @@ import Voucher from "@/models/Voucher";
 import VoucherCounter from "@/models/VoucherCounter";
 import { PERMISSIONS } from "@/lib/permission";
 import { COMPANIES } from "@/lib/voucher/companies";
+import {
+  resolveVoucherCompanyKeyForUser,
+  hasVoucherPermissionForRequest,
+} from "@/lib/voucher/resolveVoucherCompanyKey";
 import Permissions from "@/models/Permissions";
 import { getModelForCompany } from "@/models/Request";
 
@@ -66,15 +70,23 @@ export async function GET(req) {
       );
     }
 
-    // ✅ التحقق من الصلاحية
-    const companyConfig = COMPANIES.find(c => String(c.key).toLowerCase() === String(companyKey).toLowerCase());
+    const voucherCompanyKey = resolveVoucherCompanyKeyForUser(
+      requestCompanyKey || companyKey,
+      allowedPerms
+    );
+
+    const companyConfig = COMPANIES.find(
+      (c) => String(c.key).toLowerCase() === String(voucherCompanyKey).toLowerCase()
+    );
     const isTestCompany = String(companyConfig?.key || "").trim() === "010";
     const hasCompanyPermission = Boolean(
       companyConfig?.permission && allowedPerms.includes(companyConfig.permission)
     );
     let hasAccess = isTestCompany
       ? hasCompanyPermission
-      : hasCompanyPermission || allowedPerms.includes(PERMISSIONS.VIEW_ALL_REPORTS);
+      : hasCompanyPermission ||
+        allowedPerms.includes(PERMISSIONS.VIEW_ALL_REPORTS) ||
+        hasVoucherPermissionForRequest(requestCompanyKey || companyKey, allowedPerms);
 
     // ✅ إذا المستخدم مخوّل على آخر step لنفس الطلب، اسمح له يشوف الوصل
     if (!hasAccess && requestId) {
@@ -96,7 +108,7 @@ export async function GET(req) {
     }
 
     const doc = await Voucher.findOne({
-      companyKey,
+      companyKey: voucherCompanyKey,
       requestId,
       mode,
     })
@@ -259,19 +271,28 @@ export async function POST(req) {
       );
     }
 
-    // ✅ التحقق من الصلاحية
-    const companyConfig = COMPANIES.find(c => String(c.key).toLowerCase() === String(companyKey).toLowerCase());
+    const requestCompany = safeString(requestCompanyKey || companyKey);
+    const voucherCompanyKey = resolveVoucherCompanyKeyForUser(
+      requestCompany,
+      allowedPerms
+    );
+    const resolvedConfig = COMPANIES.find(
+      (c) => String(c.key).toLowerCase() === String(voucherCompanyKey).toLowerCase()
+    );
+
+    const companyConfig = resolvedConfig;
     const isTestCompany = String(companyConfig?.key || "").trim() === "010";
     const hasCompanyPermission = Boolean(
       companyConfig?.permission && allowedPerms.includes(companyConfig.permission)
     );
     let hasAccess = isTestCompany
       ? hasCompanyPermission
-      : hasCompanyPermission || allowedPerms.includes(PERMISSIONS.VIEW_ALL_REPORTS);
+      : hasCompanyPermission ||
+        allowedPerms.includes(PERMISSIONS.VIEW_ALL_REPORTS) ||
+        hasVoucherPermissionForRequest(requestCompany, allowedPerms);
 
     // ✅ استثناء: إذا المستخدم مخوَّل على آخر step لهذا الطلب، نسمح له حتى بدون صلاحية الوصولات
     if (!hasAccess && requestId) {
-      const requestCompany = safeString(requestCompanyKey || companyKey);
       const RequestModel = getModelForCompany(requestCompany);
       const requestDoc = await RequestModel.findOne({
         _id: requestId,
@@ -296,10 +317,15 @@ export async function POST(req) {
       );
     }
 
+    const saveCompanyKey = safeString(voucherCompanyKey);
+    const saveCompanyName = safeString(
+      companyName || resolvedConfig?.name || voucherCompanyKey
+    );
+
     // ✅ لنفس الطلب/الشركة/النوع: إنشاء مرة واحدة فقط
     if (requestId) {
       const existingVoucher = await Voucher.findOne({
-        companyKey: safeString(companyKey),
+        companyKey: saveCompanyKey,
         requestId: safeString(requestId),
         mode,
       })
@@ -316,7 +342,6 @@ export async function POST(req) {
     }
 
     if (requestId) {
-      const requestCompany = safeString(requestCompanyKey || companyKey);
       const RequestModel = getModelForCompany(requestCompany);
       const requestDoc = await RequestModel.findOne({
         _id: requestId,
@@ -341,7 +366,7 @@ export async function POST(req) {
     }
 
     const counter = await VoucherCounter.findOneAndUpdate(
-      { companyKey, mode },
+      { companyKey: saveCompanyKey, mode },
       { $inc: { seq: 1 } },
       {
         new: true,
@@ -354,8 +379,8 @@ export async function POST(req) {
     const voucherNo = String(seq).padStart(5, "0");
 
     const doc = await Voucher.create({
-      companyKey: safeString(companyKey),
-      companyName: safeString(companyName),
+      companyKey: saveCompanyKey,
+      companyName: saveCompanyName,
       mode,
       seq,
       voucherNo,

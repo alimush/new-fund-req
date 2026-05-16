@@ -28,6 +28,10 @@ import StatusBadge from "@/components/StatusBadge";
 import { usePermissions } from "@/context/PermissionContext";
 import { PERMISSIONS } from "@/lib/permission";
 import { COMPANIES } from "@/lib/voucher/companies";
+import {
+  resolveVoucherCompanyKeyForUser,
+  hasVoucherPermissionForRequest,
+} from "@/lib/voucher/resolveVoucherCompanyKey";
 import VoucherModal from "@/components/VoucherModal";
 import html2canvas from "html2canvas";
 import { PDFDocument } from "pdf-lib";
@@ -70,49 +74,20 @@ export default function RequestDetails({ id, companyKey }) {
   const voucherCompanyConfig = COMPANIES.find(
     (c) => String(c.key).trim().toLowerCase() === String(companyKey || "").trim().toLowerCase()
   );
-  const userVoucherCompanies = Array.isArray(permissions)
-    ? COMPANIES.filter((c) => c?.permission && permissions.includes(c.permission))
-    : [];
-  const userVoucherCompanyKey = userVoucherCompanies[0]?.key || "";
-  const pickVoucherCompanyByRequest = useMemo(() => {
-    const reqCompany = String(companyKey || "").trim().toLowerCase();
-    const has = (k) =>
-      userVoucherCompanies.some(
-        (c) => String(c?.key || "").trim().toLowerCase() === String(k || "").trim().toLowerCase()
-      );
-
-    // إذا الطلب على الغدير و المستخدم عنده الغدير الفرعي -> خليه على الغدير الفرعي
-    if (reqCompany === "al-ghadeer" && has("Ghadeer-Najaf-Sub")) {
-      return "Ghadeer-Najaf-Sub";
-    }
-
-    // إذا الطلب على بدور النجف -> خليه على بدور النجف
-    if (
-      (reqCompany === "badur-al-najaf" || reqCompany === "badur-al-najaf".toLowerCase()) &&
-      has("Badur-Al-Najaf")
-    ) {
-      return "Badur-Al-Najaf";
-    }
-
-    // fallback: نفس الشركة إذا مسموحة للمستخدم
-    if (has(companyKey)) return companyKey;
-
-    // fallback أخير: أول صلاحية وصولات عند المستخدم
-    return userVoucherCompanyKey;
-  }, [companyKey, userVoucherCompanies, userVoucherCompanyKey]);
   const isTestVoucherCompany = String(voucherCompanyConfig?.key || "").trim() === "010";
-  const canCreateVoucherForCompany =
-    Array.isArray(permissions) &&
-    (isTestVoucherCompany
-      ? voucherCompanyConfig?.permission &&
-        permissions.includes(voucherCompanyConfig.permission)
-      : permissions.includes(PERMISSIONS.VIEW_ALL_REPORTS) ||
-        (voucherCompanyConfig?.permission &&
-          permissions.includes(voucherCompanyConfig.permission)));
-  const effectiveVoucherCompanyKey =
-    canCreateVoucherForCompany || !pickVoucherCompanyByRequest
-      ? companyKey
-      : pickVoucherCompanyByRequest;
+  const canCreateVoucherForCompany = useMemo(
+    () =>
+      Array.isArray(permissions) &&
+      (isTestVoucherCompany
+        ? voucherCompanyConfig?.permission &&
+          permissions.includes(voucherCompanyConfig.permission)
+        : hasVoucherPermissionForRequest(companyKey, permissions)),
+    [permissions, companyKey, isTestVoucherCompany, voucherCompanyConfig]
+  );
+  const effectiveVoucherCompanyKey = useMemo(
+    () => resolveVoucherCompanyKeyForUser(companyKey, permissions),
+    [companyKey, permissions]
+  );
 
   const printRef = useRef(null);
 
