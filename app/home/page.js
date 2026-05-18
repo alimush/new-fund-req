@@ -4,11 +4,25 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePermissions } from "@/context/PermissionContext";
 import { useEffect, useMemo, useState } from "react";
-import { FiFileText, FiBarChart2, FiPieChart, FiGrid, FiZap, FiClock } from "react-icons/fi";
+import {
+  FiFileText,
+  FiBarChart2,
+  FiPieChart,
+  FiGrid,
+  FiZap,
+  FiClock,
+  FiCheckCircle,
+} from "react-icons/fi";
 import { PERMISSIONS } from "@/lib/permission";
 import { COMPANIES } from "@/lib/voucher/companies";
 import { useRouter } from "next/navigation";
 import { ExBadgeInlineSpinner } from "@/components/ex/ExBadgeInlineSpinner";
+import {
+  getApprovalCount,
+  getDisbursementCount,
+  sumApprovalCounts,
+  sumDisbursementCounts,
+} from "@/lib/notifications/notificationCounts";
 
 const cards = [
   { key: "Al-Ghadeer", name: "طلبات الغدير", logo: "/الغدير.png" },
@@ -137,9 +151,28 @@ export default function HomePage() {
     return hasOnlyEXCompany && !hasAnyNonEXCard;
   }, [permissionsReady, companies, permissions, companyCards]);
 
-  const totalPending = useMemo(() => {
-    return companyCards.reduce((sum, c) => sum + Number(counts?.[c.key] || 0), 0);
-  }, [companyCards, counts]);
+  const companyKeys = useMemo(
+    () => companyCards.map((c) => c.key),
+    [companyCards]
+  );
+
+  const canViewReceipts = useMemo(
+    () =>
+      Array.isArray(permissions) &&
+      permissions.includes(PERMISSIONS.RECEIPTS),
+    [permissions]
+  );
+
+  const totalApproval = useMemo(
+    () => sumApprovalCounts(counts, companyKeys),
+    [counts, companyKeys]
+  );
+
+  const totalDisbursement = useMemo(
+    () =>
+      canViewReceipts ? sumDisbursementCounts(counts, companyKeys) : 0,
+    [counts, companyKeys, canViewReceipts]
+  );
 
   useEffect(() => {
     if (!shouldRedirectToExHome) return;
@@ -254,27 +287,43 @@ export default function HomePage() {
             <p className="text-[11px] font-bold text-gray-500">الشركات</p>
             <p className="mt-1 text-sm font-extrabold text-gray-900">{companyCards.length}</p>
           </div>
-          <div className="rounded-2xl bg-slate-50/90 p-2.5 text-center ring-1 ring-slate-200 shadow-sm">
-            <p className="text-[11px] font-bold text-gray-500">طلبات بانتظارك (موافقة أو صرف)</p>
-            <div className="mt-1 flex items-center justify-center">
-              <span
-                className="
-                  inline-flex min-h-[28px] min-w-[34px] items-center justify-center
-                  rounded-full px-2.5
-                  bg-gradient-to-r from-rose-600 to-red-600 text-white
-                  text-xs font-black tracking-wide tabular-nums
-                  shadow-[0_10px_22px_-10px_rgba(220,38,38,0.9)]
-                  ring-2 ring-white/75
-                "
+          <div className="rounded-2xl bg-slate-50/90 p-2.5 ring-1 ring-slate-200 shadow-sm">
+            <p className="text-center text-[11px] font-bold text-gray-500">إشعارات بانتظارك</p>
+            <div className="mt-2 space-y-1.5">
+              <div
+                className="flex items-center justify-between gap-2 rounded-xl bg-white/90 px-2.5 py-2 ring-1 ring-slate-200/80"
+                title="طلبات تحتاج موافقتك في سير العمل"
               >
-                {!countsLoaded ? (
-                  <ExBadgeInlineSpinner />
-                ) : totalPending > 99 ? (
-                  "99+"
-                ) : (
-                  totalPending
-                )}
-              </span>
+                <span className="min-w-0 text-right text-[10px] font-extrabold leading-tight text-gray-800 sm:text-[11px]">
+                  قيد الانتظار للموافقة
+                </span>
+                <span className="inline-flex shrink-0 min-h-[26px] min-w-[30px] items-center justify-center gap-1 rounded-full bg-gradient-to-r from-rose-600 to-red-600 px-2 text-[11px] font-black text-white tabular-nums shadow-[0_6px_14px_-6px_rgba(220,38,38,0.85)] ring-2 ring-white/70">
+                  <FiClock className="text-[10px]" />
+                  {!countsLoaded ? (
+                    <ExBadgeInlineSpinner />
+                  ) : (
+                    totalApproval > 99 ? "99+" : totalApproval
+                  )}
+                </span>
+              </div>
+              {canViewReceipts && (
+                <div
+                  className="flex items-center justify-between gap-2 rounded-xl bg-white/90 px-2.5 py-2 ring-1 ring-slate-200/80"
+                  title="طلبات جاهزة للصرف — نفس تقرير تتبع الصرف"
+                >
+                  <span className="min-w-0 text-right text-[10px] font-extrabold leading-tight text-gray-800 sm:text-[11px]">
+                    قيد الانتظار للصرف
+                  </span>
+                  <span className="inline-flex shrink-0 min-h-[26px] min-w-[30px] items-center justify-center gap-1 rounded-full bg-gradient-to-r from-emerald-600 to-green-600 px-2 text-[11px] font-black text-white tabular-nums shadow-[0_6px_14px_-6px_rgba(5,150,105,0.8)] ring-2 ring-white/70">
+                    <FiCheckCircle className="text-[10px]" />
+                    {!countsLoaded ? (
+                      <ExBadgeInlineSpinner />
+                    ) : (
+                      totalDisbursement > 99 ? "99+" : totalDisbursement
+                    )}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -315,7 +364,10 @@ export default function HomePage() {
             animate="show"
           >
             {companyCards.map((c, idx) => {
-              const n = Number(counts?.[c.key] || 0);
+              const approvalN = getApprovalCount(counts, c.key);
+              const disbursementN = canViewReceipts
+                ? getDisbursementCount(counts, c.key)
+                : 0;
 
               return (
                 <Link key={idx} href={c.href || `/requests/${c.key}`} passHref>
@@ -334,24 +386,36 @@ export default function HomePage() {
                   text-center flex flex-col items-center
                 "
                   >
-                    {/* ✅ Badge عداد */}
-                    {n > 0 && !c.isIcon && (
-                      <div
-                        className="
-                      absolute left-4 top-4 z-20
-                      inline-flex min-h-[30px] min-w-[34px] items-center justify-center
-                      rounded-full px-2.5
-                      bg-gradient-to-r from-rose-600 to-red-600 text-white
-                      text-xs font-black tracking-wide tabular-nums
-                      shadow-[0_10px_22px_-10px_rgba(220,38,38,0.9)]
-                      ring-2 ring-white/75
-                      transition-transform duration-300 group-hover:scale-105
-                    "
-                        title="موافقات بانتظارك أو طلبات بانتظار إجراء الصرف (الوصل)"
+                    {(approvalN > 0 || disbursementN > 0) && !c.isIcon && (
+                      <motion.div
+                        className="absolute left-3 top-3 z-20 flex items-center gap-1.5"
+                        initial={{ opacity: 0, scale: 0.9 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        transition={{ duration: 0.25 }}
                       >
-                        <span className="absolute inset-0 rounded-full bg-white/20 opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
-                        <span className="relative">{n > 99 ? "99+" : n}</span>
-                      </div>
+                        {approvalN > 0 && (
+                          <span
+                            className="inline-flex h-9 min-w-[2.25rem] items-center justify-center gap-1 rounded-full bg-gradient-to-br from-rose-600 to-red-600 px-2.5 text-white shadow-[0_8px_22px_-8px_rgba(220,38,38,0.9)] ring-2 ring-white/85 backdrop-blur-sm transition-transform duration-300 group-hover:scale-110"
+                            title="قيد الانتظار للموافقة"
+                          >
+                            <FiClock className="text-[13px] shrink-0 opacity-95" aria-hidden />
+                            <span className="text-xs font-black tabular-nums leading-none">
+                              {approvalN > 99 ? "99+" : approvalN}
+                            </span>
+                          </span>
+                        )}
+                        {disbursementN > 0 && (
+                          <span
+                            className="inline-flex h-9 min-w-[2.25rem] items-center justify-center gap-1 rounded-full bg-gradient-to-br from-emerald-600 to-green-600 px-2.5 text-white shadow-[0_8px_22px_-8px_rgba(5,150,105,0.85)] ring-2 ring-white/85 backdrop-blur-sm transition-transform duration-300 group-hover:scale-110"
+                            title="قيد الانتظار للصرف"
+                          >
+                            <FiCheckCircle className="text-[13px] shrink-0 opacity-95" aria-hidden />
+                            <span className="text-xs font-black tabular-nums leading-none">
+                              {disbursementN > 99 ? "99+" : disbursementN}
+                            </span>
+                          </span>
+                        )}
+                      </motion.div>
                     )}
 
                     {/* زخارف ناعمة */}

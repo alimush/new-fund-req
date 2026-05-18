@@ -150,16 +150,16 @@ export default function VoucherModal({
   const [globalTextStyle, setGlobalTextStyle] = useState(DEFAULT_GLOBAL_TEXT_STYLE);
   const [fieldStyles, setFieldStyles] = useState(DEFAULT_FIELD_STYLES);
 
-  const selectedCompany = useMemo(
-    () => {
-      const normalizedKey = String(companyKey || "").trim().toLowerCase();
-      return (
-        COMPANIES.find((c) => String(c.key).trim().toLowerCase() === normalizedKey) ||
-        null
-      );
-    },
-    [companyKey]
-  );
+  const templateCompanyKey = existingVoucher?.companyKey || companyKey;
+
+  const selectedCompany = useMemo(() => {
+    const normalizedKey = String(templateCompanyKey || "").trim().toLowerCase();
+    return (
+      COMPANIES.find((c) => {
+        return String(c.key).trim().toLowerCase() === normalizedKey;
+      }) ?? null
+    );
+  }, [templateCompanyKey]);
 
   const today = useMemo(() => new Date(), []);
   const todayYY = String(today.getFullYear()).slice(-2);
@@ -302,11 +302,6 @@ export default function VoucherModal({
   }, [open, requestId, request]);
 
   useEffect(() => {
-    if (!open || !requestData) return;
-    fillFromRequest(requestData);
-  }, [open, requestData, fillFromRequest]);
-
-  useEffect(() => {
     if (!open || !companyKey || !requestId) return;
 
     let cancelled = false;
@@ -322,9 +317,11 @@ export default function VoucherModal({
         } else {
           setExistingVoucher(null);
           setVoucherNo(null);
+          if (requestData) fillFromRequest(requestData);
         }
       } catch (err) {
         console.error("Failed to load existing voucher:", err);
+        if (!cancelled && requestData) fillFromRequest(requestData);
       } finally {
         if (!cancelled) setLoadingVoucher(false);
       }
@@ -335,7 +332,16 @@ export default function VoucherModal({
     return () => {
       cancelled = true;
     };
-  }, [open, companyKey, requestId, requestCompanyKey, loadExistingVoucher, hydrateFromVoucherDoc]);
+  }, [
+    open,
+    companyKey,
+    requestId,
+    requestCompanyKey,
+    requestData,
+    loadExistingVoucher,
+    hydrateFromVoucherDoc,
+    fillFromRequest,
+  ]);
 
   const effectiveDate = useMemo(() => {
     return buildEffectiveDate(existingVoucher, vDateYY, vDateMM, vDateDD);
@@ -532,10 +538,12 @@ export default function VoucherModal({
     const amountCleaned = cleanAmount(vAmount);
     const amountNumber = amountCleaned ? Number(amountCleaned) : 0;
   
+    const payloadCompanyKey = existingVoucher?.companyKey || companyKey;
+
     return {
-      companyKey,
+      companyKey: payloadCompanyKey,
       requestCompanyKey: requestCompanyKey || companyKey,
-      companyName: selectedCompany?.name || companyKey,
+      companyName: selectedCompany?.name || payloadCompanyKey,
       mode: "payment",
       requestId,
   

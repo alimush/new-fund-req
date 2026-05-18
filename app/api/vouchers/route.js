@@ -8,6 +8,7 @@ import { COMPANIES } from "@/lib/voucher/companies";
 import {
   resolveVoucherCompanyKeyForUser,
   hasVoucherPermissionForRequest,
+  voucherLookupCompanyKeys,
 } from "@/lib/voucher/resolveVoucherCompanyKey";
 import Permissions from "@/models/Permissions";
 import { getModelForCompany } from "@/models/Request";
@@ -42,6 +43,32 @@ async function getUserAccess(userId) {
     (g.permissions || []).forEach((p) => permsSet.add(String(p).trim()));
   }
   return { allowedPerms: Array.from(permsSet).filter(Boolean) };
+}
+
+async function findVoucherForRequest({
+  requestId,
+  mode,
+  requestCompanyKey,
+  allowedPerms,
+  hintCompanyKey = "",
+}) {
+  const rid = safeString(requestId);
+  if (!rid) return null;
+
+  const keys = voucherLookupCompanyKeys(
+    requestCompanyKey,
+    allowedPerms,
+    hintCompanyKey
+  );
+
+  for (const companyKey of keys) {
+    const doc = await Voucher.findOne({ companyKey, requestId: rid, mode })
+      .sort({ createdAt: -1 })
+      .lean();
+    if (doc) return doc;
+  }
+
+  return Voucher.findOne({ requestId: rid, mode }).sort({ createdAt: -1 }).lean();
 }
 
 export async function GET(req) {
@@ -107,13 +134,13 @@ export async function GET(req) {
       return NextResponse.json({ success: false, error: "ليس لديك صلاحية لهذه الشركة" }, { status: 403 });
     }
 
-    const doc = await Voucher.findOne({
-      companyKey: voucherCompanyKey,
+    const doc = await findVoucherForRequest({
       requestId,
       mode,
-    })
-      .sort({ createdAt: -1 })
-      .lean();
+      requestCompanyKey: requestCompanyKey || companyKey,
+      allowedPerms,
+      hintCompanyKey: companyKey || voucherCompanyKey,
+    });
 
     return NextResponse.json({
       success: true,
@@ -324,13 +351,13 @@ export async function POST(req) {
 
     // ✅ لنفس الطلب/الشركة/النوع: إنشاء مرة واحدة فقط
     if (requestId) {
-      const existingVoucher = await Voucher.findOne({
-        companyKey: saveCompanyKey,
-        requestId: safeString(requestId),
+      const existingVoucher = await findVoucherForRequest({
+        requestId,
         mode,
-      })
-        .sort({ createdAt: -1 })
-        .lean();
+        requestCompanyKey: requestCompany,
+        allowedPerms,
+        hintCompanyKey: saveCompanyKey,
+      });
 
       if (existingVoucher) {
         return NextResponse.json({

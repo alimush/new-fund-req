@@ -6,6 +6,8 @@ import User from "@/models/User";
 import { getModelForCompany } from "@/models/Request";
 import { Types } from "mongoose";
 import { pendingApprovalMongoExtraMatch } from "@/lib/workflow/canApproveAtStep";
+import { countPendingDisbursement } from "@/lib/receipts/disbursementCount";
+import { PERMISSIONS } from "@/lib/permission";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -60,61 +62,6 @@ async function countPendingApprovals(Model, uid, userPermissions = []) {
   return rows?.[0]?.c || 0;
 }
 
-/**
- * نفس منطق scope=delegated في /api/requests — طلبات مخوّلة لك للصرف (الوصل)،
- * مع استبعاد ما تم إصدار الوصل له (voucherProcessed).
- */
-async function countDelegatedVoucherPending(Model, uid, username) {
-  const uname = String(username || "").trim();
-  const rows = await Model.aggregate([
-    {
-      $match: {
-        status: { $in: ["Approved", "approved"], $nin: ["Cancelled", "cancelled"] },
-      },
-    },
-    {
-      $addFields: {
-        _lastIdx: { $subtract: [{ $size: { $ifNull: ["$workflow.steps", []] } }, 1] },
-      },
-    },
-    { $match: { $expr: { $gte: ["$_lastIdx", 0] } } },
-    {
-      $addFields: {
-        _step: { $arrayElemAt: ["$workflow.steps", "$_lastIdx"] },
-      },
-    },
-    {
-      $match: {
-        $expr: { $eq: ["$currentStep", "$_lastIdx"] },
-        "_step.status": { $in: ["Approved", "approved"] },
-        $and: [
-          {
-            $or: [
-              { "_step.voucherDelegateTo": uid },
-              { "_step.voucherDelegateToUsername": uname || "__no_user__" },
-            ],
-          },
-          {
-            $or: [
-              { "_step.voucherProcessedBy": null },
-              { "_step.voucherProcessedBy": { $exists: false } },
-            ],
-          },
-          {
-            $or: [
-              { "_step.voucherProcessedAt": null },
-              { "_step.voucherProcessedAt": { $exists: false } },
-            ],
-          },
-        ],
-      },
-    },
-    { $group: { _id: "$_id" } },
-    { $count: "c" },
-  ]);
-  return rows?.[0]?.c || 0;
-}
-
 export async function GET(req) {
   try {
     await dbConnect();
@@ -138,7 +85,12 @@ export async function GET(req) {
       .filter(Boolean);
 
     if (!companies.length) {
-      return NextResponse.json({ success: true, counts: {} });
+      return NextResponse.json({
+        success: true,
+        counts: {},
+        approval: {},
+        disbursement: {},
+      });
     }
 
     const uid = new Types.ObjectId(userId);
@@ -147,28 +99,45 @@ export async function GET(req) {
     const userPermissions = await getUserPermissions(userId);
 
     const counts = {};
+    const approval = {};
+    const disbursement = {};
+    const canCountDisbursement = userPermissions.includes(PERMISSIONS.RECEIPTS);
 
     for (const company of companies) {
       const allowed = await hasCompanyAccess(userId, company);
 
       if (!allowed) {
-        counts[company] = 0;
+        counts[company] = { approval: 0, disbursement: 0, total: 0 };
+        approval[company] = 0;
+        disbursement[company] = 0;
         continue;
       }
 
       const Model = getModelForCompany(company);
 
-      const [nApproval, nVoucher] = await Promise.all([
-        countPendingApprovals(Model, uid, userPermissions),
-        countDelegatedVoucherPending(Model, uid, username),
-      ]);
+      const nApproval = await countPendingApprovals(Model, uid, userPermissions);
+      const nDisbursement = canCountDisbursement
+        ? await countPendingDisbursement(Model, {
+            uid,
+            username,
+            permissions: userPermissions,
+          })
+        : 0;
 
-      counts[company] = nApproval + nVoucher;
+      approval[company] = nApproval;
+      disbursement[company] = nDisbursement;
+      counts[company] = {
+        approval: nApproval,
+        disbursement: nDisbursement,
+        total: nApproval + nDisbursement,
+      };
     }
 
     return NextResponse.json({
       success: true,
       counts,
+      approval,
+      disbursement,
     });
   } catch (err) {
     console.error("❌ notifications/counts error:", err);

@@ -15,6 +15,10 @@ import {
 import { useRouter } from "next/navigation";
 import { usePermissions } from "@/context/PermissionContext";
 import { PERMISSIONS } from "@/lib/permission";
+import {
+  getApprovalCount,
+  getDisbursementCount,
+} from "@/lib/notifications/notificationCounts";
 import StatusBadge from "@/components/StatusBadge";
 import CreateRequestModal from "@/components/CreateRequestModal";
 
@@ -76,6 +80,9 @@ export default function RequestsPage({ companyKey }) {
     Array.isArray(permissions) &&
     permissions.includes(PERMISSIONS.CREATE_REQUEST);
 
+  const canViewReceipts =
+    Array.isArray(permissions) && permissions.includes(PERMISSIONS.RECEIPTS);
+
   const PAGE_SIZE = 20;
 
   // ===== Access Guard =====
@@ -114,12 +121,20 @@ export default function RequestsPage({ companyKey }) {
   const [myRequests, setMyRequests] = useState([]);
   const [pendingApprovals, setPendingApprovals] = useState([]);
   const [delegatedRequests, setDelegatedRequests] = useState([]);
+  const [disbursedByMe, setDisbursedByMe] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [notifyCounts, setNotifyCounts] = useState(null);
+
+  const notifyApproval = getApprovalCount(notifyCounts || {}, companyKey);
+  const notifyDisbursement = canViewReceipts
+    ? getDisbursementCount(notifyCounts || {}, companyKey)
+    : 0;
 
   // ===== Pagination =====
   const [pageMy, setPageMy] = useState(1);
   const [pagePending, setPagePending] = useState(1);
   const [pageDelegated, setPageDelegated] = useState(1);
+  const [pageDisbursed, setPageDisbursed] = useState(1);
 
   // ===== Modal =====
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -187,7 +202,12 @@ export default function RequestsPage({ companyKey }) {
   }, [showSuggest, closeSuggest]);
 
   const suggestionPool = useMemo(() => {
-    const all = [...(pendingApprovals || []), ...(myRequests || []), ...(delegatedRequests || [])];
+    const all = [
+      ...(pendingApprovals || []),
+      ...(myRequests || []),
+      ...(delegatedRequests || []),
+      ...(disbursedByMe || []),
+    ];
     const set = new Set();
     const out = [];
     for (const r of all) {
@@ -211,7 +231,7 @@ export default function RequestsPage({ companyKey }) {
       }
     }
     return out;
-  }, [pendingApprovals, myRequests, delegatedRequests]);
+  }, [pendingApprovals, myRequests, delegatedRequests, disbursedByMe]);
 
   const computeSuggestions = useCallback(
     (text) => {
@@ -233,6 +253,8 @@ export default function RequestsPage({ companyKey }) {
     setSuggestPos((p) => ({ ...p, open: false }));
     setPageMy(1);
     setPagePending(1);
+    setPageDelegated(1);
+    setPageDisbursed(1);
   };
 
   // ===== Fetch =====
@@ -251,40 +273,54 @@ export default function RequestsPage({ companyKey }) {
 
       const mineUrl = `${base}&scope=mine${stPart}${qPart}`;
       const pendingUrl = `${base}&scope=pending${qPart}`;
-      const delegatedUrl = `${base}&scope=delegated${qPart}`;
 
-      const [resMine, resPending, resDelegated] = await Promise.all([
+      const fetches = [
         fetch(mineUrl, { cache: "no-store" }),
         fetch(pendingUrl, { cache: "no-store" }),
-        fetch(delegatedUrl, { cache: "no-store" }),
-      ]);
+      ];
+      if (canViewReceipts) {
+        const disbursementBase = `/api/receipts/disbursement-report?company=${encodeURIComponent(companyKey)}`;
+        fetches.push(
+          fetch(`${disbursementBase}&tab=pending${qPart}`, { cache: "no-store" }),
+          fetch(`${disbursementBase}&tab=done${qPart}`, { cache: "no-store" })
+        );
+      }
 
-      if (
-        [401, 403].includes(resMine.status) ||
-        [401, 403].includes(resPending.status) ||
-        [401, 403].includes(resDelegated.status)
-      ) {
+      const responses = await Promise.all(fetches);
+
+      if (responses.some((r) => [401, 403].includes(r.status))) {
         router.replace("/home");
         return;
       }
 
-      const jMine = await resMine.json();
-      const jPending = await resPending.json();
-      const jDelegated = await resDelegated.json();
+      const jMine = await responses[0].json();
+      const jPending = await responses[1].json();
 
       setMyRequests(jMine?.success && Array.isArray(jMine?.data) ? jMine.data : []);
       setPendingApprovals(jPending?.success && Array.isArray(jPending?.data) ? jPending.data : []);
-      setDelegatedRequests(
-        jDelegated?.success && Array.isArray(jDelegated?.data) ? jDelegated.data : []
-      );
+
+      if (canViewReceipts) {
+        const jDelegated = await responses[2].json();
+        const jDisbursed = await responses[3].json();
+        setDelegatedRequests(
+          jDelegated?.success && Array.isArray(jDelegated?.data) ? jDelegated.data : []
+        );
+        setDisbursedByMe(
+          jDisbursed?.success && Array.isArray(jDisbursed?.data) ? jDisbursed.data : []
+        );
+      } else {
+        setDelegatedRequests([]);
+        setDisbursedByMe([]);
+      }
     } catch {
       setMyRequests([]);
       setPendingApprovals([]);
       setDelegatedRequests([]);
+      setDisbursedByMe([]);
     } finally {
       setLoading(false);
     }
-  }, [companyKey, router, appliedSearch, myStatus]);
+  }, [companyKey, router, appliedSearch, myStatus, canViewReceipts]);
 
   // initial load
   useEffect(() => {
@@ -298,8 +334,56 @@ export default function RequestsPage({ companyKey }) {
     setPageMy(1);
     setPagePending(1);
     setPageDelegated(1);
+    setPageDisbursed(1);
     fetchAll();
   }, [appliedSearch, myStatus]); // eslint-disable-line
+
+  useEffect(() => {
+    if (!accessChecked || !companyKey) return;
+
+    let alive = true;
+
+    const loadNotify = async () => {
+      try {
+        const res = await fetch(
+          `/api/notifications/counts?companies=${encodeURIComponent(companyKey)}`,
+          { cache: "no-store", credentials: "include" }
+        );
+        const data = await res.json().catch(() => ({}));
+        if (!alive) return;
+        if (res.ok && data?.success) setNotifyCounts(data.counts || {});
+        else setNotifyCounts({});
+      } catch {
+        if (alive) setNotifyCounts({});
+      }
+    };
+
+    loadNotify();
+    const t = setInterval(loadNotify, 30000);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, [companyKey, accessChecked]);
+
+  const CountPill = ({ count, tone, label }) => {
+    const n = Number(count) || 0;
+    if (!n) return null;
+    const toneClass =
+      tone === "disbursement"
+        ? "bg-gradient-to-r from-emerald-600 to-green-600 text-white shadow-[0_6px_14px_-6px_rgba(5,150,105,0.8)]"
+        : "bg-gradient-to-r from-rose-600 to-red-600 text-white shadow-[0_6px_14px_-6px_rgba(220,38,38,0.85)]";
+
+    return (
+      <span
+        title={label}
+        className={`inline-flex min-h-[26px] items-center gap-1 rounded-full px-2.5 text-[11px] font-black tabular-nums ring-2 ring-white/40 ${toneClass}`}
+      >
+        {n > 99 ? "99+" : n}
+        <span className="hidden sm:inline text-[10px] font-extrabold opacity-95">{label}</span>
+      </span>
+    );
+  };
 
   // ===== Pagination computed + clamp =====
   const myPaged = useMemo(() => paginate(myRequests, pageMy, PAGE_SIZE), [myRequests, pageMy]);
@@ -307,6 +391,10 @@ export default function RequestsPage({ companyKey }) {
   const delegatedPaged = useMemo(
     () => paginate(delegatedRequests, pageDelegated, PAGE_SIZE),
     [delegatedRequests, pageDelegated]
+  );
+  const disbursedPaged = useMemo(
+    () => paginate(disbursedByMe, pageDisbursed, PAGE_SIZE),
+    [disbursedByMe, pageDisbursed]
   );
 
   useEffect(() => {
@@ -319,6 +407,9 @@ export default function RequestsPage({ companyKey }) {
   useEffect(() => {
     if (pageDelegated > delegatedPaged.totalPages) setPageDelegated(delegatedPaged.totalPages);
   }, [pageDelegated, delegatedPaged.totalPages]);
+  useEffect(() => {
+    if (pageDisbursed > disbursedPaged.totalPages) setPageDisbursed(disbursedPaged.totalPages);
+  }, [pageDisbursed, disbursedPaged.totalPages]);
 
   // ===== Stats (من طلباتي الحالية بعد فلتر السيرفر) =====
   const stats = useMemo(() => {
@@ -373,7 +464,8 @@ export default function RequestsPage({ companyKey }) {
     );
   };
 
-  const RequestCard = ({ r }) => {
+  const RequestCard = ({ r, variant = "default" }) => {
+    const isDisbursement = variant === "disbursementPending";
     const dateText = r.createdAt
       ? new Date(r.createdAt).toLocaleDateString()
       : "-";
@@ -397,18 +489,12 @@ export default function RequestsPage({ companyKey }) {
     return (
       <div
         onClick={() => router.push(`/requests/${companyKey}/${r._id}`)}
-        className="
-          group relative cursor-pointer rounded-2xl
-          bg-white/60 backdrop-blur-xl
-          ring-1 ring-black/5
-          shadow-[0_12px_35px_-18px_rgba(0,0,0,0.28)]
-          p-5
-          transition-all duration-300
-          hover:-translate-y-[2px]
-          hover:bg-white/75
-          hover:ring-black/10
-          hover:shadow-[0_18px_55px_-22px_rgba(0,0,0,0.38)]
-        "
+        className={[
+          "group relative cursor-pointer rounded-2xl backdrop-blur-xl p-5 transition-all duration-300 hover:-translate-y-[2px]",
+          isDisbursement
+            ? "bg-gradient-to-br from-emerald-50/95 via-green-50/50 to-white/70 ring-2 ring-emerald-300/50 shadow-[0_12px_35px_-18px_rgba(5,150,105,0.22)] hover:ring-emerald-400/60 hover:shadow-[0_18px_55px_-22px_rgba(5,150,105,0.3)]"
+            : "bg-white/60 ring-1 ring-black/5 shadow-[0_12px_35px_-18px_rgba(0,0,0,0.28)] hover:bg-white/75 hover:ring-black/10 hover:shadow-[0_18px_55px_-22px_rgba(0,0,0,0.38)]",
+        ].join(" ")}
       >
         {/* glow */}
         <div className="pointer-events-none absolute inset-0 rounded-2xl opacity-0 transition-opacity duration-300 group-hover:opacity-100 bg-gradient-to-br from-white/45 via-transparent to-transparent" />
@@ -433,9 +519,12 @@ export default function RequestsPage({ companyKey }) {
   
             <div className="mt-3 text-[12px] font-mono font-semibold text-gray-700/85">
               {r.requestCode || r._id}
+              {r.voucherNo ? (
+                <span className="mr-2 text-emerald-700"> · وصل {r.voucherNo}</span>
+              ) : null}
             </div>
           </div>
-  
+
           {/* RIGHT SIDE */}
           <div className="shrink-0 flex flex-col items-end gap-2">
             
@@ -499,27 +588,74 @@ export default function RequestsPage({ companyKey }) {
     );
   };
 
-  const SectionShell = ({ title, subtitle, icon: Icon, right, children }) => (
-    <div className="rounded-3xl bg-white/40 backdrop-blur-2xl ring-1 ring-white/30 shadow-[0_18px_45px_-25px_rgba(0,0,0,0.35)] overflow-hidden">
-      <div className="px-5 py-4 bg-white/25">
+  const SectionShell = ({
+    title,
+    subtitle,
+    icon: Icon,
+    right,
+    accent,
+    badgeCount,
+    badgeTone = "approval",
+    children,
+  }) => {
+    const headerClass =
+      accent === "emerald"
+        ? "bg-gradient-to-r from-emerald-500/20 via-green-500/10 to-white/20"
+        : accent === "red"
+          ? "bg-gradient-to-r from-red-500/15 via-rose-500/10 to-white/20"
+          : "bg-white/25";
+    const iconWrapClass =
+      accent === "emerald"
+        ? "bg-emerald-500/15 text-emerald-800 ring-emerald-300/45"
+        : accent === "red"
+          ? "bg-red-500/15 text-red-800 ring-red-300/40"
+          : "bg-white/45 text-gray-800 ring-white/30";
+    const badgeToneClass =
+      badgeTone === "disbursement"
+        ? "bg-gradient-to-r from-emerald-600 to-green-600 text-white"
+        : "bg-gradient-to-r from-rose-600 to-red-600 text-white";
+    const shellClass =
+      accent === "emerald"
+        ? "bg-emerald-50/30 ring-emerald-200/45"
+        : accent === "red"
+          ? "bg-red-50/20 ring-red-200/35"
+          : "bg-white/40 ring-white/30";
+
+    return (
+      <div className={`rounded-3xl backdrop-blur-2xl ring-1 shadow-[0_18px_45px_-25px_rgba(0,0,0,0.35)] overflow-hidden ${shellClass}`}>
+      <div className={`px-5 py-4 ${headerClass}`}>
         <div className="flex items-start justify-between gap-3">
-          <div className="flex items-start gap-3">
+          <div className="flex items-start gap-3 min-w-0">
             {Icon && (
-              <div className="mt-0.5 h-10 w-10 rounded-2xl bg-white/45 ring-1 ring-white/30 backdrop-blur flex items-center justify-center text-gray-800">
+              <div
+                className={`mt-0.5 h-10 w-10 rounded-2xl ring-1 backdrop-blur flex items-center justify-center shrink-0 ${iconWrapClass}`}
+              >
                 <Icon className="text-xl" />
               </div>
             )}
-            <div>
-              <div className="text-[16px] font-black text-gray-900">{title}</div>
-              {subtitle && <div className="text-[13px] font-bold text-gray-700/80">{subtitle}</div>}
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="text-[16px] font-black text-gray-900">{title}</div>
+                {Number(badgeCount) > 0 && (
+                  <span
+                    className={`inline-flex min-h-[24px] items-center rounded-full px-2 text-[11px] font-black tabular-nums ${badgeToneClass}`}
+                  >
+                    {Number(badgeCount) > 99 ? "99+" : badgeCount}
+                  </span>
+                )}
+              </div>
+              {subtitle && (
+                <div className="text-[13px] font-bold text-gray-700/80">{subtitle}</div>
+              )}
             </div>
           </div>
           {right}
         </div>
       </div>
-      <div className="p-5">{children}</div>
-    </div>
-  );
+        <div className="p-5">{children}</div>
+      </div>
+    );
+  };
 
   const ScrollBox = ({ children }) => (
     <div className="max-h-[520px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-gray-300/60 scrollbar-track-transparent">
@@ -551,6 +687,16 @@ export default function RequestsPage({ companyKey }) {
                 <span className="max-w-[180px] truncate px-2.5 py-1 rounded-xl bg-white/55 backdrop-blur ring-1 ring-white/30 text-gray-900 font-extrabold sm:max-w-none">
                   {companyKey}
                 </span>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                <CountPill count={notifyApproval} tone="approval" label="قيد الموافقة" />
+                {canViewReceipts && (
+                  <CountPill
+                    count={notifyDisbursement}
+                    tone="disbursement"
+                    label="قيد الصرف"
+                  />
+                )}
               </div>
             </div>
           </div>
@@ -708,6 +854,9 @@ export default function RequestsPage({ companyKey }) {
             title="قيد الانتظار للموافقة"
             subtitle="Requests that are pending with you"
             icon={FiClock}
+            accent="red"
+            badgeCount={notifyApproval}
+            badgeTone="approval"
             right={<span className="text-[13px] font-extrabold text-gray-800/70">{pendingPaged.total} items</span>}
           >
             {loading ? (
@@ -786,11 +935,15 @@ export default function RequestsPage({ companyKey }) {
           </SectionShell>
         </div>
 
-        {delegatedRequests.length > 0 && (
+        {canViewReceipts && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <SectionShell
             title="قيد الانتظار للصرف"
-            subtitle="طلبات مخوّلة لك لإصدار الوصل أو رفع المرفق"
+            subtitle="نفس تقرير تتبع الصرف — قيد انتظار الصرف"
             icon={FiCheckCircle}
+            accent="emerald"
+            badgeCount={notifyDisbursement}
+            badgeTone="disbursement"
             right={
               <span className="text-[13px] font-extrabold text-gray-800/70">
                 {delegatedPaged.total} items
@@ -799,12 +952,16 @@ export default function RequestsPage({ companyKey }) {
           >
             {loading ? (
               <div className="py-10 text-center font-extrabold text-gray-800/70">Loading...</div>
+            ) : delegatedRequests.length === 0 ? (
+              <div className="py-10 text-center font-extrabold text-gray-800/70">
+                لا يوجد طلبات قيد الانتظار للصرف
+              </div>
             ) : (
               <>
                 <ScrollBox>
                   <div className="space-y-3">
                     {delegatedPaged.items.map((r) => (
-                      <RequestCard key={r._id} r={r} />
+                      <RequestCard key={r._id} r={r} variant="disbursementPending" />
                     ))}
                   </div>
                 </ScrollBox>
@@ -816,6 +973,41 @@ export default function RequestsPage({ companyKey }) {
               </>
             )}
           </SectionShell>
+
+          <SectionShell
+            title="صرفتها أنا"
+              subtitle="نفس تقرير تتبع الصرف — تم الصرف من قبلك"
+            icon={FiCheckCircle}
+            right={
+              <span className="text-[13px] font-extrabold text-gray-800/70">
+                {disbursedPaged.total} items
+              </span>
+            }
+          >
+            {loading ? (
+              <div className="py-10 text-center font-extrabold text-gray-800/70">Loading...</div>
+            ) : disbursedByMe.length === 0 ? (
+              <div className="py-10 text-center font-extrabold text-gray-800/70">
+                لا يوجد طلبات صرفتها بعد
+              </div>
+            ) : (
+              <>
+                <ScrollBox>
+                  <div className="space-y-3">
+                    {disbursedPaged.items.map((r) => (
+                      <RequestCard key={`disbursed-${r._id}`} r={r} />
+                    ))}
+                  </div>
+                </ScrollBox>
+                <Pager
+                  page={disbursedPaged.page}
+                  totalPages={disbursedPaged.totalPages}
+                  onPage={setPageDisbursed}
+                />
+              </>
+            )}
+          </SectionShell>
+          </div>
         )}
       </div>
 

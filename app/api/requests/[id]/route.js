@@ -11,7 +11,11 @@ import RequestOldData from "@/models/RequestOldData";
 import { PERMISSIONS } from "@/lib/permission";
 import { COMPANIES } from "@/lib/voucher/companies";
 
-import { buildWorkflowActionEmailHtml, sendWorkflowEmail } from "@/lib/email/workflowEmail";
+import {
+  buildWorkflowActionEmailHtml,
+  buildVoucherDelegationEmailHtml,
+  sendWorkflowEmail,
+} from "@/lib/email/workflowEmail";
 
 /* ======================= HELPERS ======================= */
 async function hasCompanyAccess(userId, company) {
@@ -380,7 +384,9 @@ if (action === "update") {
         );
       }
 
-      const delegateUserDoc = await User.findById(delegateToUserId).select("username").lean();
+      const delegateUserDoc = await User.findById(delegateToUserId)
+        .select("username email")
+        .lean();
 
       step.voucherDelegateTo = new Types.ObjectId(delegateToUserId);
       step.voucherDelegatedBy = new Types.ObjectId(String(userId));
@@ -389,6 +395,32 @@ if (action === "update") {
       step.voucherDelegatedByUsername = String(currentUsername || "").trim();
       request.markModified(`workflow.steps.${stepIndex}`);
       await request.save();
+
+      try {
+        const delegateEmail = String(delegateUserDoc?.email || "").trim().toLowerCase();
+        if (delegateEmail) {
+          const code = String(request.requestCode || request.code || "").trim();
+          const subject = `[تخويل صرف] ${code || id} | ${company}`;
+          const html = buildVoucherDelegationEmailHtml({
+            requestId: id,
+            company,
+            requestCode: code,
+            requestType: String(request.requestType || ""),
+            description: String(request.description || ""),
+            delegatedByName: currentUsername,
+            greetingName: delegateUserDoc?.username || "زميلنا",
+            baseDomain: "https://funds-gdr.spc-it.com.iq",
+          });
+          await sendWorkflowEmail({
+            toEmails: [delegateEmail],
+            subject,
+            html,
+          });
+        }
+      } catch (e) {
+        console.error("❌ Delegation email failed:", e?.message || e);
+      }
+
       return NextResponse.json({ success: true, data: request });
     }
 

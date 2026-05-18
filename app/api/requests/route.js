@@ -13,7 +13,53 @@ import {
   sendWorkflowEmail,
 } from "@/lib/email/workflowEmail";
 import { pendingApprovalMongoExtraMatch } from "@/lib/workflow/canApproveAtStep";
+
 export const runtime = "nodejs";
+
+const STATUS_APPROVED_NOT_CANCELLED = {
+  status: { $in: ["Approved", "approved"], $nin: ["Cancelled", "cancelled"] },
+};
+
+function voucherLookupByRequestPipeline() {
+  return [
+    {
+      $match: {
+        $expr: {
+          $or: [
+            { $eq: ["$requestId", "$$rid"] },
+            { $eq: [{ $toString: { $ifNull: ["$requestId", ""] } }, "$$rid"] },
+          ],
+        },
+      },
+    },
+    { $sort: { createdAt: -1 } },
+    { $limit: 1 },
+    { $project: { voucherNo: 1, seq: 1, createdByUserId: 1, createdAt: 1 } },
+  ];
+}
+
+function filterRequestsBySearch(list, q) {
+  const tq = String(q || "").trim().toLowerCase();
+  if (!tq) return list;
+  return list.filter((r) => {
+    const text = [
+      r.requestCode,
+      r.company,
+      r.companyKey,
+      r.requestType,
+      r.description,
+      r.expenseType,
+      r.currency,
+      r.department,
+      r.createdBy,
+      r._id,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    return text.includes(tq);
+  });
+}
 
 // =========================
 // Counter (RequestCode)
@@ -565,34 +611,95 @@ export async function GET(req) {
 
       const list = await Model.aggregate(pipeline);
 
-      if (q) {
-        const tq = q.toLowerCase();
-        const out = list.filter((r) => {
-          const text = [
-            r.requestCode,
-            r.company,
-            r.companyKey,
-            r.requestType,
-            r.description,
-            r.expenseType,
-            r.currency,
-            r.department,
-            r.createdBy,
-            r._id,
-          ]
-            .filter(Boolean)
-            .join(" ")
-            .toLowerCase();
-          return text.includes(tq);
-        });
-        return NextResponse.json({ success: true, data: out });
-      }
+      return NextResponse.json({
+        success: true,
+        data: q ? filterRequestsBySearch(list, q) : list,
+      });
+    }
 
-      return NextResponse.json({ success: true, data: list });
+    // =========================
+    // ✅ LIST: تم الصرف من قبلي
+    // =========================
+    if (scope === "disbursedbyme" || scope === "disbursed-by-me") {
+      const uid = new mongoose.Types.ObjectId(userId);
+      const userIdStr = String(userId);
+      const uname = String(username || "").trim();
+
+      const processedOr = [
+        { "_step.voucherProcessedBy": uid },
+        { "_step.voucherProcessedBy": userIdStr },
+      ];
+      if (uname) processedOr.push({ "_step.voucherProcessedByUsername": uname });
+
+      const issuerOr = [
+        { "__v.0.createdByUserId": userIdStr },
+        { "__v.0.createdByUserId": uid },
+      ];
+
+      const pipeline = [
+        { $match: STATUS_APPROVED_NOT_CANCELLED },
+        {
+          $addFields: {
+            _lastIdx: { $subtract: [{ $size: { $ifNull: ["$workflow.steps", []] } }, 1] },
+          },
+        },
+        { $match: { $expr: { $gte: ["$_lastIdx", 0] } } },
+        { $addFields: { _step: { $arrayElemAt: ["$workflow.steps", "$_lastIdx"] } } },
+        {
+          $lookup: {
+            from: "vouchers",
+            let: { rid: { $toString: "$_id" } },
+            pipeline: voucherLookupByRequestPipeline(),
+            as: "__v",
+          },
+        },
+        {
+          $match: {
+            $expr: { $eq: ["$currentStep", "$_lastIdx"] },
+            "_step.status": { $in: ["Approved", "approved"] },
+            "__v.0": { $exists: true },
+            $or: [{ $or: processedOr }, { $or: issuerOr }],
+          },
+        },
+        {
+          $addFields: {
+            _sortDisburse: {
+              $ifNull: [
+                "$_step.voucherProcessedAt",
+                {
+                  $let: {
+                    vars: { d: { $arrayElemAt: ["$__v", 0] } },
+                    in: "$$d.createdAt",
+                  },
+                },
+              ],
+            },
+          },
+        },
+        { $sort: { _sortDisburse: -1, createdAt: -1 } },
+        {
+          $project: {
+            _step: 0,
+            _lastIdx: 0,
+            __v: 0,
+            _sortDisburse: 0,
+          },
+        },
+      ];
+
+      const list = await Model.aggregate(pipeline);
+      return NextResponse.json({
+        success: true,
+        data: q ? filterRequestsBySearch(list, q) : list,
+      });
     }
 
     return NextResponse.json(
-      { success: false, error: "Invalid scope. Use scope=mine or scope=pending or scope=delegated" },
+      {
+        success: false,
+        error:
+          "Invalid scope. Use scope=mine, pending, delegated, or disbursedByMe",
+      },
       { status: 400 }
     );
   } catch (err) {

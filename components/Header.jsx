@@ -38,9 +38,9 @@ export default function Header({ onLogout }) {
     if (!nextUsername) setMenuOpen(false);
   }, [user]);
   const canViewReports =
-  Array.isArray(permissions) &&
-  permissions.includes(PERMISSIONS.VIEW_REPORTS);
-  
+    Array.isArray(permissions) &&
+    permissions.includes(PERMISSIONS.VIEW_REPORTS);
+
   const handleLogout = async () => {
     try {
       // (اختياري) امسح sessionStorage
