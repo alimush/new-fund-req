@@ -603,6 +603,22 @@ export default function ReportsPage() {
     r.value ??
     null;
 
+  const LINK_COL = "رابط الطلب";
+
+  const buildRequestReportUrl = useCallback(
+    (r, source = "new") => {
+      const company = String(r?.companyKey || "").trim();
+      const id = String(r?._id || "").trim();
+      if (!company || !id) return "";
+      const path = `/requests/${encodeURIComponent(company)}/${encodeURIComponent(id)}?source=${encodeURIComponent(source)}`;
+      if (typeof window !== "undefined" && window.location?.origin) {
+        return `${window.location.origin}${path}`;
+      }
+      return path;
+    },
+    []
+  );
+
   const EXPORT_PAGE_SIZE = 200;
 
   const buildParamsExport = useCallback(
@@ -687,9 +703,11 @@ export default function ReportsPage() {
       const { all } = await fetchAllForExport();
       if (!all || all.length === 0) return;
 
+      const source = dataSource?.value || "new";
       const rows = all.map((r) => ({
         Company: r.companyKey || "-",
         Code: r.requestCode || "-",
+        [LINK_COL]: buildRequestReportUrl(r, source) || "-",
         Type: r.requestType || "-",
         Requester: r.createdBy || "-",
         Status: r.status || "-",
@@ -709,13 +727,25 @@ export default function ReportsPage() {
 
       const ws = XLSX.utils.json_to_sheet(rows);
 
+      const range = XLSX.utils.decode_range(ws["!ref"] || "A1:A1");
       const amountCol = Object.keys(rows[0] || {}).indexOf("Amount");
+      const linkCol = Object.keys(rows[0] || {}).indexOf(LINK_COL);
+
       if (amountCol >= 0) {
-        const range = XLSX.utils.decode_range(ws["!ref"] || "A1:A1");
         for (let R = range.s.r + 1; R <= range.e.r; R++) {
           const cellAddr = XLSX.utils.encode_cell({ r: R, c: amountCol });
           if (ws[cellAddr] && typeof ws[cellAddr].v === "number") {
             ws[cellAddr].z = "#,##0";
+          }
+        }
+      }
+
+      if (linkCol >= 0) {
+        for (let R = range.s.r + 1; R <= range.e.r; R++) {
+          const cellAddr = XLSX.utils.encode_cell({ r: R, c: linkCol });
+          const url = ws[cellAddr]?.v;
+          if (typeof url === "string" && url.startsWith("http")) {
+            ws[cellAddr].l = { Target: url, Tooltip: "فتح الطلب" };
           }
         }
       }
@@ -733,7 +763,7 @@ export default function ReportsPage() {
     } finally {
       setLoading(false);
     }
-  }, [fetchAllForExport, dataSource]);
+  }, [fetchAllForExport, dataSource, buildRequestReportUrl]);
 
   const Card = ({ icon: Icon, title, value }) => (
     <motion.div
