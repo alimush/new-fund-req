@@ -56,6 +56,8 @@ const StepSchema = new mongoose.Schema(
     },
     voucherProcessedAt: { type: Date, default: null },
     voucherProcessedByUsername: { type: String, default: "", trim: true },
+    voucherId: { type: String, default: "", trim: true },
+    voucherNo: { type: String, default: "", trim: true },
   },
   { _id: false }
 );

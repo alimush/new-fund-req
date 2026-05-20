@@ -11,7 +11,10 @@ import {
   voucherLookupCompanyKeys,
 } from "@/lib/voucher/resolveVoucherCompanyKey";
 import Permissions from "@/models/Permissions";
+import User from "@/models/User";
 import { getModelForCompany } from "@/models/Request";
+import { findVoucherForRequest } from "@/lib/voucher/findVoucherForRequest";
+import { linkVoucherToRequest } from "@/lib/voucher/linkVoucherToRequest";
 
 export const runtime = "nodejs";
 
@@ -43,32 +46,6 @@ async function getUserAccess(userId) {
     (g.permissions || []).forEach((p) => permsSet.add(String(p).trim()));
   }
   return { allowedPerms: Array.from(permsSet).filter(Boolean) };
-}
-
-async function findVoucherForRequest({
-  requestId,
-  mode,
-  requestCompanyKey,
-  allowedPerms,
-  hintCompanyKey = "",
-}) {
-  const rid = safeString(requestId);
-  if (!rid) return null;
-
-  const keys = voucherLookupCompanyKeys(
-    requestCompanyKey,
-    allowedPerms,
-    hintCompanyKey
-  );
-
-  for (const companyKey of keys) {
-    const doc = await Voucher.findOne({ companyKey, requestId: rid, mode })
-      .sort({ createdAt: -1 })
-      .lean();
-    if (doc) return doc;
-  }
-
-  return Voucher.findOne({ requestId: rid, mode }).sort({ createdAt: -1 }).lean();
 }
 
 export async function GET(req) {
@@ -134,13 +111,39 @@ export async function GET(req) {
       return NextResponse.json({ success: false, error: "ليس لديك صلاحية لهذه الشركة" }, { status: 403 });
     }
 
+    let requestCodeHint = safeString(searchParams.get("requestCode"));
+    if (!requestCodeHint && requestId) {
+      const RequestModel = getModelForCompany(requestCompanyKey || companyKey);
+      const reqLean = await RequestModel.findById(requestId).select("requestCode").lean();
+      requestCodeHint = safeString(reqLean?.requestCode);
+    }
+
     const doc = await findVoucherForRequest({
       requestId,
+      requestCode: requestCodeHint,
       mode,
       requestCompanyKey: requestCompanyKey || companyKey,
       allowedPerms,
-      hintCompanyKey: companyKey || voucherCompanyKey,
+      hintCompanyKey: requestCompanyKey || companyKey || voucherCompanyKey,
     });
+
+    if (doc && requestId) {
+      try {
+        const actor = await User.findById(userId).select("username").lean();
+        const linked = await linkVoucherToRequest({
+          requestCompanyKey: requestCompanyKey || companyKey,
+          requestId,
+          voucherId: String(doc._id),
+          userId,
+          username: actor?.username || "",
+        });
+        if (!linked?.ok) {
+          console.warn("link on voucher GET skipped:", linked?.reason, requestId);
+        }
+      } catch (e) {
+        console.error("link on voucher GET:", e);
+      }
+    }
 
     return NextResponse.json({
       success: true,
@@ -350,9 +353,17 @@ export async function POST(req) {
     );
 
     // ✅ لنفس الطلب/الشركة/النوع: إنشاء مرة واحدة فقط
+    let requestCodeHint = safeString(requestCode);
+    if (requestId && !requestCodeHint) {
+      const RequestModel = getModelForCompany(requestCompany);
+      const reqLean = await RequestModel.findById(requestId).select("requestCode").lean();
+      requestCodeHint = safeString(reqLean?.requestCode);
+    }
+
     if (requestId) {
       const existingVoucher = await findVoucherForRequest({
         requestId,
+        requestCode: requestCodeHint,
         mode,
         requestCompanyKey: requestCompany,
         allowedPerms,
@@ -360,6 +371,13 @@ export async function POST(req) {
       });
 
       if (existingVoucher) {
+        await linkVoucherToRequest({
+          requestCompanyKey: requestCompany,
+          requestId,
+          voucherId: String(existingVoucher._id),
+          userId,
+          username: createdByName || "",
+        });
         return NextResponse.json({
           success: true,
           message: "Voucher already exists for this request",
@@ -413,7 +431,7 @@ export async function POST(req) {
       voucherNo,
 
       requestId: requestId ? safeString(requestId) : null,
-      requestCode: safeString(requestCode),
+      requestCode: requestCodeHint || safeString(requestCode),
 
       voucherDate: buildVoucherDate(vDateYY, vDateMM, vDateDD),
 
@@ -451,24 +469,21 @@ export async function POST(req) {
     });
 
     if (requestId) {
-      const requestCompany = safeString(requestCompanyKey || companyKey);
-      const RequestModel = getModelForCompany(requestCompany);
-      const requestDoc = await RequestModel.findOne({ _id: requestId, companyKey: requestCompany });
-      const steps = requestDoc?.workflow?.steps || [];
-      const lastIdx = steps.length - 1;
-      if (requestDoc && lastIdx >= 0) {
-        requestDoc.workflow.steps[lastIdx].voucherProcessedBy = userId;
-        requestDoc.workflow.steps[lastIdx].voucherProcessedAt = new Date();
-        requestDoc.workflow.steps[lastIdx].voucherProcessedByUsername = createdByName || "";
-        requestDoc.markModified(`workflow.steps.${lastIdx}`);
-        await requestDoc.save();
-      }
+      await linkVoucherToRequest({
+        requestCompanyKey: requestCompany,
+        requestId,
+        voucherId: String(doc._id),
+        userId,
+        username: createdByName || "",
+      });
     }
+
+    const linked = requestId ? await Voucher.findById(doc._id).lean() : doc;
 
     return NextResponse.json({
       success: true,
       message: "Voucher created successfully",
-      data: doc,
+      data: linked || doc,
     });
   } catch (err) {
     console.error("❌ Create Voucher Error:", err);

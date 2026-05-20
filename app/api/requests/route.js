@@ -13,30 +13,16 @@ import {
   sendWorkflowEmail,
 } from "@/lib/email/workflowEmail";
 import { pendingApprovalMongoExtraMatch } from "@/lib/workflow/canApproveAtStep";
+import {
+  voucherLookupByRequestPipeline,
+  voucherLookupLetFields,
+} from "@/lib/voucher/voucherLookupPipeline";
 
 export const runtime = "nodejs";
 
 const STATUS_APPROVED_NOT_CANCELLED = {
   status: { $in: ["Approved", "approved"], $nin: ["Cancelled", "cancelled"] },
 };
-
-function voucherLookupByRequestPipeline() {
-  return [
-    {
-      $match: {
-        $expr: {
-          $or: [
-            { $eq: ["$requestId", "$$rid"] },
-            { $eq: [{ $toString: { $ifNull: ["$requestId", ""] } }, "$$rid"] },
-          ],
-        },
-      },
-    },
-    { $sort: { createdAt: -1 } },
-    { $limit: 1 },
-    { $project: { voucherNo: 1, seq: 1, createdByUserId: 1, createdAt: 1 } },
-  ];
-}
 
 function filterRequestsBySearch(list, q) {
   const tq = String(q || "").trim().toLowerCase();
@@ -648,7 +634,7 @@ export async function GET(req) {
         {
           $lookup: {
             from: "vouchers",
-            let: { rid: { $toString: "$_id" } },
+            let: voucherLookupLetFields(),
             pipeline: voucherLookupByRequestPipeline(),
             as: "__v",
           },

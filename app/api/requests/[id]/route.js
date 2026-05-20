@@ -16,6 +16,8 @@ import {
   buildVoucherDelegationEmailHtml,
   sendWorkflowEmail,
 } from "@/lib/email/workflowEmail";
+import { getRequestDisbursementState } from "@/lib/voucher/requestDisbursementState";
+import { reconcileRequestVoucher } from "@/lib/voucher/reconcileRequestVoucher";
 
 /* ======================= HELPERS ======================= */
 async function hasCompanyAccess(userId, company) {
@@ -154,7 +156,52 @@ export async function GET(req, { params }) {
     }
   }
 
-    return NextResponse.json({ success: true, data: request });
+    const userPerms = await getUserPermissions(userId);
+    const plain = request.toObject ? request.toObject() : request;
+    let disbursement = await getRequestDisbursementState({
+      requestCompanyKey: company,
+      requestId: id,
+      requestCode: plain.requestCode,
+      allowedPerms: userPerms,
+      hintCompanyKey: company,
+    });
+
+    if (disbursement.hasVoucher && disbursement.voucher) {
+      try {
+        const actor = await User.findById(userId).select("username").lean();
+        const { linked } = await reconcileRequestVoucher({
+          requestCompanyKey: company,
+          requestId: id,
+          requestCode: plain.requestCode,
+          voucher: disbursement.voucher,
+          userId,
+          username: actor?.username || "",
+        });
+        if (linked) {
+          disbursement = {
+            ...disbursement,
+            stepDisbursed: true,
+            isDisbursed: true,
+          };
+        }
+      } catch (e) {
+        console.error("reconcile on request GET:", e);
+      }
+    }
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        ...plain,
+        disbursement: {
+          isDisbursed: disbursement.isDisbursed,
+          hasVoucher: disbursement.hasVoucher,
+          stepDisbursed: disbursement.stepDisbursed,
+          voucherNo: disbursement.voucherNo,
+          voucherId: disbursement.voucherId,
+        },
+      },
+    });
   } catch (err) {
     console.error("❌ GET Error:", err?.message || err);
     return NextResponse.json({ success: false, error: err?.message || "Server error" }, { status: 500 });

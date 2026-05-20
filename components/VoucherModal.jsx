@@ -94,6 +94,7 @@ export default function VoucherModal({
   requestCompanyKey,
   requestId,
   onSaved,
+  treatAsExisting = false,
 }) {
   const paperRef = useRef(null);
 
@@ -245,10 +246,12 @@ export default function VoucherModal({
 
   const loadExistingVoucher = useCallback(async () => {
     if (!companyKey || !requestId) return null;
+    const code = String(requestData?.requestCode || request?.requestCode || "").trim();
+    const codePart = code ? `&requestCode=${encodeURIComponent(code)}` : "";
     const res = await fetch(
       `/api/vouchers?companyKey=${encodeURIComponent(companyKey)}&requestCompanyKey=${encodeURIComponent(
         requestCompanyKey || companyKey
-      )}&requestId=${encodeURIComponent(requestId)}&mode=payment`,
+      )}&requestId=${encodeURIComponent(requestId)}${codePart}&mode=payment`,
       {
         method: "GET",
         credentials: "include",
@@ -259,7 +262,7 @@ export default function VoucherModal({
     const json = await res.json().catch(() => null);
     if (!res.ok || !json?.success) return null;
     return json.data || null;
-  }, [companyKey, requestId, requestCompanyKey]);
+  }, [companyKey, requestId, requestCompanyKey, requestData?.requestCode, request?.requestCode]);
 
   useEffect(() => {
     setRequestData(request || null);
@@ -361,7 +364,7 @@ export default function VoucherModal({
       ? selectedCompany.paymentImgJpg
       : selectedCompany.paymentImgPng;
   }, [selectedCompany, useOldTemplate]);
-  const isLockedAfterCreate = Boolean(existingVoucher?._id);
+  const isLockedAfterCreate = Boolean(existingVoucher?._id) || Boolean(treatAsExisting);
   const noop = () => {};
 
   const onYYChange = (e) => {
@@ -546,7 +549,10 @@ export default function VoucherModal({
       companyName: selectedCompany?.name || payloadCompanyKey,
       mode: "payment",
       requestId,
-  
+      requestCode: String(
+        requestData?.requestCode || request?.requestCode || ""
+      ).trim(),
+
       vDateYY,
       vDateMM,
       vDateDD,

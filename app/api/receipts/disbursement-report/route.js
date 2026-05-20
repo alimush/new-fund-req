@@ -7,6 +7,10 @@ import mongoose from "mongoose";
 import { getModelForCompany } from "@/models/Request";
 import { PERMISSIONS } from "@/lib/permission";
 import { userCanApproveOnLastStep } from "@/lib/workflow/canApproveAtStep";
+import {
+  voucherLookupByRequestPipeline,
+  voucherLookupLetFields,
+} from "@/lib/voucher/voucherLookupPipeline";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -58,25 +62,6 @@ function parseDateEnd(v) {
   if (!s) return null;
   const d = new Date(`${s}T23:59:59.999Z`);
   return Number.isNaN(d.getTime()) ? null : d;
-}
-
-/** مطابقة requestId في vouchers (نص أو ObjectId) */
-function voucherLookupByRequestPipeline() {
-  return [
-    {
-      $match: {
-        $expr: {
-          $or: [
-            { $eq: ["$requestId", "$$rid"] },
-            { $eq: [{ $toString: { $ifNull: ["$requestId", ""] } }, "$$rid"] },
-          ],
-        },
-      },
-    },
-    { $sort: { createdAt: -1 } },
-    { $limit: 1 },
-    { $project: { voucherNo: 1, seq: 1, createdByUserId: 1, createdAt: 1 } },
-  ];
 }
 
 /** استبعاد الطلبات الملغاة من تقارير/قوائم الصرف */
@@ -148,7 +133,7 @@ function buildPendingPipeline({ uid, username, from, to, permissions = [] }) {
     {
       $lookup: {
         from: "vouchers",
-        let: { rid: { $toString: "$_id" } },
+        let: voucherLookupLetFields(),
         pipeline: voucherLookupByRequestPipeline(),
         as: "__vrow",
       },
@@ -217,7 +202,7 @@ function buildDonePipeline({ uid, userIdStr, username, from, to }) {
     {
       $lookup: {
         from: "vouchers",
-        let: { rid: { $toString: "$_id" } },
+        let: voucherLookupLetFields(),
         pipeline: voucherLookupByRequestPipeline(),
         as: "__v",
       },

@@ -11,7 +11,7 @@ import { usePermissions } from "@/context/PermissionContext";
 import { PERMISSIONS } from "@/lib/permission";
 import { IoReceipt } from "react-icons/io5";
 import { FaFileInvoice } from "react-icons/fa";
-import { FiClock } from "react-icons/fi";
+import { FiClock, FiLink } from "react-icons/fi";
 
 const poppins = Poppins({
   subsets: ["latin"],
@@ -189,6 +189,15 @@ export default function Header({ onLogout }) {
                           }}
                           icon={<GoWorkflow className="text-gray-200" />}
                           label="وورك فلو الطلبات"
+                        />)}
+                         {permissions?.includes(PERMISSIONS.MANAGE_PERMISSIONS) && (
+                        <MenuItem
+                          onClick={() => {
+                            setMenuOpen(false);
+                            router.push("/admin/voucher-links");
+                          }}
+                          icon={<FiLink className="text-gray-200" />}
+                          label="ربط الوصولات بالطلبات"
                         />)}
                          {permissions?.includes(PERMISSIONS.MANAGE_PERMISSIONS) && (
                         <MenuItem
