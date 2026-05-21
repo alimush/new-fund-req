@@ -16,6 +16,8 @@ import {
   FiLayers,
   FiShield,
   FiHome,
+  FiUser,
+  FiAlertCircle,
 } from "react-icons/fi";
 
 import { usePermissions } from "@/context/PermissionContext";
@@ -48,6 +50,10 @@ export default function ReceiptsDisbursementPage() {
     Array.isArray(permissions) &&
     permissions.includes(PERMISSIONS.RECEIPTS);
 
+  const canDelegateFilter =
+    Array.isArray(permissions) && permissions.includes(PERMISSIONS.VOUCHER_DELEGATE);
+  const [canFilterUsers, setCanFilterUsers] = useState(false);
+
   useEffect(() => {
     if (!user?.id) return;
     if (!Array.isArray(permissions) || !permissions.includes(PERMISSIONS.RECEIPTS)) {
@@ -55,11 +61,13 @@ export default function ReceiptsDisbursementPage() {
     }
   }, [user?.id, permissions, router]);
 
-  const [tab, setTab] = useState("pending");
   const [companyFilter, setCompanyFilter] = useState({
     value: "all",
     label: "كل الشركات",
   });
+  const [processorFilter, setProcessorFilter] = useState(null);
+  const [processorOptions, setProcessorOptions] = useState([]);
+  const [viewMode, setViewMode] = useState("regular");
   const [q, setQ] = useState("");
   const [date, setDate] = useState({ from: "", to: "" });
   const [rows, setRows] = useState([]);
@@ -67,7 +75,10 @@ export default function ReceiptsDisbursementPage() {
   const [metaCompanies, setMetaCompanies] = useState([]);
   const [hasSearched, setHasSearched] = useState(false);
 
-  const filtersRef = useRef({ q: "", from: "", to: "" });
+  const filtersRef = useRef({ q: "", from: "", to: "", processorUser: "" });
+  const suggestAbortRef = useRef(null);
+  const fetchAbortRef = useRef(null);
+  const [usersLoading, setUsersLoading] = useState(true);
 
   const [portalReady, setPortalReady] = useState(false);
   const [smartOptions, setSmartOptions] = useState([]);
@@ -121,13 +132,13 @@ export default function ReceiptsDisbursementPage() {
       }),
       control: (base, state) => ({
         ...base,
-        borderRadius: 12,
+        borderRadius: 10,
         borderColor: state.isFocused ? "#cbd5e1" : "#e5e7eb",
         boxShadow: "none",
-        minHeight: 42,
+        minHeight: 36,
         backgroundColor: "rgba(255,255,255,0.94)",
         transition: "border-color 120ms ease",
-        fontSize: 13,
+        fontSize: 12,
         fontWeight: 900,
         ":hover": { borderColor: "#cbd5e1" },
       }),
@@ -159,44 +170,116 @@ export default function ReceiptsDisbursementPage() {
     ];
   }, [companies, metaCompanies]);
 
-  const tabOptions = useMemo(
-    () => [
-      { value: "pending", label: "قيد انتظار الصرف" },
-      { value: "done", label: "صرفتها أنا" },
-    ],
-    []
-  );
+  const lockedProcessorOption = useMemo(() => {
+    const id = String(user?.id || "");
+    const label = String(user?.username || user?.name || id || "أنا");
+    return id ? { value: id, label } : null;
+  }, [user?.id, user?.username, user?.name]);
 
-  const tabSelectValue = useMemo(
-    () => tabOptions.find((o) => o.value === tab) || tabOptions[0],
-    [tab, tabOptions]
-  );
+  const processorSelectOptions = useMemo(() => {
+    const fromApi = (processorOptions || []).map((u) => ({
+      value: u.id,
+      label: u.username || u.id,
+    }));
+    if (canDelegateFilter) {
+      return [{ value: "all", label: "كل المخوّلين" }, ...fromApi];
+    }
+    return fromApi.length ? fromApi : lockedProcessorOption ? [lockedProcessorOption] : [];
+  }, [canDelegateFilter, lockedProcessorOption, processorOptions]);
 
-  const stats = useMemo(
-    () => ({
-      total: rows.length,
-      pendingView: tab === "pending" ? rows.length : "—",
-      doneView: tab === "done" ? rows.length : "—",
-    }),
-    [rows, tab]
-  );
+  const processorSelectValue = useMemo(() => {
+    if (!canFilterUsers && !canDelegateFilter) return lockedProcessorOption;
+    if (processorFilter) {
+      return (
+        processorSelectOptions.find((o) => o.value === processorFilter.value) ||
+        processorFilter
+      );
+    }
+    if (canDelegateFilter) return processorSelectOptions[0] || null;
+    return lockedProcessorOption;
+  }, [
+    canFilterUsers,
+    canDelegateFilter,
+    lockedProcessorOption,
+    processorFilter,
+    processorSelectOptions,
+  ]);
+
+  const stats = useMemo(() => {
+    const disbursed = rows.filter((r) => r.isDisbursed).length;
+    const pending = rows.filter((r) => !r.isDisbursed).length;
+    return { total: rows.length, disbursed, pending };
+  }, [rows]);
+
+  const buildProcessorParam = useCallback(() => {
+    let pu = String(processorFilter?.value || "").trim();
+    if (!pu) {
+      if (canDelegateFilter) pu = "all";
+      else if (user?.id) pu = String(user.id);
+    }
+    return pu;
+  }, [processorFilter, canDelegateFilter, user?.id]);
+
+  const loadAuthorizedUsers = useCallback(async () => {
+    if (!canView) return;
+    setUsersLoading(true);
+    try {
+      const res = await fetch("/api/receipts/disbursement-report?filterUsers=1", {
+        credentials: "include",
+        cache: "no-store",
+      });
+      const json = await res.json();
+      if (json?.success) {
+        setProcessorOptions(Array.isArray(json.data) ? json.data : []);
+        setCanFilterUsers(Boolean(json.meta?.canFilterUsers));
+        if (json.meta?.viewMode) setViewMode(json.meta.viewMode);
+      }
+    } catch (e) {
+      console.error("loadAuthorizedUsers:", e);
+    } finally {
+      setUsersLoading(false);
+    }
+  }, [canView]);
+
+  useEffect(() => {
+    loadAuthorizedUsers();
+  }, [loadAuthorizedUsers]);
+
+  useEffect(() => {
+    if (usersLoading) return;
+    if (canDelegateFilter) {
+      setProcessorFilter({ value: "all", label: "كل المخوّلين" });
+      filtersRef.current.processorUser = "all";
+    } else if (lockedProcessorOption) {
+      setProcessorFilter(lockedProcessorOption);
+      filtersRef.current.processorUser = lockedProcessorOption.value;
+    }
+  }, [usersLoading, canDelegateFilter, lockedProcessorOption]);
 
   const fetchData = useCallback(async () => {
     if (!canView) return;
-    const { q: qv, from: fv, to: tv } = filtersRef.current;
+
+    if (fetchAbortRef.current) fetchAbortRef.current.abort();
+    const ac = new AbortController();
+    fetchAbortRef.current = ac;
+
+    const { q: qv, from: fv, to: tv, processorUser: pu } = filtersRef.current;
     const company = companyFilter?.value || "all";
     setLoading(true);
     try {
       const params = new URLSearchParams();
-      params.set("tab", tab);
       if (company && company !== "all") params.set("company", company);
       if (qv.trim()) params.set("q", qv.trim());
       if (fv) params.set("from", fv);
       if (tv) params.set("to", tv);
+      if (pu) params.set("processorUser", pu);
+      else if (canDelegateFilter) params.set("processorUser", "all");
+      else if (user?.id) params.set("processorUser", String(user.id));
 
       const res = await fetch(`/api/receipts/disbursement-report?${params.toString()}`, {
         credentials: "include",
         cache: "no-store",
+        signal: ac.signal,
       });
       const json = await res.json();
       if (!json?.success) {
@@ -205,13 +288,15 @@ export default function ReceiptsDisbursementPage() {
       }
       setRows(Array.isArray(json.data) ? json.data : []);
       if (Array.isArray(json.meta?.companies)) setMetaCompanies(json.meta.companies);
+      if (json.meta?.viewMode) setViewMode(json.meta.viewMode);
     } catch (e) {
+      if (e?.name === "AbortError") return;
       console.error(e);
       alert(e?.message || "تعذر التحميل");
     } finally {
-      setLoading(false);
+      if (!ac.signal.aborted) setLoading(false);
     }
-  }, [canView, tab, companyFilter]);
+  }, [canView, companyFilter, canDelegateFilter, user?.id]);
 
   const recalcSuggestPos = useCallback(() => {
     const el = inputRef.current;
@@ -226,12 +311,16 @@ export default function ReceiptsDisbursementPage() {
 
   const fetchSuggestions = useCallback(async () => {
     const query = q.trim();
-    if (!query || !canView) {
+    if (query.length < 2 || !canView) {
       setSmartOptions([]);
       setShowSuggest(false);
       setActiveIdx(-1);
       return;
     }
+
+    if (suggestAbortRef.current) suggestAbortRef.current.abort();
+    const ac = new AbortController();
+    suggestAbortRef.current = ac;
 
     try {
       setSuggestLoading(true);
@@ -239,16 +328,21 @@ export default function ReceiptsDisbursementPage() {
       const params = new URLSearchParams();
       params.set("suggest", "1");
       params.set("q", query);
-      params.set("tab", tab);
       if (date.from) params.set("from", date.from);
       if (date.to) params.set("to", date.to);
       if (company && company !== "all") params.set("company", company);
+      const pu = filtersRef.current.processorUser;
+      if (pu) params.set("processorUser", pu);
+      else if (canDelegateFilter) params.set("processorUser", "all");
+      else if (user?.id) params.set("processorUser", String(user.id));
 
       const res = await fetch(`/api/receipts/disbursement-report?${params.toString()}`, {
         credentials: "include",
         cache: "no-store",
+        signal: ac.signal,
       });
       const json = await res.json();
+      if (ac.signal.aborted) return;
       if (json?.success) {
         const arr = Array.isArray(json.data) ? json.data : [];
         setSmartOptions(arr);
@@ -262,24 +356,15 @@ export default function ReceiptsDisbursementPage() {
         }
       }
     } catch (err) {
-      console.error("disbursement suggest:", err);
+      if (err?.name !== "AbortError") console.error("disbursement suggest:", err);
     } finally {
-      setSuggestLoading(false);
+      if (!ac.signal.aborted) setSuggestLoading(false);
     }
-  }, [q, canView, companyFilter, tab, date.from, date.to, recalcSuggestPos]);
-
-  useEffect(() => {
-    if (!canView) return;
-    setRows([]);
-    setHasSearched(false);
-    setShowSuggest(false);
-    setSmartOptions([]);
-    setActiveIdx(-1);
-  }, [canView, tab, companyFilter?.value]);
+  }, [q, canView, companyFilter, canDelegateFilter, user?.id, date.from, date.to, recalcSuggestPos]);
 
   useEffect(() => {
     const query = q.trim();
-    if (!query) {
+    if (!query || query.length < 2) {
       setSmartOptions([]);
       setShowSuggest(false);
       setActiveIdx(-1);
@@ -287,9 +372,9 @@ export default function ReceiptsDisbursementPage() {
     }
     const t = setTimeout(() => {
       fetchSuggestions();
-    }, 250);
+    }, 450);
     return () => clearTimeout(t);
-  }, [q, fetchSuggestions]);
+  }, [q, fetchSuggestions, processorFilter?.value, companyFilter?.value]);
 
   useEffect(() => {
     if (!showSuggest) return;
@@ -349,10 +434,12 @@ export default function ReceiptsDisbursementPage() {
   };
 
   const handleSearch = () => {
+    const pu = buildProcessorParam();
     filtersRef.current = {
       q: q.trim(),
       from: date.from,
       to: date.to,
+      processorUser: pu,
     };
     setHasSearched(true);
     setShowSuggest(false);
@@ -361,11 +448,11 @@ export default function ReceiptsDisbursementPage() {
   };
 
   const handleReset = () => {
-    setTab("pending");
     setCompanyFilter({ value: "all", label: "كل الشركات" });
+    setProcessorFilter(canDelegateFilter ? null : lockedProcessorOption);
     setQ("");
     setDate({ from: "", to: "" });
-    filtersRef.current = { q: "", from: "", to: "" };
+    filtersRef.current = { q: "", from: "", to: "", processorUser: "" };
     setRows([]);
     setHasSearched(false);
     setSmartOptions([]);
@@ -427,11 +514,17 @@ export default function ReceiptsDisbursementPage() {
             <FiFilter className="text-blue-600" /> تتبع صرف الطلبات
           </h1>
           <p className="mt-1 text-sm font-bold text-gray-600">
-            قيد انتظار الصرف، وما تم صرفه بواسطتك — صلاحية الوصولات.
+            {canDelegateFilter
+              ? "مصروف وغير مصروف عبر التخويل — اختر المخوّل ثم ابحث عن الوصولات."
+              : "مصروف (أخضر) وغير مصروف (أحمر) — المخوّلون فقط في القائمة."}
           </p>
+          <div className="mt-2 flex flex-wrap justify-end gap-2 text-[11px] font-extrabold">
+            <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-emerald-800">مصروف</span>
+            <span className="rounded-full bg-red-100 px-2.5 py-1 text-red-800">غير مصروف</span>
+          </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="hidden items-center gap-2 md:flex">
           <motion.button
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.99 }}
@@ -464,51 +557,68 @@ export default function ReceiptsDisbursementPage() {
         </div>
       </motion.div>
 
-      <div className="mb-5 grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-3">
-        <Card icon={FiLayers} title="المجموع" value={stats.total} />
-        <Card icon={FiClock} title="قيد الصرف (العرض)" value={stats.pendingView} />
-        <Card icon={FiCheckCircle} title="صرفتها أنا (العرض)" value={stats.doneView} />
-      </div>
+      {hasSearched && !loading ? (
+        <div className="mb-5 grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-3">
+          <Card icon={FiLayers} title="المجموع" value={stats.total} />
+          <Card icon={FiAlertCircle} title="غير مصروف" value={stats.pending} />
+          <Card icon={FiCheckCircle} title="مصروف" value={stats.disbursed} />
+        </div>
+      ) : null}
 
       <motion.div
-        className="relative z-20 mb-6 rounded-2xl border border-gray-200/80 bg-white/85 p-5 shadow-sm backdrop-blur md:p-6"
+        className="relative z-20 mb-4 rounded-xl border border-gray-200/80 bg-white/85 p-3 shadow-sm backdrop-blur md:p-4"
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
       >
-        <div className="mb-4 flex items-center justify-end gap-2 text-base font-extrabold text-gray-900">
-          <FiShield className="text-gray-700" />
+        <div className="mb-2.5 flex items-center justify-end gap-1.5 text-[13px] font-extrabold text-gray-800">
+          <FiShield className="text-gray-600" />
           الفلاتر
         </div>
 
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
           <div className="text-right">
-            <label className="mb-1 flex items-center justify-end gap-2 text-[13px] font-extrabold text-gray-700">
-              <FiClock /> نوع القائمة
+            <label className="mb-0.5 flex items-center justify-end gap-1 text-[11px] font-extrabold text-gray-600">
+              <FiUser className="text-[12px]" />
+              المخوّل
             </label>
             <Select
               {...selectMenuProps}
-              options={tabOptions}
-              value={tabSelectValue}
+              options={processorSelectOptions}
+              value={processorSelectValue}
               onChange={(v) => {
-                const next = v?.value || "pending";
-                setTab(next === "done" ? "done" : "pending");
+                if (!canFilterUsers && !canDelegateFilter) return;
+                setProcessorFilter(v || null);
+                filtersRef.current.processorUser = String(v?.value || "");
               }}
+              isDisabled={usersLoading || (!canFilterUsers && !canDelegateFilter)}
+              isLoading={usersLoading}
               styles={selectStyles}
-              isSearchable={false}
+              isSearchable
+              openMenuOnFocus
+              filterOption={(option, raw) => {
+                const t = String(raw || "").trim().toLowerCase();
+                if (!t) return true;
+                return String(option.label || "").toLowerCase().includes(t);
+              }}
+              placeholder="مخوّل…"
+              noOptionsMessage={() => "لا يوجد"}
               components={noClearComponents}
             />
           </div>
 
           <div className="text-right">
-            <label className="mb-1 flex items-center justify-end gap-2 text-[13px] font-extrabold text-gray-700">
-              <FiHome /> الشركة
+            <label className="mb-0.5 flex items-center justify-end gap-1 text-[11px] font-extrabold text-gray-600">
+              <FiHome className="text-[12px]" />
+              الشركة
             </label>
             <Select
               {...selectMenuProps}
               options={companyOptions}
-              placeholder="كل الشركات"
+              placeholder="الكل"
               value={companyFilter}
-              onChange={(v) => setCompanyFilter(v || { value: "all", label: "كل الشركات" })}
+              onChange={(v) =>
+                setCompanyFilter(v || { value: "all", label: "كل الشركات" })
+              }
               styles={selectStyles}
               isSearchable
               components={noClearComponents}
@@ -516,53 +626,82 @@ export default function ReceiptsDisbursementPage() {
           </div>
 
           <div className="text-right">
-            <label className="mb-1 flex items-center justify-end gap-2 text-[13px] font-extrabold text-gray-700">
-              <FiCalendar /> From
+            <label className="mb-0.5 flex items-center justify-end gap-1 text-[11px] font-extrabold text-gray-600">
+              <FiCalendar className="text-[12px]" />
+              من
             </label>
             <input
               type="date"
               value={date.from}
               onChange={(e) => setDate({ ...date, from: e.target.value })}
-              className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-[14px] font-extrabold text-gray-900 outline-none"
+              className="w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-[12px] font-extrabold text-gray-900 outline-none focus:border-gray-300"
             />
           </div>
 
           <div className="text-right">
-            <label className="mb-1 flex items-center justify-end gap-2 text-[13px] font-extrabold text-gray-700">
-              <FiCalendar /> To
+            <label className="mb-0.5 flex items-center justify-end gap-1 text-[11px] font-extrabold text-gray-600">
+              <FiCalendar className="text-[12px]" />
+              إلى
             </label>
             <input
               type="date"
               value={date.to}
               onChange={(e) => setDate({ ...date, to: e.target.value })}
-              className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-[14px] font-extrabold text-gray-900 outline-none"
+              className="w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-[12px] font-extrabold text-gray-900 outline-none focus:border-gray-300"
             />
           </div>
+        </div>
 
-          <div className="relative text-right lg:col-span-2">
-            <label className="mb-1 flex items-center justify-end gap-2 text-[13px] font-extrabold text-gray-700">
-              <FiSearch /> بحث موحّد
-            </label>
-            <div className="relative">
-              <input
-                ref={inputRef}
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                onFocus={() => {
-                  if (smartOptions.length > 0) {
-                    recalcSuggestPos();
-                    setShowSuggest(true);
-                  }
-                }}
-                onKeyDown={onSmartKeyDown}
-                placeholder="رمز، وصف، نوع، رقم وصل…"
-                className="w-full rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-[16px] font-extrabold text-gray-900 shadow-sm outline-none focus:border-gray-300"
-              />
-              {suggestLoading && (
-                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-gray-700" />
-              )}
-            </div>
+        <div className="mt-2 text-right">
+          <label className="mb-0.5 flex items-center justify-end gap-1 text-[11px] font-extrabold text-gray-600">
+            <FiSearch className="text-[12px]" />
+            بحث
+          </label>
+          <div className="relative">
+            <input
+              ref={inputRef}
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              onFocus={() => {
+                if (smartOptions.length > 0) {
+                  recalcSuggestPos();
+                  setShowSuggest(true);
+                }
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && (!showSuggest || activeIdx < 0)) {
+                  e.preventDefault();
+                  handleSearch();
+                  return;
+                }
+                onSmartKeyDown(e);
+              }}
+              placeholder="رمز طلب، وصل، وصف…"
+              className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-[13px] font-extrabold text-gray-900 outline-none focus:border-gray-300"
+            />
+            {suggestLoading && (
+              <span className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 animate-spin rounded-full border-2 border-gray-300 border-t-gray-700" />
+            )}
           </div>
+        </div>
+
+        <div className="mt-2 flex justify-end gap-1.5 border-t border-gray-100 pt-2 md:hidden">
+          <button
+            type="button"
+            onClick={handleReset}
+            disabled={loading}
+            className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-[12px] font-extrabold text-gray-800"
+          >
+            <FiRotateCcw className="inline" /> مسح
+          </button>
+          <button
+            type="button"
+            onClick={handleSearch}
+            disabled={loading}
+            className="rounded-lg bg-gray-900 px-3 py-1.5 text-[12px] font-extrabold text-white disabled:opacity-50"
+          >
+            {loading ? "…" : "بحث"}
+          </button>
         </div>
       </motion.div>
 
@@ -616,6 +755,7 @@ export default function ReceiptsDisbursementPage() {
                 <thead className="sticky top-0 z-10">
                   <tr className="border-b border-white/40 bg-white/80 backdrop-blur">
                     {[
+                      "الحالة",
                       "الشركة",
                       "كود الطلب",
                       "رقم الوصل",
@@ -623,7 +763,8 @@ export default function ReceiptsDisbursementPage() {
                       "المبلغ",
                       "الوصف",
                       "مقدم الطلب",
-                      tab === "done" ? "تاريخ الصرف" : "التاريخ",
+                      viewMode === "delegate" ? "المُصرف" : "المُصرف / التاريخ",
+                      "التاريخ",
                     ].map((h, i) => (
                       <th
                         key={`${h}-${i}`}
@@ -636,10 +777,14 @@ export default function ReceiptsDisbursementPage() {
                 </thead>
 
                 <tbody className="divide-y divide-white/30">
-                  {rows.map((r, idx) => (
+                  {rows.map((r, idx) => {
+                    const rowTint = r.isDisbursed
+                      ? "bg-emerald-50/90 hover:bg-emerald-100/90"
+                      : "bg-red-50/90 hover:bg-red-100/90";
+                    return (
                     <motion.tr
                       key={`${r.companyKey}-${r._id}`}
-                      whileHover={{ backgroundColor: "rgba(2,132,199,0.08)" }}
+                      whileHover={{ scale: 1.001 }}
                       transition={{ duration: 0.12 }}
                       onClick={() =>
                         window.open(
@@ -648,10 +793,21 @@ export default function ReceiptsDisbursementPage() {
                           "noopener,noreferrer"
                         )
                       }
-                      className={`cursor-pointer ${
-                        idx % 2 === 0 ? "bg-white/30" : "bg-white/20"
-                      } hover:bg-white/45`}
+                      className={`cursor-pointer ${rowTint} ${
+                        idx % 2 === 0 ? "" : ""
+                      }`}
                     >
+                      <td className="whitespace-nowrap px-6 py-4 text-right">
+                        <span
+                          className={`inline-flex rounded-full px-3 py-1 text-xs font-extrabold ${
+                            r.isDisbursed
+                              ? "bg-emerald-600 text-white"
+                              : "bg-red-600 text-white"
+                          }`}
+                        >
+                          {r.isDisbursed ? "مصروف" : "غير مصروف"}
+                        </span>
+                      </td>
                       <td className="whitespace-nowrap px-6 py-4 text-right font-extrabold text-slate-900">
                         {r.companyKey || "-"}
                       </td>
@@ -673,12 +829,17 @@ export default function ReceiptsDisbursementPage() {
                       </td>
                       <td className="whitespace-nowrap px-6 py-4 text-right">{r.createdBy || "-"}</td>
                       <td className="whitespace-nowrap px-6 py-4 text-right text-slate-700">
-                        {tab === "done"
-                          ? fmtDate(r.voucherProcessedAt)
-                          : fmtDate(r.createdAt)}
+                        {r.voucherProcessedByUsername ||
+                          (r.wasDelegated && r.voucherDelegateToUsername
+                            ? `مخوّل: ${r.voucherDelegateToUsername}`
+                            : "-")}
+                      </td>
+                      <td className="whitespace-nowrap px-6 py-4 text-right text-slate-700">
+                        {fmtDate(r.isDisbursed ? r.voucherProcessedAt : r.createdAt)}
                       </td>
                     </motion.tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

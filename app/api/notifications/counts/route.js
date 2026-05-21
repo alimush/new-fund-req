@@ -116,13 +116,15 @@ export async function GET(req) {
       const Model = getModelForCompany(company);
 
       const nApproval = await countPendingApprovals(Model, uid, userPermissions);
-      const nDisbursement = canCountDisbursement
-        ? await countPendingDisbursement(Model, {
-            uid,
-            username,
-            permissions: userPermissions,
-          })
-        : 0;
+      const isVoucherDelegate = userPermissions.includes(PERMISSIONS.VOUCHER_DELEGATE);
+      const nDisbursement =
+        canCountDisbursement && !isVoucherDelegate
+          ? await countPendingDisbursement(Model, {
+              uid,
+              username,
+              permissions: userPermissions,
+            })
+          : 0;
 
       approval[company] = nApproval;
       disbursement[company] = nDisbursement;

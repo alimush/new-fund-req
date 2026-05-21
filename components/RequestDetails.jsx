@@ -892,6 +892,18 @@ export default function RequestDetails({ id, companyKey }) {
                   const canUseVoucherByPermissionOrDelegation =
                     canCreateVoucherForCompany || isDelegatedCurrentUser;
 
+                  const wasDelegatedOnStep =
+                    !!delegatedToId || !!delegatedToUsername;
+                  const canDelegateViewDisbursedVoucher =
+                    canDelegateVoucher &&
+                    isFinalApproved &&
+                    showPrintVoucher &&
+                    wasDelegatedOnStep;
+                  const showFullVoucherActions =
+                    canOpenVoucherActions && canUseVoucherByPermissionOrDelegation;
+                  const showDelegatePrintOnly =
+                    canDelegateViewDisbursedVoucher && !showFullVoucherActions;
+
                   const isCurrent = idx === request.currentStep;
                   const canApproveFinalStep =
                     !isLast || (isLast && canDelegateVoucher);
@@ -1136,9 +1148,8 @@ export default function RequestDetails({ id, companyKey }) {
                           </div>
                         )}
 
-{isFinalApproved &&
-  canOpenVoucherActions &&
-  canUseVoucherByPermissionOrDelegation &&
+{(showFullVoucherActions || showDelegatePrintOnly) &&
+  isFinalApproved &&
   ["Badur-Baghdad", "Al-Ghadeer", "010", "Tiba-Al-najaf", "Ghadeer-Karbala"].includes(companyKey) && (
     <div className="mt-4 flex flex-col gap-2">
       {voucherNoLabel ? (
@@ -1146,27 +1157,31 @@ export default function RequestDetails({ id, companyKey }) {
           وصل صرف رقم {voucherNoLabel}
         </p>
       ) : null}
-      <motion.div className="flex gap-3">
-        <button
-        onClick={(e) => {
-          e.stopPropagation();
-          setShowVoucherModal(true);
-        }}
-        className="flex-1 py-2.5 rounded-2xl bg-gray-900 text-white font-extrabold hover:bg-black shadow"
-      >
-        {showPrintVoucher ? "طباعة الوصل" : "إنشاء وصل صرف"}
-        </button>
-
+      <motion.div className={`flex gap-3 ${showDelegatePrintOnly ? "" : ""}`}>
         <button
           onClick={(e) => {
             e.stopPropagation();
-            setShowVoucherAttachModal(true);
+            setShowVoucherModal(true);
           }}
-          className="flex-1 py-2.5 rounded-2xl bg-blue-600 text-white font-extrabold hover:bg-blue-700 shadow flex items-center justify-center gap-2"
+          className="flex-1 py-2.5 rounded-2xl bg-gray-900 text-white font-extrabold hover:bg-black shadow"
         >
-          <FiUploadCloud />
-          رفق الوصل
+          {showPrintVoucher || showDelegatePrintOnly
+            ? "طباعة الوصل"
+            : "إنشاء وصل صرف"}
         </button>
+
+        {showFullVoucherActions && !showDelegatePrintOnly ? (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowVoucherAttachModal(true);
+            }}
+            className="flex-1 py-2.5 rounded-2xl bg-blue-600 text-white font-extrabold hover:bg-blue-700 shadow flex items-center justify-center gap-2"
+          >
+            <FiUploadCloud />
+            رفق الوصل
+          </button>
+        ) : null}
       </motion.div>
     </div>
   )}
@@ -1324,10 +1339,14 @@ export default function RequestDetails({ id, companyKey }) {
         open={showVoucherModal}
         onClose={() => setShowVoucherModal(false)}
         request={request}
-        companyKey={effectiveVoucherCompanyKey}
+        companyKey={
+          showPrintVoucher || hasLinkedVoucher
+            ? companyKey
+            : effectiveVoucherCompanyKey
+        }
         requestCompanyKey={companyKey}
         requestId={id}
-        treatAsExisting={hasLinkedVoucher}
+        treatAsExisting={hasLinkedVoucher || showPrintVoucher}
         onSaved={async () => {
           await fetchData();
         }}

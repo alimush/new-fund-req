@@ -83,6 +83,10 @@ export default function RequestsPage({ companyKey }) {
   const canViewReceipts =
     Array.isArray(permissions) && permissions.includes(PERMISSIONS.RECEIPTS);
 
+  const canDelegateVoucher =
+    Array.isArray(permissions) &&
+    permissions.includes(PERMISSIONS.VOUCHER_DELEGATE);
+
   const PAGE_SIZE = 20;
 
   // ===== Access Guard =====
@@ -126,9 +130,10 @@ export default function RequestsPage({ companyKey }) {
   const [notifyCounts, setNotifyCounts] = useState(null);
 
   const notifyApproval = getApprovalCount(notifyCounts || {}, companyKey);
-  const notifyDisbursement = canViewReceipts
-    ? getDisbursementCount(notifyCounts || {}, companyKey)
-    : 0;
+  const notifyDisbursement =
+    canViewReceipts && !canDelegateVoucher
+      ? getDisbursementCount(notifyCounts || {}, companyKey)
+      : 0;
 
   // ===== Pagination =====
   const [pageMy, setPageMy] = useState(1);
@@ -280,10 +285,16 @@ export default function RequestsPage({ companyKey }) {
       ];
       if (canViewReceipts) {
         const disbursementBase = `/api/receipts/disbursement-report?company=${encodeURIComponent(companyKey)}`;
-        fetches.push(
-          fetch(`${disbursementBase}&tab=pending${qPart}`, { cache: "no-store" }),
-          fetch(`${disbursementBase}&tab=done${qPart}`, { cache: "no-store" })
-        );
+        if (canDelegateVoucher) {
+          fetches.push(
+            fetch(`${disbursementBase}&tab=done${qPart}`, { cache: "no-store" })
+          );
+        } else {
+          fetches.push(
+            fetch(`${disbursementBase}&tab=pending${qPart}`, { cache: "no-store" }),
+            fetch(`${disbursementBase}&tab=done${qPart}`, { cache: "no-store" })
+          );
+        }
       }
 
       const responses = await Promise.all(fetches);
@@ -300,14 +311,22 @@ export default function RequestsPage({ companyKey }) {
       setPendingApprovals(jPending?.success && Array.isArray(jPending?.data) ? jPending.data : []);
 
       if (canViewReceipts) {
-        const jDelegated = await responses[2].json();
-        const jDisbursed = await responses[3].json();
-        setDelegatedRequests(
-          jDelegated?.success && Array.isArray(jDelegated?.data) ? jDelegated.data : []
-        );
-        setDisbursedByMe(
-          jDisbursed?.success && Array.isArray(jDisbursed?.data) ? jDisbursed.data : []
-        );
+        if (canDelegateVoucher) {
+          const jDisbursed = await responses[2].json();
+          setDelegatedRequests([]);
+          setDisbursedByMe(
+            jDisbursed?.success && Array.isArray(jDisbursed?.data) ? jDisbursed.data : []
+          );
+        } else {
+          const jDelegated = await responses[2].json();
+          const jDisbursed = await responses[3].json();
+          setDelegatedRequests(
+            jDelegated?.success && Array.isArray(jDelegated?.data) ? jDelegated.data : []
+          );
+          setDisbursedByMe(
+            jDisbursed?.success && Array.isArray(jDisbursed?.data) ? jDisbursed.data : []
+          );
+        }
       } else {
         setDelegatedRequests([]);
         setDisbursedByMe([]);
@@ -320,7 +339,7 @@ export default function RequestsPage({ companyKey }) {
     } finally {
       setLoading(false);
     }
-  }, [companyKey, router, appliedSearch, myStatus, canViewReceipts]);
+  }, [companyKey, router, appliedSearch, myStatus, canViewReceipts, canDelegateVoucher]);
 
   // initial load
   useEffect(() => {
@@ -690,7 +709,7 @@ export default function RequestsPage({ companyKey }) {
               </div>
               <div className="flex flex-wrap items-center gap-2 pt-0.5">
                 <CountPill count={notifyApproval} tone="approval" label="قيد الموافقة" />
-                {canViewReceipts && (
+                {canViewReceipts && !canDelegateVoucher && (
                   <CountPill
                     count={notifyDisbursement}
                     tone="disbursement"
@@ -936,7 +955,14 @@ export default function RequestsPage({ companyKey }) {
         </div>
 
         {canViewReceipts && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div
+            className={
+              canDelegateVoucher
+                ? "grid grid-cols-1 gap-6"
+                : "grid grid-cols-1 lg:grid-cols-2 gap-6"
+            }
+          >
+          {!canDelegateVoucher && (
           <SectionShell
             title="قيد الانتظار للصرف"
             subtitle="نفس تقرير تتبع الصرف — قيد انتظار الصرف"
@@ -973,10 +999,15 @@ export default function RequestsPage({ companyKey }) {
               </>
             )}
           </SectionShell>
+          )}
 
           <SectionShell
             title="صرفتها أنا"
-              subtitle="نفس تقرير تتبع الصرف — تم الصرف من قبلك"
+              subtitle={
+                canDelegateVoucher
+                  ? "وصولات منصرفة عبر التخويل"
+                  : "نفس تقرير تتبع الصرف — تم الصرف من قبلك"
+              }
             icon={FiCheckCircle}
             right={
               <span className="text-[13px] font-extrabold text-gray-800/70">

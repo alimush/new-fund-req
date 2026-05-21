@@ -11,6 +11,12 @@ import {
   voucherLookupByRequestPipeline,
   voucherLookupLetFields,
 } from "@/lib/voucher/voucherLookupPipeline";
+import {
+  buildRegularUserReportPipeline,
+  buildDelegatedDisbursementPipeline,
+  buildAuthorizedUserReportPipeline,
+  buildQuickSuggestPipeline,
+} from "@/lib/receipts/disbursementReportPipelines";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -62,6 +68,161 @@ function parseDateEnd(v) {
   if (!s) return null;
   const d = new Date(`${s}T23:59:59.999Z`);
   return Number.isNaN(d.getTime()) ? null : d;
+}
+
+async function loadDelegateHolderIdsAndUsernames() {
+  const groups = await Permissions.find({
+    permissions: PERMISSIONS.VOUCHER_DELEGATE,
+  })
+    .select("users")
+    .lean();
+
+  const ids = new Set();
+  for (const g of groups) {
+    for (const u of g.users || []) {
+      const s = String(u);
+      if (isValidObjectId(s)) ids.add(s);
+    }
+  }
+  const idList = [...ids];
+  const users = idList.length
+    ? await User.find({ _id: { $in: idList } })
+        .select("username")
+        .lean()
+    : [];
+  const usernames = users
+    .map((u) => String(u.username || "").trim())
+    .filter(Boolean);
+  return { ids: idList, usernames };
+}
+
+/** المخوّلون للصرف فقط (voucherDelegateTo) */
+async function loadAuthorizedFilterUsers(ctx, companiesToScan, holderIds, canDelegateView) {
+  const holderSet = new Set((holderIds || []).map(String));
+  const idSet = new Set();
+
+  if (!canDelegateView) {
+    idSet.add(String(ctx.userId));
+  }
+
+  const delegatedByOr = [
+    { "_step.voucherDelegatedBy": ctx.uid },
+    { "_step.voucherDelegatedBy": String(ctx.userId) },
+  ];
+  const uname = String(ctx.username || "").trim();
+  if (uname) delegatedByOr.push({ "_step.voucherDelegatedByUsername": uname });
+
+  const delegatedOnlyMatch = {
+    $or: [
+      { "_step.voucherDelegateTo": { $ne: null } },
+      {
+        $and: [
+          { "_step.voucherDelegateToUsername": { $exists: true } },
+          { "_step.voucherDelegateToUsername": { $ne: "" } },
+        ],
+      },
+    ],
+  };
+
+  for (const companyKey of companiesToScan) {
+    try {
+      const Model = getModelForCompany(companyKey);
+      const stepScope = canDelegateView
+        ? delegatedOnlyMatch
+        : { $and: [{ $or: delegatedByOr }, delegatedOnlyMatch] };
+
+      const rows = await Model.aggregate([
+        { $match: STATUS_MATCH_APPROVED_NOT_CANCELLED },
+        {
+          $addFields: {
+            _lastIdx: {
+              $subtract: [{ $size: { $ifNull: ["$workflow.steps", []] } }, 1],
+            },
+          },
+        },
+        { $match: { $expr: { $gte: ["$_lastIdx", 0] } } },
+        { $addFields: { _step: { $arrayElemAt: ["$workflow.steps", "$_lastIdx"] } } },
+        {
+          $match: {
+            $expr: { $eq: ["$currentStep", "$_lastIdx"] },
+            "_step.status": { $in: ["Approved", "approved"] },
+            ...stepScope,
+          },
+        },
+        { $group: { _id: "$_step.voucherDelegateTo" } },
+        { $match: { _id: { $ne: null } } },
+      ]);
+
+      for (const r of rows) {
+        const toId = r._id?.toString?.() || String(r._id || "");
+        if (toId && isValidObjectId(toId) && !holderSet.has(toId)) {
+          idSet.add(toId);
+        }
+      }
+    } catch (e) {
+      console.error(`loadAuthorizedFilterUsers ${companyKey}:`, e?.message || e);
+    }
+  }
+
+  const ids = [...idSet].filter((id) => isValidObjectId(id));
+  if (!ids.length) return [];
+
+  const users = await User.find({ _id: { $in: ids } })
+    .select("_id username")
+    .lean();
+
+  return users
+    .map((u) => ({
+      id: String(u._id),
+      username: String(u.username || u._id).trim() || String(u._id),
+    }))
+    .sort((a, b) => a.username.localeCompare(b.username, "ar"));
+}
+
+async function resolveProcessorTarget(ctx, processorUserId, canDelegateView, authorizedUsers) {
+  const authorizedIds = new Set((authorizedUsers || []).map((u) => String(u.id)));
+  const pid = String(processorUserId || "").trim();
+
+  if (canDelegateView && (!pid || pid === "all")) {
+    return {
+      uid: null,
+      userIdStr: "",
+      username: "",
+      locked: false,
+      filterAll: true,
+    };
+  }
+
+  const targetId = pid && pid !== "all" ? pid : String(ctx.userId);
+
+  if (!isValidObjectId(targetId)) {
+    throw Object.assign(new Error("معرّف المستخدم غير صالح"), { status: 400 });
+  }
+
+  if (!authorizedIds.has(targetId)) {
+    throw Object.assign(new Error("لا صلاحية للفلترة على هذا المستخدم"), { status: 403 });
+  }
+
+  const holderIds = (await loadDelegateHolderIdsAndUsernames()).ids;
+  if (canDelegateView && holderIds.includes(targetId)) {
+    throw Object.assign(new Error("لا يمكن الفلترة على مستخدم تخويل"), { status: 400 });
+  }
+
+  const u = await User.findById(targetId).select("username").lean();
+  if (!u) {
+    throw Object.assign(new Error("المستخدم غير موجود"), { status: 404 });
+  }
+
+  const isSelf = targetId === String(ctx.userId);
+
+  return {
+    uid: new mongoose.Types.ObjectId(targetId),
+    userIdStr: targetId,
+    username: String(u.username || "").trim(),
+    locked: !canDelegateView && isSelf && authorizedIds.size <= 1,
+    filterAll: false,
+    isSelf,
+  };
 }
 
 /** استبعاد الطلبات الملغاة من تقارير/قوائم الصرف */
@@ -339,6 +500,11 @@ function serializeRow(row, companyKey) {
   const fromItems = totalFromItems(row.items);
   const totalAmount =
     fromItems != null ? fromItems : row.amount != null ? Number(row.amount) : null;
+  const isDisbursed = Boolean(
+    row.isDisbursed ||
+      row.voucherProcessedAt ||
+      displayVoucherNo(row.voucherNo, row.voucherSeq)
+  );
   return {
     _id: id,
     companyKey: row.companyKey || companyKey,
@@ -351,10 +517,79 @@ function serializeRow(row, companyKey) {
     createdAt: row.createdAt || null,
     status: row.status || "",
     totalAmount: Number.isFinite(totalAmount) ? totalAmount : null,
+    isDisbursed,
+    wasDelegated: Boolean(row.wasDelegated),
     voucherProcessedAt: row.voucherProcessedAt || null,
     voucherProcessedByUsername: row.voucherProcessedByUsername || "",
+    voucherDelegateToUsername: row.voucherDelegateToUsername || "",
     voucherNo: displayVoucherNo(row.voucherNo, row.voucherSeq) || null,
   };
+}
+
+function buildReportPipeline(ctx, opts) {
+  const {
+    tab,
+    from,
+    to,
+    canDelegateView,
+    delegateHolderIds,
+    delegateHolderUsernames,
+    processorTarget,
+  } = opts;
+  const userIdStr = String(ctx.userId);
+
+  if (canDelegateView) {
+    const delegateMode =
+      tab === "pending" ? "pending" : tab === "done" ? "disbursed" : "all";
+    return buildDelegatedDisbursementPipeline({
+      delegateHolderIds,
+      delegateHolderUsernames,
+      from,
+      to,
+      processorUid: processorTarget.filterAll ? null : processorTarget.uid,
+      processorIdStr: processorTarget.filterAll ? "" : processorTarget.userIdStr,
+      processorUsername: processorTarget.filterAll ? "" : processorTarget.username,
+      mode: delegateMode,
+    });
+  }
+
+  if (tab === "pending") {
+    return buildPendingPipeline({
+      uid: ctx.uid,
+      username: ctx.username,
+      from,
+      to,
+      permissions: ctx.permissions,
+    });
+  }
+  if (tab === "done") {
+    return buildDonePipeline({
+      uid: ctx.uid,
+      userIdStr,
+      username: ctx.username,
+      from,
+      to,
+    });
+  }
+
+  if (!processorTarget.isSelf) {
+    return buildAuthorizedUserReportPipeline({
+      processorUid: processorTarget.uid,
+      processorIdStr: processorTarget.userIdStr,
+      processorUsername: processorTarget.username,
+      from,
+      to,
+    });
+  }
+
+  return buildRegularUserReportPipeline({
+    uid: ctx.uid,
+    userIdStr,
+    username: ctx.username,
+    permissions: ctx.permissions,
+    from,
+    to,
+  });
 }
 
 /** نفس حقول البحث النصي في التقرير (تقريباً) بعد مرحلة الـ$project */
@@ -403,9 +638,17 @@ function buildSuggestRowMatch(sq) {
  * اقتراحات ضمن نفس صلاحية التقرير: صفوف تمرّ بـ pending/done pipeline للمستخدم الحالي،
  * ثم تطابق نصّي على الحقول الظاهرة (لا بحث عام في vouchers/طلبات خارج نطاق التقرير).
  */
-async function buildDisbursementSuggest(ctx, companyFilter, qRaw, tabRaw, fromRaw, toRaw) {
+async function buildDisbursementSuggest(
+  ctx,
+  companyFilter,
+  qRaw,
+  tabRaw,
+  fromRaw,
+  toRaw,
+  processorUserIdRaw
+) {
   const sq = String(qRaw || "").trim();
-  if (!sq || !ctx.companies.length) return [];
+  if (sq.length < 2 || !ctx.companies.length) return [];
 
   let companiesToScan = ctx.companies;
   if (companyFilter && companyFilter !== "all") {
@@ -415,32 +658,48 @@ async function buildDisbursementSuggest(ctx, companyFilter, qRaw, tabRaw, fromRa
     companiesToScan = [companyFilter];
   }
 
-  const tab = String(tabRaw || "pending").toLowerCase() === "done" ? "done" : "pending";
+  const canDelegateView = ctx.permissions.includes(PERMISSIONS.VOUCHER_DELEGATE);
+  const tab = String(tabRaw || "").toLowerCase();
   const from = parseDateStart(fromRaw);
   const to = parseDateEnd(toRaw);
-  const userIdStr = String(ctx.userId);
-  const pipelineFn =
-    tab === "done"
-      ? () => buildDonePipeline({ uid: ctx.uid, userIdStr, username: ctx.username, from, to })
-      : () =>
-          buildPendingPipeline({
-            uid: ctx.uid,
-            username: ctx.username,
-            from,
-            to,
-            permissions: ctx.permissions,
-          });
+  const holders = canDelegateView
+    ? await loadDelegateHolderIdsAndUsernames()
+    : { ids: [], usernames: [] };
+  const authorizedUsers = await loadAuthorizedFilterUsers(
+    ctx,
+    companiesToScan,
+    holders.ids,
+    canDelegateView
+  );
+  const processorTarget = await resolveProcessorTarget(
+    ctx,
+    processorUserIdRaw,
+    canDelegateView,
+    authorizedUsers
+  );
+
+  const pipeline = buildQuickSuggestPipeline({
+    uid: ctx.uid,
+    userIdStr: String(ctx.userId),
+    username: ctx.username,
+    permissions: ctx.permissions,
+    canDelegateView,
+    delegateHolderIds: holders.ids,
+    delegateHolderUsernames: holders.usernames,
+    processorTarget,
+    from,
+    to,
+  });
 
   const matchStage = buildSuggestRowMatch(sq);
   const out = [];
   const seen = new Set();
 
   for (const companyKey of companiesToScan) {
-    if (out.length >= 32) break;
+    if (out.length >= 16) break;
     try {
       const Model = getModelForCompany(companyKey);
-      const pipeline = [...pipelineFn(), matchStage, { $limit: 24 }];
-      const docs = await Model.aggregate(pipeline);
+      const docs = await Model.aggregate([...pipeline, matchStage, { $limit: 12 }]);
       for (const d of docs) {
         const id = String(d._id);
         if (seen.has(id)) continue;
@@ -449,7 +708,8 @@ async function buildDisbursementSuggest(ctx, companyFilter, qRaw, tabRaw, fromRa
         const desc = String(d.description || "").slice(0, 48);
         const ck = d.companyKey || companyKey;
         const vn = displayVoucherNo(d.voucherNo, d.voucherSeq);
-        if (tab === "done" && vn) {
+        const disbursed = Boolean(d.isDisbursed || d.voucherProcessedAt || vn);
+        if (disbursed && vn) {
           const val = String(vn || code || id).trim();
           const label = `وصل ${vn} — ${ck}${desc ? " — " + desc : ""}`;
           out.push({ type: "voucher", value: val, label });
@@ -486,6 +746,27 @@ export async function GET(req) {
 
     const { searchParams } = new URL(req.url);
 
+    if (searchParams.get("filterUsers") === "1") {
+      const canDelegateView = ctx.permissions.includes(PERMISSIONS.VOUCHER_DELEGATE);
+      const holders = canDelegateView
+        ? await loadDelegateHolderIdsAndUsernames()
+        : { ids: [], usernames: [] };
+      const authorizedUsers = await loadAuthorizedFilterUsers(
+        ctx,
+        ctx.companies,
+        holders.ids,
+        canDelegateView
+      );
+      return NextResponse.json({
+        success: true,
+        data: authorizedUsers,
+        meta: {
+          canFilterUsers: canDelegateView || authorizedUsers.length > 1,
+          viewMode: canDelegateView ? "delegate" : "regular",
+        },
+      });
+    }
+
     if (searchParams.get("suggest") === "1") {
       try {
         const companyFilter = String(searchParams.get("company") || "all").trim();
@@ -496,7 +777,8 @@ export async function GET(req) {
           sq,
           searchParams.get("tab"),
           searchParams.get("from"),
-          searchParams.get("to")
+          searchParams.get("to"),
+          searchParams.get("processorUser")
         );
         return NextResponse.json({ success: true, data });
       } catch (e) {
@@ -516,11 +798,12 @@ export async function GET(req) {
       });
     }
 
-    const tab = String(searchParams.get("tab") || "pending").toLowerCase();
+    const tab = String(searchParams.get("tab") || "").toLowerCase();
     const companyFilter = String(searchParams.get("company") || "all").trim();
     const q = String(searchParams.get("q") || "").trim();
     const from = parseDateStart(searchParams.get("from"));
     const to = parseDateEnd(searchParams.get("to"));
+    const canDelegateView = ctx.permissions.includes(PERMISSIONS.VOUCHER_DELEGATE);
 
     let companiesToScan = ctx.companies;
     if (companyFilter && companyFilter !== "all") {
@@ -533,25 +816,48 @@ export async function GET(req) {
       companiesToScan = [companyFilter];
     }
 
-    const userIdStr = String(ctx.userId);
-    const pipelineFn =
-      tab === "done"
-        ? () => buildDonePipeline({ uid: ctx.uid, userIdStr, username: ctx.username, from, to })
-        : () =>
-            buildPendingPipeline({
-              uid: ctx.uid,
-              username: ctx.username,
-              from,
-              to,
-              permissions: ctx.permissions,
-            });
+    const holders = canDelegateView
+      ? await loadDelegateHolderIdsAndUsernames()
+      : { ids: [], usernames: [] };
+
+    const authorizedUsers = await loadAuthorizedFilterUsers(
+      ctx,
+      companiesToScan,
+      holders.ids,
+      canDelegateView
+    );
+
+    let processorTarget;
+    try {
+      processorTarget = await resolveProcessorTarget(
+        ctx,
+        searchParams.get("processorUser"),
+        canDelegateView,
+        authorizedUsers
+      );
+    } catch (e) {
+      return NextResponse.json(
+        { success: false, error: e?.message || "خطأ في الفلتر" },
+        { status: e?.status || 400 }
+      );
+    }
+
+    const pipeline = buildReportPipeline(ctx, {
+      tab,
+      from,
+      to,
+      canDelegateView,
+      delegateHolderIds: holders.ids,
+      delegateHolderUsernames: holders.usernames,
+      processorTarget,
+    });
 
     const merged = [];
 
     for (const companyKey of companiesToScan) {
       try {
         const Model = getModelForCompany(companyKey);
-        const list = await Model.aggregate(pipelineFn());
+        const list = await Model.aggregate(pipeline);
         for (const row of list) {
           if (!textMatchesRow(row, q)) continue;
           merged.push(serializeRow(row, companyKey));
@@ -562,21 +868,24 @@ export async function GET(req) {
     }
 
     merged.sort((a, b) => {
-      const da = new Date(
-        tab === "done" ? a.voucherProcessedAt || a.createdAt : a.createdAt || 0
-      ).getTime();
-      const db = new Date(
-        tab === "done" ? b.voucherProcessedAt || b.createdAt : b.createdAt || 0
-      ).getTime();
+      const da = new Date(a.voucherProcessedAt || a.createdAt || 0).getTime();
+      const db = new Date(b.voucherProcessedAt || b.createdAt || 0).getTime();
       return db - da;
     });
+
+    const canFilterUsers = canDelegateView || authorizedUsers.length > 1;
 
     return NextResponse.json({
       success: true,
       data: merged,
       meta: {
         companies: ctx.companies,
-        tab: tab === "done" ? "done" : "pending",
+        viewMode: canDelegateView ? "delegate" : "regular",
+        canFilterUsers,
+        lockedProcessorUserId: processorTarget.locked ? ctx.userId : null,
+        lockedProcessorUsername: processorTarget.locked ? ctx.username : null,
+        processorUsers: authorizedUsers,
+        tab: tab || "all",
       },
     });
   } catch (err) {

@@ -163,6 +163,13 @@ export default function HomePage() {
     [permissions]
   );
 
+  const canDelegateVoucher = useMemo(
+    () =>
+      Array.isArray(permissions) &&
+      permissions.includes(PERMISSIONS.VOUCHER_DELEGATE),
+    [permissions]
+  );
+
   const totalApproval = useMemo(
     () => sumApprovalCounts(counts, companyKeys),
     [counts, companyKeys]
@@ -170,8 +177,10 @@ export default function HomePage() {
 
   const totalDisbursement = useMemo(
     () =>
-      canViewReceipts ? sumDisbursementCounts(counts, companyKeys) : 0,
-    [counts, companyKeys, canViewReceipts]
+      canViewReceipts && !canDelegateVoucher
+        ? sumDisbursementCounts(counts, companyKeys)
+        : 0,
+    [counts, companyKeys, canViewReceipts, canDelegateVoucher]
   );
 
   useEffect(() => {
@@ -306,7 +315,7 @@ export default function HomePage() {
                   )}
                 </span>
               </div>
-              {canViewReceipts && (
+              {canViewReceipts && !canDelegateVoucher && (
                 <div
                   className="flex items-center justify-between gap-2 rounded-xl bg-white/90 px-2.5 py-2 ring-1 ring-slate-200/80"
                   title="طلبات جاهزة للصرف — نفس تقرير تتبع الصرف"
@@ -365,9 +374,10 @@ export default function HomePage() {
           >
             {companyCards.map((c, idx) => {
               const approvalN = getApprovalCount(counts, c.key);
-              const disbursementN = canViewReceipts
-                ? getDisbursementCount(counts, c.key)
-                : 0;
+              const disbursementN =
+                canViewReceipts && !canDelegateVoucher
+                  ? getDisbursementCount(counts, c.key)
+                  : 0;
 
               return (
                 <Link key={idx} href={c.href || `/requests/${c.key}`} passHref>
