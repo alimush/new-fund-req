@@ -292,9 +292,6 @@ export default function ReportsPage() {
     resetUiState();
   }, [dataSource, resetUiState]);
 
-  const isDigitsOnly = (s) =>
-    /^\d+$/.test(String(s || "").replace(/,/g, "").trim());
-
   const recalcSuggestPos = useCallback(() => {
     const el = inputRef.current;
     if (!el) return;
@@ -309,13 +306,6 @@ export default function ReportsPage() {
   const fetchSuggestions = useCallback(async () => {
     const q = smartInput.trim();
     if (!q) {
-      setSmartOptions([]);
-      setShowSuggest(false);
-      setActiveIdx(-1);
-      return;
-    }
-
-    if (isDigitsOnly(q)) {
       setSmartOptions([]);
       setShowSuggest(false);
       setActiveIdx(-1);
@@ -354,13 +344,6 @@ export default function ReportsPage() {
     const q = smartInput.trim();
 
     if (!q) {
-      setSmartOptions([]);
-      setShowSuggest(false);
-      setActiveIdx(-1);
-      return;
-    }
-
-    if (/^\d+$/.test(q.replace(/,/g, "").trim())) {
       setSmartOptions([]);
       setShowSuggest(false);
       setActiveIdx(-1);
@@ -1011,7 +994,7 @@ export default function ReportsPage() {
 
           <div className="text-right lg:col-span-2">
             <label className="text-[13px] text-gray-700 mb-1 flex items-center justify-end gap-2 font-extrabold">
-              <FiSearch /> بحث موحّد (كود / وصف)
+              <FiSearch /> بحث موحّد (كود / وصف / مبلغ)
             </label>
 
             <div className="relative flex gap-2">
@@ -1025,7 +1008,7 @@ export default function ReportsPage() {
                   setActiveIdx(-1);
                 }}
                 onKeyDown={onSmartKeyDown}
-                placeholder="اكتب كود أو وصف..."
+                placeholder="كود أو وصف أو مبلغ..."
                 className="w-full rounded-xl px-4 py-2.5 border border-gray-200 bg-white text-gray-900 font-extrabold text-[16px] shadow-sm outline-none focus:border-gray-300"
               />
             </div>

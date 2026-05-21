@@ -80,8 +80,69 @@ function computeTotalAmount(doc) {
 function parseDigitsAmount(q) {
   const cleaned = String(q || "").replace(/,/g, "").trim();
   if (!cleaned) return { isNumber: false, amount: null };
-  if (!/^\d+$/.test(cleaned)) return { isNumber: false, amount: null };
-  return { isNumber: true, amount: Number(cleaned) };
+  if (!/^\d+(\.\d+)?$/.test(cleaned)) return { isNumber: false, amount: null };
+  const amount = Number(cleaned);
+  if (!Number.isFinite(amount)) return { isNumber: false, amount: null };
+  return { isNumber: true, amount };
+}
+
+/** تطبيع المبلغ (حتى 4 منازل) لتجنب أخطاء الفاصلة العائمة */
+function normalizeAmount(n) {
+  const v = Number(n);
+  if (!Number.isFinite(v)) return null;
+  return Math.round(v * 10000) / 10000;
+}
+
+function amountToMatchString(n) {
+  const v = normalizeAmount(n);
+  if (v == null) return "";
+  return String(v.toFixed(4)).replace(/\.?0+$/, "");
+}
+
+function formatAmountLabel(n) {
+  const v = normalizeAmount(n);
+  if (v == null) return "";
+  const hasFraction = Math.abs(v % 1) > 1e-9;
+  return v.toLocaleString("en-US", {
+    minimumFractionDigits: hasFraction ? 1 : 0,
+    maximumFractionDigits: 4,
+  });
+}
+
+function amountMatchesPart(total, part) {
+  const p = String(part || "").replace(/,/g, "").trim();
+  if (!p || !/\d/.test(p)) return false;
+  const s = amountToMatchString(total);
+  if (!s) return false;
+  if (s === "0" && p !== "0") return false;
+  return s.includes(p);
+}
+
+const SUGGEST_AMOUNT_SCAN_PER_COMPANY = 100;
+
+function collectAmountSuggestions(docs, digitPart) {
+  const part = String(digitPart || "").replace(/,/g, "").trim();
+  if (!part || !/\d/.test(part)) return [];
+
+  const amountByKey = new Map();
+
+  for (const d of docs || []) {
+    const total = computeTotalAmount(d);
+    const norm = normalizeAmount(total);
+    if (norm == null) continue;
+    if (!amountMatchesPart(norm, part)) continue;
+    const key = amountToMatchString(norm);
+    if (!amountByKey.has(key)) amountByKey.set(key, norm);
+  }
+
+  return Array.from(amountByKey.values())
+    .sort((a, b) => a - b)
+    .slice(0, 25)
+    .map((amt) => ({
+      value: amountToMatchString(amt),
+      label: `مبلغ: ${formatAmountLabel(amt)}`,
+      type: "amount",
+    }));
 }
 
 async function getCurrenciesBySource(source, allowedCompanies) {
@@ -105,12 +166,14 @@ async function getNewDocsByCompany({
   companyList,
   queryBase,
   select = null,
+  limitPerCompany = null,
 }) {
   const docsByCompany = await Promise.all(
     companyList.map(async (companyKey) => {
       const Model = getModelForCompany(companyKey);
 
       let q = Model.find(queryBase).sort({ createdAt: -1 });
+      if (limitPerCompany) q = q.limit(limitPerCompany);
       if (select) q = q.select(select);
 
       const docs = await q.lean();
@@ -125,12 +188,14 @@ async function getOldDocs({
   companyList,
   queryBase,
   select = null,
+  limitPerCompany = null,
 }) {
   let q = RequestOldData.find({
     ...queryBase,
     companyKey: { $in: companyList },
   }).sort({ createdAt: -1 });
 
+  if (limitPerCompany) q = q.limit(limitPerCompany);
   if (select) q = q.select(select);
 
   return await q.lean();
@@ -141,12 +206,23 @@ async function getDocsBySource({
   companyList,
   queryBase,
   select = null,
+  limitPerCompany = null,
 }) {
   if (source === "old") {
-    return await getOldDocs({ companyList, queryBase, select });
+    return await getOldDocs({
+      companyList,
+      queryBase,
+      select,
+      limitPerCompany,
+    });
   }
 
-  return await getNewDocsByCompany({ companyList, queryBase, select });
+  return await getNewDocsByCompany({
+    companyList,
+    queryBase,
+    select,
+    limitPerCompany,
+  });
 }
 
 export async function GET(req) {
@@ -206,34 +282,50 @@ export async function GET(req) {
       const q = (searchParams.get("q") || "").trim();
       if (!q) return NextResponse.json({ success: true, data: [] });
 
-      const { isNumber } = parseDigitsAmount(q);
-
-      if (isNumber) {
-        return NextResponse.json({ success: true, data: [] });
-      }
-
       const rxText = escapeRegex(q);
       const rx = new RegExp(rxText, "i");
 
-     const cond = {
-  status: { $ne: "Cancelled" },
+      const cond = {
+        status: { $ne: "Cancelled" },
 
-  ...(canViewAllReports
-    ? {}
-    : { createdBy: currentUsername || "__never_match__" }),
+        ...(canViewAllReports
+          ? {}
+          : { createdBy: currentUsername || "__never_match__" }),
 
-  $or: [
-    { requestCode: { $regex: rxText, $options: "i" } },
-    { description: { $regex: rxText, $options: "i" } },
-  ],
-};
+        $or: [
+          { requestCode: { $regex: rxText, $options: "i" } },
+          { description: { $regex: rxText, $options: "i" } },
+        ],
+      };
 
       const merged = await getDocsBySource({
         source,
         companyList: allowedCompanies,
         queryBase: cond,
-        select: "requestCode description createdAt companyKey",
+        select: "requestCode description items createdAt companyKey",
       });
+
+      const digitPart = q.replace(/,/g, "").trim();
+      const isNumericQuery = /^\d+(\.\d+)?$/.test(digitPart);
+
+      const baseCond = {
+        status: { $ne: "Cancelled" },
+        ...(canViewAllReports
+          ? {}
+          : { createdBy: currentUsername || "__never_match__" }),
+      };
+
+      let amountScanDocs = merged;
+      if (isNumericQuery) {
+        const recentForAmount = await getDocsBySource({
+          source,
+          companyList: allowedCompanies,
+          queryBase: baseCond,
+          select: "items",
+          limitPerCompany: SUGGEST_AMOUNT_SCAN_PER_COMPANY,
+        });
+        amountScanDocs = [...merged, ...recentForAmount];
+      }
 
       const codesSet = new Set();
       const descMap = new Map();
@@ -259,6 +351,10 @@ export async function GET(req) {
         .slice(0, 25)
         .forEach((c) => options.push({ value: c, label: c, type: "code" }));
 
+      collectAmountSuggestions(amountScanDocs, digitPart).forEach((o) =>
+        options.push(o)
+      );
+
       Array.from(descMap.entries())
         .slice(0, 25)
         .forEach(([full, short]) =>
@@ -267,7 +363,7 @@ export async function GET(req) {
 
       const uniq = new Map();
       for (const o of options) {
-        uniq.set(`${o.type}|${o.label}`, o);
+        uniq.set(`${o.type}|${o.value}`, o);
       }
 
       return NextResponse.json({
@@ -425,12 +521,10 @@ export async function GET(req) {
       }
 
       if (qParam && !qIsNumber) {
-        const rx = { $regex: escapeRegex(qParam), $options: "i" };
+        const exact = escapeRegex(qParam);
         query.$or = [
-          { requestCode: rx },
-          { description: rx },
-          { createdBy: rx },
-          { department: rx },
+          { requestCode: { $regex: `^${exact}$`, $options: "i" } },
+          { description: { $regex: `^${exact}$`, $options: "i" } },
         ];
       }
 
@@ -465,11 +559,11 @@ export async function GET(req) {
       }
 
       if (qIsNumber && Number.isFinite(qAmount)) {
-        const target = Number(qAmount);
+        const target = normalizeAmount(qAmount);
         mergedAll = mergedAll.filter((d) => {
-          const v = Number(d.totalAmount);
-          if (!Number.isFinite(v)) return false;
-          return Math.round(v) === Math.round(target);
+          const v = normalizeAmount(d.totalAmount);
+          if (v == null || target == null) return false;
+          return v === target;
         });
       }
 
