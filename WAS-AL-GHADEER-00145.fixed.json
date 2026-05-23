@@ -1,0 +1,180 @@
+{
+  "companyKey": "Al-Ghadeer",
+  "requestCode": "WAS-AL-GHADEER-00145",
+  "requestType": "تسديد مستحقات",
+  "description": "مستحقات \\ خدمات مشروع غدير كربلاء \\ لشهر 4/2026 \\ مصطفى عباس ",
+  "currency": "IQD",
+  "department": "الادارة",
+  "expenseType": "",
+  "items": [
+    {
+      "desc": "مستحقات \\ خدمات مشروع غدير كربلاء \\ لشهر 4/2026 \\ مصطفى عباس ",
+      "qty": 1,
+      "price": 506750
+    }
+  ],
+  "createdBy": "mohammed.raad",
+  "attachments": [
+    {
+      "key": "requests/Al-Ghadeer/1778161019046-d8d6e1db4b78-Screenshot 2026-05-07 163155.png",
+      "name": "Screenshot 2026-05-07 163155.png",
+      "type": "image/png",
+      "size": 15979,
+      "url": ""
+    }
+  ],
+  "workflow": {
+    "name": "الغدير",
+    "steps": [
+      {
+        "users": [{ "$oid": "69d4a36bf1e54d84dcc636ed" }],
+        "status": "Approved",
+        "actedBy": { "$oid": "69d4a36bf1e54d84dcc636ed" },
+        "actedAt": { "$date": "2026-05-10T12:34:53.623Z" },
+        "comment": "",
+        "tag": "",
+        "attachment": null,
+        "tagAttachments": [],
+        "voucherDelegateTo": null,
+        "voucherDelegatedBy": null,
+        "voucherDelegatedAt": null,
+        "voucherDelegateToUsername": "",
+        "voucherDelegatedByUsername": "",
+        "voucherProcessedBy": null,
+        "voucherProcessedAt": null,
+        "voucherProcessedByUsername": "",
+        "voucherId": "",
+        "voucherNo": ""
+      },
+      {
+        "users": [
+          { "$oid": "69d4a40ef1e54d84dcc636fe" },
+          { "$oid": "69d4a3f8f1e54d84dcc636f5" }
+        ],
+        "status": "Approved",
+        "actedBy": { "$oid": "69d4a40ef1e54d84dcc636fe" },
+        "actedAt": { "$date": "2026-05-10T12:56:32.775Z" },
+        "comment": "",
+        "tag": "",
+        "attachment": null,
+        "tagAttachments": [],
+        "voucherDelegateTo": null,
+        "voucherDelegatedBy": null,
+        "voucherDelegatedAt": null,
+        "voucherDelegateToUsername": "",
+        "voucherDelegatedByUsername": "",
+        "voucherProcessedBy": null,
+        "voucherProcessedAt": null,
+        "voucherProcessedByUsername": "",
+        "voucherId": "",
+        "voucherNo": ""
+      },
+      {
+        "users": [
+          { "$oid": "69d4a428f1e54d84dcc63708" },
+          { "$oid": "69d4a489f1e54d84dcc6372c" }
+        ],
+        "status": "Approved",
+        "actedBy": { "$oid": "69d4a489f1e54d84dcc6372c" },
+        "actedAt": { "$date": "2026-05-12T07:09:32.890Z" },
+        "comment": "",
+        "tag": "",
+        "attachment": null,
+        "tagAttachments": [],
+        "voucherDelegateTo": null,
+        "voucherDelegatedBy": null,
+        "voucherDelegatedAt": null,
+        "voucherDelegateToUsername": "",
+        "voucherDelegatedByUsername": "",
+        "voucherProcessedBy": null,
+        "voucherProcessedAt": null,
+        "voucherProcessedByUsername": "",
+        "voucherId": "",
+        "voucherNo": ""
+      },
+      {
+        "users": [{ "$oid": "69d4a437f1e54d84dcc63713" }],
+        "status": "Approved",
+        "actedBy": { "$oid": "69d4a437f1e54d84dcc63713" },
+        "actedAt": { "$date": "2026-05-13T08:52:28.180Z" },
+        "comment": "",
+        "tag": "",
+        "attachment": null,
+        "tagAttachments": [],
+        "voucherDelegateTo": null,
+        "voucherDelegatedBy": null,
+        "voucherDelegatedAt": null,
+        "voucherDelegateToUsername": "",
+        "voucherDelegatedByUsername": "",
+        "voucherProcessedBy": null,
+        "voucherProcessedAt": null,
+        "voucherProcessedByUsername": "",
+        "voucherId": "",
+        "voucherNo": ""
+      },
+      {
+        "users": [
+          { "$oid": "69d4a45af1e54d84dcc6371f" },
+          { "$oid": "69fa44686fadf5e15e0780ef" },
+          { "$oid": "69fa448a6fadf5e15e078161" }
+        ],
+        "status": "Approved",
+        "actedBy": { "$oid": "69d4a45af1e54d84dcc6371f" },
+        "actedAt": { "$date": "2026-05-13T09:04:31.023Z" },
+        "comment": "",
+        "tag": "",
+        "attachment": null,
+        "tagAttachments": [],
+        "voucherDelegateTo": null,
+        "voucherDelegatedBy": null,
+        "voucherDelegatedAt": null,
+        "voucherDelegateToUsername": "",
+        "voucherDelegatedByUsername": "",
+        "voucherProcessedBy": null,
+        "voucherProcessedAt": null,
+        "voucherProcessedByUsername": "",
+        "voucherId": "",
+        "voucherNo": ""
+      }
+    ]
+  },
+  "currentStep": 4,
+  "status": "Approved",
+  "projectName": "بدور بغداد",
+  "cancelledAt": null,
+  "cancelledNote": "",
+  "createdAt": { "$date": "2026-05-07T13:37:00.239Z" },
+  "approvalHistory": [
+    {
+      "user": "69d4a36bf1e54d84dcc636ed",
+      "action": "approve",
+      "note": "",
+      "date": { "$date": "2026-05-10T12:34:53.623Z" }
+    },
+    {
+      "user": "69d4a40ef1e54d84dcc636fe",
+      "action": "approve",
+      "note": "",
+      "date": { "$date": "2026-05-10T12:56:32.777Z" }
+    },
+    {
+      "user": "69d4a489f1e54d84dcc6372c",
+      "action": "approve",
+      "note": "",
+      "date": { "$date": "2026-05-12T07:09:32.891Z" }
+    },
+    {
+      "user": "69d4a437f1e54d84dcc63713",
+      "action": "approve",
+      "note": "",
+      "date": { "$date": "2026-05-13T08:52:28.181Z" }
+    },
+    {
+      "user": "69d4a45af1e54d84dcc6371f",
+      "action": "approve",
+      "note": "",
+      "date": { "$date": "2026-05-13T09:04:31.023Z" }
+    }
+  ],
+  "updatedAt": { "$date": "2026-05-23T12:13:48.226Z" }
+}

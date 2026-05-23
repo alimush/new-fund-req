@@ -8,10 +8,10 @@ import { Poppins } from "next/font/google";
 import { MdPolicy } from "react-icons/md";
 import { FaSquarePollVertical } from "react-icons/fa6";
 import { usePermissions } from "@/context/PermissionContext";
-import { PERMISSIONS } from "@/lib/permission";
+import { hasPermission, PERMISSIONS } from "@/lib/permission";
 import { IoReceipt } from "react-icons/io5";
 import { FaFileInvoice } from "react-icons/fa";
-import { FiClock, FiLink } from "react-icons/fi";
+import { FiClock, FiLink, FiCreditCard } from "react-icons/fi";
 
 const poppins = Poppins({
   subsets: ["latin"],
@@ -40,6 +40,8 @@ export default function Header({ onLogout }) {
   const canViewReports =
     Array.isArray(permissions) &&
     permissions.includes(PERMISSIONS.VIEW_REPORTS);
+
+  const canAccessCheques = hasPermission(permissions, PERMISSIONS.CHEQUES);
 
   const handleLogout = async () => {
     try {
@@ -229,6 +231,17 @@ export default function Header({ onLogout }) {
     }}
     icon={<IoReceipt className="text-gray-200" />}
     label="وصل صرف وقبض"
+  />
+)}
+
+{canAccessCheques && (
+  <MenuItem
+    onClick={() => {
+      setMenuOpen(false);
+      router.push("/cheques");
+    }}
+    icon={<FiCreditCard className="text-gray-200" />}
+    label="نظام الصكوك"
   />
 )}
 

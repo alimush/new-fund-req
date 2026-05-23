@@ -12,8 +12,9 @@ import {
   FiZap,
   FiClock,
   FiCheckCircle,
+  FiCreditCard,
 } from "react-icons/fi";
-import { PERMISSIONS } from "@/lib/permission";
+import { hasPermission, PERMISSIONS } from "@/lib/permission";
 import { COMPANIES } from "@/lib/voucher/companies";
 import { useRouter } from "next/navigation";
 import { ExBadgeInlineSpinner } from "@/components/ex/ExBadgeInlineSpinner";
@@ -119,6 +120,17 @@ export default function HomePage() {
         isIcon: true,
         Icon: FiPieChart,
         color: "text-purple-600"
+      });
+    }
+
+    if (hasPermission(permissions, PERMISSIONS.CHEQUES)) {
+      result.push({
+        key: "cheques-system",
+        name: "نظام الصكوك",
+        href: "/cheques",
+        isIcon: true,
+        Icon: FiCreditCard,
+        color: "text-teal-600",
       });
     }
 

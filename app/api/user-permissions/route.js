@@ -1,6 +1,7 @@
 import dbConnect from "@/lib/mongodb";
 import Permissions from "@/models/Permissions";
 import User from "@/models/User";
+import { normalizePermissions } from "@/lib/permission";
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
@@ -41,7 +42,9 @@ export async function GET(req) {
       $or: [{ users: cookieUserId }, { users: user._id }],
     }).lean();
 
-    const permissions = [...new Set(groups.flatMap((g) => g.permissions || []))];
+    const permissions = normalizePermissions(
+      [...new Set(groups.flatMap((g) => g.permissions || []))]
+    );
     const companies = [...new Set(groups.flatMap((g) => g.companies || []))];
 
     return NextResponse.json({
