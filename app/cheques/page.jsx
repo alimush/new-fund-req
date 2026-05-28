@@ -88,9 +88,7 @@ export default function ChequesHomePage() {
                     <FiSearch size={12} />
                     بحث متقدم
                   </span>
-                  <span className="inline-flex items-center rounded-lg bg-white/90 px-2.5 py-1 text-[11px] font-extrabold text-slate-600 ring-1 ring-slate-200/80">
-                    MongoDB
-                  </span>
+
                 </div>
               </div>
             </div>

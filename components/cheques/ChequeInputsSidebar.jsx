@@ -133,9 +133,7 @@ export default function ChequeInputsSidebar({
               </div>
             ))}
           </div>
-          <p className="text-[10px] text-slate-500 font-semibold mt-2">
-            تُحفظ في MongoDB ولا تُطبع على صورة الصك
-          </p>
+
         </Section>
       ) : null}
 
