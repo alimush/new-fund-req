@@ -17,6 +17,7 @@ import {
   buildAuthorizedUserReportPipeline,
   buildQuickSuggestPipeline,
 } from "@/lib/receipts/disbursementReportPipelines";
+import { companyInList } from "@/lib/companies/companyAccess";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -199,12 +200,15 @@ async function resolveProcessorTarget(ctx, processorUserId, canDelegateView, aut
     throw Object.assign(new Error("معرّف المستخدم غير صالح"), { status: 400 });
   }
 
-  if (!authorizedIds.has(targetId)) {
+  const isSelf = targetId === String(ctx.userId);
+
+  // «صرفتها أنا» — المستخدم الحالي دائماً مسموح يفلتر على نفسه
+  if (!isSelf && !authorizedIds.has(targetId)) {
     throw Object.assign(new Error("لا صلاحية للفلترة على هذا المستخدم"), { status: 403 });
   }
 
   const holderIds = (await loadDelegateHolderIdsAndUsernames()).ids;
-  if (canDelegateView && holderIds.includes(targetId)) {
+  if (canDelegateView && !isSelf && holderIds.includes(targetId)) {
     throw Object.assign(new Error("لا يمكن الفلترة على مستخدم تخويل"), { status: 400 });
   }
 
@@ -212,8 +216,6 @@ async function resolveProcessorTarget(ctx, processorUserId, canDelegateView, aut
   if (!u) {
     throw Object.assign(new Error("المستخدم غير موجود"), { status: 404 });
   }
-
-  const isSelf = targetId === String(ctx.userId);
 
   return {
     uid: new mongoose.Types.ObjectId(targetId),
@@ -273,20 +275,6 @@ function buildPendingPipeline({ uid, username, from, to, permissions = [] }) {
       $match: {
         $expr: { $eq: ["$currentStep", "$_lastIdx"] },
         "_step.status": { $in: ["Approved", "approved"] },
-        $and: [
-          {
-            $or: [
-              { "_step.voucherProcessedBy": null },
-              { "_step.voucherProcessedBy": { $exists: false } },
-            ],
-          },
-          {
-            $or: [
-              { "_step.voucherProcessedAt": null },
-              { "_step.voucherProcessedAt": { $exists: false } },
-            ],
-          },
-        ],
         $or: canActOr,
       },
     },
@@ -299,7 +287,7 @@ function buildPendingPipeline({ uid, username, from, to, permissions = [] }) {
         as: "__vrow",
       },
     },
-    // طلب مربوط بوصل = يعتبر مصروفاً حتى لو ما مُسجَّل على آخر خطوة (سكيمة قديمة)
+    // قيد الصرف = لا يوجد وصل فعلي في vouchers
     { $match: { "__vrow.0": { $exists: false } } },
     {
       $project: {
@@ -344,11 +332,6 @@ function buildDonePipeline({ uid, userIdStr, username, from, to }) {
   ];
   if (uname) processedOr.push({ "_step.voucherProcessedByUsername": uname });
 
-  const issuerOr = [
-    { "__v.0.createdByUserId": userIdStr },
-    { "__v.0.createdByUserId": uid },
-  ];
-
   const pipeline = [];
 
   pipeline.push(
@@ -373,7 +356,7 @@ function buildDonePipeline({ uid, userIdStr, username, from, to }) {
         $expr: { $eq: ["$currentStep", "$_lastIdx"] },
         "_step.status": { $in: ["Approved", "approved"] },
         "__v.0": { $exists: true },
-        $or: [{ $or: processedOr }, { $or: issuerOr }],
+        $or: processedOr,
       },
     }
   );
@@ -500,11 +483,8 @@ function serializeRow(row, companyKey) {
   const fromItems = totalFromItems(row.items);
   const totalAmount =
     fromItems != null ? fromItems : row.amount != null ? Number(row.amount) : null;
-  const isDisbursed = Boolean(
-    row.isDisbursed ||
-      row.voucherProcessedAt ||
-      displayVoucherNo(row.voucherNo, row.voucherSeq)
-  );
+  const voucherNo = displayVoucherNo(row.voucherNo, row.voucherSeq);
+  const isDisbursed = Boolean(row.isDisbursed && voucherNo);
   return {
     _id: id,
     companyKey: row.companyKey || companyKey,
@@ -522,7 +502,7 @@ function serializeRow(row, companyKey) {
     voucherProcessedAt: row.voucherProcessedAt || null,
     voucherProcessedByUsername: row.voucherProcessedByUsername || "",
     voucherDelegateToUsername: row.voucherDelegateToUsername || "",
-    voucherNo: displayVoucherNo(row.voucherNo, row.voucherSeq) || null,
+    voucherNo: voucherNo || null,
   };
 }
 
@@ -538,9 +518,19 @@ function buildReportPipeline(ctx, opts) {
   } = opts;
   const userIdStr = String(ctx.userId);
 
+  /** tab=done: فقط ما صرفه اليوزر على آخر خطوة (voucherProcessedBy) + وصل موجود */
+  if (tab === "done") {
+    return buildDonePipeline({
+      uid: ctx.uid,
+      userIdStr,
+      username: ctx.username,
+      from,
+      to,
+    });
+  }
+
   if (canDelegateView) {
-    const delegateMode =
-      tab === "pending" ? "pending" : tab === "done" ? "disbursed" : "all";
+    const delegateMode = tab === "pending" ? "pending" : "all";
     return buildDelegatedDisbursementPipeline({
       delegateHolderIds,
       delegateHolderUsernames,
@@ -560,15 +550,6 @@ function buildReportPipeline(ctx, opts) {
       from,
       to,
       permissions: ctx.permissions,
-    });
-  }
-  if (tab === "done") {
-    return buildDonePipeline({
-      uid: ctx.uid,
-      userIdStr,
-      username: ctx.username,
-      from,
-      to,
     });
   }
 
@@ -652,7 +633,7 @@ async function buildDisbursementSuggest(
 
   let companiesToScan = ctx.companies;
   if (companyFilter && companyFilter !== "all") {
-    if (!ctx.companies.includes(companyFilter)) {
+    if (!companyInList(ctx.companies, companyFilter)) {
       throw Object.assign(new Error("لا صلاحية لهذه الشركة"), { status: 403 });
     }
     companiesToScan = [companyFilter];
@@ -708,7 +689,7 @@ async function buildDisbursementSuggest(
         const desc = String(d.description || "").slice(0, 48);
         const ck = d.companyKey || companyKey;
         const vn = displayVoucherNo(d.voucherNo, d.voucherSeq);
-        const disbursed = Boolean(d.isDisbursed || d.voucherProcessedAt || vn);
+        const disbursed = Boolean(d.isDisbursed && vn);
         if (disbursed && vn) {
           const val = String(vn || code || id).trim();
           const label = `وصل ${vn} — ${ck}${desc ? " — " + desc : ""}`;
@@ -807,7 +788,7 @@ export async function GET(req) {
 
     let companiesToScan = ctx.companies;
     if (companyFilter && companyFilter !== "all") {
-      if (!ctx.companies.includes(companyFilter)) {
+      if (!companyInList(ctx.companies, companyFilter)) {
         return NextResponse.json(
           { success: false, error: "لا صلاحية لهذه الشركة" },
           { status: 403 }

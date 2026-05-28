@@ -8,11 +8,13 @@ export function PermissionProvider({ children }) {
   const [user, setUser] = useState(null);
   const [permissions, setPermissions] = useState([]);
   const [companies, setCompanies] = useState([]);
+  const [permissionsLoaded, setPermissionsLoaded] = useState(false);
 
   const logoutToLogin = () => {
     setUser(null);
     setPermissions([]);
     setCompanies([]);
+    setPermissionsLoaded(true);
 
     if (window.location.pathname !== "/login") {
       window.location.href = "/login";
@@ -43,6 +45,8 @@ export function PermissionProvider({ children }) {
       }
     } catch (err) {
       logoutToLogin();
+    } finally {
+      setPermissionsLoaded(true);
     }
   };
 
@@ -61,7 +65,9 @@ export function PermissionProvider({ children }) {
   }, []);
 
   return (
-    <PermissionContext.Provider value={{ user, permissions, companies }}>
+    <PermissionContext.Provider
+      value={{ user, permissions, companies, permissionsLoaded }}
+    >
       {children}
     </PermissionContext.Provider>
   );

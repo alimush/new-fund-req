@@ -510,6 +510,8 @@ export async function DELETE(req) {
             reqDoc.workflow.steps[lastIdx].voucherProcessedBy = null;
             reqDoc.workflow.steps[lastIdx].voucherProcessedAt = null;
             reqDoc.workflow.steps[lastIdx].voucherProcessedByUsername = "";
+            reqDoc.workflow.steps[lastIdx].voucherId = "";
+            reqDoc.workflow.steps[lastIdx].voucherNo = "";
             reqDoc.markModified(`workflow.steps.${lastIdx}`);
             await reqDoc.save();
           }

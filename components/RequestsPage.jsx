@@ -74,7 +74,7 @@ function Pager({ page, totalPages, onPage }) {
 
 export default function RequestsPage({ companyKey }) {
   const router = useRouter();
-  const { permissions, companies, user } = usePermissions();
+  const { permissions, companies, user, permissionsLoaded } = usePermissions();
 
   const canCreate =
     Array.isArray(permissions) &&
@@ -95,20 +95,34 @@ export default function RequestsPage({ companyKey }) {
 
   useEffect(() => {
     if (!companyKey) return;
+
+    // انتظر اكتمال /api/user-permissions — companies=[] قبل التحميل لا تعني رفض صلاحية
+    if (!permissionsLoaded) {
+      setAccessChecked(false);
+      setAccessDenied(false);
+      return;
+    }
+
+    if (!user?.id) {
+      setAccessChecked(false);
+      setAccessDenied(false);
+      return;
+    }
+
     if (!Array.isArray(companies)) return;
 
-    // إذا الشركات عندك تختلف كـ case، نخلي مقارنة lower
-    const ok = companies.map((x) => norm(x)).includes(norm(companyKey));
+    const ok = companies.some((x) => norm(x) === norm(companyKey));
 
     if (!ok) {
       setAccessDenied(true);
+      setAccessChecked(false);
       router.replace("/home");
       return;
     }
 
     setAccessDenied(false);
     setAccessChecked(true);
-  }, [companyKey, companies, router]);
+  }, [companyKey, companies, user?.id, permissionsLoaded, router]);
 
   const currentUsername = useMemo(() => {
     return user?.username || "";
@@ -285,21 +299,40 @@ export default function RequestsPage({ companyKey }) {
       ];
       if (canViewReceipts) {
         const disbursementBase = `/api/receipts/disbursement-report?company=${encodeURIComponent(companyKey)}`;
+        const processorPart = user?.id
+          ? `&processorUser=${encodeURIComponent(String(user.id))}`
+          : "";
         if (canDelegateVoucher) {
           fetches.push(
-            fetch(`${disbursementBase}&tab=done${qPart}`, { cache: "no-store" })
+            fetch(
+              `${disbursementBase}&tab=done${processorPart}${qPart}`,
+              { cache: "no-store" }
+            )
           );
         } else {
           fetches.push(
             fetch(`${disbursementBase}&tab=pending${qPart}`, { cache: "no-store" }),
-            fetch(`${disbursementBase}&tab=done${qPart}`, { cache: "no-store" })
+            fetch(
+              `${disbursementBase}&tab=done${processorPart}${qPart}`,
+              { cache: "no-store" }
+            )
           );
         }
       }
 
       const responses = await Promise.all(fetches);
+      const coreResponses = responses.slice(0, 2);
 
-      if (responses.some((r) => [401, 403].includes(r.status))) {
+      const authFailed = coreResponses.some((r) => r.status === 401);
+      if (authFailed) {
+        router.replace("/login");
+        return;
+      }
+
+      const coreForbidden = coreResponses.some((r) => r.status === 403);
+      if (coreForbidden) {
+        setAccessDenied(true);
+        setAccessChecked(false);
         router.replace("/home");
         return;
       }
@@ -312,20 +345,39 @@ export default function RequestsPage({ companyKey }) {
 
       if (canViewReceipts) {
         if (canDelegateVoucher) {
-          const jDisbursed = await responses[2].json();
+          const disbRes = responses[2];
+          if (disbRes?.ok) {
+            const jDisbursed = await disbRes.json();
+            setDisbursedByMe(
+              jDisbursed?.success && Array.isArray(jDisbursed?.data)
+                ? jDisbursed.data.filter((r) => Boolean(r.voucherNo))
+                : []
+            );
+          } else {
+            setDisbursedByMe([]);
+          }
           setDelegatedRequests([]);
-          setDisbursedByMe(
-            jDisbursed?.success && Array.isArray(jDisbursed?.data) ? jDisbursed.data : []
-          );
         } else {
-          const jDelegated = await responses[2].json();
-          const jDisbursed = await responses[3].json();
-          setDelegatedRequests(
-            jDelegated?.success && Array.isArray(jDelegated?.data) ? jDelegated.data : []
-          );
-          setDisbursedByMe(
-            jDisbursed?.success && Array.isArray(jDisbursed?.data) ? jDisbursed.data : []
-          );
+          const delegRes = responses[2];
+          const disbRes = responses[3];
+          if (delegRes?.ok) {
+            const jDelegated = await delegRes.json();
+            setDelegatedRequests(
+              jDelegated?.success && Array.isArray(jDelegated?.data) ? jDelegated.data : []
+            );
+          } else {
+            setDelegatedRequests([]);
+          }
+          if (disbRes?.ok) {
+            const jDisbursed = await disbRes.json();
+            setDisbursedByMe(
+              jDisbursed?.success && Array.isArray(jDisbursed?.data)
+                ? jDisbursed.data.filter((r) => Boolean(r.voucherNo))
+                : []
+            );
+          } else {
+            setDisbursedByMe([]);
+          }
         }
       } else {
         setDelegatedRequests([]);
@@ -339,7 +391,15 @@ export default function RequestsPage({ companyKey }) {
     } finally {
       setLoading(false);
     }
-  }, [companyKey, router, appliedSearch, myStatus, canViewReceipts, canDelegateVoucher]);
+  }, [
+    companyKey,
+    router,
+    appliedSearch,
+    myStatus,
+    canViewReceipts,
+    canDelegateVoucher,
+    user?.id,
+  ]);
 
   // initial load
   useEffect(() => {
@@ -438,7 +498,13 @@ export default function RequestsPage({ companyKey }) {
     return { total, approved, pending };
   }, [myRequests]);
 
-  if (!accessChecked) return null;
+  if (!accessChecked) {
+    return (
+      <div className="flex min-h-[40vh] items-center justify-center text-slate-600 font-bold">
+        جاري التحقق من الصلاحيات…
+      </div>
+    );
+  }
   if (accessDenied) return null;
 
   const SuggestionsPortal = () => {
@@ -1003,11 +1069,7 @@ export default function RequestsPage({ companyKey }) {
 
           <SectionShell
             title="صرفتها أنا"
-              subtitle={
-                canDelegateVoucher
-                  ? "وصولات منصرفة عبر التخويل"
-                  : "نفس تقرير تتبع الصرف — تم الصرف من قبلك"
-              }
+              subtitle="طلبات صرفتها أنت على آخر خطوة (مسجّل باسمك على الخطوة) وما زال وصلها موجود"
             icon={FiCheckCircle}
             right={
               <span className="text-[13px] font-extrabold text-gray-800/70">

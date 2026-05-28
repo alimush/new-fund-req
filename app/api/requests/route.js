@@ -80,12 +80,16 @@ async function hasCompanyAccess(userId, company) {
   if (!userId || !company) return false;
   if (!isValidObjectId(userId)) return false;
 
-  const exists = await Permissions.exists({
+  const groups = await Permissions.find({
     users: new mongoose.Types.ObjectId(userId),
-    companies: company,
-  });
+  })
+    .select("companies")
+    .lean();
 
-  return !!exists;
+  const target = String(company).trim().toLowerCase();
+  return groups.some((g) =>
+    (g.companies || []).some((c) => String(c).trim().toLowerCase() === target)
+  );
 }
 
 async function requireCompanyAccess(req, company) {
@@ -617,11 +621,6 @@ export async function GET(req) {
       ];
       if (uname) processedOr.push({ "_step.voucherProcessedByUsername": uname });
 
-      const issuerOr = [
-        { "__v.0.createdByUserId": userIdStr },
-        { "__v.0.createdByUserId": uid },
-      ];
-
       const pipeline = [
         { $match: STATUS_APPROVED_NOT_CANCELLED },
         {
@@ -644,7 +643,7 @@ export async function GET(req) {
             $expr: { $eq: ["$currentStep", "$_lastIdx"] },
             "_step.status": { $in: ["Approved", "approved"] },
             "__v.0": { $exists: true },
-            $or: [{ $or: processedOr }, { $or: issuerOr }],
+            $or: processedOr,
           },
         },
         {
