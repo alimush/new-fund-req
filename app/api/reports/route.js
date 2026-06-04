@@ -521,10 +521,11 @@ export async function GET(req) {
       }
 
       if (qParam && !qIsNumber) {
-        const exact = escapeRegex(qParam);
+        const rxText = escapeRegex(qParam);
+        // نفس منطق الاقتراحات: بحث جزئي في الكود والوصف (ليس تطابقاً كاملاً فقط)
         query.$or = [
-          { requestCode: { $regex: `^${exact}$`, $options: "i" } },
-          { description: { $regex: `^${exact}$`, $options: "i" } },
+          { requestCode: { $regex: rxText, $options: "i" } },
+          { description: { $regex: rxText, $options: "i" } },
         ];
       }
 
