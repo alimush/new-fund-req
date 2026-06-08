@@ -1,18 +1,21 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, useEffect, useCallback } from "react";
 import { toPng } from "html-to-image";
 import { motion, AnimatePresence } from "framer-motion";
 import { FiX, FiPlus, FiTrash2, FiImage, FiCheck , FiPrinter} from "react-icons/fi";
 import { Cairo } from "next/font/google";
-import { useEffect } from "react";
-import { FiPaperclip, FiFileText } from "react-icons/fi"; // فوق بالimports
-
+import { FiPaperclip, FiFileText } from "react-icons/fi";
+import PaymentPlanA4Sheets from "@/components/ex/PaymentPlanA4Sheets";
+import { PAYMENT_PLAN_TEMPLATE } from "@/lib/ex/paymentPlanTemplate";
+import { fieldsFromPaymentPlanTemplate } from "@/lib/ex/paymentPlanLayoutMerge";
+import {
+  formatMoneyInput,
+  parseMoneyNumber,
+  formatPayPercent,
+} from "@/lib/ex/formatMoneyInput";
 
 const cairo = Cairo({ subsets: ["arabic"], weight: ["400", "600", "700", "800"] });
-
-const TEMPLATE_IMG = "/payment-plan-a4.jpg";
-const pct = (p) => ({ top: `${p.top}%`, left: `${p.left}%` });
 
 async function waitForImages(node) {
   const imgs = Array.from(node.querySelectorAll("img"));
@@ -146,12 +149,43 @@ const steps = useMemo(
     customer: initialForm?.customer || "",
     unitNo: initialForm?.unitNo || "",
     dateDMY: initialForm?.dateDMY || todayStrDMY(),
-    discount: initialForm?.discount || "",
+    discount: initialForm?.discount ? formatMoneyInput(initialForm.discount) : "",
     rows:
       Array.isArray(initialForm?.rows) && initialForm.rows.length
-        ? initialForm.rows
-       : [{ payType: defaultPayType(0), amount: "", payDateYMD: "" }],
+        ? initialForm.rows.map((r, i) => ({
+            payType: r.payType || defaultPayType(i),
+            amount: r.amount ? formatMoneyInput(r.amount) : "",
+            payDateYMD: r.payDateYMD || "",
+            payPercent: r.payPercent || "",
+          }))
+        : [{ payType: defaultPayType(0), amount: "", payDateYMD: "", payPercent: "" }],
   }));
+
+  const [layoutFields, setLayoutFields] = useState(() =>
+    fieldsFromPaymentPlanTemplate()
+  );
+  const [tableRowHeight, setTableRowHeight] = useState(
+    PAYMENT_PLAN_TEMPLATE.defaultTableRowHeight
+  );
+
+  const loadLayout = useCallback(async () => {
+    try {
+      const res = await fetch("/api/ex/payment-plan-layout", { cache: "no-store" });
+      const json = await res.json();
+      if (json?.success && Array.isArray(json.data)) {
+        setLayoutFields(json.data);
+        setTableRowHeight(
+          Number(json.tableRowHeight) || PAYMENT_PLAN_TEMPLATE.defaultTableRowHeight
+        );
+      }
+    } catch {
+      //
+    }
+  }, []);
+
+  useEffect(() => {
+    if (open) loadLayout();
+  }, [open, loadLayout]);
 
   const setField = (key, val) => setForm((p) => ({ ...p, [key]: val }));
 
@@ -170,7 +204,7 @@ const steps = useMemo(
         ...p,
         rows: [
           ...(p.rows || []),
-          { payType: defaultPayType(nextIndex), amount: "", payDateYMD: "" },
+          { payType: defaultPayType(nextIndex), amount: "", payDateYMD: "", payPercent: "" },
         ],
       };
     });
@@ -199,45 +233,36 @@ const steps = useMemo(
       unitNo: "",
       dateDMY: todayStrDMY(),
       discount: "",
-      rows: [{ payType: "", amount: "", payDateYMD: "" }],
+      rows: [{ payType: defaultPayType(0), amount: "", payDateYMD: "", payPercent: "" }],
     });
     setServerMsg("");
     setActiveTab("Header");
     setHasPrinted(false);
   };
 
-  const POS = useMemo(
-    () => ({
-      salesEmp: { top: 10.5, left: 2.5, width: 28, height: 3.8 },
-      date: { top: 10.5, left: 48, width: 18, height: 3.8 },
-      customer: { top: 13.6, left: 3, width: 28, height: 3.8 },
-      unitNo: { top: 13.6, left: 47.5, width: 18, height: 3.8 },
+  const totalAmount = useMemo(() => {
+    return (form.rows || []).reduce(
+      (sum, r) => sum + parseMoneyNumber(r.amount),
+      0
+    );
+  }, [form.rows]);
 
-      table: {
-        startTop: 30,
-        rowH: 3.2,
-        colPayType: { left: 9.5, width: 22, height: 1 },
-        colAmount: { left: 33.0, width: 18, height: 1 },
-        colDate: { left: 52.5, width: 15, height: 1 },
-      },
-
-      discount: { top: 79, left: 7, width: 39, height: 3.6 },
-      // ✅ حذفنا signature من POS
-    }),
-    []
-  );
-
-  const rowTop = (i) => POS.table.startTop + i * POS.table.rowH;
+  const rowsWithPercent = useMemo(() => {
+    return (form.rows || []).map((r) => ({
+      ...r,
+      payPercent: formatPayPercent(r.amount, totalAmount),
+    }));
+  }, [form.rows, totalAmount]);
 
   // ✅ Multi-page للطباعة: 15 سطر لكل صفحة
   const pages = useMemo(() => {
     const chunks = [];
-    const all = form.rows || [];
+    const all = rowsWithPercent;
     for (let i = 0; i < all.length; i += MAX_ROWS_PER_PAGE) {
       chunks.push(all.slice(i, i + MAX_ROWS_PER_PAGE));
     }
     return chunks.length ? chunks : [[]];
-  }, [form.rows]);
+  }, [rowsWithPercent]);
 
   const pageRefs = useRef([]);
   pageRefs.current = [];
@@ -386,21 +411,15 @@ const steps = useMemo(
 
   // ✅ تنظيف rows + حساب مجموع
   const cleanedRows = useMemo(() => {
-    return (form.rows || [])
+    return rowsWithPercent
       .map((r) => ({
         payType: String(r.payType || "").trim(),
         amount: String(r.amount || "").trim(),
         payDateYMD: String(r.payDateYMD || "").trim(),
+        payPercent: String(r.payPercent || "").trim(),
       }))
       .filter((r) => r.payType || r.amount || r.payDateYMD);
-  }, [form.rows]);
-
-  const totalAmount = useMemo(() => {
-    return cleanedRows.reduce((sum, r) => {
-      const n = Number(String(r.amount || "0").replace(/,/g, ""));
-      return sum + (isFinite(n) ? n : 0);
-    }, 0);
-  }, [cleanedRows]);
+  }, [rowsWithPercent]);
 
   // ✅ زر الإنشاء: يدز إلى API ويخزن بالمونغو (بدون signature)
   const handleCreate = async () => {
@@ -471,157 +490,14 @@ const steps = useMemo(
     <div className={`${cairo.className}`}>
       {/* Hidden render area فقط للطباعة/الصور */}
       <div className="sr-only" aria-hidden="true">
-        {pages.map((rowsChunk, pageIdx) => (
-          <div
-            key={pageIdx}
-            ref={setPageRef(pageIdx)}
-            className="relative bg-white overflow-hidden"
-            style={{ width: 900, aspectRatio: "210/297" }}
-          >
-            <img
-              src={TEMPLATE_IMG}
-              alt="template"
-              className="absolute inset-0 w-full h-full object-contain"
-              draggable={false}
-            />
-
-            <div className="absolute inset-0 text-gray-900">
-              {form.salesEmp && (
-                <div
-                  className="absolute font-extrabold"
-                  style={{
-                    ...pct(POS.salesEmp),
-                    width: `${POS.salesEmp.width}%`,
-                    fontSize: 16,
-                    direction: "rtl",
-                    textAlign: "right",
-                  }}
-                >
-                  {form.salesEmp}
-                </div>
-              )}
-
-              {form.dateDMY && (
-                <div
-                  className="absolute font-extrabold"
-                  style={{
-                    ...pct(POS.date),
-                    width: `${POS.date.width}%`,
-                    fontSize: 16,
-                    direction: "rtl",
-                    textAlign: "right",
-                  }}
-                >
-                  {form.dateDMY}
-                </div>
-              )}
-
-              {form.customer && (
-                <div
-                  className="absolute font-extrabold"
-                  style={{
-                    ...pct(POS.customer),
-                    width: `${POS.customer.width}%`,
-                    fontSize: 16,
-                    direction: "rtl",
-                    textAlign: "right",
-                  }}
-                >
-                  {form.customer}
-                </div>
-              )}
-
-              {form.unitNo && (
-                <div
-                  className="absolute font-extrabold"
-                  style={{
-                    ...pct(POS.unitNo),
-                    width: `${POS.unitNo.width}%`,
-                    fontSize: 16,
-                    direction: "rtl",
-                    textAlign: "right",
-                  }}
-                >
-                  {form.unitNo}
-                </div>
-              )}
-
-              {rowsChunk.map((r, i) => {
-                const top = rowTop(i);
-                return (
-                  <div key={`${pageIdx}_${i}`}>
-                    {r.payType && (
-                      <div
-                        className="absolute font-bold"
-                        style={{
-                          top: `${top}%`,
-                          left: `${POS.table.colPayType.left}%`,
-                          width: `${POS.table.colPayType.width}%`,
-                          fontSize: 14,
-                          direction: "rtl",
-                          textAlign: "center",
-                        }}
-                      >
-                        {r.payType}
-                      </div>
-                    )}
-
-                    {r.amount && (
-                      <div
-                        className="absolute font-bold"
-                        style={{
-                          top: `${top}%`,
-                          left: `${POS.table.colAmount.left}%`,
-                          width: `${POS.table.colAmount.width}%`,
-                          fontSize: 14,
-                          direction: "ltr",
-                          textAlign: "center",
-                        }}
-                      >
-                        {fmtInt(String(r.amount).replace(/,/g, ""))}
-                      </div>
-                    )}
-
-                    {r.payDateYMD && (
-                      <div
-                        className="absolute font-bold"
-                        style={{
-                          top: `${top}%`,
-                          left: `${POS.table.colDate.left}%`,
-                          width: `${POS.table.colDate.width}%`,
-                          fontSize: 14,
-                          direction: "rtl",
-                          textAlign: "center",
-                        }}
-                      >
-                        {ymdToDMY(r.payDateYMD)}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-
-              {pageIdx === pages.length - 1 && (
-                <>
-                  {form.discount && (
-                    <div
-                      className="absolute font-extrabold"
-                      style={{
-                        ...pct(POS.discount),
-                        width: `${POS.discount.width}%`,
-                        fontSize: 15,
-                        direction: "rtl",
-                        textAlign: "center",
-                      }}
-                    >
-                      {form.discount}
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          </div>
-        ))}
+        <PaymentPlanA4Sheets
+          form={form}
+          layoutFields={layoutFields}
+          tableRowHeight={tableRowHeight}
+          pages={pages}
+          setPageRef={setPageRef}
+          totalAmount={totalAmount}
+        />
       </div>
 
       <AnimatePresence>
@@ -771,9 +647,10 @@ const steps = useMemo(
                           <table className="min-w-full text-sm">
                             <thead className="sticky top-0 z-10 bg-white/90 backdrop-blur-xl text-gray-700 border-b border-black/10">
                               <tr>
-                                <th className="text-center px-3 py-3 font-semibold">نوع الدفعة</th>
-                                <th className="text-center px-3 py-3 font-semibold">القيمة المالية</th>
+                                <th className="text-center px-3 py-3 font-semibold">اسم الدفعة</th>
                                 <th className="text-center px-3 py-3 font-semibold">التاريخ</th>
+                                <th className="text-center px-3 py-3 font-semibold">القيمة المالية</th>
+                                <th className="text-center px-3 py-3 font-semibold">نسبة الدفعة</th>
                                 <th className="px-3 py-3" />
                               </tr>
                             </thead>
@@ -786,17 +663,7 @@ const steps = useMemo(
                                       value={r.payType}
                                       onChange={(e) => setRow(i, "payType", e.target.value)}
                                       className="w-full border border-gray-200 rounded-lg p-2 bg-white"
-                                      placeholder="مثال: دفعة أولى"
-                                    />
-                                  </td>
-
-                                  <td className="px-3 py-2">
-                                    <input
-                                      value={r.amount}
-                                      onChange={(e) => setRow(i, "amount", e.target.value)}
-                                      className="w-full border border-gray-200 rounded-lg p-2 bg-white text-center"
-                                      placeholder="مثال: 1,500,000"
-                                      inputMode="numeric"
+                                      placeholder="الدفعة الأولى"
                                     />
                                   </td>
 
@@ -807,6 +674,24 @@ const steps = useMemo(
                                       onChange={(e) => setRow(i, "payDateYMD", e.target.value)}
                                       className="w-full border border-gray-200 rounded-lg p-2 bg-white text-center"
                                     />
+                                  </td>
+
+                                  <td className="px-3 py-2">
+                                    <input
+                                      value={r.amount}
+                                      onChange={(e) =>
+                                        setRow(i, "amount", formatMoneyInput(e.target.value))
+                                      }
+                                      className="w-full border border-gray-200 rounded-lg p-2 bg-white text-center"
+                                      placeholder="1,500,000"
+                                      inputMode="numeric"
+                                    />
+                                  </td>
+
+                                  <td className="px-3 py-2 text-center">
+                                    <span className="inline-block w-full rounded-lg border border-gray-100 bg-gray-50 px-2 py-2 text-sm font-bold text-gray-700">
+                                      {formatPayPercent(r.amount, totalAmount) || "—"}
+                                    </span>
                                   </td>
 
                                   <td className="px-3 py-2 text-right">
@@ -932,8 +817,11 @@ const steps = useMemo(
                       type="text"
                       placeholder="الخصم"
                       value={form.discount}
-                      onChange={(e) => setField("discount", e.target.value)}
+                      onChange={(e) =>
+                        setField("discount", formatMoneyInput(e.target.value))
+                      }
                       className="border border-gray-300 rounded-lg p-2 bg-white text-gray-800"
+                      inputMode="numeric"
                     />
                     <div className="sm:col-span-2 text-right text-xs text-gray-500 font-bold">
                       ✅ الخصم رح ينطبع فقط بآخر صفحة.
@@ -991,9 +879,10 @@ const steps = useMemo(
                           <table className="min-w-full text-sm">
                             <thead className="sticky top-0 z-10 bg-gray-100/90 backdrop-blur-xl text-gray-700">
                               <tr>
-                                <th className="text-center px-4 py-2 font-semibold">نوع</th>
-                                <th className="text-center px-4 py-2 font-semibold">المبلغ</th>
+                                <th className="text-center px-4 py-2 font-semibold">اسم الدفعة</th>
                                 <th className="text-center px-4 py-2 font-semibold">التاريخ</th>
+                                <th className="text-center px-4 py-2 font-semibold">المبلغ</th>
+                                <th className="text-center px-4 py-2 font-semibold">نسبة الدفعة</th>
                               </tr>
                             </thead>
                             <tbody className="bg-white/70">
@@ -1002,16 +891,17 @@ const steps = useMemo(
                                   <tr key={i} className="border-t border-gray-200/60 hover:bg-white/80 transition">
                                     <td className="px-4 py-2 text-center">{r.payType || "-"}</td>
                                     <td className="px-4 py-2 text-center">
-                                      {r.amount ? fmtInt(String(r.amount).replace(/,/g, "")) : "-"}
-                                    </td>
-                                    <td className="px-4 py-2 text-center">
                                       {r.payDateYMD ? ymdToDMY(r.payDateYMD) : "-"}
                                     </td>
+                                    <td className="px-4 py-2 text-center">
+                                      {r.amount ? fmtInt(String(r.amount).replace(/,/g, "")) : "-"}
+                                    </td>
+                                    <td className="px-4 py-2 text-center">{r.payPercent || "-"}</td>
                                   </tr>
                                 ))
                               ) : (
                                 <tr>
-                                  <td colSpan={3} className="px-4 py-4 text-center text-gray-500">
+                                  <td colSpan={4} className="px-4 py-4 text-center text-gray-500">
                                     ماكو صفوف مدخلة
                                   </td>
                                 </tr>

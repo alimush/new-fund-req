@@ -29,6 +29,10 @@ import StatusBadge from "@/components/StatusBadge";
 import { usePermissions } from "@/context/PermissionContext";
 import { PERMISSIONS } from "@/lib/permission";
 import { DEFAULT_EX_BOOKING_COMPANY } from "@/lib/exForms/exCompanies";
+import {
+  canUserViewExRequestAttachments,
+  canUserViewExStepAttachments,
+} from "@/lib/ex/exAttachmentAccess";
 const pct = (p) => ({ top: `${p.top}%`, left: `${p.left}%` });
 
 function displayExRef(doc) {
@@ -149,6 +153,7 @@ function CommentModal({
   onSubmit,
   loading,
   isOperation = false,
+  showOperationUpload = false,
   attachmentFile = null,
   onAttachmentChange,
   uploading = false,
@@ -198,7 +203,7 @@ function CommentModal({
               </div>
 
               <div className="space-y-4">
-                {isOperation && (
+                {isOperation && showOperationUpload && (
                   <div className="space-y-3">
                     <div className="text-sm font-bold text-gray-800 text-right">ارفع مرفق الأوبريشن</div>
 
@@ -248,7 +253,7 @@ function CommentModal({
 
               <button
                 onClick={() => onSubmit(comment)}
-                disabled={loading || uploading || (isOperation && !attachmentFile)}
+                disabled={loading || uploading || (isOperation && showOperationUpload && !attachmentFile)}
                 className="flex items-center gap-2 rounded-xl bg-black px-4 py-2 font-bold text-white hover:bg-gray-900 disabled:opacity-60"
               >
                 {loading || uploading ? (
@@ -300,8 +305,7 @@ const downloadFile = async (file) => {
 
 /**
  * After operation_submit the server puts only the operation file on the next step.
- * We stop merging doc.attachments into steps *after* that handoff so original request
- * files stay scoped through the operation step only (still visible there via this merge).
+ * Step 0 never receives doc.attachments; steps 1..cutoff may merge them until handoff.
  */
 function computeRequestAttachmentsCutoffStepIdx(steps, docAttachments, workflowMeta) {
   const fromServer = workflowMeta?.mergeDocAttachmentsThroughStep;
@@ -428,6 +432,18 @@ const isOperationUser =
     [workflowSteps, doc?.attachments, workflow]
   );
 
+  const canViewRequestAttachments = useMemo(
+    () =>
+      canUserViewExRequestAttachments(
+        workflowSteps,
+        currentUser?._id,
+        doc?.currentStep,
+        doc,
+        currentUser
+      ),
+    [workflowSteps, currentUser, doc]
+  );
+
   const buildPngs = async () => {
     const node = pageRef.current;
     if (!node) return [];
@@ -462,26 +478,42 @@ const isOperationUser =
     }
   };
 
+  const isRequestAttachmentFile = (f) => {
+    if (!f || !Array.isArray(doc?.attachments)) return false;
+    return doc.attachments.some(
+      (d) =>
+        (d?.key && f?.key && String(d.key) === String(f.key)) ||
+        (d?.url && f?.url && String(d.url) === String(f.url))
+    );
+  };
+
   const getStepFiles = (step, stepIdx) => {
     const files = [];
 
-    // مرفقات الستيب
+    // مرفقات الستيب — الستيب الأول لا يعرض مرفقات الطلب الأصلية
     if (Array.isArray(step?.tagAttachments) && step.tagAttachments.length) {
-      files.push(...step.tagAttachments.filter(Boolean));
+      for (const f of step.tagAttachments.filter(Boolean)) {
+        if (stepIdx === 0 && isRequestAttachmentFile(f)) continue;
+        files.push(f);
+      }
     }
 
     if (step?.tag && !files.some((f) => f?.url === step.tag)) {
-      files.push({
+      const tagFile = {
         url: step.tag,
         name: "Step Attachment",
         type: "",
         size: 0,
-      });
+      };
+      if (!(stepIdx === 0 && isRequestAttachmentFile(tagFile))) {
+        files.push(tagFile);
+      }
     }
 
-    // مرفقات الطلب الأصلي — لا تُعرض على خطوات ما بعد تسليم الأوبريشن (انظر computeRequestAttachmentsCutoffStepIdx)
+    // مرفقات الطلب الأصلي — من الستيب الثاني فقط وحتى قبل تسليم الأوبريشن
     const includeRequestAttachments =
       Number.isFinite(stepIdx) &&
+      stepIdx > 0 &&
       Array.isArray(doc?.attachments) &&
       doc.attachments.length > 0 &&
       stepIdx <= requestAttachmentsCutoffStepIdx;
@@ -776,7 +808,9 @@ const isOperationUser =
       <Info label="اسم الزبون" value={doc?.customerName} icon={<FiUser />} />
       <Info label="رقم الوحدة" value={doc?.unitNo} icon={<FiInfo />} />
     </div>
-      {Array.isArray(doc?.attachments) && doc.attachments.length > 0 ? (
+      {canViewRequestAttachments &&
+      Array.isArray(doc?.attachments) &&
+      doc.attachments.length > 0 ? (
         doc.attachments.map((file, idx) => {
           const img = isImageFile(file);
           const pdf = isPdfFile(file);
@@ -828,7 +862,7 @@ const isOperationUser =
         })
       ) : (
         <div className="text-sm text-gray-500 text-center py-6">
-          لا توجد مرفقات
+          {canViewRequestAttachments ? "لا توجد مرفقات" : "الاتاج غير متاح حتى يصل دورك في الورك فلو"}
         </div>
       )}
     </div>
@@ -848,51 +882,45 @@ const isOperationUser =
         </div>
 
 
-        {/* {Array.isArray(doc?.attachments) && doc.attachments.length > 0 && (
-          <Section title="Attachments" icon={<FiPaperclip />}>
-            <div className="flex flex-wrap gap-6">
-              {doc.attachments.map((file, idx) => {
+        {!isAttachmentOnly &&
+          canViewRequestAttachments &&
+          Array.isArray(doc?.attachments) &&
+          doc.attachments.length > 0 && (
+          <Section title="مرفقات الطلب" icon={<FiPaperclip />}>
+            <div className="space-y-2">
+              {doc.attachments.map((file, fileIdx) => {
                 const img = isImageFile(file);
                 const pdf = isPdfFile(file);
 
                 return (
-                  <div key={idx} className="group w-40">
-                    <a
-                      href={file.url || "#"}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="block"
-                      onClick={(e) => {
-                        if (!file?.url) e.preventDefault();
-                      }}
-                    >
-                      <div className="w-40 h-40 rounded-2xl overflow-hidden border border-gray-200 bg-white shadow-sm transition-transform group-hover:scale-[1.03] group-hover:shadow-lg flex items-center justify-center">
-                        {img && file?.url ? (
-                          <img src={file.url} alt={file.name} className="w-full h-full object-cover" />
-                        ) : (
-                          <div className="flex flex-col items-center justify-center text-gray-600">
-                            <FiFileText className="text-3xl" />
-                            <div className="mt-2 text-[11px] font-bold uppercase opacity-70">
-                              {pdf ? "PDF" : fileExt(file?.name) || "FILE"}
-                            </div>
-                          </div>
-                        )}
+                  <div
+                    key={fileIdx}
+                    className="flex items-center justify-between gap-3 px-3 py-2 rounded-2xl bg-white/55 ring-1 ring-black/5"
+                  >
+                    <div className="min-w-0 flex items-center gap-2">
+                      <div className="h-9 w-9 rounded-xl border border-black/10 bg-white/70 flex items-center justify-center text-gray-600">
+                        {img ? <FiImage /> : <FiFileText />}
                       </div>
-                    </a>
 
-                    <p className="mt-2 text-[13px] text-center text-gray-800 font-semibold truncate group-hover:text-blue-600">
-                      {file?.name || "Attachment"}
-                    </p>
+                      <div className="min-w-0">
+                        <div className="text-sm font-semibold text-gray-800 truncate">
+                          {file?.name || (pdf ? "PDF Attachment" : "Attachment")}
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          {pdf ? "PDF" : img ? "Image" : fileExt(file?.name) || "FILE"}
+                        </div>
+                      </div>
+                    </div>
 
-                    <div className="mt-2 flex items-center justify-center gap-2">
+                    <div className="flex items-center gap-2">
                       <a
-                        href={file.url || "#"}
+                        href={file?.url || "#"}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="px-3 py-1.5 rounded-xl text-xs font-bold bg-gray-900 text-white hover:bg-black"
                         onClick={(e) => {
                           if (!file?.url) e.preventDefault();
                         }}
+                        className="px-3 py-1.5 rounded-xl text-xs font-bold bg-gray-900 text-white hover:bg-black"
                       >
                         Open
                       </a>
@@ -911,7 +939,7 @@ const isOperationUser =
               })}
             </div>
           </Section>
-        )} */}
+        )}
 
         {/* WORKFLOW (same logic) */}
         {workflow && (
@@ -942,11 +970,12 @@ const isOperationUser =
   currentUser &&
   step?.users?.some((u) => String(u?._id) === String(currentUser?._id));
 
-  const canViewAttachments =
-  isCurrent &&
-  stepStatusLower === "pending" &&
-  currentUser &&
-  step?.users?.some((u) => String(u?._id) === String(currentUser?._id));
+            const canViewStepAttachments = canUserViewExStepAttachments(
+              step,
+              idx,
+              currentUser?._id,
+              doc?.currentStep
+            );
 
             const hasComment = !!(step?.comment && String(step.comment).trim());
             const hasAttach =
@@ -1119,6 +1148,8 @@ const isOperationUser =
                   </div>
 
                   {!isAttachmentOnly &&
+  idx > 0 &&
+  canViewStepAttachments &&
   stepFiles.length > 0 &&
   currentUser &&
   step?.users?.some((u) => String(u?._id) === String(currentUser?._id)) && ( <div className="mt-4 space-y-2">
@@ -1308,11 +1339,13 @@ const isOperationUser =
               ? "Approve Step"
               : actionModal?.action === "reject"
               ? "Reject Step"
-              : "Submit Step"
+              : "معاينة المرفق"
           }
           subtitle={
             actionModal?.action === "operation_submit"
-              ? "ارفع مرفق الأوبريشن ثم أرسل للخطوة التالية"
+              ? Number(actionModal?.stepIndex) === 0
+                ? "تأكيد معاينة المرفق وإرسال للخطوة التالية"
+                : "ارفع مرفق الأوبريشن ثم أرسل للخطوة التالية"
               : "Submit"
           }
           submitLabel="Submit"
@@ -1325,6 +1358,9 @@ const isOperationUser =
           loading={acting}
           uploading={uploadingOpAttachment}
           isOperation={actionModal?.action === "operation_submit"}
+          showOperationUpload={
+            actionModal?.action === "operation_submit" && Number(actionModal?.stepIndex) > 0
+          }
           attachmentFile={opAttachment}
           onAttachmentChange={setOpAttachment}
         />

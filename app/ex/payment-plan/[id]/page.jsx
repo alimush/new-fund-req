@@ -28,7 +28,12 @@ import { useRouter, useParams, useSearchParams } from "next/navigation";
 import StatusBadge from "@/components/StatusBadge";
 import { usePermissions } from "@/context/PermissionContext";
 import { PERMISSIONS } from "@/lib/permission";
+import { canUserViewExStepAttachments } from "@/lib/ex/exAttachmentAccess";
 import { DEFAULT_EX_BOOKING_COMPANY } from "@/lib/exForms/exCompanies";
+import PaymentPlanA4Sheets from "@/components/ex/PaymentPlanA4Sheets";
+import { PAYMENT_PLAN_TEMPLATE } from "@/lib/ex/paymentPlanTemplate";
+import { fieldsFromPaymentPlanTemplate } from "@/lib/ex/paymentPlanLayoutMerge";
+import { parseMoneyNumber, formatPayPercent } from "@/lib/ex/formatMoneyInput";
 /* =================== HARD KEY (مؤقتاً) =================== */
 const PAGE_KEY = "exceptions";
 
@@ -38,10 +43,7 @@ function displayPaymentPlanRef(plan) {
   return id.length > 10 ? `…${id.slice(-6)}` : id || "—";
 }
 
-/* =================== نفس ثوابت الـ Generator =================== */
-const TEMPLATE_IMG = "/payment-plan-a4.jpg";
-const pct = (p) => ({ top: `${p.top}%`, left: `${p.left}%` });
-const MAX_ROWS_PER_PAGE = 15;
+const MAX_ROWS_PER_PAGE = PAYMENT_PLAN_TEMPLATE.maxRowsPerPage;
 
 async function waitForImages(node) {
   const imgs = Array.from(node.querySelectorAll("img"));
@@ -66,26 +68,6 @@ function ymdToDMY(v) {
 }
 
 const fmtInt = (n) => new Intl.NumberFormat("en-US").format(Number(n || 0));
-
-/* =================== POS =================== */
-const POS = {
-  salesEmp: { top: 10.5, left: 2.5, width: 28, height: 3.8 },
-  date: { top: 10.5, left: 48, width: 18, height: 3.8 },
-  customer: { top: 13.6, left: 3, width: 28, height: 3.8 },
-  unitNo: { top: 13.6, left: 47.5, width: 18, height: 3.8 },
-
-  table: {
-    startTop: 30,
-    rowH: 3.2,
-    colPayType: { left: 9.5, width: 22, height: 1 },
-    colAmount: { left: 33.0, width: 18, height: 1 },
-    colDate: { left: 52.5, width: 15, height: 1 },
-  },
-
-  discount: { top: 79, left: 7, width: 39, height: 3.6 },
-};
-
-const rowTop = (i) => POS.table.startTop + i * POS.table.rowH;
 
 function printAllPngs(pngs) {
   if (!pngs?.length) return;
@@ -330,6 +312,12 @@ export default function PaymentPlanDetailsPage() {
   const [errMsg, setErrMsg] = useState("");
 
   const [currentUser, setCurrentUser] = useState(null);
+  const [layoutFields, setLayoutFields] = useState(() =>
+    fieldsFromPaymentPlanTemplate()
+  );
+  const [tableRowHeight, setTableRowHeight] = useState(
+    PAYMENT_PLAN_TEMPLATE.defaultTableRowHeight
+  );
   const [acting, setActing] = useState(false);
 
   const [showPreview, setShowPreview] = useState(false);
@@ -402,22 +390,43 @@ const isOperationUser =
     };
   }, [id, company]);
 
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const res = await fetch("/api/ex/payment-plan-layout", { cache: "no-store" });
+        const json = await res.json();
+        if (!alive || !json?.success) return;
+        if (Array.isArray(json.data)) setLayoutFields(json.data);
+        setTableRowHeight(
+          Number(json.tableRowHeight) || PAYMENT_PLAN_TEMPLATE.defaultTableRowHeight
+        );
+      } catch {
+        //
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const totalAmount = useMemo(() => {
+    return (plan?.rows || []).reduce(
+      (sum, r) => sum + parseMoneyNumber(r.amount),
+      0
+    );
+  }, [plan]);
+
   const cleanedRows = useMemo(() => {
     return (plan?.rows || [])
       .map((r) => ({
         payType: String(r.payType || "").trim(),
         amount: String(r.amount || "").trim(),
         payDateYMD: String(r.payDateYMD || "").trim(),
+        payPercent: formatPayPercent(r.amount, totalAmount),
       }))
       .filter((r) => r.payType || r.amount || r.payDateYMD);
-  }, [plan]);
-
-  const totalAmount = useMemo(() => {
-    return cleanedRows.reduce((sum, r) => {
-      const n = Number(String(r.amount || "0").replace(/,/g, ""));
-      return sum + (isFinite(n) ? n : 0);
-    }, 0);
-  }, [cleanedRows]);
+  }, [plan, totalAmount]);
 
   const pages = useMemo(() => {
     const chunks = [];
@@ -667,73 +676,20 @@ const isOperationUser =
       <div className="max-w-6xl mx-auto">
         {/* ========== Offscreen Render Area (للصور/الطباعة) ========== */}
         <div className="sr-only" aria-hidden="true">
-          {pages.map((rowsChunk, pageIdx) => (
-            <div
-              key={pageIdx}
-              ref={setPageRef(pageIdx)}
-              className="relative bg-white overflow-hidden"
-              style={{ width: 900, aspectRatio: "210/297" }}
-            >
-              <img src={TEMPLATE_IMG} alt="template" className="absolute inset-0 w-full h-full object-contain" draggable={false} />
-
-              <div className="absolute inset-0 text-gray-900">
-                {!!plan?.salesEmp && (
-                  <div className="absolute font-extrabold" style={{ ...pct(POS.salesEmp), width: `${POS.salesEmp.width}%`, fontSize: 16, direction: "rtl", textAlign: "right" }}>
-                    {plan.salesEmp}
-                  </div>
-                )}
-
-                {!!plan?.dateDMY && (
-                  <div className="absolute font-extrabold" style={{ ...pct(POS.date), width: `${POS.date.width}%`, fontSize: 16, direction: "rtl", textAlign: "right" }}>
-                    {plan.dateDMY}
-                  </div>
-                )}
-
-                {!!plan?.customer && (
-                  <div className="absolute font-extrabold" style={{ ...pct(POS.customer), width: `${POS.customer.width}%`, fontSize: 16, direction: "rtl", textAlign: "right" }}>
-                    {plan.customer}
-                  </div>
-                )}
-
-                {!!plan?.unitNo && (
-                  <div className="absolute font-extrabold" style={{ ...pct(POS.unitNo), width: `${POS.unitNo.width}%`, fontSize: 16, direction: "rtl", textAlign: "right" }}>
-                    {plan.unitNo}
-                  </div>
-                )}
-
-                {rowsChunk.map((r, i) => {
-                  const top = rowTop(i);
-                  return (
-                    <div key={`${pageIdx}_${i}`}>
-                      {!!r.payType && (
-                        <div className="absolute font-bold" style={{ top: `${top}%`, left: `${POS.table.colPayType.left}%`, width: `${POS.table.colPayType.width}%`, fontSize: 14, direction: "rtl", textAlign: "center" }}>
-                          {r.payType}
-                        </div>
-                      )}
-
-                      {!!r.amount && (
-                        <div className="absolute font-bold" style={{ top: `${top}%`, left: `${POS.table.colAmount.left}%`, width: `${POS.table.colAmount.width}%`, fontSize: 14, direction: "ltr", textAlign: "center" }}>
-                          {fmtInt(String(r.amount).replace(/,/g, ""))}
-                        </div>
-                      )}
-
-                      {!!r.payDateYMD && (
-                        <div className="absolute font-bold" style={{ top: `${top}%`, left: `${POS.table.colDate.left}%`, width: `${POS.table.colDate.width}%`, fontSize: 14, direction: "rtl", textAlign: "center" }}>
-                          {ymdToDMY(r.payDateYMD)}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-
-                {pageIdx === pages.length - 1 && !!plan?.discount && (
-                  <div className="absolute font-extrabold" style={{ ...pct(POS.discount), width: `${POS.discount.width}%`, fontSize: 15, direction: "rtl", textAlign: "center" }}>
-                    {plan.discount}
-                  </div>
-                )}
-              </div>
-            </div>
-          ))}
+          <PaymentPlanA4Sheets
+            form={{
+              salesEmp: plan?.salesEmp,
+              dateDMY: plan?.dateDMY,
+              customer: plan?.customer,
+              unitNo: plan?.unitNo,
+              discount: plan?.discount,
+            }}
+            layoutFields={layoutFields}
+            tableRowHeight={tableRowHeight}
+            pages={pages}
+            setPageRef={setPageRef}
+            totalAmount={totalAmount}
+          />
         </div>
 
         {/* =================== HEADER (مثل تصميمك) =================== */}
@@ -873,9 +829,10 @@ const isOperationUser =
                 <table className="min-w-full text-sm text-slate-900">
                   <thead className="sticky top-0 z-10">
                     <tr className="bg-white/70 backdrop-blur border-b border-black/5 text-[11px] uppercase tracking-wider text-slate-700">
-                      <th className="px-5 py-4 text-center font-black w-[40%]">نوع الدفعة</th>
-                      <th className="px-5 py-4 text-center font-black w-[30%]">المبلغ</th>
-                      <th className="px-5 py-4 text-center font-black w-[30%]">التاريخ</th>
+                      <th className="px-5 py-4 text-center font-black">اسم الدفعة</th>
+                      <th className="px-5 py-4 text-center font-black">التاريخ</th>
+                      <th className="px-5 py-4 text-center font-black">المبلغ</th>
+                      <th className="px-5 py-4 text-center font-black">نسبة الدفعة</th>
                     </tr>
                   </thead>
 
@@ -890,17 +847,18 @@ const isOperationUser =
                           ].join(" ")}
                         >
                           <td className="px-5 py-4 text-center font-extrabold text-slate-900">{r.payType || "-"}</td>
-                          <td className="px-5 py-4 text-center tabular-nums text-slate-800 font-semibold">
-                            {r.amount ? fmtInt(String(r.amount).replace(/,/g, "")) : "-"}
-                          </td>
                           <td className="px-5 py-4 text-center text-slate-700">
                             {r.payDateYMD ? ymdToDMY(r.payDateYMD) : "-"}
                           </td>
+                          <td className="px-5 py-4 text-center tabular-nums text-slate-800 font-semibold">
+                            {r.amount ? fmtInt(String(r.amount).replace(/,/g, "")) : "-"}
+                          </td>
+                          <td className="px-5 py-4 text-center text-slate-700">{r.payPercent || "-"}</td>
                         </tr>
                       ))
                     ) : (
                       <tr>
-                        <td colSpan={3} className="px-5 py-12 text-center text-slate-500 italic">
+                        <td colSpan={4} className="px-5 py-12 text-center text-slate-500 italic">
                           No rows
                         </td>
                       </tr>
@@ -910,7 +868,7 @@ const isOperationUser =
                   {cleanedRows.length ? (
                     <tfoot className="sticky bottom-0 z-10">
                       <tr className="bg-white/75 backdrop-blur border-t border-black/5">
-                        <td className="px-5 py-4 text-right font-black text-slate-700" colSpan={2}>
+                        <td className="px-5 py-4 text-right font-black text-slate-700" colSpan={3}>
                           Total
                         </td>
                         <td className="px-5 py-4 text-center">
@@ -1033,6 +991,13 @@ const isOperationUser =
                       stepStatusLower === "pending" &&
                       currentUser &&
                       step?.users?.some((u) => String(u?._id) === String(currentUser?._id));
+
+                    const canViewStepAttachments = canUserViewExStepAttachments(
+                      step,
+                      idx,
+                      currentUser?._id,
+                      plan?.currentStep
+                    );
 
                     const hasComment = !!(step?.comment && String(step.comment).trim());
                     const hasAttach =
@@ -1171,7 +1136,8 @@ const isOperationUser =
                           </div>
 
 
-                          {stepFiles.length > 0 &&
+                          {canViewStepAttachments &&
+                          stepFiles.length > 0 &&
   currentUser &&
   step?.users?.some((u) => String(u?._id) === String(currentUser?._id)) && (
     <div className="mt-4 space-y-2">

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import dbConnect from "@/lib/mongodb";
+import { sanitizeExDocAttachmentsForUser } from "@/lib/ex/exAttachmentAccess";
 import { cookies } from "next/headers";
 import { Types } from "mongoose";
 import { PERMISSIONS } from "@/lib/permission";
@@ -316,12 +317,14 @@ export async function GET(req, ctx) {
       );
     }
 
+    const safePlan = sanitizeExDocAttachmentsForUser(plan2, String(userId), currentUser);
+
     return NextResponse.json({
       success: true,
-      data: plan2,
-      workflow: plan2?.workflow ?? null,
-      pageKey: plan2?.pageKey ?? "",
-      stepsCount: plan2?.workflow?.steps?.length ?? 0,
+      data: safePlan,
+      workflow: safePlan?.workflow ?? null,
+      pageKey: safePlan?.pageKey ?? "",
+      stepsCount: safePlan?.workflow?.steps?.length ?? 0,
       currentUser,
     });
   } catch (err) {
@@ -702,11 +705,13 @@ attachments: buildMailAttachmentsFromFiles(step.tagAttachments),
       })
       .lean();
 
+    const safePlan = sanitizeExDocAttachmentsForUser(plan2, String(userId), currentUser);
+
     return NextResponse.json({
       success: true,
-      data: plan2,
-      workflow: plan2?.workflow ?? null,
-      pageKey: plan2?.pageKey ?? "",
+      data: safePlan,
+      workflow: safePlan?.workflow ?? null,
+      pageKey: safePlan?.pageKey ?? "",
       currentUser,
       emailResult,
     });

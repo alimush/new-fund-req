@@ -36,8 +36,9 @@ function cleanRows(rows) {
       payType: cleanStr(r?.payType),
       amount: cleanStr(r?.amount),
       payDateYMD: cleanStr(r?.payDateYMD),
+      payPercent: cleanStr(r?.payPercent),
     }))
-    .filter((r) => r.payType || r.amount || r.payDateYMD);
+    .filter((r) => r.payType || r.amount || r.payDateYMD || r.payPercent);
 }
 
 function cleanAttachments(arr) {

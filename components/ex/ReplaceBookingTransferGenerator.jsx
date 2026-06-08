@@ -7,6 +7,7 @@ import { FiX, FiPlus, FiTrash2, FiImage, FiCheck, FiPaperclip, FiFileText , FiPr
 import { Cairo } from "next/font/google";
 
 import { getExForm } from "@/lib/exForms/registry";
+import { formatMoneyInput, parseMoneyNumber } from "@/lib/ex/formatMoneyInput";
 
 const cairo = Cairo({ subsets: ["arabic"], weight: ["400", "600", "700", "800"] });
 
@@ -52,7 +53,7 @@ function dmyToYMD(v) {
 }
 
 const fmtInt = (n) =>
-  new Intl.NumberFormat("en-US").format(Number(String(n || "0").replace(/,/g, "") || 0));
+  new Intl.NumberFormat("en-US").format(parseMoneyNumber(n));
 
 function Spinner() {
   return (
@@ -209,7 +210,9 @@ export default function ReplaceBookingTransferGenerator({
   const makeInitialForm = () => {
     const base = {};
     for (const f of FIELDS) {
-      base[f.name] = initialForm?.[f.name] ?? "";
+      const raw = initialForm?.[f.name] ?? "";
+      base[f.name] =
+        f.type === "moneyIQD" && raw ? formatMoneyInput(raw) : raw;
     }
     if ("salesEmp" in base && !base.salesEmp) base.salesEmp = getCurrentUsername();
     if ("createdBy" in base && !base.createdBy) base.createdBy = getCurrentUsername();
@@ -610,18 +613,17 @@ export default function ReplaceBookingTransferGenerator({
                             placeholder={f.label}
                             value={val}
                             onChange={(e) => {
-                              const numeric = String(e.target.value || "").replace(/[^\d]/g, "");
-
-                              if (!numeric) {
+                              const formatted = formatMoneyInput(e.target.value);
+                              if (!formatted) {
                                 setField(f.name, "");
                                 if (wordsFieldName) setField(wordsFieldName, "");
                                 return;
                               }
-
-                              const formatted = new Intl.NumberFormat("en-US").format(Number(numeric));
                               setField(f.name, formatted);
-
-                              if (wordsFieldName) setField(wordsFieldName, numberToArabicWordsIQD(numeric));
+                              const numeric = String(formatted).replace(/[^\d]/g, "");
+                              if (wordsFieldName) {
+                                setField(wordsFieldName, numberToArabicWordsIQD(numeric));
+                              }
                             }}
                             inputMode="numeric"
                             readOnly={!!f.readOnly}

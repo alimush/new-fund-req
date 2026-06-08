@@ -1,6 +1,7 @@
 // /app/api/ex/[pageKey]/[id]/route.js
 import { NextResponse } from "next/server";
 import dbConnect from "@/lib/mongodb";
+import { sanitizeExDocAttachmentsForUser } from "@/lib/ex/exAttachmentAccess";
 import { cookies } from "next/headers";
 import { Types } from "mongoose";
 import { PERMISSIONS } from "@/lib/permission";
@@ -109,6 +110,8 @@ function setMergeDocAttachmentsThroughStep(doc, completedOperationStepIndex) {
 }
 
 function maybeSyncRequestAttachmentsToStep(step, doc, stepIndex) {
+  // مرفقات الطلب لا تُرفع للستيب الأول — تبقى على doc.attachments فقط
+  if (Number(stepIndex) === 0) return;
   const cutoff = getMergeDocAttachmentsThroughStep(doc);
   if (cutoff !== null && Number(stepIndex) > cutoff) return;
   syncRequestAttachmentsToStep(step, doc);
@@ -311,12 +314,14 @@ export async function GET(req, ctx) {
       );
     }
 
+    const safeDoc = sanitizeExDocAttachmentsForUser(doc2, String(userIdObj), currentUser);
+
     return NextResponse.json({
       success: true,
-      data: doc2,
-      workflow: doc2?.workflow ?? null,
-      pageKey: doc2?.pageKey ?? pageKey,
-      stepsCount: doc2?.workflow?.steps?.length ?? 0,
+      data: safeDoc,
+      workflow: safeDoc?.workflow ?? null,
+      pageKey: safeDoc?.pageKey ?? pageKey,
+      stepsCount: safeDoc?.workflow?.steps?.length ?? 0,
       currentUser,
     });
   } catch (err) {
@@ -442,7 +447,12 @@ export async function PUT(req, ctx) {
       );
     }
 
-    if (isOperationUser && action === "operation_submit" && !attachmentMeta?.key) {
+    if (
+      isOperationUser &&
+      action === "operation_submit" &&
+      stepIndex > 0 &&
+      !attachmentMeta?.key
+    ) {
       return NextResponse.json(
         { success: false, error: "Operation attachment is required" },
         { status: 400 }
@@ -763,11 +773,13 @@ doc.markModified(`workflow.steps.${stepIndex}`);
       .populate({ path: "workflow.steps.actedBy", model: "User", select: "username name email", strictPopulate: false })
       .lean();
 
+    const safeDoc = sanitizeExDocAttachmentsForUser(doc2, String(userIdObj), currentUser);
+
     return NextResponse.json({
       success: true,
-      data: doc2,
-      workflow: doc2?.workflow ?? null,
-      pageKey: doc2?.pageKey ?? pageKeyParam,
+      data: safeDoc,
+      workflow: safeDoc?.workflow ?? null,
+      pageKey: safeDoc?.pageKey ?? pageKeyParam,
       currentUser,
       emailResult,
     });

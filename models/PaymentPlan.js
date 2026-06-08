@@ -7,6 +7,7 @@ const RowSchema = new Schema(
     payType: { type: String, default: "" },
     amount: { type: String, default: "" },
     payDateYMD: { type: String, default: "" },
+    payPercent: { type: String, default: "" },
   },
   { _id: false }
 );
