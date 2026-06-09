@@ -1,4 +1,5 @@
 "use client";
+
 import { useState, useEffect } from "react";
 import { FaUserCircle, FaBars, FaHome, FaUserPlus, FaSignOutAlt } from "react-icons/fa";
 import { GoWorkflow } from "react-icons/go";
@@ -18,25 +19,38 @@ const poppins = Poppins({
   weight: ["400", "600", "700"],
 });
 
+function MenuIcon({ color = "text-blue-400", children }) {
+  return (
+    <span
+      className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-slate-800/90 text-sm ring-1 ring-slate-600/80 ${color}`}
+    >
+      {children}
+    </span>
+  );
+}
+
 export default function Header({ onLogout }) {
   const router = useRouter();
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
   const [username, setUsername] = useState(null);
-  
+
   const { permissions, user, companies } = usePermissions();
-  const isExOnlyUser = Array.isArray(companies)
-    && companies.length === 1
-    && String(companies[0] || "").trim() === "EX";
+  const isExOnlyUser =
+    Array.isArray(companies) &&
+    companies.length === 1 &&
+    String(companies[0] || "").trim() === "EX";
 
   const openNewTab = (path) => {
     window.open(path, "_blank", "noopener,noreferrer");
   };
+
   useEffect(() => {
     const nextUsername = user?.username || null;
     setUsername(nextUsername);
     if (!nextUsername) setMenuOpen(false);
   }, [user]);
+
   const canViewReports =
     Array.isArray(permissions) &&
     permissions.includes(PERMISSIONS.VIEW_REPORTS);
@@ -45,21 +59,16 @@ export default function Header({ onLogout }) {
 
   const handleLogout = async () => {
     try {
-      // (اختياري) امسح sessionStorage
       sessionStorage.clear();
-  
-      // نادِ endpoint يمسح cookie userId
-      await fetch("/api/logout", { method: "POST", credentials: "include" }).catch(() => {});
-  
-      // حدّث الحالة
+      await fetch("/api/logout", { method: "POST", credentials: "include" }).catch(
+        () => {}
+      );
       setUsername(null);
       setMenuOpen(false);
       window.dispatchEvent(new Event("userChanged"));
-  
-      // تحويل + منع الرجوع بالـ back لصفحات محمية
       router.replace("/login");
-      router.refresh(); // يساعد يفشل أي data cached بالـ app router
-    } catch (e) {
+      router.refresh();
+    } catch {
       router.replace("/login");
     }
   };
@@ -69,236 +78,305 @@ export default function Header({ onLogout }) {
       initial={{ y: "-100%", opacity: 0 }}
       animate={{ y: 0, opacity: 1 }}
       exit={{ y: "-100%", opacity: 0 }}
-      transition={{ duration: 0.5, ease: "easeInOut" }}
-      className="sticky top-0 z-50 w-full border-b border-gray-700/70 bg-gradient-to-b from-gray-900 via-gray-850 to-gray-900/95 backdrop-blur-xl shadow-[0_10px_28px_-18px_rgba(0,0,0,0.75)]"
+      transition={{ duration: 0.45, ease: "easeInOut" }}
+      className="sticky top-0 z-50 w-full border-b border-slate-700/60 bg-gradient-to-b from-slate-900 via-slate-900 to-slate-950/95 shadow-[0_10px_28px_-18px_rgba(15,23,42,0.85)] backdrop-blur-xl"
     >
-      {/* 🔹 استخدم grid بدون max-w حتى تبقى أقصى اليمين واليسار */}
       <div className="grid h-16 w-full grid-cols-3 items-center px-4 sm:px-6">
-        {/* يسار */}
-        <div className="flex flex-col items-start leading-tight relative">
+        {/* Logo */}
+        <div className="relative flex min-w-0 flex-col items-start justify-center leading-tight">
           <span
-            className={`font-bold text-2xl tracking-tight
-                        bg-gradient-to-r from-gray-200 via-gray-100 to-white
-                        text-transparent bg-clip-text ${poppins.className}`}
+            className={`text-2xl font-bold tracking-tight text-slate-100 ${poppins.className}`}
           >
             SPC
           </span>
-          <span className={`text-[11px] text-gray-300 ${poppins.className}`}>
+          <span className={`text-[10px] font-semibold text-slate-400 sm:text-[11px] ${poppins.className}`}>
             Developed by SPC team
           </span>
-          <span className="absolute -bottom-2 left-0 h-[2px] w-16 rounded-full
-                           bg-gradient-to-r from-gray-500 via-gray-400 to-gray-300 opacity-80" />
+          <span className="absolute -bottom-2 left-0 h-[2px] w-14 rounded-full bg-gradient-to-r from-indigo-500/80 via-blue-400/70 to-slate-500/60" />
         </div>
 
-      {/* الوسط – العنوان */}
-<div className="flex justify-center">
-  <h1
-    onClick={() => router.push("/home")}
-    className="cursor-pointer
-               text-base sm:text-lg md:text-2xl font-bold tracking-tight
-               bg-gradient-to-r from-gray-200 via-gray-100 to-white
-               text-transparent bg-clip-text
-               hover:opacity-80 transition"
-  >
-    Fund Request
-  </h1>
-</div>
+        {/* Center title */}
+        <div className="flex justify-center">
+          <h1
+            onClick={() => router.push("/home")}
+            className="cursor-pointer bg-gradient-to-r from-slate-100 via-white to-slate-200 bg-clip-text text-base font-extrabold tracking-tight text-transparent transition hover:opacity-80 sm:text-lg md:text-xl"
+          >
+            Fund Request
+          </h1>
+        </div>
 
-        {/* يمين */}
-        <div className="flex justify-end items-center relative">
+        {/* User + menu */}
+        <div className="relative flex items-center justify-end">
           <AnimatePresence>
-            {pathname !== "/login" && username && (
+            {pathname !== "/login" && username ? (
               <motion.div
                 key="user-cluster"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                transition={{ duration: 0.4, ease: "easeInOut" }}
-                className="flex items-center gap-3"
+                transition={{ duration: 0.35, ease: "easeInOut" }}
+                className="flex items-center gap-2 sm:gap-3"
               >
-                {/* بطاقة اليوزر */}
                 <motion.div
-                  whileHover={{ scale: 1.04 }}
-                  className="flex items-center gap-2 rounded-xl border border-gray-600/80 bg-gray-800/80 px-3 py-1.5 shadow-sm"
+                  whileHover={{ scale: 1.02 }}
+                  className="flex items-center gap-1.5 rounded-xl border border-slate-600/70 bg-slate-800/75 px-2 py-1 shadow-sm backdrop-blur-sm sm:gap-2 sm:px-2.5 sm:py-1.5"
                 >
-                  <FaUserCircle className="text-2xl text-gray-200" />
-                  <span className="text-sm font-semibold text-gray-100">
+                  <FaUserCircle className="text-lg text-indigo-400 sm:text-xl" />
+                  <span className="max-w-[120px] truncate text-xs font-extrabold text-slate-100 sm:max-w-none sm:text-sm">
                     {username}
                   </span>
                 </motion.div>
 
-                {/* زر المنيو */}
                 <motion.button
-                  whileHover={{ scale: 1.05 }}
+                  whileHover={{ scale: 1.04 }}
+                  whileTap={{ scale: 0.98 }}
                   onClick={() => setMenuOpen((v) => !v)}
-                  className={`p-2 rounded-xl border transition 
-                    ${menuOpen
-                      ? "bg-gray-700 border-gray-500"
-                      : "bg-gray-800 hover:bg-gray-700 border-gray-600"}`}
+                  className={`rounded-xl border p-1.5 transition ${
+                    menuOpen
+                      ? "border-indigo-500/70 bg-indigo-600/25 text-indigo-200"
+                      : "border-slate-600/70 bg-slate-800/75 text-slate-200 hover:border-slate-500 hover:bg-slate-700/80"
+                  }`}
                   aria-label="menu"
                 >
                   <motion.div
                     animate={{ rotate: menuOpen ? 90 : 0 }}
-                    transition={{ duration: 0.35 }}
+                    transition={{ duration: 0.3 }}
                   >
-                    <FaBars className="text-gray-200 text-lg" />
+                    <FaBars className="text-base" />
                   </motion.div>
                 </motion.button>
 
-                {/* المنيو المنسدلة */}
                 <AnimatePresence>
-                  {menuOpen && (
+                  {menuOpen ? (
                     <motion.div
                       key="menu"
-                      initial={{ opacity: 0, y: -10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -10 }}
-                      transition={{ duration: 0.35, ease: "easeInOut" }}
-                      className="absolute right-0 top-12 w-56 overflow-hidden rounded-2xl border border-gray-600/80 bg-gray-900/95 shadow-xl backdrop-blur"
+                      initial={{ opacity: 0, y: -8, scale: 0.98 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: -8, scale: 0.98 }}
+                      transition={{ duration: 0.25, ease: "easeOut" }}
+                      className="absolute right-0 top-12 w-60 overflow-hidden rounded-2xl border border-slate-600/80 bg-slate-900/95 shadow-xl backdrop-blur-md"
                     >
-                      <div className="p-1">
+                      <div className="border-b border-slate-700/80 px-4 py-3">
+                        <p className="text-[11px] font-bold uppercase tracking-wider text-indigo-400/90">
+                          القائمة
+                        </p>
+                        <p className="mt-0.5 truncate text-sm font-extrabold text-slate-100">
+                          {username}
+                        </p>
+                      </div>
+
+                      <div className="p-1.5">
                         <MenuItem
                           onClick={() => {
                             setMenuOpen(false);
                             router.push("/home");
                           }}
-                          icon={<FaHome className="text-gray-200" />}
+                          icon={
+                            <MenuIcon color="text-amber-600">
+                              <FaHome />
+                            </MenuIcon>
+                          }
                           label="الرئيسية"
                         />
-                         {permissions?.includes(PERMISSIONS.MANAGE_PERMISSIONS) && (
-                        <MenuItem
-                          onClick={() => {
-                            setMenuOpen(false);
-                            router.push("/register");
-                          }}
-                          icon={<FaUserPlus className="text-gray-200" />}
-                          label="إنشاء يوزر جديد"
-                        />)}
-                         {permissions?.includes(PERMISSIONS.MANAGE_PERMISSIONS) && (
-                        <MenuItem
-                          onClick={() => {
-                            setMenuOpen(false);
-                            router.push("/workflow");
-                          }}
-                          icon={<GoWorkflow className="text-gray-200" />}
-                          label="الموافقات "
-                        />)}
-                         {permissions?.includes(PERMISSIONS.MANAGE_PERMISSIONS) && (
-                        <MenuItem
-                          onClick={() => {
-                            setMenuOpen(false);
-                            router.push("/admin/requests-workflow");
-                          }}
-                          icon={<GoWorkflow className="text-gray-200" />}
-                          label="وورك فلو الطلبات"
-                        />)}
-                         {permissions?.includes(PERMISSIONS.MANAGE_PERMISSIONS) && (
-                        <MenuItem
-                          onClick={() => {
-                            setMenuOpen(false);
-                            router.push("/admin/voucher-links");
-                          }}
-                          icon={<FiLink className="text-gray-200" />}
-                          label="ربط الوصولات بالطلبات"
-                        />)}
-                         {permissions?.includes(PERMISSIONS.MANAGE_PERMISSIONS) && (
-                        <MenuItem
-                          onClick={() => {
-                            setMenuOpen(false);
-                            router.push("ex/workflow");
-                          }}
-                          icon={<GoWorkflow className="text-gray-200" />}
-                          label="ex workflow "
-                        />)}
 
+                        {permissions?.includes(PERMISSIONS.MANAGE_PERMISSIONS) ? (
+                          <MenuItem
+                            onClick={() => {
+                              setMenuOpen(false);
+                              router.push("/register");
+                            }}
+                            icon={
+                              <MenuIcon color="text-indigo-600">
+                                <FaUserPlus />
+                              </MenuIcon>
+                            }
+                            label="إنشاء يوزر جديد"
+                          />
+                        ) : null}
 
+                        {permissions?.includes(PERMISSIONS.MANAGE_PERMISSIONS) ? (
+                          <MenuItem
+                            onClick={() => {
+                              setMenuOpen(false);
+                              router.push("/workflow");
+                            }}
+                            icon={
+                              <MenuIcon color="text-purple-600">
+                                <GoWorkflow />
+                              </MenuIcon>
+                            }
+                            label="الموافقات"
+                          />
+                        ) : null}
 
-                      {permissions?.includes(PERMISSIONS.MANAGE_PERMISSIONS) && (
-  <MenuItem
-    onClick={() => {
-      setMenuOpen(false);
-      router.push("/permissions");
-    }}
-    icon={<MdPolicy className="text-gray-200" />}
-    label="إدارة الصلاحيات"
-  />
-)}
-                      {permissions?.includes(PERMISSIONS.RECEIPTS) && (
-  <MenuItem
-    onClick={() => {
-      setMenuOpen(false);
-      router.push("/vouchers");
-    }}
-    icon={<IoReceipt className="text-gray-200" />}
-    label="وصل صرف وقبض"
-  />
-)}
+                        {permissions?.includes(PERMISSIONS.MANAGE_PERMISSIONS) ? (
+                          <MenuItem
+                            onClick={() => {
+                              setMenuOpen(false);
+                              router.push("/admin/requests-workflow");
+                            }}
+                            icon={
+                              <MenuIcon color="text-violet-600">
+                                <GoWorkflow />
+                              </MenuIcon>
+                            }
+                            label="وورك فلو الطلبات"
+                          />
+                        ) : null}
 
-{canAccessCheques && (
-  <MenuItem
-    onClick={() => {
-      setMenuOpen(false);
-      router.push("/cheques");
-    }}
-    icon={<FiCreditCard className="text-gray-200" />}
-    label="نظام الصكوك"
-  />
-)}
+                        {permissions?.includes(PERMISSIONS.MANAGE_PERMISSIONS) ? (
+                          <MenuItem
+                            onClick={() => {
+                              setMenuOpen(false);
+                              router.push("/admin/voucher-links");
+                            }}
+                            icon={
+                              <MenuIcon color="text-blue-600">
+                                <FiLink />
+                              </MenuIcon>
+                            }
+                            label="ربط الوصولات بالطلبات"
+                          />
+                        ) : null}
 
-{permissions?.includes(PERMISSIONS.EX) && !isExOnlyUser && (
-                        <MenuItem
-                          onClick={() => {
-                            setMenuOpen(false);
-                            router.push("/ex/ex-home");
-                          }}
-                          icon={<FaFileInvoice className="text-gray-200" />}
-                          label="طلبات الحجز"
-                        />)}
+                        {permissions?.includes(PERMISSIONS.MANAGE_PERMISSIONS) ? (
+                          <MenuItem
+                            onClick={() => {
+                              setMenuOpen(false);
+                              router.push("ex/workflow");
+                            }}
+                            icon={
+                              <MenuIcon color="text-slate-600">
+                                <GoWorkflow />
+                              </MenuIcon>
+                            }
+                            label="ex workflow"
+                          />
+                        ) : null}
 
-{canViewReports && (
-  <MenuItem
-    onClick={() => {
-      setMenuOpen(false);
-      openNewTab("/reports");
-    }}
-    icon={<FaSquarePollVertical className="text-gray-200" />}
-    label="تقارير"
-  />
-)}
+                        {permissions?.includes(PERMISSIONS.MANAGE_PERMISSIONS) ? (
+                          <MenuItem
+                            onClick={() => {
+                              setMenuOpen(false);
+                              router.push("/permissions");
+                            }}
+                            icon={
+                              <MenuIcon color="text-emerald-600">
+                                <MdPolicy />
+                              </MenuIcon>
+                            }
+                            label="إدارة الصلاحيات"
+                          />
+                        ) : null}
 
+                        {permissions?.includes(PERMISSIONS.RECEIPTS) ? (
+                          <MenuItem
+                            onClick={() => {
+                              setMenuOpen(false);
+                              router.push("/vouchers");
+                            }}
+                            icon={
+                              <MenuIcon color="text-teal-600">
+                                <IoReceipt />
+                              </MenuIcon>
+                            }
+                            label="وصل صرف وقبض"
+                          />
+                        ) : null}
 
-{permissions?.includes(PERMISSIONS.RECEIPTS) && (
-  <MenuItem
-    onClick={() => {
-      setMenuOpen(false);
-      openNewTab("/receipts/disbursement");
-    }}
-    icon={<FiClock className="text-gray-200" />}
-    label="تتبع صرف الطلبات"
-  />
-)}
-{permissions?.includes(PERMISSIONS.RECEIPTS) && (
-  <MenuItem
-    onClick={() => {
-      setMenuOpen(false);
-      openNewTab("/vouchers/reports");
-    }}
-    icon={<FaSquarePollVertical className="text-gray-200" />}
-    label="تقارير الوصلات"
-  />
-)}
+                        {canAccessCheques ? (
+                          <MenuItem
+                            onClick={() => {
+                              setMenuOpen(false);
+                              router.push("/cheques");
+                            }}
+                            icon={
+                              <MenuIcon color="text-cyan-600">
+                                <FiCreditCard />
+                              </MenuIcon>
+                            }
+                            label="نظام الصكوك"
+                          />
+                        ) : null}
+
+                        {permissions?.includes(PERMISSIONS.EX) && !isExOnlyUser ? (
+                          <MenuItem
+                            onClick={() => {
+                              setMenuOpen(false);
+                              router.push("/ex/ex-home");
+                            }}
+                            icon={
+                              <MenuIcon color="text-orange-600">
+                                <FaFileInvoice />
+                              </MenuIcon>
+                            }
+                            label="طلبات الحجز"
+                          />
+                        ) : null}
+
+                        {canViewReports ? (
+                          <MenuItem
+                            onClick={() => {
+                              setMenuOpen(false);
+                              openNewTab("/reports");
+                            }}
+                            icon={
+                              <MenuIcon color="text-purple-600">
+                                <FaSquarePollVertical />
+                              </MenuIcon>
+                            }
+                            label="تقارير"
+                          />
+                        ) : null}
+
+                        {permissions?.includes(PERMISSIONS.RECEIPTS) ? (
+                          <MenuItem
+                            onClick={() => {
+                              setMenuOpen(false);
+                              openNewTab("/receipts/disbursement");
+                            }}
+                            icon={
+                              <MenuIcon color="text-amber-600">
+                                <FiClock />
+                              </MenuIcon>
+                            }
+                            label="تتبع صرف الطلبات"
+                          />
+                        ) : null}
+
+                        {permissions?.includes(PERMISSIONS.RECEIPTS) ? (
+                          <MenuItem
+                            onClick={() => {
+                              setMenuOpen(false);
+                              openNewTab("/vouchers/reports");
+                            }}
+                            icon={
+                              <MenuIcon color="text-indigo-600">
+                                <FaSquarePollVertical />
+                              </MenuIcon>
+                            }
+                            label="تقارير الوصلات"
+                          />
+                        ) : null}
+
+                        <div className="my-1 border-t border-slate-700/80" />
+
                         <MenuItem
                           onClick={handleLogout}
-                          icon={<FaSignOutAlt className="text-red-400" />}
+                          icon={
+                            <MenuIcon color="text-red-600">
+                              <FaSignOutAlt />
+                            </MenuIcon>
+                          }
                           label="تسجيل خروج"
                           danger
                         />
                       </div>
                     </motion.div>
-                  )}
+                  ) : null}
                 </AnimatePresence>
               </motion.div>
-            )}
+            ) : null}
           </AnimatePresence>
         </div>
       </div>
@@ -311,11 +389,14 @@ function MenuItem({ onClick, icon, label, danger = false }) {
     <motion.button
       whileHover={{ scale: 1.01 }}
       onClick={onClick}
-      className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm rounded-xl transition
-        ${danger ? "text-red-400 hover:bg-red-900/30" : "text-gray-200 hover:bg-gray-700/70"}`}
+      className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-extrabold transition ${
+        danger
+          ? "text-red-400 hover:bg-red-950/40"
+          : "text-slate-200 hover:bg-slate-800/80"
+      }`}
     >
-      <span className="text-base">{icon}</span>
-      <span className="font-semibold">{label}</span>
+      {icon}
+      <span>{label}</span>
     </motion.button>
   );
 }
