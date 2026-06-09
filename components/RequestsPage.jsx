@@ -72,6 +72,191 @@ function Pager({ page, totalPages, onPage }) {
   );
 }
 
+function CountPill({ count, tone, label }) {
+  const n = Number(count) || 0;
+  if (!n) return null;
+  const toneClass =
+    tone === "disbursement"
+      ? "bg-gradient-to-r from-emerald-600 to-green-600 text-white shadow-[0_6px_14px_-6px_rgba(5,150,105,0.8)]"
+      : "bg-gradient-to-r from-rose-600 to-red-600 text-white shadow-[0_6px_14px_-6px_rgba(220,38,38,0.85)]";
+
+  return (
+    <span
+      title={label}
+      className={`inline-flex min-h-[26px] items-center gap-1 rounded-full px-2.5 text-[11px] font-black tabular-nums ring-2 ring-white/40 ${toneClass}`}
+    >
+      {n > 99 ? "99+" : n}
+      <span className="hidden sm:inline text-[10px] font-extrabold opacity-95">{label}</span>
+    </span>
+  );
+}
+
+function ScrollBox({ children }) {
+  return (
+    <div className="max-h-[520px] overflow-y-auto overscroll-y-contain pr-1 scrollbar-thin scrollbar-thumb-gray-300/60 scrollbar-track-transparent">
+      {children}
+    </div>
+  );
+}
+
+function SectionShell({
+  title,
+  subtitle,
+  icon: Icon,
+  right,
+  accent,
+  badgeCount,
+  badgeTone = "approval",
+  children,
+}) {
+  const headerClass =
+    accent === "emerald"
+      ? "bg-gradient-to-r from-emerald-500/20 via-green-500/10 to-white/20"
+      : accent === "red"
+        ? "bg-gradient-to-r from-red-500/15 via-rose-500/10 to-white/20"
+        : "bg-white/25";
+  const iconWrapClass =
+    accent === "emerald"
+      ? "bg-emerald-500/15 text-emerald-800 ring-emerald-300/45"
+      : accent === "red"
+        ? "bg-red-500/15 text-red-800 ring-red-300/40"
+        : "bg-white/45 text-gray-800 ring-white/30";
+  const badgeToneClass =
+    badgeTone === "disbursement"
+      ? "bg-gradient-to-r from-emerald-600 to-green-600 text-white"
+      : "bg-gradient-to-r from-rose-600 to-red-600 text-white";
+  const shellClass =
+    accent === "emerald"
+      ? "bg-emerald-50/30 ring-emerald-200/45"
+      : accent === "red"
+        ? "bg-red-50/20 ring-red-200/35"
+        : "bg-white/40 ring-white/30";
+
+  return (
+    <div
+      className={`rounded-3xl backdrop-blur-2xl ring-1 shadow-[0_18px_45px_-25px_rgba(0,0,0,0.35)] overflow-hidden ${shellClass}`}
+    >
+      <div className={`px-5 py-4 ${headerClass}`}>
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-start gap-3 min-w-0">
+            {Icon && (
+              <div
+                className={`mt-0.5 h-10 w-10 rounded-2xl ring-1 backdrop-blur flex items-center justify-center shrink-0 ${iconWrapClass}`}
+              >
+                <Icon className="text-xl" />
+              </div>
+            )}
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="text-[16px] font-black text-gray-900">{title}</div>
+                {Number(badgeCount) > 0 && (
+                  <span
+                    className={`inline-flex min-h-[24px] items-center rounded-full px-2 text-[11px] font-black tabular-nums ${badgeToneClass}`}
+                  >
+                    {Number(badgeCount) > 99 ? "99+" : badgeCount}
+                  </span>
+                )}
+              </div>
+              {subtitle && (
+                <div className="text-[13px] font-bold text-gray-700/80">{subtitle}</div>
+              )}
+            </div>
+          </div>
+          {right}
+        </div>
+      </div>
+      <div className="p-5">{children}</div>
+    </div>
+  );
+}
+
+function RequestCard({ r, variant = "default", companyKey }) {
+  const router = useRouter();
+  const isDisbursement = variant === "disbursementPending";
+  const dateText = r.createdAt ? new Date(r.createdAt).toLocaleDateString() : "-";
+
+  const fmt = useMemo(
+    () => new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }),
+    []
+  );
+
+  const totalAmount =
+    typeof r.totalAmount === "number"
+      ? r.totalAmount
+      : Array.isArray(r.items)
+        ? r.items.reduce(
+            (sum, it) => sum + (Number(it.qty) || 0) * (Number(it.price) || 0),
+            0
+          )
+        : 0;
+
+  return (
+    <div
+      onClick={() => router.push(`/requests/${companyKey}/${r._id}`)}
+      className={[
+        "group relative cursor-pointer rounded-2xl backdrop-blur-xl p-5 transition-all duration-300 hover:-translate-y-[2px]",
+        isDisbursement
+          ? "bg-gradient-to-br from-emerald-50/95 via-green-50/50 to-white/70 ring-2 ring-emerald-300/50 shadow-[0_12px_35px_-18px_rgba(5,150,105,0.22)] hover:ring-emerald-400/60 hover:shadow-[0_18px_55px_-22px_rgba(5,150,105,0.3)]"
+          : "bg-white/60 ring-1 ring-black/5 shadow-[0_12px_35px_-18px_rgba(0,0,0,0.28)] hover:bg-white/75 hover:ring-black/10 hover:shadow-[0_18px_55px_-22px_rgba(0,0,0,0.38)]",
+      ].join(" ")}
+    >
+      <div className="pointer-events-none absolute inset-0 rounded-2xl opacity-0 transition-opacity duration-300 group-hover:opacity-100 bg-gradient-to-br from-white/45 via-transparent to-transparent" />
+
+      <div className="relative flex items-start justify-between gap-4">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <StatusBadge status={r.status} />
+            <span className="text-[12px] font-semibold text-gray-600">{dateText}</span>
+          </div>
+
+          <div className="mt-2 text-[18px] font-extrabold text-gray-900 line-clamp-1">
+            {r.requestType || "Request"}
+          </div>
+
+          <div className="mt-2 text-[14px] text-gray-800/90 leading-relaxed line-clamp-2">
+            {r.description || "-"}
+          </div>
+
+          <div className="mt-3 text-[12px] font-mono font-semibold text-gray-700/85">
+            {r.requestCode || r._id}
+            {r.voucherNo ? (
+              <span className="mr-2 text-emerald-700"> · وصل {r.voucherNo}</span>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="shrink-0 flex flex-col items-end gap-2">
+          <div className="rounded-xl px-4 py-3 bg-white/35 backdrop-blur-2xl ring-1 ring-white/60 shadow-[0_10px_26px_-16px_rgba(0,0,0,0.35)] transition-all duration-300 group-hover:bg-white/45">
+            <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
+              Amount
+            </div>
+            <div className="mt-1 text-[18px] font-black text-gray-900 tabular-nums break-words">
+              {fmt.format(totalAmount)}
+            </div>
+          </div>
+
+          {r.currency ? (
+            <div className="rounded-lg px-3 py-1.5 bg-white/55 backdrop-blur-xl ring-1 ring-black/10 shadow-sm text-[12px] font-bold text-gray-700 transition-all duration-300 group-hover:bg-white/70">
+              {r.currency}
+            </div>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="relative mt-4 flex items-center justify-between gap-3 text-[13px] text-gray-700/85">
+        <span className="inline-flex items-center gap-2 min-w-0">
+          <FiFileText className="text-[16px]" />
+          <span className="truncate max-w-[240px] font-semibold">{r.company || companyKey}</span>
+        </span>
+
+        <span className="truncate max-w-[55%]">
+          By: <span className="font-extrabold text-gray-900">{r.createdBy || "Unknown"}</span>
+        </span>
+      </div>
+    </div>
+  );
+}
+
 export default function RequestsPage({ companyKey }) {
   const router = useRouter();
   const { permissions, companies, user, permissionsLoaded } = usePermissions();
@@ -176,10 +361,11 @@ export default function RequestsPage({ companyKey }) {
     setSuggestPos({ open: true, top: r.bottom + 8, left: r.left, width: r.width });
   }, []);
 
-  // ✅ نخفي الاقتراحات عند scroll حتى ما يصير “هزّة”
+  // إخفاء الاقتراحات عند scroll الصفحة (مو داخل صناديق القوائم)
   useEffect(() => {
-    const onScroll = () => {
+    const onScroll = (e) => {
       if (!showSuggest) return;
+      if (e.target !== document && e.target !== document.documentElement) return;
       setShowSuggest(false);
       setActiveIdx(-1);
       setSuggestPos((p) => ({ ...p, open: false }));
@@ -445,25 +631,6 @@ export default function RequestsPage({ companyKey }) {
     };
   }, [companyKey, accessChecked]);
 
-  const CountPill = ({ count, tone, label }) => {
-    const n = Number(count) || 0;
-    if (!n) return null;
-    const toneClass =
-      tone === "disbursement"
-        ? "bg-gradient-to-r from-emerald-600 to-green-600 text-white shadow-[0_6px_14px_-6px_rgba(5,150,105,0.8)]"
-        : "bg-gradient-to-r from-rose-600 to-red-600 text-white shadow-[0_6px_14px_-6px_rgba(220,38,38,0.85)]";
-
-    return (
-      <span
-        title={label}
-        className={`inline-flex min-h-[26px] items-center gap-1 rounded-full px-2.5 text-[11px] font-black tabular-nums ring-2 ring-white/40 ${toneClass}`}
-      >
-        {n > 99 ? "99+" : n}
-        <span className="hidden sm:inline text-[10px] font-extrabold opacity-95">{label}</span>
-      </span>
-    );
-  };
-
   // ===== Pagination computed + clamp =====
   const myPaged = useMemo(() => paginate(myRequests, pageMy, PAGE_SIZE), [myRequests, pageMy]);
   const pendingPaged = useMemo(() => paginate(pendingApprovals, pagePending, PAGE_SIZE), [pendingApprovals, pagePending]);
@@ -506,247 +673,6 @@ export default function RequestsPage({ companyKey }) {
     );
   }
   if (accessDenied) return null;
-
-  const SuggestionsPortal = () => {
-    if (!mounted) return null;
-    if (!showSuggest) return null;
-    if (!suggestPos.open) return null;
-    if (!suggestions.length) return null;
-  
-    return createPortal(
-      <div
-        ref={suggestWrapRef}
-        style={{
-          position: "fixed",
-          top: suggestPos.top,
-          left: suggestPos.left,
-          width: suggestPos.width,
-          zIndex: 9999,
-        }}
-        className="pointer-events-auto"
-      >
-        <div className="w-full rounded-2xl bg-white/95 backdrop-blur ring-1 ring-black/10 shadow-2xl overflow-hidden">
-          <div className="max-h-56 overflow-auto">
-            {suggestions.map((s, idx) => (
-              <button
-                key={`${s}-${idx}`}
-                type="button"
-                onMouseDown={(e) => e.preventDefault()} // ✅ يمنع blur قبل click
-                onClick={() => pickSuggestion(s)}
-                className={[
-                  "w-full text-left px-4 py-2.5 text-[14px] font-bold",
-                  "hover:bg-slate-100",
-                  idx === activeIdx ? "bg-slate-100" : "bg-transparent",
-                ].join(" ")}
-              >
-                {s}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>,
-      document.body
-    );
-  };
-
-  const RequestCard = ({ r, variant = "default" }) => {
-    const isDisbursement = variant === "disbursementPending";
-    const dateText = r.createdAt
-      ? new Date(r.createdAt).toLocaleDateString()
-      : "-";
-  
-    const fmt = useMemo(
-      () => new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }),
-      []
-    );
-  
-    const totalAmount =
-      typeof r.totalAmount === "number"
-        ? r.totalAmount
-        : Array.isArray(r.items)
-        ? r.items.reduce(
-            (sum, it) =>
-              sum + (Number(it.qty) || 0) * (Number(it.price) || 0),
-            0
-          )
-        : 0;
-  
-    return (
-      <div
-        onClick={() => router.push(`/requests/${companyKey}/${r._id}`)}
-        className={[
-          "group relative cursor-pointer rounded-2xl backdrop-blur-xl p-5 transition-all duration-300 hover:-translate-y-[2px]",
-          isDisbursement
-            ? "bg-gradient-to-br from-emerald-50/95 via-green-50/50 to-white/70 ring-2 ring-emerald-300/50 shadow-[0_12px_35px_-18px_rgba(5,150,105,0.22)] hover:ring-emerald-400/60 hover:shadow-[0_18px_55px_-22px_rgba(5,150,105,0.3)]"
-            : "bg-white/60 ring-1 ring-black/5 shadow-[0_12px_35px_-18px_rgba(0,0,0,0.28)] hover:bg-white/75 hover:ring-black/10 hover:shadow-[0_18px_55px_-22px_rgba(0,0,0,0.38)]",
-        ].join(" ")}
-      >
-        {/* glow */}
-        <div className="pointer-events-none absolute inset-0 rounded-2xl opacity-0 transition-opacity duration-300 group-hover:opacity-100 bg-gradient-to-br from-white/45 via-transparent to-transparent" />
-  
-        <div className="relative flex items-start justify-between gap-4">
-          {/* LEFT */}
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <StatusBadge status={r.status} />
-              <span className="text-[12px] font-semibold text-gray-600">
-                {dateText}
-              </span>
-            </div>
-  
-            <div className="mt-2 text-[18px] font-extrabold text-gray-900 line-clamp-1">
-              {r.requestType || "Request"}
-            </div>
-  
-            <div className="mt-2 text-[14px] text-gray-800/90 leading-relaxed line-clamp-2">
-              {r.description || "-"}
-            </div>
-  
-            <div className="mt-3 text-[12px] font-mono font-semibold text-gray-700/85">
-              {r.requestCode || r._id}
-              {r.voucherNo ? (
-                <span className="mr-2 text-emerald-700"> · وصل {r.voucherNo}</span>
-              ) : null}
-            </div>
-          </div>
-
-          {/* RIGHT SIDE */}
-          <div className="shrink-0 flex flex-col items-end gap-2">
-            
-            {/* Amount Card */}
-            <div
-              className="
-                rounded-xl px-4 py-3
-                bg-white/35 backdrop-blur-2xl
-                ring-1 ring-white/60
-                shadow-[0_10px_26px_-16px_rgba(0,0,0,0.35)]
-                transition-all duration-300
-                group-hover:bg-white/45
-              "
-            >
-              <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
-                Amount
-              </div>
-  
-              <div className="mt-1 text-[18px] font-black text-gray-900 tabular-nums break-words">
-                {fmt.format(totalAmount)}
-              </div>
-            </div>
-  
-            {/* Currency Card (منفصل تماما) */}
-            {r.currency && (
-              <div
-                className="
-                  rounded-lg px-3 py-1.5
-                  bg-white/55 backdrop-blur-xl
-                  ring-1 ring-black/10
-                  shadow-sm
-                  text-[12px] font-bold text-gray-700
-                  transition-all duration-300
-                  group-hover:bg-white/70
-                "
-              >
-                {r.currency}
-              </div>
-            )}
-  
-          </div>
-        </div>
-  
-        {/* Bottom Row */}
-        <div className="relative mt-4 flex items-center justify-between gap-3 text-[13px] text-gray-700/85">
-          <span className="inline-flex items-center gap-2 min-w-0">
-            <FiFileText className="text-[16px]" />
-            <span className="truncate max-w-[240px] font-semibold">
-              {r.company || companyKey}
-            </span>
-          </span>
-  
-          <span className="truncate max-w-[55%]">
-            By:{" "}
-            <span className="font-extrabold text-gray-900">
-              {r.createdBy || "Unknown"}
-            </span>
-          </span>
-        </div>
-      </div>
-    );
-  };
-
-  const SectionShell = ({
-    title,
-    subtitle,
-    icon: Icon,
-    right,
-    accent,
-    badgeCount,
-    badgeTone = "approval",
-    children,
-  }) => {
-    const headerClass =
-      accent === "emerald"
-        ? "bg-gradient-to-r from-emerald-500/20 via-green-500/10 to-white/20"
-        : accent === "red"
-          ? "bg-gradient-to-r from-red-500/15 via-rose-500/10 to-white/20"
-          : "bg-white/25";
-    const iconWrapClass =
-      accent === "emerald"
-        ? "bg-emerald-500/15 text-emerald-800 ring-emerald-300/45"
-        : accent === "red"
-          ? "bg-red-500/15 text-red-800 ring-red-300/40"
-          : "bg-white/45 text-gray-800 ring-white/30";
-    const badgeToneClass =
-      badgeTone === "disbursement"
-        ? "bg-gradient-to-r from-emerald-600 to-green-600 text-white"
-        : "bg-gradient-to-r from-rose-600 to-red-600 text-white";
-    const shellClass =
-      accent === "emerald"
-        ? "bg-emerald-50/30 ring-emerald-200/45"
-        : accent === "red"
-          ? "bg-red-50/20 ring-red-200/35"
-          : "bg-white/40 ring-white/30";
-
-    return (
-      <div className={`rounded-3xl backdrop-blur-2xl ring-1 shadow-[0_18px_45px_-25px_rgba(0,0,0,0.35)] overflow-hidden ${shellClass}`}>
-      <div className={`px-5 py-4 ${headerClass}`}>
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex items-start gap-3 min-w-0">
-            {Icon && (
-              <div
-                className={`mt-0.5 h-10 w-10 rounded-2xl ring-1 backdrop-blur flex items-center justify-center shrink-0 ${iconWrapClass}`}
-              >
-                <Icon className="text-xl" />
-              </div>
-            )}
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="text-[16px] font-black text-gray-900">{title}</div>
-                {Number(badgeCount) > 0 && (
-                  <span
-                    className={`inline-flex min-h-[24px] items-center rounded-full px-2 text-[11px] font-black tabular-nums ${badgeToneClass}`}
-                  >
-                    {Number(badgeCount) > 99 ? "99+" : badgeCount}
-                  </span>
-                )}
-              </div>
-              {subtitle && (
-                <div className="text-[13px] font-bold text-gray-700/80">{subtitle}</div>
-              )}
-            </div>
-          </div>
-          {right}
-        </div>
-      </div>
-        <div className="p-5">{children}</div>
-      </div>
-    );
-  };
-
-  const ScrollBox = ({ children }) => (
-    <div className="max-h-[520px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-gray-300/60 scrollbar-track-transparent">
-      {children}
-    </div>
-  );
 
   return (
     <div className="min-h-screen w-full text-[15px] font-bold text-slate-900">
@@ -894,10 +820,42 @@ export default function RequestsPage({ companyKey }) {
           </div>
         </div>
 
-        {/* Suggestions Portal */}
-        {mounted && showSuggest && suggestPos.open && suggestions.length > 0 ? (
-          <SuggestionsPortal />
-        ) : null}
+        {mounted && showSuggest && suggestPos.open && suggestions.length > 0
+          ? createPortal(
+              <div
+                ref={suggestWrapRef}
+                style={{
+                  position: "fixed",
+                  top: suggestPos.top,
+                  left: suggestPos.left,
+                  width: suggestPos.width,
+                  zIndex: 9999,
+                }}
+                className="pointer-events-auto"
+              >
+                <div className="w-full rounded-2xl bg-white/95 backdrop-blur ring-1 ring-black/10 shadow-2xl overflow-hidden">
+                  <div className="max-h-56 overflow-auto">
+                    {suggestions.map((s, idx) => (
+                      <button
+                        key={`${s}-${idx}`}
+                        type="button"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => pickSuggestion(s)}
+                        className={[
+                          "w-full text-left px-4 py-2.5 text-[14px] font-bold",
+                          "hover:bg-slate-100",
+                          idx === activeIdx ? "bg-slate-100" : "bg-transparent",
+                        ].join(" ")}
+                      >
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>,
+              document.body
+            )
+          : null}
 
         {/* Stats */}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -953,7 +911,7 @@ export default function RequestsPage({ companyKey }) {
                 <ScrollBox>
                   <div className="space-y-3">
                     {pendingPaged.items.map((r) => (
-                      <RequestCard key={r._id} r={r} />
+                      <RequestCard key={r._id} r={r} companyKey={companyKey} />
                     ))}
                   </div>
                 </ScrollBox>
@@ -1009,7 +967,7 @@ export default function RequestsPage({ companyKey }) {
                 <ScrollBox>
                   <div className="space-y-3">
                     {myPaged.items.map((r) => (
-                      <RequestCard key={r._id} r={r} />
+                      <RequestCard key={r._id} r={r} companyKey={companyKey} />
                     ))}
                   </div>
                 </ScrollBox>
@@ -1053,7 +1011,7 @@ export default function RequestsPage({ companyKey }) {
                 <ScrollBox>
                   <div className="space-y-3">
                     {delegatedPaged.items.map((r) => (
-                      <RequestCard key={r._id} r={r} variant="disbursementPending" />
+                      <RequestCard key={r._id} r={r} variant="disbursementPending" companyKey={companyKey} />
                     ))}
                   </div>
                 </ScrollBox>
@@ -1088,7 +1046,7 @@ export default function RequestsPage({ companyKey }) {
                 <ScrollBox>
                   <div className="space-y-3">
                     {disbursedPaged.items.map((r) => (
-                      <RequestCard key={`disbursed-${r._id}`} r={r} />
+                      <RequestCard key={`disbursed-${r._id}`} r={r} companyKey={companyKey} />
                     ))}
                   </div>
                 </ScrollBox>
