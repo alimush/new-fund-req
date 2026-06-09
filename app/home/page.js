@@ -13,6 +13,7 @@ import {
   FiClock,
   FiCheckCircle,
   FiCreditCard,
+  FiLayers,
 } from "react-icons/fi";
 import { hasPermission, PERMISSIONS } from "@/lib/permission";
 import { COMPANIES } from "@/lib/voucher/companies";
@@ -36,8 +37,9 @@ const cards = [
   {
     key: "EX",
     name: "طلبات الحجز",
-    logo: "/ex.png",
     href: "/ex/ex-home",
+    Icon: FiLayers,
+    iconClass: "w-10 h-10 text-indigo-600",
   },
   
   { key: "Al-Rida", name: "طلبات الرضا", logo: "/الرضا.png" },
@@ -359,7 +361,9 @@ export default function HomePage() {
                   className="inline-flex items-center gap-1.5 rounded-xl bg-white/95 px-3 py-1.5 text-xs font-extrabold text-gray-800 ring-1 ring-slate-200 shadow-sm transition hover:-translate-y-0.5 hover:bg-white"
                 >
                   {card.Icon ? (
-                    <card.Icon className={card.color || "text-gray-700"} />
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-white ring-1 ring-slate-200/90 shadow-sm">
+                      <card.Icon className={`text-[15px] ${card.color || "text-gray-700"}`} />
+                    </span>
                   ) : (
                     <FiZap className="text-gray-700" />
                   )}
@@ -454,8 +458,10 @@ export default function HomePage() {
                     transition-all duration-300 group-hover:scale-[1.03]
                   "
                     >
-                      {c.isIcon ? (
-                        <c.Icon className={`w-10 h-10 ${c.color || "text-gray-700"} transition-transform duration-500 group-hover:scale-110`} />
+                      {c.Icon ? (
+                        <c.Icon
+                          className={`${c.iconClass || "w-10 h-10 text-gray-700"} transition-transform duration-500 group-hover:scale-110`}
+                        />
                       ) : (
                         <Image
                           src={c.logo || "/12.png"}
@@ -507,11 +513,15 @@ export default function HomePage() {
                   <div className="pointer-events-none absolute inset-0 rounded-3xl bg-gradient-to-br from-white/35 via-white/10 to-transparent opacity-90" />
                   <div className="relative flex h-20 w-20 items-center justify-center rounded-2xl bg-white/70 shadow-md ring-1 ring-white/40 backdrop-blur transition-all duration-300 group-hover:scale-[1.03]">
                     {c.Icon ? (
-                      <c.Icon
-                        className={`h-10 w-10 ${
-                          c.color || "text-gray-700"
-                        } transition-transform duration-500 group-hover:scale-110`}
-                      />
+                      <span
+                        className={`flex h-14 w-14 items-center justify-center rounded-xl ring-1 ring-slate-200/80 shadow-sm ${c.color ? "" : "bg-slate-50"}`}
+                      >
+                        <c.Icon
+                          className={`h-7 w-7 ${
+                            c.color || "text-gray-700"
+                          } transition-transform duration-500 group-hover:scale-110`}
+                        />
+                      </span>
                     ) : (
                       <FiZap className="h-10 w-10 text-gray-700" />
                     )}
