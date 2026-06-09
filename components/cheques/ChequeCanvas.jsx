@@ -9,7 +9,8 @@ import { getTodayDateParts, slashPositionBetween } from "@/lib/cheques/dateUtils
 import { isCanvasField } from "@/lib/cheques/templates";
 import {
   fieldDesignFontPx,
-  screenScaleFromWidth,
+  getChequeAspectRatioCss,
+  screenFontScaleFromWidth,
 } from "@/lib/cheques/chequeDesignMetrics";
 import {
   clampTextLayout,
@@ -55,7 +56,7 @@ export default function ChequeCanvas({
 }) {
   const containerRef = useRef(null);
   const dragRef = useRef(null);
-  const [designScale, setDesignScale] = useState(1);
+  const [fontScale, setFontScale] = useState(1);
 
   const list = fields || template?.fields || [];
   const fieldByKey = useMemo(
@@ -99,7 +100,7 @@ export default function ChequeCanvas({
     if (!el || !template) return;
 
     const update = () => {
-      setDesignScale(screenScaleFromWidth(el.offsetWidth, template));
+      setFontScale(screenFontScaleFromWidth(el.offsetWidth, template));
     };
     update();
     const ro = new ResizeObserver(update);
@@ -108,7 +109,7 @@ export default function ChequeCanvas({
   }, [template]);
 
   const slashFontPx =
-    fieldDesignFontPx(fieldByKey.dateDay, 14) * designScale;
+    fieldDesignFontPx(fieldByKey.dateDay, 14) * fontScale;
 
   const getRect = () => containerRef.current?.getBoundingClientRect();
 
@@ -284,7 +285,7 @@ export default function ChequeCanvas({
           value={values?.[f.key]}
           onChange={(val) => set(f.key, val)}
           variant="canvas"
-          designScale={designScale}
+          designScale={fontScale}
           isActive={!viewMode && (layoutMode ? isLayoutSelected : activeField === f.key)}
           readOnly={isReadOnly}
           onFocus={() => {
@@ -309,7 +310,7 @@ export default function ChequeCanvas({
           ? "ring-2 ring-amber-400 ring-offset-2 rounded-lg"
           : ""
       }`}
-      style={{ aspectRatio: template?.aspectRatio || "1024 / 470" }}
+      style={{ aspectRatio: getChequeAspectRatioCss(template) }}
     >
       {showTemplateImage ? (
         <Image
@@ -317,7 +318,7 @@ export default function ChequeCanvas({
           alt={template.name}
           fill
           priority
-          className="object-contain pointer-events-none"
+          className="object-fill pointer-events-none"
           sizes="(max-width: 1200px) 100vw, 900px"
         />
       ) : (
@@ -401,7 +402,7 @@ export default function ChequeCanvas({
                 value={values?.[TEXT_KEY]}
                 onChange={(val) => set(TEXT_KEY, val)}
                 variant="canvas"
-                designScale={designScale}
+                designScale={fontScale}
                 isActive={
                   layoutMode
                     ? layoutSelectedKey === TEXT_KEY

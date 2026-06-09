@@ -13,6 +13,21 @@ const FieldLayoutSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const PrintCalibSchema = new mongoose.Schema(
+  {
+    pageTopMm: { type: Number, default: 0 },
+    pageLeftMm: { type: Number, default: 0 },
+    widthMm: { type: Number, default: 0 },
+    heightMm: { type: Number, default: 0 },
+    offsetXmm: { type: Number, default: 0 },
+    offsetYmm: { type: Number, default: 0 },
+    scaleX: { type: Number, default: 100 },
+    scaleY: { type: Number, default: 100 },
+    fieldOffsets: { type: mongoose.Schema.Types.Mixed, default: {} },
+  },
+  { _id: false }
+);
+
 const ChequeLayoutSchema = new mongoose.Schema(
   {
     templateKey: {
@@ -23,6 +38,7 @@ const ChequeLayoutSchema = new mongoose.Schema(
     },
     fields: { type: [FieldLayoutSchema], default: [] },
     dateShowSlashes: { type: Boolean, default: true },
+    printCalib: { type: PrintCalibSchema, default: null },
     updatedBy: { type: String, default: "" },
   },
   { timestamps: true }

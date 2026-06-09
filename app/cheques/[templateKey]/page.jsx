@@ -10,9 +10,13 @@ import {
   FiMove,
   FiEdit3,
   FiPrinter,
+  FiSliders,
 } from "react-icons/fi";
-import { printChequeData } from "@/lib/cheques/printCheque";
+import { printChequeData, printChequeImageOnly, printChequeWithImage } from "@/lib/cheques/printCheque";
+import { defaultPrintCalib } from "@/lib/cheques/printCalib";
+import ChequePrintSettingsModal from "@/components/cheques/ChequePrintSettingsModal";
 import { getChequeTemplate, isValidChequeTemplateKey } from "@/lib/cheques/templates";
+import { getChequePrintDimensions } from "@/lib/cheques/chequePrintDimensions";
 import {
   fieldsFromTemplate,
   layoutPayloadFromFields,
@@ -41,17 +45,28 @@ export default function ChequeEditorPage() {
     [templateKey]
   );
 
+  const printDims = useMemo(
+    () => (baseTemplate ? getChequePrintDimensions(baseTemplate) : null),
+    [baseTemplate]
+  );
+
   const [mergedFields, setMergedFields] = useState([]);
   const [values, setValues] = useState({});
   const [activeField, setActiveField] = useState(null);
   const [layoutMode, setLayoutMode] = useState(false);
   const [layoutSelectedKey, setLayoutSelectedKey] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [printingImage, setPrintingImage] = useState(false);
+  const [printingWithData, setPrintingWithData] = useState(false);
+  const [printPreviewMode, setPrintPreviewMode] = useState(false);
   const [savingLayout, setSavingLayout] = useState(false);
   const [savingDateStyle, setSavingDateStyle] = useState(false);
   const [dateShowSlashes, setDateShowSlashes] = useState(true);
   const [textFieldLayout, setTextFieldLayout] = useState(null);
   const [lastSavedId, setLastSavedId] = useState(null);
+  const [printCalib, setPrintCalib] = useState(null);
+  const [printModal, setPrintModal] = useState({ open: false, mode: "data" });
+  const [printing, setPrinting] = useState(false);
 
   const template = baseTemplate;
 
@@ -80,6 +95,7 @@ export default function ChequeEditorPage() {
             typeof json.dateShowSlashes === "boolean"
               ? json.dateShowSlashes
               : fallbackSlashes,
+          printCalib: json.printCalib || defaultPrintCalib(baseTemplate, fields),
         };
       }
     } catch {
@@ -88,6 +104,10 @@ export default function ChequeEditorPage() {
     return {
       fields: fieldsFromTemplate(baseTemplate),
       dateShowSlashes: fallbackSlashes,
+      printCalib: defaultPrintCalib(
+        baseTemplate,
+        fieldsFromTemplate(baseTemplate)
+      ),
     };
   }, [baseTemplate, templateKey]);
 
@@ -107,10 +127,11 @@ export default function ChequeEditorPage() {
 
     let cancelled = false;
     (async () => {
-      const { fields, dateShowSlashes: slashes } = await loadLayout();
+      const { fields, dateShowSlashes: slashes, printCalib: calib } = await loadLayout();
       if (cancelled) return;
       setMergedFields(fields);
       setDateShowSlashes(slashes);
+      setPrintCalib(calib);
       setTextFieldLayout(getDefaultTextFieldLayout(fields));
       setValues(buildEmptyChequeValues(baseTemplate, fields));
       setLastSavedId(null);
@@ -219,6 +240,53 @@ export default function ChequeEditorPage() {
     showToast(`إعادة افتراضيات «${baseTemplate.name}» فقط — احفظ لتثبيتها`, "info");
   };
 
+  const openPrintModal = (mode) => {
+    if (!template || layoutMode) return;
+    setPrintModal({ open: true, mode });
+  };
+
+  const quickPrint = async (mode) => {
+    if (!template || layoutMode) return;
+    await runPrint(mode, null, false);
+  };
+
+  const runPrint = async (mode, calib, useProvidedCalib = false) => {
+    if (!template) return false;
+    const base = {
+      template,
+      templateKey,
+      fields: mergedFields,
+      values,
+      dateShowSlashes,
+      textFieldLayout,
+      title: template.name,
+      printCalib: calib,
+      useProvidedCalib,
+    };
+    if (mode === "data") {
+      return printChequeData({
+        ...base,
+        onStart: () => setPrinting(true),
+        onEnd: () => setPrinting(false),
+      });
+    }
+    if (mode === "withImage") {
+      return printChequeWithImage({
+        ...base,
+        onStart: () => setPrintingWithData(true),
+        onEnd: () => setPrintingWithData(false),
+      });
+    }
+    return printChequeImageOnly({
+      template,
+      fields: mergedFields,
+      title: template.name,
+      printCalib: calib,
+      onStart: () => setPrintingImage(true),
+      onEnd: () => setPrintingImage(false),
+    });
+  };
+
   const handleCreateAndPrint = async () => {
     if (!template || layoutMode) return;
     setSaving(true);
@@ -241,16 +309,8 @@ export default function ChequeEditorPage() {
       }
 
       setLastSavedId(json.data?._id);
-      showToast("تم الحفظ — جاري فتح الطباعة…", "success");
-
-      await printChequeData({
-        template,
-        fields: mergedFields,
-        values,
-        dateShowSlashes,
-        textFieldLayout,
-        title: template.name,
-      });
+      showToast("تم الحفظ — جاري الطباعة بإعدادات القالب…", "success");
+      await quickPrint("data");
     } catch {
       showToast("خطأ في الاتصال", "error");
     } finally {
@@ -334,6 +394,49 @@ export default function ChequeEditorPage() {
           </button>
           <button
             type="button"
+            onClick={() => setPrintPreviewMode((v) => !v)}
+            disabled={layoutMode}
+            title="معاينة بنفس أبعاد الطباعة بدون صورة القالب"
+            className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-extrabold disabled:opacity-50 ${
+              printPreviewMode
+                ? "bg-sky-600 text-white"
+                : "border border-sky-300 bg-sky-50 text-sky-900 hover:bg-sky-100"
+            }`}
+          >
+            {printPreviewMode ? "معاينة الصورة" : "معاينة الطباعة"}
+          </button>
+          <button
+            type="button"
+            onClick={() => quickPrint("data")}
+            disabled={printing || printingWithData || printingImage || saving || layoutMode}
+            title="طباعة البيانات على صك فارغ"
+            className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-slate-100 px-4 py-2.5 text-sm font-extrabold text-slate-900 hover:bg-slate-200 disabled:opacity-50"
+          >
+            <FiPrinter className={printing ? "animate-pulse" : ""} />
+            {printing ? "جاري الطباعة…" : "طباعة على صك فارغ"}
+          </button>
+          <button
+            type="button"
+            onClick={() => quickPrint("withImage")}
+            disabled={printingWithData || printingImage || printing || saving || layoutMode || !template?.image}
+            title="طباعة صورة الصك مع البيانات"
+            className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-extrabold text-white hover:bg-emerald-700 disabled:opacity-50"
+          >
+            <FiPrinter className={printingWithData ? "animate-pulse" : ""} />
+            {printingWithData ? "جاري الطباعة…" : "طباعة الصك والبيانات"}
+          </button>
+          <button
+            type="button"
+            onClick={() => quickPrint("imageOnly")}
+            disabled={printingImage || printingWithData || printing || saving || layoutMode || !template?.image}
+            title="طباعة صورة الصك فقط بدون بيانات — للتجربة"
+            className="inline-flex items-center gap-2 rounded-xl border border-violet-300 bg-violet-50 px-4 py-2.5 text-sm font-extrabold text-violet-900 hover:bg-violet-100 disabled:opacity-50"
+          >
+            <FiPrinter className={printingImage ? "animate-pulse" : ""} />
+            {printingImage ? "جاري الطباعة…" : "طباعة الصك"}
+          </button>
+          <button
+            type="button"
             onClick={handleCreateAndPrint}
             disabled={saving || layoutMode}
             title="يحفظ الصك ثم يطبع البيانات على صك فارغ في الطابعة"
@@ -341,6 +444,16 @@ export default function ChequeEditorPage() {
           >
             <FiPrinter className={saving ? "animate-pulse" : ""} />
             {saving ? "جاري الإنشاء والطباعة…" : "إنشاء وطباعة"}
+          </button>
+          <button
+            type="button"
+            onClick={() => openPrintModal("data")}
+            disabled={layoutMode}
+            title="ضبط إعدادات الطباعة المحفوظة لهذا القالب"
+            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-extrabold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+          >
+            <FiSliders />
+            ضبط الطباعة
           </button>
         </div>
       </div>
@@ -393,6 +506,8 @@ export default function ChequeEditorPage() {
           <p className="hidden md:block text-xs font-bold text-slate-500 mb-3 text-center">
             {layoutMode
               ? "لتعديل افتراضي text (المستشار): اختر text واسحبه أو عدّل X/Y — ثم احفظ التخطيط"
+              : printPreviewMode
+              ? `معاينة الطباعة — ${printDims?.widthMm ?? "?"}×${printDims?.heightMm ?? "?"} مم (بيانات فقط على صك فارغ)`
               : "مربع text (أزرق): تحريك/تكبير لهذا الصك فقط — الافتراضي من «ترتيب الحقول»"}
           </p>
           <ChequeCanvas
@@ -411,9 +526,26 @@ export default function ChequeEditorPage() {
             textFieldLayout={textFieldLayout}
             onTextFieldLayoutChange={setTextFieldLayout}
             textFieldAdjustable={!layoutMode}
+            printMode={printPreviewMode}
           />
         </motion.div>
       </div>
+
+      <ChequePrintSettingsModal
+        open={printModal.open}
+        mode={printModal.mode}
+        template={template}
+        templateKey={templateKey}
+        initialCalib={printCalib}
+        canSave={canLayoutEditor}
+        previewFields={mergedFields}
+        previewValues={values}
+        dateShowSlashes={dateShowSlashes}
+        textFieldLayout={textFieldLayout}
+        onClose={() => setPrintModal({ open: false, mode: "data" })}
+        onSaved={(saved) => setPrintCalib(saved)}
+        onPrint={(calib) => runPrint(printModal.mode, calib, true)}
+      />
     </div>
   );
 }

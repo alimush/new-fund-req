@@ -8,9 +8,15 @@ import {
   isValidChequeTemplateKey,
 } from "@/lib/cheques/templates";
 import {
+  fieldsFromTemplate,
   filterLayoutForTemplate,
   layoutPayloadFromFields,
+  mergeTemplateFields,
 } from "@/lib/cheques/mergeFields";
+import {
+  normalizePrintCalib,
+  printCalibPayload,
+} from "@/lib/cheques/printCalib";
 import {
   requireChequeAccess,
   requireChequeEditor,
@@ -53,11 +59,16 @@ export async function GET(req) {
         ? doc.dateShowSlashes
         : tpl?.dateShowSlashesDefault ?? true;
 
+    const mergedFields =
+      data.length > 0 ? mergeTemplateFields(tpl, data) : fieldsFromTemplate(tpl);
+    const printCalib = normalizePrintCalib(doc?.printCalib, tpl, mergedFields);
+
     return NextResponse.json({
       success: true,
       templateKey,
       data,
       dateShowSlashes,
+      printCalib,
       updatedAt: doc?.updatedAt || null,
     });
   } catch (err) {
@@ -99,22 +110,54 @@ export async function POST(req) {
     }
 
     const tpl = getChequeTemplate(templateKey);
+    const printCalibOnly = Boolean(body?.printCalibOnly);
+
+    if (printCalibOnly) {
+      const existing = await ChequeLayout.findOne({ templateKey }).lean();
+      const existingLayout = filterLayoutForTemplate(tpl, existing?.fields || []);
+      const existingFields =
+        existingLayout.length > 0
+          ? mergeTemplateFields(tpl, existingLayout)
+          : fieldsFromTemplate(tpl);
+      const printCalib = printCalibPayload(body?.printCalib, tpl, existingFields);
+      const doc = await ChequeLayout.findOneAndUpdate(
+        { templateKey },
+        {
+          $set: {
+            templateKey,
+            printCalib,
+            updatedBy: username,
+          },
+        },
+        { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true }
+      ).lean();
+
+      return NextResponse.json({
+        success: true,
+        templateKey,
+        printCalib: normalizePrintCalib(doc?.printCalib, tpl, existingFields),
+      });
+    }
+
     const fields = layoutPayloadFromFields(body?.fields || [], tpl);
     const dateShowSlashes =
       typeof body?.dateShowSlashes === "boolean"
         ? body.dateShowSlashes
         : tpl?.dateShowSlashesDefault ?? true;
 
+    const update = {
+      templateKey,
+      fields,
+      dateShowSlashes,
+      updatedBy: username,
+    };
+    if (body?.printCalib != null) {
+      update.printCalib = printCalibPayload(body.printCalib, tpl, fields);
+    }
+
     const doc = await ChequeLayout.findOneAndUpdate(
       { templateKey },
-      {
-        $set: {
-          templateKey,
-          fields,
-          dateShowSlashes,
-          updatedBy: username,
-        },
-      },
+      { $set: update },
       { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true }
     ).lean();
 
@@ -127,6 +170,7 @@ export async function POST(req) {
       success: true,
       templateKey,
       dateShowSlashes: savedSlashes,
+      printCalib: normalizePrintCalib(doc?.printCalib, tpl, fields),
       data: { ...doc, fields, dateShowSlashes: savedSlashes },
     });
   } catch (err) {

@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   FiX,
   FiPrinter,
+  FiSliders,
   FiExternalLink,
   FiHash,
   FiCalendar,
@@ -25,7 +26,10 @@ import {
   formatChequeDateParts,
   formatSavedAt,
 } from "@/lib/cheques/formatCheque";
-import { printChequeData } from "@/lib/cheques/printCheque";
+import { printChequeData, printChequeImageOnly, printChequeWithImage } from "@/lib/cheques/printCheque";
+import { defaultPrintCalib } from "@/lib/cheques/printCalib";
+import ChequePrintSettingsModal from "@/components/cheques/ChequePrintSettingsModal";
+import { useChequeAccess } from "@/components/cheques/useChequeAccess";
 
 function MetaRow({ icon: Icon, label, value }) {
   return (
@@ -84,6 +88,7 @@ export function ChequeViewContent({ chequeId, onReady, className = "" }) {
 
       let fields = fieldsFromTemplate(tpl);
       let slashes = tpl.dateShowSlashesDefault ?? true;
+      let printCalib = defaultPrintCalib(tpl, fields);
 
       try {
         const layoutRes = await fetch(
@@ -98,6 +103,7 @@ export function ChequeViewContent({ chequeId, onReady, className = "" }) {
           if (typeof layoutJson.dateShowSlashes === "boolean") {
             slashes = layoutJson.dateShowSlashes;
           }
+          printCalib = layoutJson.printCalib || defaultPrintCalib(tpl, fields);
         }
       } catch {
         //
@@ -109,10 +115,12 @@ export function ChequeViewContent({ chequeId, onReady, className = "" }) {
       setValues(vals);
       onReady?.({
         template: tpl,
+        templateKey: data.templateKey,
         fields,
         values: vals,
         dateShowSlashes: slashes,
         textFieldLayout: data.textFieldLayout || null,
+        printCalib,
         doc: data,
       });
     } catch (err) {
@@ -197,9 +205,13 @@ export function ChequeViewContent({ chequeId, onReady, className = "" }) {
 }
 
 export default function ChequeViewDrawer({ open, chequeId, onClose }) {
+  const { canLayoutEditor } = useChequeAccess();
   const [portalReady, setPortalReady] = useState(false);
   const [printing, setPrinting] = useState(false);
+  const [printingImage, setPrintingImage] = useState(false);
+  const [printingWithData, setPrintingWithData] = useState(false);
   const [printPayload, setPrintPayload] = useState(null);
+  const [printModal, setPrintModal] = useState({ open: false, mode: "data" });
 
   useEffect(() => setPortalReady(true), []);
 
@@ -216,18 +228,52 @@ export default function ChequeViewDrawer({ open, chequeId, onClose }) {
     };
   }, [open, onClose]);
 
-  const handlePrint = async () => {
-    if (!printPayload?.template) return;
-    const title =
-      [printPayload.doc?.templateName, printPayload.doc?.chequeNumber]
-        .filter(Boolean)
-        .join(" — ") || "صك";
-    await printChequeData({
+  const printTitle =
+    [printPayload?.doc?.templateName, printPayload?.doc?.chequeNumber]
+      .filter(Boolean)
+      .join(" — ") || "صك";
+
+  const runPrint = async (mode, printCalib, useProvidedCalib = false) => {
+    if (!printPayload?.template) return false;
+    const base = {
       ...printPayload,
-      title,
-      onStart: () => setPrinting(true),
-      onEnd: () => setPrinting(false),
+      title: printTitle,
+      printCalib,
+      useProvidedCalib,
+    };
+    if (mode === "data") {
+      return printChequeData({
+        ...base,
+        onStart: () => setPrinting(true),
+        onEnd: () => setPrinting(false),
+      });
+    }
+    if (mode === "withImage") {
+      return printChequeWithImage({
+        ...base,
+        onStart: () => setPrintingWithData(true),
+        onEnd: () => setPrintingWithData(false),
+      });
+    }
+    return printChequeImageOnly({
+      template: printPayload.template,
+      fields: printPayload.fields,
+      title: printTitle,
+      printCalib,
+      onStart: () => setPrintingImage(true),
+      onEnd: () => setPrintingImage(false),
     });
+  };
+
+  const openPrintModal = (mode) => {
+    if (!printPayload?.template) return;
+    setPrintModal({ open: true, mode });
+  };
+
+  /** طباعة مباشرة — يحمّل القالب المحفوظ تلقائياً */
+  const quickPrint = async (mode) => {
+    if (!printPayload?.template) return;
+    await runPrint(mode, null, false);
   };
 
   if (!portalReady) return null;
@@ -263,12 +309,47 @@ export default function ChequeViewDrawer({ open, chequeId, onClose }) {
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
-                  onClick={handlePrint}
-                  disabled={printing}
+                  onClick={() => quickPrint("data")}
+                  disabled={printing || printingImage || printingWithData || !printPayload?.template}
                   className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-extrabold text-white hover:bg-slate-800 disabled:opacity-60"
                 >
                   <FiPrinter className={printing ? "animate-pulse" : ""} />
                   {printing ? "جاري الطباعة…" : "طباعة على صك فارغ"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => quickPrint("withImage")}
+                  disabled={
+                    printing ||
+                    printingImage ||
+                    printingWithData ||
+                    !printPayload?.template?.image
+                  }
+                  title="طباعة صورة الصك مع البيانات"
+                  className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-extrabold text-white hover:bg-emerald-700 disabled:opacity-60"
+                >
+                  <FiPrinter className={printingWithData ? "animate-pulse" : ""} />
+                  {printingWithData ? "جاري الطباعة…" : "طباعة الصك والبيانات"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => quickPrint("imageOnly")}
+                  disabled={printing || printingImage || printingWithData || !printPayload?.template?.image}
+                  title="طباعة صورة الصك فقط بدون بيانات — للتجربة"
+                  className="inline-flex items-center gap-2 rounded-xl border border-violet-300 bg-violet-50 px-4 py-2 text-sm font-extrabold text-violet-900 hover:bg-violet-100 disabled:opacity-60"
+                >
+                  <FiPrinter className={printingImage ? "animate-pulse" : ""} />
+                  {printingImage ? "جاري الطباعة…" : "طباعة الصك"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => openPrintModal("data")}
+                  disabled={!printPayload?.template}
+                  title="ضبط إعدادات الطباعة المحفوظة لهذا القالب"
+                  className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-extrabold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                >
+                  <FiSliders />
+                  ضبط الطباعة
                 </button>
                 <Link
                   href={`/cheques/view?id=${encodeURIComponent(chequeId)}`}
@@ -302,6 +383,23 @@ export default function ChequeViewDrawer({ open, chequeId, onClose }) {
           </motion.div>
         </motion.div>
       ) : null}
+      <ChequePrintSettingsModal
+        open={printModal.open}
+        mode={printModal.mode}
+        template={printPayload?.template}
+        templateKey={printPayload?.templateKey}
+        initialCalib={printPayload?.printCalib}
+        canSave={canLayoutEditor}
+        previewFields={printPayload?.fields}
+        previewValues={printPayload?.values}
+        dateShowSlashes={printPayload?.dateShowSlashes}
+        textFieldLayout={printPayload?.textFieldLayout}
+        onClose={() => setPrintModal({ open: false, mode: "data" })}
+        onSaved={(saved) =>
+          setPrintPayload((prev) => (prev ? { ...prev, printCalib: saved } : prev))
+        }
+        onPrint={(calib) => runPrint(printModal.mode, calib, true)}
+      />
     </AnimatePresence>,
     document.body
   );

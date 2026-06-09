@@ -3,31 +3,74 @@
 import { Suspense, useCallback, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { FiArrowRight, FiPrinter } from "react-icons/fi";
+import { FiArrowRight, FiPrinter, FiSliders } from "react-icons/fi";
 import { ChequeViewContent } from "@/components/cheques/ChequeViewDrawer";
-import { printChequeData } from "@/lib/cheques/printCheque";
+import { printChequeData, printChequeImageOnly, printChequeWithImage } from "@/lib/cheques/printCheque";
+import ChequePrintSettingsModal from "@/components/cheques/ChequePrintSettingsModal";
 import { useChequeAccess } from "@/components/cheques/useChequeAccess";
 
 function ChequeViewInner() {
   const searchParams = useSearchParams();
   const id = String(searchParams.get("id") || "").trim();
-  const { canUseCheques, ready } = useChequeAccess();
+  const { canUseCheques, canLayoutEditor, ready } = useChequeAccess();
   const [printing, setPrinting] = useState(false);
+  const [printingImage, setPrintingImage] = useState(false);
+  const [printingWithData, setPrintingWithData] = useState(false);
   const [printPayload, setPrintPayload] = useState(null);
+  const [printModal, setPrintModal] = useState({ open: false, mode: "data" });
 
-  const handlePrint = useCallback(async () => {
+  const printTitle =
+    [printPayload?.doc?.templateName, printPayload?.doc?.chequeNumber]
+      .filter(Boolean)
+      .join(" — ") || "صك";
+
+  const runPrint = useCallback(
+    async (mode, printCalib, useProvidedCalib = false) => {
+      if (!printPayload?.template) return false;
+      const base = {
+        ...printPayload,
+        title: printTitle,
+        printCalib,
+        useProvidedCalib,
+      };
+      if (mode === "data") {
+        return printChequeData({
+          ...base,
+          onStart: () => setPrinting(true),
+          onEnd: () => setPrinting(false),
+        });
+      }
+      if (mode === "withImage") {
+        return printChequeWithImage({
+          ...base,
+          onStart: () => setPrintingWithData(true),
+          onEnd: () => setPrintingWithData(false),
+        });
+      }
+      return printChequeImageOnly({
+        template: printPayload.template,
+        fields: printPayload.fields,
+        title: printTitle,
+        printCalib,
+        onStart: () => setPrintingImage(true),
+        onEnd: () => setPrintingImage(false),
+      });
+    },
+    [printPayload, printTitle]
+  );
+
+  const openPrintModal = (mode) => {
     if (!printPayload?.template) return;
-    const title =
-      [printPayload.doc?.templateName, printPayload.doc?.chequeNumber]
-        .filter(Boolean)
-        .join(" — ") || "صك";
-    await printChequeData({
-      ...printPayload,
-      title,
-      onStart: () => setPrinting(true),
-      onEnd: () => setPrinting(false),
-    });
-  }, [printPayload]);
+    setPrintModal({ open: true, mode });
+  };
+
+  const quickPrint = useCallback(
+    async (mode) => {
+      if (!printPayload?.template) return;
+      await runPrint(mode, null, false);
+    },
+    [printPayload, runPrint]
+  );
 
   if (!ready || !canUseCheques) {
     return (
@@ -61,20 +104,74 @@ function ChequeViewInner() {
           </Link>
           <h1 className="text-xl md:text-2xl font-extrabold text-slate-900">معاينة الصك</h1>
           <p className="text-sm font-semibold text-slate-500 mt-1">
-            الصورة للمعاينة — الطباعة بيانات فقط على الصك الفارغ في الطابعة
+            الطباعة تستخدم إعدادات القالب المحفوظة — كل نوع صك له ضبط مستقل
           </p>
         </div>
-        <button
-          type="button"
-          onClick={handlePrint}
-          disabled={printing || !printPayload}
-          className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-extrabold text-white hover:bg-slate-800 disabled:opacity-60"
-        >
-          <FiPrinter className={printing ? "animate-pulse" : ""} />
-          {printing ? "جاري الطباعة…" : "طباعة على صك فارغ"}
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => quickPrint("data")}
+            disabled={printing || printingImage || printingWithData || !printPayload}
+            className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-extrabold text-white hover:bg-slate-800 disabled:opacity-60"
+          >
+            <FiPrinter className={printing ? "animate-pulse" : ""} />
+            {printing ? "جاري الطباعة…" : "طباعة على صك فارغ"}
+          </button>
+          <button
+            type="button"
+            onClick={() => quickPrint("withImage")}
+            disabled={
+              printing ||
+              printingImage ||
+              printingWithData ||
+              !printPayload?.template?.image
+            }
+            title="طباعة صورة الصك مع البيانات"
+            className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-extrabold text-white hover:bg-emerald-700 disabled:opacity-60"
+          >
+            <FiPrinter className={printingWithData ? "animate-pulse" : ""} />
+            {printingWithData ? "جاري الطباعة…" : "طباعة الصك والبيانات"}
+          </button>
+          <button
+            type="button"
+            onClick={() => quickPrint("imageOnly")}
+            disabled={printing || printingImage || printingWithData || !printPayload?.template?.image}
+            title="طباعة صورة الصك فقط بدون بيانات — للتجربة"
+            className="inline-flex items-center gap-2 rounded-xl border border-violet-300 bg-violet-50 px-4 py-2.5 text-sm font-extrabold text-violet-900 hover:bg-violet-100 disabled:opacity-60"
+          >
+            <FiPrinter className={printingImage ? "animate-pulse" : ""} />
+            {printingImage ? "جاري الطباعة…" : "طباعة الصك"}
+          </button>
+          <button
+            type="button"
+            onClick={() => openPrintModal("data")}
+            disabled={!printPayload}
+            title="ضبط إعدادات الطباعة المحفوظة لهذا القالب"
+            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-extrabold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+          >
+            <FiSliders />
+            ضبط الطباعة
+          </button>
+        </div>
       </div>
       <ChequeViewContent chequeId={id} onReady={setPrintPayload} />
+      <ChequePrintSettingsModal
+        open={printModal.open}
+        mode={printModal.mode}
+        template={printPayload?.template}
+        templateKey={printPayload?.templateKey}
+        initialCalib={printPayload?.printCalib}
+        canSave={canLayoutEditor}
+        previewFields={printPayload?.fields}
+        previewValues={printPayload?.values}
+        dateShowSlashes={printPayload?.dateShowSlashes}
+        textFieldLayout={printPayload?.textFieldLayout}
+        onClose={() => setPrintModal({ open: false, mode: "data" })}
+        onSaved={(saved) =>
+          setPrintPayload((prev) => (prev ? { ...prev, printCalib: saved } : prev))
+        }
+        onPrint={(calib) => runPrint(printModal.mode, calib, true)}
+      />
     </div>
   );
 }
