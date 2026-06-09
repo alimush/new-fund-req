@@ -120,6 +120,121 @@ function amountMatchesPart(total, part) {
 
 const SUGGEST_AMOUNT_SCAN_PER_COMPANY = 100;
 
+const REPORT_LIST_SELECT =
+  "requestCode requestType createdBy status department currency description createdAt items workflow currentStep";
+
+async function countDocsBySource({ source, companyList, queryBase }) {
+  if (source === "old") {
+    return RequestOldData.countDocuments({
+      ...queryBase,
+      companyKey: { $in: companyList },
+    });
+  }
+
+  const counts = await Promise.all(
+    companyList.map(async (companyKey) => {
+      const Model = getModelForCompany(companyKey);
+      return Model.countDocuments(queryBase);
+    })
+  );
+
+  return counts.reduce((sum, n) => sum + (Number(n) || 0), 0);
+}
+
+async function fetchPageDocsBySource({
+  source,
+  companyList,
+  queryBase,
+  page,
+  pageSize,
+  select = REPORT_LIST_SELECT,
+}) {
+  const skip = (page - 1) * pageSize;
+
+  if (source === "old") {
+    return RequestOldData.find({
+      ...queryBase,
+      companyKey: { $in: companyList },
+    })
+      .select(select)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(pageSize)
+      .lean();
+  }
+
+  if (companyList.length === 1) {
+    const companyKey = companyList[0];
+    const Model = getModelForCompany(companyKey);
+    const docs = await Model.find(queryBase)
+      .select(select)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(pageSize)
+      .lean();
+    return (docs || []).map((d) => ({ ...d, companyKey }));
+  }
+
+  const fetchLimit = page * pageSize;
+  const perCompany = await Promise.all(
+    companyList.map(async (companyKey) => {
+      const Model = getModelForCompany(companyKey);
+      const docs = await Model.find(queryBase)
+        .select(select)
+        .sort({ createdAt: -1 })
+        .limit(fetchLimit)
+        .lean();
+      return (docs || []).map((d) => ({ ...d, companyKey }));
+    })
+  );
+
+  const merged = perCompany.flat();
+  merged.sort((a, b) => {
+    const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+    const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+    return tb - ta;
+  });
+
+  return merged.slice(skip, skip + pageSize);
+}
+
+function enrichReportDocs(docs) {
+  for (const d of docs) {
+    d.pendingWithIds = computePendingWithIds(d);
+    d.totalAmount = computeTotalAmount(d);
+  }
+  return docs;
+}
+
+async function attachPendingNames(pageDocs) {
+  const allPendingIds = new Set();
+  for (const d of pageDocs) {
+    (d.pendingWithIds || []).forEach((id) => allPendingIds.add(String(id)));
+  }
+
+  if (!allPendingIds.size) {
+    return pageDocs.map((d) => ({ ...d, pendingWithNames: [] }));
+  }
+
+  const users = await User.find({ _id: { $in: Array.from(allPendingIds) } })
+    .select("_id username")
+    .lean();
+
+  const pendingNameMap = new Map(users.map((u) => [String(u._id), u.username]));
+
+  return pageDocs.map((d) => ({
+    ...d,
+    pendingWithNames: (d.pendingWithIds || [])
+      .map((id) => pendingNameMap.get(String(id)))
+      .filter(Boolean),
+  }));
+}
+
+function buildSearchMeta({ total, page, pageSize }) {
+  const totalPages = total ? Math.ceil(total / pageSize) : 0;
+  return { total, totalPages, page, pageSize };
+}
+
 function collectAmountSuggestions(docs, digitPart) {
   const part = String(digitPart || "").replace(/,/g, "").trim();
   if (!part || !/\d/.test(part)) return [];
@@ -239,10 +354,11 @@ export async function GET(req) {
       );
     }
 
-    const currentUser = await User.findById(userId).select("username").lean();
+    const [{ allowedCompanies, allowedPerms }, currentUser] = await Promise.all([
+      getUserAccess(userId),
+      User.findById(userId).select("username").lean(),
+    ]);
     const currentUsername = String(currentUser?.username || "").trim();
-
-    const { allowedCompanies, allowedPerms } = await getUserAccess(userId);
 
     const canViewReports = allowedPerms.includes(PERMISSIONS.VIEW_REPORTS);
     const canViewAllReports = allowedPerms.includes(
@@ -460,26 +576,10 @@ export async function GET(req) {
     }
 
     if (!companyList.length) {
-      const pendingUsers = await User.find({}).select("_id username").lean();
-
       return NextResponse.json({
         success: true,
-        filters: {
-          companies: allowedCompanies,
-          users: canViewAllReports
-            ? []
-            : currentUsername
-            ? [currentUsername]
-            : [],
-          currencies: [],
-          statuses: [],
-          pendingUsers: pendingUsers.map((u) => ({
-            value: String(u._id),
-            label: u.username,
-          })),
-        },
         data: [],
-        meta: { total: 0, totalPages: 0, page, pageSize },
+        meta: buildSearchMeta({ total: 0, page, pageSize }),
       });
     }
 
@@ -545,12 +645,10 @@ export async function GET(req) {
         source,
         companyList,
         queryBase,
+        select: REPORT_LIST_SELECT,
       });
 
-      for (const d of mergedAll) {
-        d.pendingWithIds = computePendingWithIds(d);
-        d.totalAmount = computeTotalAmount(d);
-      }
+      enrichReportDocs(mergedAll);
 
       if (pendingParam !== "all") {
         const p = String(pendingParam);
@@ -575,173 +673,46 @@ export async function GET(req) {
       });
 
       const totalHeavy = mergedAll.length;
-      const totalPagesHeavy = totalHeavy ? Math.ceil(totalHeavy / pageSize) : 0;
-
       const start = (page - 1) * pageSize;
       const pageDocs = mergedAll.slice(start, start + pageSize);
-
-      const allPendingIds = new Set();
-      for (const d of pageDocs) {
-        (d.pendingWithIds || []).forEach((id) => allPendingIds.add(String(id)));
-      }
-
-      let pendingNameMap = new Map();
-      if (allPendingIds.size > 0) {
-        const users = await User.find({ _id: { $in: Array.from(allPendingIds) } })
-          .select("_id username")
-          .lean();
-
-        pendingNameMap = new Map(
-          users.map((u) => [String(u._id), u.username])
-        );
-      }
-
-      const finalData = pageDocs.map((d) => ({
-        ...d,
-        pendingWithNames: (d.pendingWithIds || [])
-          .map((id) => pendingNameMap.get(String(id)))
-          .filter(Boolean),
-      }));
-
-      const pageUsers = new Set();
-      const pageCurrencies = new Set();
-      const pageStatuses = new Set();
-
-      for (const d of finalData) {
-        if (d.createdBy) pageUsers.add(d.createdBy);
-        if (d.currency) pageCurrencies.add(d.currency);
-        if (d.status) pageStatuses.add(d.status);
-      }
-
-      const pendingUsers = await User.find({}).select("_id username").lean();
+      const finalData = await attachPendingNames(pageDocs);
 
       return NextResponse.json({
         success: true,
-        filters: {
-          companies: companyList,
-          users: canViewAllReports
-            ? Array.from(pageUsers)
-            : currentUsername
-            ? [currentUsername]
-            : [],
-          currencies: Array.from(pageCurrencies),
-          statuses: Array.from(pageStatuses),
-          pendingUsers: pendingUsers.map((u) => ({
-            value: String(u._id),
-            label: u.username,
-          })),
-        },
         data: finalData,
-        meta: {
-          total: totalHeavy,
-          totalPages: totalPagesHeavy,
-          page,
-          pageSize,
-        },
+        meta: buildSearchMeta({ total: totalHeavy, page, pageSize }),
       });
     }
 
     // =========================
-    // NORMAL MODE
+    // NORMAL MODE (DB pagination)
     // =========================
-    let merged = await getDocsBySource({
-      source,
-      companyList,
-      queryBase,
-    });
-
-    for (const d of merged) {
-      d.pendingWithIds = computePendingWithIds(d);
-      d.totalAmount = computeTotalAmount(d);
-    }
-
-    merged.sort((a, b) => {
-      const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-      const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-      return tb - ta;
-    });
-
-    const total = merged.length;
-    const totalPages = total ? Math.ceil(total / pageSize) : 0;
+    const [total, pageDocsRaw] = await Promise.all([
+      countDocsBySource({ source, companyList, queryBase }),
+      fetchPageDocsBySource({
+        source,
+        companyList,
+        queryBase,
+        page,
+        pageSize,
+      }),
+    ]);
 
     if (!total) {
-      const pendingUsers = await User.find({}).select("_id username").lean();
-
       return NextResponse.json({
         success: true,
-        filters: {
-          companies: companyList,
-          users: canViewAllReports
-            ? []
-            : currentUsername
-            ? [currentUsername]
-            : [],
-          currencies: [],
-          statuses: [],
-          pendingUsers: pendingUsers.map((u) => ({
-            value: String(u._id),
-            label: u.username,
-          })),
-        },
         data: [],
-        meta: { total: 0, totalPages: 0, page, pageSize },
+        meta: buildSearchMeta({ total: 0, page, pageSize }),
       });
     }
 
-    const start = (page - 1) * pageSize;
-    const pageDocs = merged.slice(start, start + pageSize);
-
-    const allPendingIds = new Set();
-    for (const d of pageDocs) {
-      (d.pendingWithIds || []).forEach((id) => allPendingIds.add(String(id)));
-    }
-
-    let pendingNameMap = new Map();
-    if (allPendingIds.size > 0) {
-      const users = await User.find({ _id: { $in: Array.from(allPendingIds) } })
-        .select("_id username")
-        .lean();
-
-      pendingNameMap = new Map(users.map((u) => [String(u._id), u.username]));
-    }
-
-    const finalData = pageDocs.map((d) => ({
-      ...d,
-      pendingWithNames: (d.pendingWithIds || [])
-        .map((id) => pendingNameMap.get(String(id)))
-        .filter(Boolean),
-    }));
-
-    const pageUsers = new Set();
-    const pageCurrencies = new Set();
-    const pageStatuses = new Set();
-
-    for (const d of finalData) {
-      if (d.createdBy) pageUsers.add(d.createdBy);
-      if (d.currency) pageCurrencies.add(d.currency);
-      if (d.status) pageStatuses.add(d.status);
-    }
-
-    const pendingUsers = await User.find({}).select("_id username").lean();
+    enrichReportDocs(pageDocsRaw);
+    const finalData = await attachPendingNames(pageDocsRaw);
 
     return NextResponse.json({
       success: true,
-      filters: {
-        companies: companyList,
-        users: canViewAllReports
-          ? Array.from(pageUsers)
-          : currentUsername
-          ? [currentUsername]
-          : [],
-        currencies: Array.from(pageCurrencies),
-        statuses: Array.from(pageStatuses),
-        pendingUsers: pendingUsers.map((u) => ({
-          value: String(u._id),
-          label: u.username,
-        })),
-      },
       data: finalData,
-      meta: { total, totalPages, page, pageSize },
+      meta: buildSearchMeta({ total, page, pageSize }),
     });
   } catch (err) {
     console.error("❌ Reports API Error:", err);
