@@ -194,7 +194,7 @@ export async function GET(req, { params }) {
       data: {
         ...plain,
         disbursement: {
-          isDisbursed: disbursement.isDisbursed,
+          isDisbursed: disbursement.isDisbursed || disbursement.stepDisbursed,
           hasVoucher: disbursement.hasVoucher,
           stepDisbursed: disbursement.stepDisbursed,
           voucherNo: disbursement.voucherNo,
@@ -337,7 +337,7 @@ if (action === "update") {
   return NextResponse.json({ success: true, data: request });
 }
     /* ================= VALID ACTION ================= */
-    if (action !== "approve" && action !== "reject" && action !== "delegate_voucher") {
+    if (action !== "approve" && action !== "reject" && action !== "delegate_voucher" && action !== "delegate_disburse_approve") {
       return NextResponse.json({ success: false, error: "Invalid action" }, { status: 400 });
     }
 
@@ -366,12 +366,62 @@ if (action === "update") {
       return NextResponse.json({ success: false, error: "Request is cancelled" }, { status: 400 });
     }
 
-    if (action !== "delegate_voucher" && step.status !== "Pending") {
+    if (action !== "delegate_voucher" && action !== "delegate_disburse_approve" && step.status !== "Pending") {
       return NextResponse.json({ success: false, error: "Step already processed" }, { status: 400 });
+    }
+
+    if (action === "delegate_disburse_approve") {
+      const lastIdx = request.workflow.steps.length - 1;
+      const isFinalApprovedStep =
+        request.status === "Approved" && stepIndex === lastIdx && step.status === "Approved";
+
+      if (!isFinalApprovedStep) {
+        return NextResponse.json(
+          { success: false, error: "Approve disbursement is allowed only on final approved step" },
+          { status: 400 }
+        );
+      }
+
+      const currentUserDoc = await User.findById(userId).select("username").lean();
+      const currentUsername = String(currentUserDoc?.username || "").trim();
+      const delegatedToId = step?.voucherDelegateTo ? String(step.voucherDelegateTo) : "";
+      const delegatedUsername = String(step?.voucherDelegateToUsername || "").trim();
+      const isDelegatedUser =
+        (delegatedToId && delegatedToId === String(userId)) ||
+        (delegatedUsername && delegatedUsername === currentUsername);
+
+      if (!isDelegatedUser) {
+        return NextResponse.json(
+          { success: false, error: "Only the delegated user can approve disbursement" },
+          { status: 403 }
+        );
+      }
+
+      if (step?.voucherProcessedBy || step?.voucherProcessedAt) {
+        return NextResponse.json(
+          { success: false, error: "Disbursement already approved" },
+          { status: 400 }
+        );
+      }
+
+      step.voucherProcessedBy = userId;
+      step.voucherProcessedAt = new Date();
+      step.voucherProcessedByUsername = currentUsername;
+
+      request.approvalHistory.push({
+        user: userId,
+        action: "delegate_disburse_approve",
+        note: note || "",
+        date: new Date(),
+      });
+
+      await request.save();
+      return NextResponse.json({ success: true, data: request });
     }
 
     // authorization (هنا step.users عادة ObjectId)
     const isAuthorized = (step.users || []).some((u) => String(u) === String(userId));
+
     if (action === "delegate_voucher") {
       let delegateToUserId = String(body?.delegateToUserId || "").trim();
       const delegateToUsername = String(body?.delegateToUsername || "").trim();

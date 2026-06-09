@@ -35,6 +35,7 @@ const ChequeSchema = new mongoose.Schema(
 
     customer: { type: String, default: "" },
     payee: { type: String, default: "" },
+    governorate: { type: String, default: "" },
 
     amountNumeric: { type: Number, default: 0 },
     amountWords: { type: String, default: "" },

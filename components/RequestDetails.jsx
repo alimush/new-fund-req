@@ -59,6 +59,7 @@ export default function RequestDetails({ id, companyKey }) {
   const [showVoucherModal, setShowVoucherModal] = useState(false);
   const [delegateUserId, setDelegateUserId] = useState("");
   const [delegating, setDelegating] = useState(false);
+  const [approvingDisburse, setApprovingDisburse] = useState(false);
 
   const fmt = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
 
@@ -98,12 +99,15 @@ export default function RequestDetails({ id, companyKey }) {
       lastWorkflowStep?.voucherNo ||
       lastWorkflowStep?.voucherId
   );
+  const delegateDisburseApproved = Boolean(
+    lastWorkflowStep?.voucherProcessedAt || lastWorkflowStep?.voucherProcessedBy
+  );
   const disbursement = request?.disbursement;
   const hasLinkedVoucher = Boolean(disbursement?.hasVoucher);
   const isRequestDisbursed = Boolean(
     disbursement?.isDisbursed ?? disbursement?.stepDisbursed ?? stepMarkedDisbursed
   );
-  const showPrintVoucher = isRequestDisbursed || hasLinkedVoucher;
+  const showPrintVoucher = hasLinkedVoucher;
   const voucherNoLabel =
     hasLinkedVoucher && disbursement?.voucherNo
       ? String(disbursement.voucherNo).trim()
@@ -886,9 +890,13 @@ export default function RequestDetails({ id, companyKey }) {
                         delegatedToUsername === currentUsername)
                     );
                   const isDelegatedCurrentUser =
-                    !!delegatedToId &&
-                    (sameUser(step?.voucherDelegateTo, currentUser) ||
-                      (delegatedToUsername && delegatedToUsername === currentUsername));
+                    (!!delegatedToId && sameUser(step?.voucherDelegateTo, currentUser)) ||
+                    (delegatedToUsername && delegatedToUsername === currentUsername);
+                  const delegateDisburseApproved = Boolean(
+                    step?.voucherProcessedAt || step?.voucherProcessedBy
+                  );
+                  const delegateAwaitingApprove =
+                    isFinalApproved && isDelegatedCurrentUser && !delegateDisburseApproved;
                   const canUseVoucherByPermissionOrDelegation =
                     canCreateVoucherForCompany || isDelegatedCurrentUser;
 
@@ -897,10 +905,12 @@ export default function RequestDetails({ id, companyKey }) {
                   const canDelegateViewDisbursedVoucher =
                     canDelegateVoucher &&
                     isFinalApproved &&
-                    showPrintVoucher &&
+                    hasLinkedVoucher &&
                     wasDelegatedOnStep;
                   const showFullVoucherActions =
-                    canOpenVoucherActions && canUseVoucherByPermissionOrDelegation;
+                    canOpenVoucherActions &&
+                    canUseVoucherByPermissionOrDelegation &&
+                    !delegateAwaitingApprove;
                   const showDelegatePrintOnly =
                     canDelegateViewDisbursedVoucher && !showFullVoucherActions;
 
@@ -1148,6 +1158,49 @@ export default function RequestDetails({ id, companyKey }) {
                           </div>
                         )}
 
+                        {delegateAwaitingApprove && !isCancelled && (
+                          <div className="mt-4">
+                            <button
+                              type="button"
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                setApprovingDisburse(true);
+                                try {
+                                  const res = await fetch(
+                                    `/api/requests/${id}?company=${companyKey}`,
+                                    {
+                                      method: "PUT",
+                                      credentials: "include",
+                                      headers: { "Content-Type": "application/json" },
+                                      body: JSON.stringify({
+                                        action: "delegate_disburse_approve",
+                                        stepIndex: idx,
+                                      }),
+                                    }
+                                  );
+                                  const json = await res.json().catch(() => ({}));
+                                  if (!res.ok || !json?.success) {
+                                    alert(json?.error || "تعذر اعتماد الصرف");
+                                    return;
+                                  }
+                                  await fetchData();
+                                } catch {
+                                  alert("خطأ في الاتصال");
+                                } finally {
+                                  setApprovingDisburse(false);
+                                }
+                              }}
+                              disabled={approvingDisburse}
+                              className="w-full py-2.5 rounded-2xl bg-green-600 hover:bg-green-700 text-white font-extrabold shadow-sm disabled:opacity-60"
+                            >
+                              {approvingDisburse ? "جاري التحميل" : "Approve"}
+                            </button>
+                            <p className="mt-2 text-center text-[11px] font-semibold text-emerald-800">
+                              اعتماد الصرف أولاً — ثم إنشاء أو رفع الوصل
+                            </p>
+                          </div>
+                        )}
+
 {(showFullVoucherActions || showDelegatePrintOnly) &&
   isFinalApproved &&
   ["Badur-Baghdad", "Al-Ghadeer", "010", "Tiba-Al-najaf", "Ghadeer-Karbala"].includes(companyKey) && (
@@ -1188,7 +1241,8 @@ export default function RequestDetails({ id, companyKey }) {
 {isFinalApproved &&
   isLastStepUser &&
   canDelegateVoucher &&
-  !showPrintVoucher &&
+  !hasLinkedVoucher &&
+  !delegateDisburseApproved &&
   ["Badur-Baghdad", "Al-Ghadeer", "010", "Tiba-Al-najaf", "Ghadeer-Karbala"].includes(companyKey) && (
     <div
       className="mt-3 rounded-2xl border border-indigo-200 bg-indigo-50/70 p-3"
@@ -1339,14 +1393,10 @@ export default function RequestDetails({ id, companyKey }) {
         open={showVoucherModal}
         onClose={() => setShowVoucherModal(false)}
         request={request}
-        companyKey={
-          showPrintVoucher || hasLinkedVoucher
-            ? companyKey
-            : effectiveVoucherCompanyKey
-        }
+        companyKey={hasLinkedVoucher ? companyKey : effectiveVoucherCompanyKey}
         requestCompanyKey={companyKey}
         requestId={id}
-        treatAsExisting={hasLinkedVoucher || showPrintVoucher}
+        treatAsExisting={hasLinkedVoucher}
         onSaved={async () => {
           await fetchData();
         }}

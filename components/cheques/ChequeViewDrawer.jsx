@@ -167,6 +167,9 @@ export function ChequeViewContent({ chequeId, onReady, className = "" }) {
             label="تاريخ الصك"
             value={formatChequeDateParts(doc.dateParts)}
           />
+          {doc.templateKey === "mustashar_ghadeer" ? (
+            <MetaRow label="المحافظة" value={doc.governorate} />
+          ) : null}
           <MetaRow icon={FiUser} label="ادفعوا بموجب الأمر" value={doc.payee} />
           <MetaRow
             icon={FiDollarSign}

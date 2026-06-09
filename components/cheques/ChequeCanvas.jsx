@@ -469,6 +469,7 @@ export function chequeValuesToPayload(
       yy: values?.dateYear || "",
     },
     payee: values?.payee || "",
+    governorate: values?.governorate || "",
     amountNumeric: amountRaw ? Number(amountRaw) : 0,
     amountWords: values?.amountWords || "",
     text: values?.text || "",

@@ -17,6 +17,10 @@ import {
   buildAuthorizedUserReportPipeline,
   buildQuickSuggestPipeline,
 } from "@/lib/receipts/disbursementReportPipelines";
+import {
+  isDisbursedProjectExpr,
+  notDisbursedRequestMatch,
+} from "@/lib/voucher/disbursementStatusMatch";
 import { companyInList } from "@/lib/companies/companyAccess";
 
 export const runtime = "nodejs";
@@ -287,8 +291,7 @@ function buildPendingPipeline({ uid, username, from, to, permissions = [] }) {
         as: "__vrow",
       },
     },
-    // قيد الصرف = لا يوجد وصل فعلي في vouchers
-    { $match: { "__vrow.0": { $exists: false } } },
+    { $match: notDisbursedRequestMatch("__vrow.0") },
     {
       $project: {
         _id: 1,
@@ -355,7 +358,6 @@ function buildDonePipeline({ uid, userIdStr, username, from, to }) {
       $match: {
         $expr: { $eq: ["$currentStep", "$_lastIdx"] },
         "_step.status": { $in: ["Approved", "approved"] },
-        "__v.0": { $exists: true },
         $or: processedOr,
       },
     }
@@ -386,6 +388,7 @@ function buildDonePipeline({ uid, userIdStr, username, from, to }) {
             },
           ],
         },
+        isDisbursed: isDisbursedProjectExpr(),
       },
     },
     { $sort: { _sortDisburse: -1, createdAt: -1 } },
@@ -405,6 +408,7 @@ function buildDonePipeline({ uid, userIdStr, username, from, to }) {
         items: 1,
         workflow: 1,
         currentStep: 1,
+        isDisbursed: 1,
         voucherProcessedAt: {
           $ifNull: [
             "$_step.voucherProcessedAt",
@@ -484,7 +488,7 @@ function serializeRow(row, companyKey) {
   const totalAmount =
     fromItems != null ? fromItems : row.amount != null ? Number(row.amount) : null;
   const voucherNo = displayVoucherNo(row.voucherNo, row.voucherSeq);
-  const isDisbursed = Boolean(row.isDisbursed && voucherNo);
+  const isDisbursed = Boolean(row.isDisbursed);
   return {
     _id: id,
     companyKey: row.companyKey || companyKey,
@@ -518,7 +522,7 @@ function buildReportPipeline(ctx, opts) {
   } = opts;
   const userIdStr = String(ctx.userId);
 
-  /** tab=done: فقط ما صرفه اليوزر على آخر خطوة (voucherProcessedBy) + وصل موجود */
+  /** tab=done: ما صرفه/اعتمدَه اليوزر على آخر خطوة */
   if (tab === "done") {
     return buildDonePipeline({
       uid: ctx.uid,
@@ -689,7 +693,7 @@ async function buildDisbursementSuggest(
         const desc = String(d.description || "").slice(0, 48);
         const ck = d.companyKey || companyKey;
         const vn = displayVoucherNo(d.voucherNo, d.voucherSeq);
-        const disbursed = Boolean(d.isDisbursed && vn);
+        const disbursed = Boolean(d.isDisbursed);
         if (disbursed && vn) {
           const val = String(vn || code || id).trim();
           const label = `وصل ${vn} — ${ck}${desc ? " — " + desc : ""}`;

@@ -122,6 +122,7 @@ export async function POST(req) {
       },
       customer: String(body?.customer || "").trim(),
       payee: String(body?.payee || "").trim(),
+      governorate: String(body?.governorate || "").trim(),
       amountNumeric: parseAmount(body?.amountNumeric),
       amountWords: String(body?.amountWords || "").trim(),
       text: String(body?.text || "").trim(),
