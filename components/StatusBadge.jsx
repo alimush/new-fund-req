@@ -7,44 +7,54 @@ import {
   FiClock,
 } from "react-icons/fi";
 
+const VARIANTS = {
+  approved: {
+    label: "موافق",
+    Icon: FiCheckCircle,
+    ring: "ring-emerald-200/70",
+    icon: "text-emerald-600",
+    iconBg: "bg-emerald-50/80",
+  },
+  rejected: {
+    label: "مرفوض",
+    Icon: FiXCircle,
+    ring: "ring-red-200/70",
+    icon: "text-red-600",
+    iconBg: "bg-red-50/80",
+  },
+  cancelled: {
+    label: "ملغي",
+    Icon: FiMinusCircle,
+    ring: "ring-slate-200/80",
+    icon: "text-slate-500",
+    iconBg: "bg-slate-100/80",
+  },
+  pending: {
+    label: "قيد الانتظار",
+    Icon: FiClock,
+    ring: "ring-amber-200/70",
+    icon: "text-amber-600",
+    iconBg: "bg-amber-50/80",
+  },
+};
+
 export default function StatusBadge({ status, className = "" }) {
-  const s = (status || "").toLowerCase();
+  const s = String(status || "pending").toLowerCase();
+  const v = VARIANTS[s] || VARIANTS.pending;
+  const { Icon, label, ring, icon, iconBg } = v;
 
-  const base =
-    "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-extrabold " +
-    "backdrop-blur bg-white/40 border border-white/30 " +
-    "shadow-[0_6px_16px_-8px_rgba(0,0,0,0.25)] " +
-    className;
-
-  if (s === "approved")
-    return (
-      <span className={`${base} text-green-800 ring-1 ring-green-200/60`}>
-        <FiCheckCircle className="text-green-600 text-sm" />
-        موافق
-      </span>
-    );
-
-  if (s === "rejected")
-    return (
-      <span className={`${base} text-red-800 ring-1 ring-red-200/60`}>
-        <FiXCircle className="text-red-600 text-sm" />
-        مرفوض
-      </span>
-    );
-
-  if (s === "cancelled")
-    return (
-      <span className={`${base} text-gray-700 ring-1 ring-gray-200/60`}>
-        <FiMinusCircle className="text-gray-500 text-sm" />
-        ملغي
-      </span>
-    );
-
-  // قيد الانتظار (افتراضي)
   return (
-    <span className={`${base} text-amber-800 ring-1 ring-amber-200/60`}>
-      <FiClock className="text-amber-600 text-sm" />
-      قيد الانتظار
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-xl bg-white/90 px-2 py-1 ring-1 ring-slate-200/90 shadow-sm ${ring} ${className}`}
+    >
+      <span
+        className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-lg ring-1 ring-slate-200/70 ${iconBg}`}
+      >
+        <Icon className={`text-[12px] ${icon}`} aria-hidden strokeWidth={2.5} />
+      </span>
+      <span className="whitespace-nowrap text-[11px] font-extrabold leading-none text-slate-800">
+        {label}
+      </span>
     </span>
   );
 }

@@ -731,12 +731,22 @@ export default function CommentModal({
                   disabled={disableAll}
                   onClick={handleSubmit}
                   className={`
+                    inline-flex items-center justify-center gap-2 min-w-[120px]
                     px-4 py-2 rounded-2xl text-white font-extrabold
-                    shadow-sm disabled:opacity-60
+                    shadow-sm disabled:opacity-60 disabled:cursor-not-allowed
                     ${isApprove ? "bg-green-600 hover:bg-green-700" : "bg-red-600 hover:bg-red-700"}
                   `}
                 >
-                  {submitting || loading ? "Sending..." : "Submit"}
+                  {submitting || loading ? (
+                    <>
+                      <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                      {isApprove ? "جاري الموافقة..." : "جاري الرفض..."}
+                    </>
+                  ) : isApprove ? (
+                    "موافقة"
+                  ) : (
+                    "رفض"
+                  )}
                 </button>
               )}
             </div>

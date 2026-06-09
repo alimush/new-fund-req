@@ -3,11 +3,9 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import dynamic from "next/dynamic";
-import * as XLSX from "xlsx";
 import { createPortal } from "react-dom";
 
 import {
-  FiFilter,
   FiCalendar,
   FiUser,
   FiHome,
@@ -26,6 +24,7 @@ import { FaMoneyBillWave } from "react-icons/fa6";
 import { usePermissions } from "@/context/PermissionContext";
 import { PERMISSIONS } from "@/lib/permission";
 import TablePagination from "@/components/TablePagination";
+import StatusBadge from "@/components/StatusBadge";
 
 const Select = dynamic(() => import("react-select").then((m) => m.default), {
   ssr: false,
@@ -89,6 +88,7 @@ export default function ReportsPage() {
   ];
 
   const hasSearchedRef = useRef(false);
+  const fetchAbortRef = useRef(null);
 
   const { permissions } = usePermissions();
 
@@ -389,33 +389,39 @@ export default function ReportsPage() {
     return () => document.removeEventListener("mousedown", onDown);
   }, []);
 
-  const pickSuggestion = (opt) => {
+  const pickSuggestion = useCallback((opt) => {
     if (!opt) return;
     setSmartPicked(opt);
     setSmartInput(String(opt.value || opt.label || ""));
     setShowSuggest(false);
     setActiveIdx(-1);
-  };
+  }, []);
 
-  const onSmartKeyDown = (e) => {
-    if (!showSuggest || smartOptions.length === 0) return;
-
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      setActiveIdx((i) => Math.min(i + 1, smartOptions.length - 1));
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      setActiveIdx((i) => Math.max(i - 1, 0));
-    } else if (e.key === "Enter") {
-      if (activeIdx >= 0 && smartOptions[activeIdx]) {
-        e.preventDefault();
-        pickSuggestion(smartOptions[activeIdx]);
+  const onSmartKeyDown = useCallback(
+    (e) => {
+      if (e.key === "Enter") {
+        if (showSuggest && smartOptions.length > 0 && activeIdx >= 0 && smartOptions[activeIdx]) {
+          e.preventDefault();
+          pickSuggestion(smartOptions[activeIdx]);
+        }
+        return;
       }
-    } else if (e.key === "Escape") {
-      setShowSuggest(false);
-      setActiveIdx(-1);
-    }
-  };
+
+      if (!showSuggest || smartOptions.length === 0) return;
+
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setActiveIdx((i) => Math.min(i + 1, smartOptions.length - 1));
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setActiveIdx((i) => Math.max(i - 1, 0));
+      } else if (e.key === "Escape") {
+        setShowSuggest(false);
+        setActiveIdx(-1);
+      }
+    },
+    [showSuggest, smartOptions, activeIdx, pickSuggestion]
+  );
 
   const handleMultiAll = (selected, setter, allLabel) => {
     if (!selected) return setter([]);
@@ -481,10 +487,17 @@ export default function ReportsPage() {
 
   const fetchPage = useCallback(
     async (pageValue) => {
+      fetchAbortRef.current?.abort();
+      const controller = new AbortController();
+      fetchAbortRef.current = controller;
+
       setLoading(true);
       try {
         const params = buildParams(pageValue);
-        const res = await fetch(`/api/reports?${params.toString()}`);
+        const res = await fetch(`/api/reports?${params.toString()}`, {
+          signal: controller.signal,
+          cache: "no-store",
+        });
         const json = await res.json();
 
         if (json?.success) {
@@ -507,6 +520,7 @@ export default function ReportsPage() {
           });
         }
       } catch (err) {
+        if (err?.name === "AbortError") return;
         console.error("❌ Error fetching reports:", err);
         setRequests([]);
         setMeta({
@@ -516,7 +530,9 @@ export default function ReportsPage() {
           pageSize: PAGE_SIZE,
         });
       } finally {
-        setLoading(false);
+        if (fetchAbortRef.current === controller) {
+          setLoading(false);
+        }
       }
     },
     [buildParams]
@@ -525,14 +541,29 @@ export default function ReportsPage() {
   const fetchPageRef = useRef(fetchPage);
   fetchPageRef.current = fetchPage;
 
-  const handleSearch = async () => {
+  const handleSearch = useCallback(async () => {
     hasSearchedRef.current = true;
+    setShowSuggest(false);
+    setActiveIdx(-1);
     if (page !== 1) {
       setPage(1);
       return;
     }
     await fetchPage(1);
-  };
+  }, [page, fetchPage]);
+
+  const onSearchSubmit = useCallback(
+    (e) => {
+      e.preventDefault();
+      if (loading) return;
+      handleSearch();
+    },
+    [loading, handleSearch]
+  );
+
+  useEffect(() => {
+    return () => fetchAbortRef.current?.abort();
+  }, []);
 
   useEffect(() => {
     if (!hasSearchedRef.current) return;
@@ -541,33 +572,6 @@ export default function ReportsPage() {
 
   const handleReset = () => {
     resetUiState();
-  };
-
-  const badge = (status) => {
-    const base =
-      "inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-[13px] font-extrabold border";
-
-    if (status === "Approved") {
-      return (
-        <span className={`${base} bg-green-50 text-green-700 border-green-200`}>
-          <FiCheckCircle /> مقبول
-        </span>
-      );
-    }
-
-    if (status === "Rejected") {
-      return (
-        <span className={`${base} bg-red-50 text-red-700 border-red-200`}>
-          <FiXCircle /> مرفوض
-        </span>
-      );
-    }
-
-    return (
-      <span className={`${base} bg-yellow-50 text-yellow-700 border-yellow-200`}>
-        <FiClock /> قيد الانتظار
-      </span>
-    );
   };
 
   const fmtAmount = (v) => {
@@ -686,6 +690,7 @@ export default function ReportsPage() {
       const { all } = await fetchAllForExport();
       if (!all || all.length === 0) return;
 
+      const XLSX = await import("xlsx");
       const source = dataSource?.value || "new";
       const rows = all.map((r) => ({
         Company: r.companyKey || "-",
@@ -748,29 +753,8 @@ export default function ReportsPage() {
     }
   }, [fetchAllForExport, dataSource, buildRequestReportUrl]);
 
-  const Card = ({ icon: Icon, title, value }) => (
-    <motion.div
-      whileHover={{ y: -3, scale: 1.01 }}
-      whileTap={{ scale: 0.99 }}
-      transition={{ duration: 0.18, ease: "easeOut" }}
-      className="group relative overflow-hidden rounded-2xl border border-gray-200/80 bg-white/85 backdrop-blur shadow-sm"
-    >
-      <div className="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-        <div className="absolute -top-16 -right-16 h-40 w-40 rounded-full bg-blue-500/10 blur-2xl" />
-        <div className="absolute -bottom-16 -left-16 h-40 w-40 rounded-full bg-indigo-500/10 blur-2xl" />
-      </div>
-
-      <div className="relative px-5 py-4 flex items-center gap-4">
-        <div className="w-12 h-12 rounded-2xl bg-gray-900 text-white flex items-center justify-center shadow-sm">
-          <Icon className="text-xl" />
-        </div>
-
-        <div>
-          <div className="text-[14px] font-extrabold text-gray-500">{title}</div>
-          <div className="text-2xl font-extrabold text-gray-900">{value}</div>
-        </div>
-      </div>
-    </motion.div>
+  const Card = ({ icon, title, value, iconColor = "text-blue-600" }) => (
+    <KpiCard label={title} value={value} icon={icon} iconColor={iconColor} />
   );
 
   if (!Array.isArray(permissions)) return null;
@@ -778,95 +762,121 @@ export default function ReportsPage() {
 
   return (
     <motion.div
-      className="min-h-screen p-5 md:p-7 text-[14px] md:text-[15px] font-bold"
+      className="min-h-screen bg-gradient-to-br from-slate-100 via-slate-50 to-indigo-50/30 px-4 py-6 sm:px-6 sm:py-8 md:px-10 md:py-10 text-[14px] md:text-[15px] font-bold"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.35 }}
       dir="ltr"
     >
-      <motion.div
-        initial={{ y: -10, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-5"
-      >
-        <div className="text-right">
-          <h1 className="text-2xl md:text-3xl font-extrabold text-gray-900 flex items-center justify-end gap-3">
-            <FiFilter className="text-blue-600" /> تقارير الطلبات
-          </h1>
-          <p className="text-sm text-gray-600 mt-1 font-bold">
-            فلترة ومتابعة الطلبات حسب الصلاحيات.
-          </p>
-        </div>
+      <div className="mx-auto w-full max-w-7xl">
+        {/* Hero */}
+        <motion.div
+          initial={{ y: -10, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          className="mb-6 rounded-3xl border border-slate-200/80 bg-white/85 p-5 shadow-sm sm:p-6"
+        >
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="text-right">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-blue-600/90">
+                التقارير
+              </p>
+              <h1 className="mt-1 flex items-center justify-end gap-2 text-2xl font-extrabold text-slate-900 sm:text-3xl">
+                تقارير الطلبات
+                <ColoredIcon color="text-purple-600">
+                  <FiLayers />
+                </ColoredIcon>
+              </h1>
+              <p className="mt-1 text-sm font-semibold text-slate-500">
+                فلترة ومتابعة الطلبات حسب الصلاحيات
+              </p>
+            </div>
 
-        <div className="flex items-center gap-2">
-          <motion.button
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.99 }}
-            onClick={handleSearch}
-            disabled={loading}
-            className={`px-4 py-2.5 rounded-xl flex items-center gap-2 shadow-sm border font-extrabold text-[14px] ${
-              loading
-                ? "bg-gray-200 text-gray-500 border-gray-200 cursor-not-allowed"
-                : "bg-gray-900 text-white border-gray-900 hover:bg-black"
-            }`}
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <motion.button
+                type="submit"
+                form="reports-search-form"
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.99 }}
+                disabled={loading}
+                className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-extrabold shadow-sm transition ${
+                  loading
+                    ? "cursor-not-allowed bg-slate-300 text-slate-500"
+                    : "bg-blue-600 text-white hover:bg-blue-700"
+                }`}
+              >
+                {loading ? (
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                ) : (
+                  <FiSearch className="text-base" />
+                )}
+                بحث
+              </motion.button>
+
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.99 }}
+                onClick={handleReset}
+                disabled={loading}
+                className="inline-flex items-center gap-2 rounded-xl bg-slate-50 px-4 py-2.5 text-sm font-extrabold text-slate-700 ring-1 ring-slate-200/90 transition hover:bg-white hover:shadow-sm disabled:opacity-60"
+              >
+                <FiRotateCcw className="text-base" />
+                مسح الفلاتر
+              </motion.button>
+
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.99 }}
+                onClick={handleExportExcel}
+                disabled={loading || requests.length === 0}
+                className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-extrabold shadow-sm transition ${
+                  loading || requests.length === 0
+                    ? "cursor-not-allowed bg-slate-100 text-slate-400 ring-1 ring-slate-200/80"
+                    : "bg-emerald-50 text-emerald-800 ring-1 ring-emerald-200/80 hover:bg-emerald-100"
+                }`}
+              >
+                <FiDownload className="text-base" />
+                Excel
+              </motion.button>
+            </div>
+          </div>
+        </motion.div>
+
+        {/* KPI */}
+        <motion.div
+          className="mb-6 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4"
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.06 }}
+        >
+          <Card icon={<FiLayers />} title="المجموع" value={stats.total} iconColor="text-indigo-600" />
+          <Card icon={<FiCheckCircle />} title="مقبول" value={stats.approved} iconColor="text-emerald-600" />
+          <Card icon={<FiClock />} title="قيد الانتظار" value={stats.pending} iconColor="text-amber-600" />
+          <Card icon={<FiXCircle />} title="مرفوض" value={stats.rejected} iconColor="text-red-600" />
+        </motion.div>
+
+        {/* Filters */}
+        <motion.div
+          className="relative z-20 mb-6 rounded-3xl border border-slate-200/70 bg-white/75 p-5 shadow-sm sm:p-6"
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+        >
+          <div className="mb-4 flex items-center justify-end gap-2">
+            <h2 className="text-lg font-extrabold text-slate-900">الفلاتر</h2>
+            <ColoredIcon color="text-blue-600">
+              <FiShield />
+            </ColoredIcon>
+          </div>
+
+          <form
+            id="reports-search-form"
+            onSubmit={onSearchSubmit}
+            className="grid grid-cols-1 gap-4 lg:grid-cols-4"
           >
-            {loading ? (
-              <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-            ) : (
-              <>
-                <FiSearch /> بحث
-              </>
-            )}
-          </motion.button>
-
-          <motion.button
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.99 }}
-            onClick={handleReset}
-            disabled={loading}
-            className="px-4 py-2.5 rounded-xl bg-white/80 backdrop-blur border border-gray-200 text-gray-900 flex items-center gap-2 shadow-sm hover:bg-white font-extrabold text-[14px]"
-          >
-            <FiRotateCcw /> مسح
-          </motion.button>
-
-          <motion.button
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.99 }}
-            onClick={handleExportExcel}
-            disabled={loading || requests.length === 0}
-            className={`px-4 py-2.5 rounded-xl flex items-center gap-2 shadow-sm border font-extrabold text-[14px] ${
-              loading || requests.length === 0
-                ? "bg-gray-200 text-gray-500 border-gray-200 cursor-not-allowed"
-                : "bg-white/80 backdrop-blur border-gray-200 text-gray-900 hover:bg-white"
-            }`}
-          >
-            <FiDownload /> Excel
-          </motion.button>
-        </div>
-      </motion.div>
-
-      <div className="grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-3 mb-5">
-        <Card icon={FiLayers} title="المجموع" value={stats.total} />
-        <Card icon={FiCheckCircle} title="مقبول" value={stats.approved} />
-        <Card icon={FiClock} title="قيد الانتظار" value={stats.pending} />
-        <Card icon={FiXCircle} title="مرفوض" value={stats.rejected} />
-      </div>
-
-      <motion.div
-        className="relative z-20 rounded-2xl border border-gray-200/80 bg-white/85 backdrop-blur shadow-sm p-5 md:p-6 mb-6"
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-      >
-        <div className="flex items-center justify-end gap-2 text-gray-900 font-extrabold mb-4 text-base">
-          <FiShield className="text-gray-700" />
-          الفلاتر
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
-          <div className="text-right">
-            <label className="text-[13px] text-gray-700 mb-1 flex items-center justify-end gap-2 font-extrabold">
-              <FiHome /> الشركة
-            </label>
+            <div className="text-right">
+              <FilterLabel icon={<FiHome className="text-sm" />} iconColor="text-blue-600">
+                الشركة
+              </FilterLabel>
             <Select
               {...selectMenuProps}
               options={companies}
@@ -879,9 +889,9 @@ export default function ReportsPage() {
           </div>
 
           <div className="text-right">
-            <label className="text-[13px] text-gray-700 mb-1 flex items-center justify-end gap-2 font-extrabold">
-              <FiUser /> مقدم الطلب
-            </label>
+            <FilterLabel icon={<FiUser className="text-sm" />} iconColor="text-indigo-600">
+              مقدم الطلب
+            </FilterLabel>
             <Select
               {...selectMenuProps}
               options={users}
@@ -895,9 +905,9 @@ export default function ReportsPage() {
           </div>
 
           <div className="text-right">
-            <label className="text-[13px] text-gray-700 mb-1 flex items-center justify-end gap-2 font-extrabold">
-              <FiCheckCircle /> الحالة
-            </label>
+            <FilterLabel icon={<FiCheckCircle className="text-sm" />} iconColor="text-emerald-600">
+              الحالة
+            </FilterLabel>
             <Select
               {...selectMenuProps}
               options={statuses}
@@ -913,9 +923,9 @@ export default function ReportsPage() {
           </div>
 
           <div className="text-right">
-            <label className="text-[13px] text-gray-700 mb-1 flex items-center justify-end gap-2 font-extrabold">
-              <FaMoneyBillWave /> العملة
-            </label>
+            <FilterLabel icon={<FaMoneyBillWave className="text-sm" />} iconColor="text-emerald-600">
+              العملة
+            </FilterLabel>
             <Select
               {...selectMenuProps}
               options={currencies}
@@ -931,9 +941,9 @@ export default function ReportsPage() {
           </div>
 
           <div className="text-right">
-            <label className="text-[13px] text-gray-700 mb-1 flex items-center justify-end gap-2 font-extrabold">
-              <FiClock /> قيد الانتظار عند
-            </label>
+            <FilterLabel icon={<FiClock className="text-sm" />} iconColor="text-amber-600">
+              قيد الانتظار عند
+            </FilterLabel>
             <Select
               {...selectMenuProps}
               options={pendingUsers}
@@ -949,53 +959,53 @@ export default function ReportsPage() {
           </div>
 
           <div className="text-right">
-            <label className="text-[13px] text-gray-700 mb-1 flex items-center justify-end gap-2 font-extrabold">
-              <FiCalendar /> From
-            </label>
+            <FilterLabel icon={<FiCalendar className="text-sm" />} iconColor="text-purple-600">
+              From
+            </FilterLabel>
             <input
               type="date"
               value={date.from}
               onChange={(e) => setDate({ ...date, from: e.target.value })}
-              className="w-full rounded-xl px-3 py-2.5 border border-gray-200 bg-white text-gray-900 outline-none font-extrabold text-[14px]"
+              className="w-full rounded-xl border border-slate-200/90 bg-white px-3 py-2.5 text-sm font-extrabold text-slate-900 outline-none ring-1 ring-slate-200/80 focus:ring-2 focus:ring-blue-200/80"
             />
           </div>
 
           <div className="text-right">
-            <label className="text-[13px] text-gray-700 mb-1 flex items-center justify-end gap-2 font-extrabold">
-              <FiCalendar /> To
-            </label>
+            <FilterLabel icon={<FiCalendar className="text-sm" />} iconColor="text-purple-600">
+              To
+            </FilterLabel>
             <input
               type="date"
               value={date.to}
               onChange={(e) => setDate({ ...date, to: e.target.value })}
-              className="w-full rounded-xl px-3 py-2.5 border border-gray-200 bg-white text-gray-900 outline-none font-extrabold text-[14px]"
+              className="w-full rounded-xl border border-slate-200/90 bg-white px-3 py-2.5 text-sm font-extrabold text-slate-900 outline-none ring-1 ring-slate-200/80 focus:ring-2 focus:ring-blue-200/80"
             />
           </div>
 
           {canViewNewOldData && (
-  <div className="text-right">
-    <label className="text-[13px] text-gray-700 mb-1 flex items-center justify-end gap-2 font-extrabold">
-      <FiLayers /> مصدر البيانات
-    </label>
-    <Select
-      {...selectMenuProps}
-      options={dataSourceOptions}
-      placeholder="اختر المصدر"
-      value={dataSource}
-      onChange={(v) =>
-        setDataSource(v || { value: "new", label: "new data" })
-      }
-      styles={selectStyles}
-      isSearchable={false}
-      components={noClearComponents}
-    />
-  </div>
-)}
+            <div className="text-right">
+              <FilterLabel icon={<FiLayers className="text-sm" />} iconColor="text-indigo-600">
+                مصدر البيانات
+              </FilterLabel>
+              <Select
+                {...selectMenuProps}
+                options={dataSourceOptions}
+                placeholder="اختر المصدر"
+                value={dataSource}
+                onChange={(v) =>
+                  setDataSource(v || { value: "new", label: "new data" })
+                }
+                styles={selectStyles}
+                isSearchable={false}
+                components={noClearComponents}
+              />
+            </div>
+          )}
 
           <div className="text-right lg:col-span-2">
-            <label className="text-[13px] text-gray-700 mb-1 flex items-center justify-end gap-2 font-extrabold">
-              <FiSearch /> بحث موحّد (كود / وصف / مبلغ)
-            </label>
+            <FilterLabel icon={<FiSearch className="text-sm" />} iconColor="text-blue-600">
+              بحث موحّد (كود / وصف / مبلغ)
+            </FilterLabel>
 
             <div className="relative flex gap-2">
               <input
@@ -1009,12 +1019,12 @@ export default function ReportsPage() {
                 }}
                 onKeyDown={onSmartKeyDown}
                 placeholder="كود أو وصف أو مبلغ..."
-                className="w-full rounded-xl px-4 py-2.5 border border-gray-200 bg-white text-gray-900 font-extrabold text-[16px] shadow-sm outline-none focus:border-gray-300"
+                className="w-full rounded-xl border border-slate-200/90 bg-white px-4 py-2.5 text-base font-extrabold text-slate-900 shadow-sm outline-none ring-1 ring-slate-200/80 focus:ring-2 focus:ring-blue-200/80"
               />
             </div>
           </div>
-        </div>
-      </motion.div>
+          </form>
+        </motion.div>
 
       {portalReady && showSuggest && smartOptions.length > 0
         ? createPortal(
@@ -1027,16 +1037,16 @@ export default function ReportsPage() {
                 width: suggestPos.width,
                 zIndex: 99999,
               }}
-              className="rounded-2xl border border-gray-200 bg-white shadow-2xl overflow-hidden"
+              className="rounded-2xl border border-slate-200/90 bg-white shadow-xl overflow-hidden"
             >
               {smartOptions.slice(0, 12).map((opt, idx) => (
                 <button
                   key={`${opt.type || "x"}-${opt.value}-${idx}`}
                   type="button"
                   onClick={() => pickSuggestion(opt)}
-                  className={`w-full text-right px-4 py-3 text-[15px] font-extrabold ${
-                    idx === activeIdx ? "bg-gray-100" : "bg-white"
-                  } hover:bg-gray-100`}
+                  className={`w-full px-4 py-3 text-right text-[15px] font-extrabold transition ${
+                    idx === activeIdx ? "bg-slate-100" : "bg-white"
+                  } hover:bg-slate-50`}
                 >
                   {opt.label}
                 </button>
@@ -1048,21 +1058,18 @@ export default function ReportsPage() {
 
       <AnimatePresence mode="wait">
         {loading ? (
-          <motion.div className="flex flex-col items-center py-20">
-            <div className="w-12 h-12 border-4 border-gray-200 border-t-blue-600 rounded-full animate-spin" />
-            <p className="mt-4 text-gray-700 font-extrabold text-lg">جاري التحميل</p>
-          </motion.div>
+          <ReportsSearchLoading />
         ) : requests.length > 0 ? (
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.22, ease: "easeOut" }}
-            className="relative z-0 overflow-hidden rounded-3xl border border-white/30 bg-white/55 backdrop-blur-xl shadow-[0_18px_55px_-28px_rgba(0,0,0,0.35)]"
+            className="relative z-0 overflow-hidden rounded-3xl border border-slate-200/70 bg-white/75 shadow-sm ring-1 ring-slate-200/50"
           >
             <div className="relative overflow-x-auto">
-              <table className="min-w-[1100px] w-full text-[15px] md:text-[16px] text-slate-800 font-bold">
+              <table className="min-w-[1100px] w-full text-[15px] font-bold text-slate-800 md:text-[16px]">
                 <thead className="sticky top-0 z-10">
-                  <tr className="bg-white/80 backdrop-blur border-b border-white/40">
+                  <tr className="border-b border-slate-200/80 bg-white/90 backdrop-blur">
                     {[
                       "الشركة",
                       "كود الريكويست",
@@ -1086,11 +1093,11 @@ export default function ReportsPage() {
                   </tr>
                 </thead>
 
-                <tbody className="divide-y divide-white/30">
+                <tbody className="divide-y divide-slate-200/60">
                   {requests.map((r, idx) => (
                     <motion.tr
                       key={r._id}
-                      whileHover={{ backgroundColor: "rgba(2,132,199,0.08)" }}
+                      whileHover={{ backgroundColor: "rgba(248,250,252,0.95)" }}
                       transition={{ duration: 0.12 }}
                       onClick={() =>
                         window.open(
@@ -1099,11 +1106,10 @@ export default function ReportsPage() {
                           )}`,
                           "_blank"
                         )
-                      
                       }
-                      className={`cursor-pointer ${
-                        idx % 2 === 0 ? "bg-white/30" : "bg-white/20"
-                      } hover:bg-white/45`}
+                      className={`cursor-pointer transition-colors hover:bg-slate-50 ${
+                        idx % 2 === 0 ? "bg-white/50" : "bg-white/30"
+                      }`}
                     >
                       <td className="px-6 py-4 text-right font-extrabold text-slate-900 whitespace-nowrap">
                         {r.companyKey || "-"}
@@ -1118,7 +1124,7 @@ export default function ReportsPage() {
                         {r.createdBy || "-"}
                       </td>
                       <td className="px-6 py-4 text-right whitespace-nowrap">
-                        {badge(r.status)}
+                        <StatusBadge status={r.status} />
                       </td>
 
                       <td className="px-6 py-4 text-right">
@@ -1161,10 +1167,10 @@ export default function ReportsPage() {
               </table>
             </div>
 
-            <div className="relative px-5 py-4 bg-white/65 backdrop-blur border-t border-white/30 flex items-center justify-between gap-3">
-              <div className="text-sm text-slate-700 font-extrabold">
+            <div className="flex items-center justify-between gap-3 border-t border-slate-200/70 bg-white/80 px-5 py-4 backdrop-blur">
+              <div className="text-sm font-extrabold text-slate-700">
                 Total: <span className="text-slate-900">{meta.total}</span>
-                {"  "} | Page: <span className="text-slate-900">{meta.page}</span>
+                {"  "}| Page: <span className="text-slate-900">{meta.page}</span>
                 {" / "}
                 <span className="text-slate-900">{meta.totalPages || 1}</span>
               </div>
@@ -1181,12 +1187,113 @@ export default function ReportsPage() {
             key="empty"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className="text-center text-slate-700 font-extrabold py-16 rounded-3xl border border-white/30 bg-white/55 backdrop-blur-xl shadow-[0_18px_55px_-28px_rgba(0,0,0,0.25)] text-lg"
+            className="rounded-3xl border border-slate-200/70 bg-white/75 py-16 text-center text-lg font-extrabold text-slate-600 shadow-sm ring-1 ring-slate-200/50"
           >
-            No data (press Search).
+            لا توجد نتائج — اضغط «بحث»
           </motion.div>
         )}
       </AnimatePresence>
+      </div>
     </motion.div>
+  );
+}
+
+function ReportsSearchLoading() {
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="relative min-h-[360px] overflow-hidden rounded-3xl border border-slate-200/70 bg-white/75 ring-1 ring-slate-200/50"
+    >
+      <div className="pointer-events-none space-y-3 p-5 opacity-40">
+        <div className="h-12 animate-pulse rounded-xl bg-slate-100/90" />
+        {[1, 2, 3, 4, 5].map((i) => (
+          <div key={i} className="h-14 animate-pulse rounded-xl bg-slate-100/80" />
+        ))}
+      </div>
+
+      <div className="absolute inset-0 flex items-center justify-center bg-white/40 backdrop-blur-[2px]">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.96, y: 6 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          transition={{ duration: 0.3, ease: "easeOut" }}
+          className="mx-4 w-full max-w-sm rounded-3xl border border-slate-200/80 bg-white/95 px-8 py-9 text-center shadow-[0_24px_60px_-24px_rgba(59,130,246,0.2)] ring-1 ring-slate-200/60"
+        >
+          <div className="relative mx-auto h-14 w-14">
+            <span className="absolute inset-0 animate-spin rounded-full border-[3px] border-slate-200/90 border-t-blue-600" />
+            <span
+              className="absolute inset-2.5 animate-spin rounded-full border-[3px] border-slate-100 border-b-indigo-500"
+              style={{ animationDirection: "reverse", animationDuration: "0.85s" }}
+            />
+            <span className="absolute inset-0 flex items-center justify-center">
+              <ColoredIcon color="text-blue-600" size="sm">
+                <FiSearch />
+              </ColoredIcon>
+            </span>
+          </div>
+
+          <p className="mt-5 text-base font-extrabold text-slate-900">جاري البحث</p>
+          <p className="mt-1.5 text-sm font-semibold text-slate-500">يرجى الانتظار...</p>
+
+          <div className="mt-4 flex items-center justify-center gap-1.5">
+            {[0, 1, 2].map((i) => (
+              <motion.span
+                key={i}
+                className="h-2 w-2 rounded-full bg-blue-500/80"
+                animate={{ opacity: [0.35, 1, 0.35], scale: [0.85, 1, 0.85] }}
+                transition={{
+                  duration: 1.1,
+                  repeat: Infinity,
+                  delay: i * 0.18,
+                  ease: "easeInOut",
+                }}
+              />
+            ))}
+          </div>
+        </motion.div>
+      </div>
+    </motion.div>
+  );
+}
+
+function ColoredIcon({ color = "text-blue-600", children, size = "md" }) {
+  const box = size === "sm" ? "h-7 w-7" : "h-8 w-8";
+  const ic = size === "sm" ? "text-sm" : "text-base";
+  return (
+    <span
+      className={`inline-flex ${box} shrink-0 items-center justify-center rounded-lg bg-white ring-1 ring-slate-200/90 shadow-sm ${color} ${ic}`}
+    >
+      {children}
+    </span>
+  );
+}
+
+function KpiCard({ label, value, icon, iconColor = "text-blue-600" }) {
+  return (
+    <div className="group relative overflow-hidden rounded-2xl bg-white/75 p-4 ring-1 ring-slate-200/70 shadow-sm backdrop-blur-sm transition duration-300 hover:-translate-y-1 hover:bg-white hover:shadow-[0_16px_40px_-20px_rgba(0,0,0,0.15)] hover:ring-slate-300/80">
+      <div className="relative flex items-start gap-3">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white ring-1 ring-slate-200/90 shadow-sm transition duration-300 group-hover:scale-105">
+          <span className={`text-lg ${iconColor}`}>{icon}</span>
+        </div>
+        <div className="min-w-0 flex-1 text-right">
+          <p className="text-[11px] font-bold text-slate-500">{label}</p>
+          <p className="mt-0.5 truncate text-base font-extrabold text-slate-900 sm:text-lg">
+            {value}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FilterLabel({ icon, iconColor = "text-slate-600", children }) {
+  return (
+    <label className="mb-1.5 flex items-center justify-end gap-1.5 text-[13px] font-extrabold text-slate-700">
+      {children}
+      <span className={`inline-flex h-6 w-6 items-center justify-center rounded-md bg-white ring-1 ring-slate-200/90 ${iconColor}`}>
+        {icon}
+      </span>
+    </label>
   );
 }
