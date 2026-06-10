@@ -762,13 +762,13 @@ export default function ReportsPage() {
 
   return (
     <motion.div
-      className="min-h-screen bg-gradient-to-br from-slate-100 via-slate-50 to-indigo-50/30 px-4 py-6 sm:px-6 sm:py-8 md:px-10 md:py-10 text-[14px] md:text-[15px] font-bold"
+      className="min-h-screen bg-gradient-to-br from-slate-100 via-slate-50 to-indigo-50/30 px-2 py-4 sm:px-4 sm:py-6 lg:px-5 lg:py-8 text-[14px] md:text-[15px] font-bold"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.35 }}
       dir="ltr"
     >
-      <div className="mx-auto w-full max-w-7xl">
+      <div className="mx-auto w-full max-w-none">
         {/* Hero */}
         <motion.div
           initial={{ y: -10, opacity: 0 }}
@@ -1066,8 +1066,21 @@ export default function ReportsPage() {
             transition={{ duration: 0.22, ease: "easeOut" }}
             className="relative z-0 overflow-hidden rounded-3xl border border-slate-200/70 bg-white/75 shadow-sm ring-1 ring-slate-200/50"
           >
-            <div className="relative overflow-x-auto">
-              <table className="min-w-[1100px] w-full text-[15px] font-bold text-slate-800 md:text-[16px]">
+            <div className="relative w-full">
+              <table className="w-full table-fixed text-[13px] font-bold text-slate-800 md:text-[14px]">
+                <colgroup>
+                  <col className="w-[8%]" />
+                  <col className="w-[9%]" />
+                  <col className="w-[8%]" />
+                  <col className="w-[8%]" />
+                  <col className="w-[7%]" />
+                  <col className="w-[12%]" />
+                  <col className="w-[8%]" />
+                  <col className="w-[5%]" />
+                  <col className="w-[8%]" />
+                  <col className="w-[19%]" />
+                  <col className="w-[8%]" />
+                </colgroup>
                 <thead className="sticky top-0 z-10">
                   <tr className="border-b border-slate-200/80 bg-white/90 backdrop-blur">
                     {[
@@ -1085,7 +1098,7 @@ export default function ReportsPage() {
                     ].map((h, i) => (
                       <th
                         key={`${h}-${i}`}
-                        className="px-6 py-4 text-right text-[13px] md:text-[14px] font-extrabold tracking-wide text-slate-900 whitespace-nowrap"
+                        className="px-2 py-3 text-right text-[12px] md:text-[13px] font-extrabold leading-snug tracking-wide text-slate-900"
                       >
                         {h}
                       </th>
@@ -1111,24 +1124,24 @@ export default function ReportsPage() {
                         idx % 2 === 0 ? "bg-white/50" : "bg-white/30"
                       }`}
                     >
-                      <td className="px-6 py-4 text-right font-extrabold text-slate-900 whitespace-nowrap">
+                      <td className="px-2 py-2.5 text-right font-extrabold text-slate-900 break-words align-top leading-snug">
                         {r.companyKey || "-"}
                       </td>
-                      <td className="px-6 py-4 text-right font-mono text-slate-900 whitespace-nowrap">
+                      <td className="px-2 py-2.5 text-right font-mono text-[12px] text-slate-900 break-all align-top leading-snug">
                         {r.requestCode || "-"}
                       </td>
-                      <td className="px-6 py-4 text-right whitespace-nowrap">
+                      <td className="px-2 py-2.5 text-right break-words align-top leading-snug">
                         {r.requestType || "-"}
                       </td>
-                      <td className="px-6 py-4 text-right whitespace-nowrap">
+                      <td className="px-2 py-2.5 text-right break-words align-top leading-snug">
                         {r.createdBy || "-"}
                       </td>
-                      <td className="px-6 py-4 text-right whitespace-nowrap">
+                      <td className="px-2 py-2.5 text-right align-top">
                         <StatusBadge status={r.status} />
                       </td>
 
-                      <td className="px-6 py-4 text-right">
-                        <div className="max-w-[240px] truncate">
+                      <td className="px-2 py-2.5 text-right align-top">
+                        <div className="break-words leading-snug">
                           {Array.isArray(r.pendingWithNames) &&
                           r.pendingWithNames.length > 0
                             ? r.pendingWithNames.join(", ")
@@ -1136,27 +1149,27 @@ export default function ReportsPage() {
                         </div>
                       </td>
 
-                      <td className="px-6 py-4 text-right whitespace-nowrap">
+                      <td className="px-2 py-2.5 text-right break-words align-top leading-snug">
                         {r.department || "-"}
                       </td>
-                      <td className="px-6 py-4 text-right whitespace-nowrap font-extrabold">
+                      <td className="px-2 py-2.5 text-right font-extrabold align-top">
                         {r.currency || "-"}
                       </td>
 
-                      <td className="px-6 py-4 text-right font-extrabold text-slate-900 whitespace-nowrap">
+                      <td className="px-2 py-2.5 text-right font-extrabold text-slate-900 tabular-nums align-top leading-snug">
                         {(() => {
                           const v = getAmount(r);
                           return v == null ? "-" : fmtAmount(v);
                         })()}
                       </td>
 
-                      <td className="px-6 py-4 text-right">
-                        <div className="max-w-[320px] truncate text-slate-700">
+                      <td className="px-2 py-2.5 text-right align-top">
+                        <div className="break-words text-slate-700 leading-snug">
                           {r.description || "-"}
                         </div>
                       </td>
 
-                      <td className="px-6 py-4 text-right whitespace-nowrap text-slate-700">
+                      <td className="px-2 py-2.5 text-right text-slate-700 tabular-nums align-top leading-snug">
                         {r.createdAt
                           ? new Date(r.createdAt).toLocaleDateString("en-GB")
                           : "-"}
