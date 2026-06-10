@@ -510,6 +510,13 @@ function serializeRow(row, companyKey) {
   };
 }
 
+function tabToReportMode(tab) {
+  const t = String(tab || "").toLowerCase();
+  if (t === "pending") return "pending";
+  if (t === "done") return "disbursed";
+  return "all";
+}
+
 function buildReportPipeline(ctx, opts) {
   const {
     tab,
@@ -521,20 +528,9 @@ function buildReportPipeline(ctx, opts) {
     processorTarget,
   } = opts;
   const userIdStr = String(ctx.userId);
-
-  /** tab=done: ما صرفه/اعتمدَه اليوزر على آخر خطوة */
-  if (tab === "done") {
-    return buildDonePipeline({
-      uid: ctx.uid,
-      userIdStr,
-      username: ctx.username,
-      from,
-      to,
-    });
-  }
+  const mode = tabToReportMode(tab);
 
   if (canDelegateView) {
-    const delegateMode = tab === "pending" ? "pending" : "all";
     return buildDelegatedDisbursementPipeline({
       delegateHolderIds,
       delegateHolderUsernames,
@@ -543,7 +539,18 @@ function buildReportPipeline(ctx, opts) {
       processorUid: processorTarget.filterAll ? null : processorTarget.uid,
       processorIdStr: processorTarget.filterAll ? "" : processorTarget.userIdStr,
       processorUsername: processorTarget.filterAll ? "" : processorTarget.username,
-      mode: delegateMode,
+      mode,
+    });
+  }
+
+  if (!processorTarget.isSelf) {
+    return buildAuthorizedUserReportPipeline({
+      processorUid: processorTarget.uid,
+      processorIdStr: processorTarget.userIdStr,
+      processorUsername: processorTarget.username,
+      from,
+      to,
+      mode,
     });
   }
 
@@ -557,16 +564,6 @@ function buildReportPipeline(ctx, opts) {
     });
   }
 
-  if (!processorTarget.isSelf) {
-    return buildAuthorizedUserReportPipeline({
-      processorUid: processorTarget.uid,
-      processorIdStr: processorTarget.userIdStr,
-      processorUsername: processorTarget.username,
-      from,
-      to,
-    });
-  }
-
   return buildRegularUserReportPipeline({
     uid: ctx.uid,
     userIdStr,
@@ -574,6 +571,7 @@ function buildReportPipeline(ctx, opts) {
     permissions: ctx.permissions,
     from,
     to,
+    mode,
   });
 }
 
@@ -674,6 +672,7 @@ async function buildDisbursementSuggest(
     processorTarget,
     from,
     to,
+    mode: tabToReportMode(tab),
   });
 
   const matchStage = buildSuggestRowMatch(sq);

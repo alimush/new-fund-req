@@ -61,9 +61,22 @@ export default function ReceiptsDisbursementPage() {
     }
   }, [user?.id, permissions, router]);
 
+  const disbursementFilterOptions = useMemo(
+    () => [
+      { value: "all", label: "الكل" },
+      { value: "done", label: "مصروف" },
+      { value: "pending", label: "غير مصروف" },
+    ],
+    []
+  );
+
   const [companyFilter, setCompanyFilter] = useState({
     value: "all",
     label: "كل الشركات",
+  });
+  const [disbursementFilter, setDisbursementFilter] = useState({
+    value: "all",
+    label: "الكل",
   });
   const [processorFilter, setProcessorFilter] = useState(null);
   const [processorOptions, setProcessorOptions] = useState([]);
@@ -75,7 +88,7 @@ export default function ReceiptsDisbursementPage() {
   const [metaCompanies, setMetaCompanies] = useState([]);
   const [hasSearched, setHasSearched] = useState(false);
 
-  const filtersRef = useRef({ q: "", from: "", to: "", processorUser: "" });
+  const filtersRef = useRef({ q: "", from: "", to: "", processorUser: "", tab: "all" });
   const suggestAbortRef = useRef(null);
   const fetchAbortRef = useRef(null);
   const [usersLoading, setUsersLoading] = useState(true);
@@ -263,12 +276,13 @@ export default function ReceiptsDisbursementPage() {
     const ac = new AbortController();
     fetchAbortRef.current = ac;
 
-    const { q: qv, from: fv, to: tv, processorUser: pu } = filtersRef.current;
+    const { q: qv, from: fv, to: tv, processorUser: pu, tab: tabv } = filtersRef.current;
     const company = companyFilter?.value || "all";
     setLoading(true);
     try {
       const params = new URLSearchParams();
       if (company && company !== "all") params.set("company", company);
+      if (tabv && tabv !== "all") params.set("tab", tabv);
       if (qv.trim()) params.set("q", qv.trim());
       if (fv) params.set("from", fv);
       if (tv) params.set("to", tv);
@@ -331,6 +345,8 @@ export default function ReceiptsDisbursementPage() {
       if (date.from) params.set("from", date.from);
       if (date.to) params.set("to", date.to);
       if (company && company !== "all") params.set("company", company);
+      const tabv = filtersRef.current.tab;
+      if (tabv && tabv !== "all") params.set("tab", tabv);
       const pu = filtersRef.current.processorUser;
       if (pu) params.set("processorUser", pu);
       else if (canDelegateFilter) params.set("processorUser", "all");
@@ -374,7 +390,7 @@ export default function ReceiptsDisbursementPage() {
       fetchSuggestions();
     }, 450);
     return () => clearTimeout(t);
-  }, [q, fetchSuggestions, processorFilter?.value, companyFilter?.value]);
+  }, [q, fetchSuggestions, processorFilter?.value, companyFilter?.value, disbursementFilter?.value]);
 
   useEffect(() => {
     if (!showSuggest) return;
@@ -440,6 +456,7 @@ export default function ReceiptsDisbursementPage() {
       from: date.from,
       to: date.to,
       processorUser: pu,
+      tab: disbursementFilter?.value || "all",
     };
     setHasSearched(true);
     setShowSuggest(false);
@@ -449,10 +466,11 @@ export default function ReceiptsDisbursementPage() {
 
   const handleReset = () => {
     setCompanyFilter({ value: "all", label: "كل الشركات" });
+    setDisbursementFilter({ value: "all", label: "الكل" });
     setProcessorFilter(canDelegateFilter ? null : lockedProcessorOption);
     setQ("");
     setDate({ from: "", to: "" });
-    filtersRef.current = { q: "", from: "", to: "", processorUser: "" };
+    filtersRef.current = { q: "", from: "", to: "", processorUser: "", tab: "all" };
     setRows([]);
     setHasSearched(false);
     setSmartOptions([]);
@@ -575,7 +593,7 @@ export default function ReceiptsDisbursementPage() {
           الفلاتر
         </div>
 
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
           <div className="text-right">
             <label className="mb-0.5 flex items-center justify-end gap-1 text-[11px] font-extrabold text-gray-600">
               <FiUser className="text-[12px]" />
@@ -621,6 +639,27 @@ export default function ReceiptsDisbursementPage() {
               }
               styles={selectStyles}
               isSearchable
+              components={noClearComponents}
+            />
+          </div>
+
+          <div className="text-right">
+            <label className="mb-0.5 flex items-center justify-end gap-1 text-[11px] font-extrabold text-gray-600">
+              <FiCheckCircle className="text-[12px]" />
+              حالة الصرف
+            </label>
+            <Select
+              {...selectMenuProps}
+              options={disbursementFilterOptions}
+              placeholder="الكل"
+              value={disbursementFilter}
+              onChange={(v) => {
+                const next = v || { value: "all", label: "الكل" };
+                setDisbursementFilter(next);
+                filtersRef.current.tab = next.value;
+              }}
+              styles={selectStyles}
+              isSearchable={false}
               components={noClearComponents}
             />
           </div>
