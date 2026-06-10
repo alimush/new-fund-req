@@ -61,6 +61,7 @@ export default function RequestDetails({ id, companyKey }) {
   const [showVoucherAttachModal, setShowVoucherAttachModal] = useState(false);
   const [showVoucherModal, setShowVoucherModal] = useState(false);
   const [delegateUserId, setDelegateUserId] = useState("");
+  const [delegateVoucherCompanyKey, setDelegateVoucherCompanyKey] = useState("");
   const [delegating, setDelegating] = useState(false);
   const [approvingDisburse, setApprovingDisburse] = useState(false);
   const [submittingAction, setSubmittingAction] = useState(false);
@@ -121,10 +122,23 @@ export default function RequestDetails({ id, companyKey }) {
         : hasVoucherPermissionForRequest(companyKey, permissions)),
     [permissions, companyKey, isTestVoucherCompany, voucherCompanyConfig]
   );
-  const effectiveVoucherCompanyKey = useMemo(
-    () => resolveVoucherCompanyKeyForUser(companyKey, permissions),
-    [companyKey, permissions]
-  );
+  const effectiveVoucherCompanyKey = useMemo(() => {
+    const lastStep = workflowSteps[workflowSteps.length - 1];
+    if (lastStep && currentUser) {
+      const curId = String(currentUser?._id || currentUser?.id || "").trim();
+      const curName = String(currentUser?.username || "").trim();
+      const delId = String(
+        lastStep?.voucherDelegateTo?._id || lastStep?.voucherDelegateTo || ""
+      ).trim();
+      const delName = String(lastStep?.voucherDelegateToUsername || "").trim();
+      const isDelegated =
+        (delId && curId && delId === curId) ||
+        (delName && curName && delName === curName);
+      const delegatedKey = String(lastStep?.voucherDelegateCompanyKey || "").trim();
+      if (isDelegated && delegatedKey) return delegatedKey;
+    }
+    return resolveVoucherCompanyKeyForUser(companyKey, permissions);
+  }, [companyKey, permissions, workflowSteps, currentUser]);
 
   const lastWorkflowStep = workflowSteps.length
     ? workflowSteps[workflowSteps.length - 1]
@@ -211,8 +225,10 @@ export default function RequestDetails({ id, companyKey }) {
 
   useEffect(() => {
     const steps = request?.workflow?.steps || [];
+    const optsMap = request?.delegationVoucherOptionsByUser || {};
     if (!steps.length) {
       setDelegateUserId("");
+      setDelegateVoucherCompanyKey("");
       return;
     }
     const lastStep = steps[steps.length - 1];
@@ -222,7 +238,25 @@ export default function RequestDetails({ id, companyKey }) {
         ? delegated
         : String(delegated?._id || delegated?.id || "");
     setDelegateUserId(delegatedId || "");
-  }, [request]);
+
+    const savedKey = String(lastStep?.voucherDelegateCompanyKey || "").trim();
+    if (savedKey) {
+      setDelegateVoucherCompanyKey(savedKey);
+      return;
+    }
+
+    if (delegatedId) {
+      const options = optsMap[delegatedId] || [];
+      const preferred = effectiveVoucherCompanyKey;
+      const norm = (k) => String(k || "").trim().toLowerCase();
+      const hit = options.find((o) => norm(o.key) === norm(preferred));
+      setDelegateVoucherCompanyKey(
+        hit?.key || options.find((o) => o.isDefault)?.key || options[0]?.key || ""
+      );
+    } else {
+      setDelegateVoucherCompanyKey("");
+    }
+  }, [request, effectiveVoucherCompanyKey]);
 
   useEffect(() => {
     return () => {
@@ -729,7 +763,7 @@ export default function RequestDetails({ id, companyKey }) {
             <KpiCard
               label="حالة الصرف"
               value={disburseStatusLabel}
-              sub={isRequestDisbursed ? "تم اعتماد الصرف" : "بانتظار الصرف"}
+              sub={isRequestDisbursed ? "تم الصرف" : "بانتظار الصرف"}
               icon={<FiCheckCircle />}
               iconColor={isRequestDisbursed ? "text-emerald-600" : "text-amber-600"}
             />
@@ -1344,7 +1378,7 @@ export default function RequestDetails({ id, companyKey }) {
                                   );
                                   const json = await res.json().catch(() => ({}));
                                   if (!res.ok || !json?.success) {
-                                    alert(json?.error || "تعذر اعتماد الصرف");
+                                    alert(json?.error || "تعذر  الصرف");
                                     return;
                                   }
                                   await fetchData();
@@ -1364,12 +1398,12 @@ export default function RequestDetails({ id, companyKey }) {
                                 </>
                               ) : (
                                 <>
-                                  <FiCheckCircle /> اعتماد الصرف
+                                  <FiCheckCircle />  موافقة
                                 </>
                               )}
                             </button>
                             <p className="mt-2 text-center text-[11px] font-semibold text-emerald-800">
-                              اعتماد الصرف أولاً — ثم إنشاء أو رفع الوصل
+                               الصرف أولاً — ثم إنشاء أو رفع الوصل
                             </p>
                           </div>
                         )}
@@ -1430,7 +1464,15 @@ export default function RequestDetails({ id, companyKey }) {
           onMouseDown={(e) => e.stopPropagation()}
           onChange={(e) => {
             e.stopPropagation();
-            setDelegateUserId(e.target.value);
+            const nextUserId = e.target.value;
+            setDelegateUserId(nextUserId);
+            const options =
+              request?.delegationVoucherOptionsByUser?.[nextUserId] || [];
+            const norm = (k) => String(k || "").trim().toLowerCase();
+            const hit = options.find((o) => norm(o.key) === norm(effectiveVoucherCompanyKey));
+            setDelegateVoucherCompanyKey(
+              hit?.key || options.find((o) => o.isDefault)?.key || options[0]?.key || ""
+            );
           }}
           className="flex-1 rounded-xl border border-indigo-200 bg-white px-3 py-2 text-sm font-bold text-gray-900 outline-none focus:ring-2 focus:ring-indigo-300"
         >
@@ -1441,12 +1483,34 @@ export default function RequestDetails({ id, companyKey }) {
             </option>
           ))}
         </select>
+        <select
+          value={delegateVoucherCompanyKey}
+          disabled={!delegateUserId}
+          onClick={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+          onChange={(e) => {
+            e.stopPropagation();
+            setDelegateVoucherCompanyKey(e.target.value);
+          }}
+          className="flex-1 rounded-xl border border-indigo-200 bg-white px-3 py-2 text-sm font-bold text-gray-900 outline-none focus:ring-2 focus:ring-indigo-300 disabled:opacity-60"
+        >
+          <option value="">اختر وصل الصرف</option>
+          {(request?.delegationVoucherOptionsByUser?.[delegateUserId] || []).map((opt) => (
+            <option key={opt.key} value={opt.key}>
+              {opt.name}
+            </option>
+          ))}
+        </select>
         <button
           type="button"
           onClick={async (e) => {
             e.stopPropagation();
             if (!delegateUserId) {
               alert("اختَر مستخدم للتخويل");
+              return;
+            }
+            if (!delegateVoucherCompanyKey) {
+              alert("اختَر وصل الصرف للتخويل");
               return;
             }
             setDelegating(true);
@@ -1460,6 +1524,7 @@ export default function RequestDetails({ id, companyKey }) {
                   stepIndex: idx,
                   delegateToUserId: delegateUserId.length === 24 ? delegateUserId : "",
                   delegateToUsername: delegateUserId.length === 24 ? "" : delegateUserId,
+                  delegateVoucherCompanyKey,
                 }),
               });
               const json = await res.json().catch(() => ({}));
@@ -1468,13 +1533,14 @@ export default function RequestDetails({ id, companyKey }) {
               }
               await fetchData();
               setDelegateUserId("");
+              setDelegateVoucherCompanyKey("");
             } catch (err) {
               alert(err?.message || "تعذر تنفيذ التخويل");
             } finally {
               setDelegating(false);
             }
           }}
-          disabled={!delegateUserId || delegating}
+          disabled={!delegateUserId || !delegateVoucherCompanyKey || delegating}
           className="rounded-xl bg-indigo-600 px-3 py-2 text-sm font-extrabold text-white transition hover:bg-indigo-700 disabled:opacity-60"
         >
           {delegating ? "جاري التخويل..." : "تخويل"}
@@ -1482,7 +1548,17 @@ export default function RequestDetails({ id, companyKey }) {
       </div>
       {delegatedToId && (
         <p className="mt-2 text-[12px] font-semibold text-indigo-700">
-          تم التخويل بواسطة {step?.voucherDelegatedBy?.username || "-"}.
+          تم التخويل بواسطة {step?.voucherDelegatedBy?.username || "-"}
+          {step?.voucherDelegateCompanyKey
+            ? ` على وصل ${
+                COMPANIES.find(
+                  (c) =>
+                    String(c.key).trim().toLowerCase() ===
+                    String(step.voucherDelegateCompanyKey).trim().toLowerCase()
+                )?.name || step.voucherDelegateCompanyKey
+              }`
+            : ""}
+          .
         </p>
       )}
     </div>

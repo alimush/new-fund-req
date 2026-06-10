@@ -49,6 +49,7 @@ const StepSchema = new mongoose.Schema(
     voucherDelegatedAt: { type: Date, default: null },
     voucherDelegateToUsername: { type: String, default: "", trim: true },
     voucherDelegatedByUsername: { type: String, default: "", trim: true },
+    voucherDelegateCompanyKey: { type: String, default: "", trim: true },
     voucherProcessedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",

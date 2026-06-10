@@ -18,6 +18,11 @@ import {
 } from "@/lib/email/workflowEmail";
 import { getRequestDisbursementState } from "@/lib/voucher/requestDisbursementState";
 import { reconcileRequestVoucher } from "@/lib/voucher/reconcileRequestVoucher";
+import {
+  getAllVoucherCompanyKeysForUser,
+  getVoucherCompanyOptionsForDelegation,
+  resolveVoucherCompanyKeyForUser,
+} from "@/lib/voucher/resolveVoucherCompanyKey";
 
 /* ======================= HELPERS ======================= */
 async function hasCompanyAccess(userId, company) {
@@ -60,6 +65,7 @@ function resetStepToPendingClean(st) {
   st.voucherDelegatedAt = null;
   st.voucherDelegateToUsername = "";
   st.voucherDelegatedByUsername = "";
+  st.voucherDelegateCompanyKey = "";
   st.voucherProcessedBy = null;
   st.voucherProcessedAt = null;
   st.voucherProcessedByUsername = "";
@@ -158,12 +164,33 @@ export async function GET(req, { params }) {
 
     const userPerms = await getUserPermissions(userId);
     const plain = request.toObject ? request.toObject() : request;
+    const lastStep = plain.workflow?.steps?.[plain.workflow.steps.length - 1];
+    const delegateVoucherHint = String(lastStep?.voucherDelegateCompanyKey || "").trim();
+    const hintCompanyKey =
+      delegateVoucherHint ||
+      resolveVoucherCompanyKeyForUser(company, userPerms) ||
+      company;
+
+    let delegationVoucherOptionsByUser = {};
+    if (userPerms.includes(PERMISSIONS.VOUCHER_DELEGATE)) {
+      const stepUsers = lastStep?.users || [];
+      for (const u of stepUsers) {
+        const uid = String(u?._id || u || "").trim();
+        if (!uid || !Types.ObjectId.isValid(uid)) continue;
+        const delegatePerms = await getUserPermissions(uid);
+        delegationVoucherOptionsByUser[uid] = getVoucherCompanyOptionsForDelegation(
+          company,
+          delegatePerms
+        );
+      }
+    }
+
     let disbursement = await getRequestDisbursementState({
       requestCompanyKey: company,
       requestId: id,
       requestCode: plain.requestCode,
       allowedPerms: userPerms,
-      hintCompanyKey: company,
+      hintCompanyKey,
     });
 
     if (disbursement.hasVoucher && disbursement.voucher) {
@@ -193,6 +220,7 @@ export async function GET(req, { params }) {
       success: true,
       data: {
         ...plain,
+        delegationVoucherOptionsByUser,
         disbursement: {
           isDisbursed: disbursement.isDisbursed || disbursement.stepDisbursed,
           hasVoucher: disbursement.hasVoucher,
@@ -485,6 +513,31 @@ if (action === "update") {
         .select("username email")
         .lean();
 
+      const delegatePerms = await getUserPermissions(delegateToUserId);
+      const allowedVoucherKeys = getAllVoucherCompanyKeysForUser(delegatePerms);
+      const normKey = (k) => String(k || "").trim().toLowerCase();
+
+      let delegateVoucherCompanyKey = String(body?.delegateVoucherCompanyKey || "").trim();
+      if (!delegateVoucherCompanyKey) {
+        delegateVoucherCompanyKey = resolveVoucherCompanyKeyForUser(company, delegatePerms);
+      }
+
+      if (
+        !allowedVoucherKeys.some((k) => normKey(k) === normKey(delegateVoucherCompanyKey))
+      ) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "المستخدم المختار ليس لديه صلاحية على وصل الشركة المحددة",
+          },
+          { status: 400 }
+        );
+      }
+
+      const voucherCfg = COMPANIES.find(
+        (c) => normKey(c.key) === normKey(delegateVoucherCompanyKey)
+      );
+      step.voucherDelegateCompanyKey = String(voucherCfg?.key || delegateVoucherCompanyKey);
       step.voucherDelegateTo = new Types.ObjectId(delegateToUserId);
       step.voucherDelegatedBy = new Types.ObjectId(String(userId));
       step.voucherDelegatedAt = new Date();

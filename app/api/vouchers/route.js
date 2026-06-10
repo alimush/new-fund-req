@@ -331,10 +331,33 @@ export async function POST(req) {
     }
 
     const requestCompany = safeString(requestCompanyKey || companyKey);
-    const voucherCompanyKey = resolveVoucherCompanyKeyForUser(
+    let voucherCompanyKey = resolveVoucherCompanyKeyForUser(
       requestCompany,
       allowedPerms
     );
+
+    let requestDocForVoucher = null;
+    if (requestId) {
+      const RequestModel = getModelForCompany(requestCompany);
+      requestDocForVoucher = await RequestModel.findOne({
+        _id: requestId,
+        companyKey: requestCompany,
+      })
+        .select(
+          "status currentStep workflow.steps.users workflow.steps.status workflow.steps.voucherDelegateTo workflow.steps.voucherDelegateCompanyKey"
+        )
+        .lean();
+
+      if (requestDocForVoucher && canActOnVoucherStep(requestDocForVoucher, userId)) {
+        const lastStep =
+          requestDocForVoucher.workflow?.steps?.[
+            requestDocForVoucher.workflow.steps.length - 1
+          ];
+        const delegatedKey = String(lastStep?.voucherDelegateCompanyKey || "").trim();
+        if (delegatedKey) voucherCompanyKey = delegatedKey;
+      }
+    }
+
     const resolvedConfig = COMPANIES.find(
       (c) => String(c.key).toLowerCase() === String(voucherCompanyKey).toLowerCase()
     );
@@ -351,18 +374,8 @@ export async function POST(req) {
         hasVoucherPermissionForRequest(requestCompany, allowedPerms);
 
     // ✅ استثناء: إذا المستخدم مخوَّل على آخر step لهذا الطلب، نسمح له حتى بدون صلاحية الوصولات
-    if (!hasAccess && requestId) {
-      const RequestModel = getModelForCompany(requestCompany);
-      const requestDoc = await RequestModel.findOne({
-        _id: requestId,
-        companyKey: requestCompany,
-      })
-        .select("status currentStep workflow.steps.users workflow.steps.status workflow.steps.voucherDelegateTo")
-        .lean();
-
-      if (requestDoc && canActOnVoucherStep(requestDoc, userId)) {
-        hasAccess = true;
-      }
+    if (!hasAccess && requestDocForVoucher && canActOnVoucherStep(requestDocForVoucher, userId)) {
+      hasAccess = true;
     }
 
     if (!hasAccess) {
@@ -416,22 +429,14 @@ export async function POST(req) {
     }
 
     if (requestId) {
-      const RequestModel = getModelForCompany(requestCompany);
-      const requestDoc = await RequestModel.findOne({
-        _id: requestId,
-        companyKey: requestCompany,
-      })
-        .select("status currentStep workflow.steps.users workflow.steps.status workflow.steps.voucherDelegateTo")
-        .lean();
-
-      if (!requestDoc) {
+      if (!requestDocForVoucher) {
         return NextResponse.json(
           { success: false, error: "Request not found for voucher" },
           { status: 404 }
         );
       }
 
-      if (!canActOnVoucherStep(requestDoc, userId)) {
+      if (!canActOnVoucherStep(requestDocForVoucher, userId)) {
         return NextResponse.json(
           { success: false, error: "You are not allowed to issue voucher for this request" },
           { status: 403 }
