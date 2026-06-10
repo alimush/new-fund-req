@@ -273,6 +273,24 @@ export async function POST(req) {
       );
     }
 
+    // مزامنة مرفقات الطلب كاتاج على أول خطوة (مثل الاتاج)
+    if (attachments.length > 0 && Array.isArray(doc.workflow?.steps) && doc.workflow.steps.length > 0) {
+      const firstStep = doc.workflow.steps[0];
+      const requestFiles = attachments.map((f) => ({
+        key: f.key || "",
+        url: f.url || buildPublicUrl(f.key),
+        name: f.name || "Attachment",
+        type: f.type || "",
+        size: Number(f.size || 0),
+        uploadedAt: new Date(),
+      }));
+      firstStep.tagAttachments = requestFiles;
+      firstStep.tag = requestFiles[0]?.url || "";
+      doc.markModified("workflow");
+      doc.markModified("workflow.steps");
+      await doc.save();
+    }
+
     const savedDoc = await PaymentPlan.findById(doc._id)
       .populate({
         path: "createdById",

@@ -1,11 +1,10 @@
 "use client";
 
-import { useMemo, useRef, useState, useEffect, useCallback } from "react";
+import { useMemo, useState, useRef, useEffect, useCallback } from "react";
 import { toPng } from "html-to-image";
 import { motion, AnimatePresence } from "framer-motion";
-import { FiX, FiPlus, FiTrash2, FiImage, FiCheck , FiPrinter} from "react-icons/fi";
+import { FiX, FiPlus, FiTrash2, FiCheck, FiImage } from "react-icons/fi";
 import { Cairo } from "next/font/google";
-import { FiPaperclip, FiFileText } from "react-icons/fi";
 import PaymentPlanA4Sheets from "@/components/ex/PaymentPlanA4Sheets";
 import { PAYMENT_PLAN_TEMPLATE } from "@/lib/ex/paymentPlanTemplate";
 import { fieldsFromPaymentPlanTemplate } from "@/lib/ex/paymentPlanLayoutMerge";
@@ -14,8 +13,12 @@ import {
   parseMoneyNumber,
   formatPayPercent,
 } from "@/lib/ex/formatMoneyInput";
+import { usePermissions } from "@/context/PermissionContext";
 
 const cairo = Cairo({ subsets: ["arabic"], weight: ["400", "600", "700", "800"] });
+
+const fmtInt = (n) => new Intl.NumberFormat("en-US").format(Number(n || 0));
+const MAX_ROWS_PER_PAGE = 15;
 
 async function waitForImages(node) {
   const imgs = Array.from(node.querySelectorAll("img"));
@@ -30,7 +33,14 @@ async function waitForImages(node) {
   );
 }
 
-
+function dataUrlToFile(dataUrl, fileName) {
+  const [header, base64] = dataUrl.split(",");
+  const mime = header?.match(/:(.*?);/)?.[1] || "image/png";
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return new File([bytes], fileName, { type: mime });
+}
 
 function todayStrDMY() {
   const d = new Date();
@@ -58,9 +68,6 @@ function dmyToYMD(v) {
   return `${m[3]}-${m[2]}-${m[1]}`;
 }
 
-const fmtInt = (n) => new Intl.NumberFormat("en-US").format(Number(n || 0));
-const MAX_ROWS_PER_PAGE = 15;
-
 function Spinner() {
   return (
     <span
@@ -75,9 +82,13 @@ export default function PaymentPlanGenerator({
     onClose,
     initialForm = null,
     onCreate,
-  }) {  const close = () => onClose?.();
-
-    const getCurrentUsername = () => "";
+  }) {
+  const close = () => onClose?.();
+  const { user } = usePermissions();
+  const currentUsername = useMemo(
+    () => String(user?.username || user?.name || "").trim(),
+    [user]
+  );
 
     const AR_ORDINALS = [
       "الأولى",
@@ -101,36 +112,9 @@ export default function PaymentPlanGenerator({
   const [activeTab, setActiveTab] = useState("Header");
   const [submitting, setSubmitting] = useState(false);
   const [serverMsg, setServerMsg] = useState("");
-
-const [attachment, setAttachment] = useState([]);     // ملفات فعلية قبل الرفع
-const [dragOver, setDragOver] = useState(false);
-const [hasPrinted, setHasPrinted] = useState(false);
-
-const addFiles = (filesArr) => {
-  if (!filesArr?.length) return;
-
-  setAttachment((prev) => {
-    const current = prev || [];
-    const map = new Map(current.map((f) => [`${f.name}_${f.size}`, f]));
-    for (const f of filesArr) map.set(`${f.name}_${f.size}`, f);
-    return Array.from(map.values());
-  });
-};
-
-const openAttachment = (file) => {
-  if (!file) return;
-
-  // ✅ إذا جاي من السيرفر (signed url)
-  if (file.url) {
-    window.open(file.url, "_blank", "noopener,noreferrer");
-    return;
-  }
-
-  // ✅ إذا ملف محلي قبل الرفع (File)
-  const url = URL.createObjectURL(file);
-  window.open(url, "_blank", "noopener,noreferrer");
-  setTimeout(() => URL.revokeObjectURL(url), 5000);
-};
+  const [showPreview, setShowPreview] = useState(false);
+  const [previewPngs, setPreviewPngs] = useState([]);
+  const [building, setBuilding] = useState(false);
 
 const steps = useMemo(
   () => [
@@ -138,14 +122,13 @@ const steps = useMemo(
     { key: "Table", label: "Table" },
     { key: "Footer", label: "Footer" },
     { key: "Review", label: "Review" },
-    { key: "Attachment", label: "Attachment" },
   ],
   []
 );
 
   // ✅ حذفنا signature من الفورم
   const [form, setForm] = useState(() => ({
-    salesEmp: initialForm?.salesEmp || getCurrentUsername(), // ✅ هنا
+    salesEmp: initialForm?.salesEmp || "",
     customer: initialForm?.customer || "",
     unitNo: initialForm?.unitNo || "",
     dateDMY: initialForm?.dateDMY || todayStrDMY(),
@@ -186,6 +169,14 @@ const steps = useMemo(
   useEffect(() => {
     if (open) loadLayout();
   }, [open, loadLayout]);
+
+  useEffect(() => {
+    if (!open || !currentUsername) return;
+    setForm((p) => ({
+      ...p,
+      salesEmp: initialForm?.salesEmp?.trim() || currentUsername,
+    }));
+  }, [open, currentUsername, initialForm?.salesEmp]);
 
   const setField = (key, val) => setForm((p) => ({ ...p, [key]: val }));
 
@@ -228,7 +219,7 @@ const steps = useMemo(
 
   const resetAll = () => {
     setForm({
-      salesEmp: "",
+      salesEmp: currentUsername,
       customer: "",
       unitNo: "",
       dateDMY: todayStrDMY(),
@@ -237,7 +228,6 @@ const steps = useMemo(
     });
     setServerMsg("");
     setActiveTab("Header");
-    setHasPrinted(false);
   };
 
   const totalAmount = useMemo(() => {
@@ -254,7 +244,6 @@ const steps = useMemo(
     }));
   }, [form.rows, totalAmount]);
 
-  // ✅ Multi-page للطباعة: 15 سطر لكل صفحة
   const pages = useMemo(() => {
     const chunks = [];
     const all = rowsWithPercent;
@@ -288,124 +277,6 @@ const steps = useMemo(
     return pngs;
   };
 
-  function printAllPngs(pngs, onDone) {
-    if (!pngs?.length) return;
-  
-    const iframe = document.createElement("iframe");
-    iframe.style.position = "fixed";
-    iframe.style.right = "0";
-    iframe.style.bottom = "0";
-    iframe.style.width = "0";
-    iframe.style.height = "0";
-    iframe.style.border = "0";
-    document.body.appendChild(iframe);
-  
-    const doc = iframe.contentWindow?.document;
-    if (!doc) return;
-  
-    const imgsHtml = pngs
-      .map((src) => `<div class="page"><img src="${src}" /></div>`)
-      .join("");
-  
-    doc.open();
-    const callbackName = 'onPrintDone_' + Date.now();
-    window[callbackName] = () => {
-      if (onDone) onDone();
-      cleanup();
-      delete window[callbackName];
-    };
-
-    doc.write(`
-      <!doctype html>
-      <html>
-        <head>
-          <meta charset="utf-8" />
-          <title>Print</title>
-          <style>
-            @page { size: A4; margin: 0; }
-            html, body { margin: 0; padding: 0; background: white; }
-            .page {
-              width: 210mm;
-              height: 297mm;
-              page-break-after: always;
-              overflow: hidden;
-            }
-            .page:last-child {
-              page-break-after: auto;
-            }
-            img {
-              width: 210mm;
-              height: 297mm;
-              display: block;
-            }
-          </style>
-        </head>
-        <body>
-          ${imgsHtml}
-          <script>
-            const imgs = Array.from(document.images);
-            let loaded = 0;
-  
-            window.addEventListener("afterprint", function() {
-              if (window.parent && typeof window.parent["${callbackName}"] === "function") {
-                window.parent["${callbackName}"]();
-              }
-            });
-
-            function done() {
-              window.focus();
-              window.print();
-            }
-  
-            if (!imgs.length) done();
-  
-            imgs.forEach((im) => {
-              if (im.complete) {
-                loaded++;
-                if (loaded === imgs.length) done();
-                return;
-              }
-  
-              im.onload = () => {
-                loaded++;
-                if (loaded === imgs.length) done();
-              };
-  
-              im.onerror = () => {
-                loaded++;
-                if (loaded === imgs.length) done();
-              };
-            });
-          </script>
-        </body>
-      </html>
-    `);
-    doc.close();
-  
-    const cleanup = () => {
-      try {
-        if (document.body.contains(iframe)) {
-          document.body.removeChild(iframe);
-        }
-      } catch {}
-    };
-
-    setTimeout(() => {
-      if (window[callbackName]) {
-        delete window[callbackName];
-      }
-      cleanup();
-    }, 1000 * 60 * 5);
-  }
-  
-  const doPrint = async () => {
-    const pngs = await buildPagePngs();
-    if (!pngs.length) return;
-    printAllPngs(pngs, () => {
-      setHasPrinted(true);
-    });
-  };
-
   const currentStepIndex = steps.findIndex((s) => s.key === activeTab);
   const progressPercent = Math.round(((currentStepIndex + 1) / steps.length) * 100);
 
@@ -421,52 +292,59 @@ const steps = useMemo(
       .filter((r) => r.payType || r.amount || r.payDateYMD);
   }, [rowsWithPercent]);
 
-  // ✅ زر الإنشاء: يدز إلى API ويخزن بالمونغو (بدون signature)
+  const openPreview = async () => {
+    setShowPreview(true);
+    setPreviewPngs([]);
+    setBuilding(true);
+    try {
+      const pngs = await buildPagePngs();
+      setPreviewPngs(pngs);
+    } catch (e) {
+      console.error(e);
+      setServerMsg(e?.message || "تعذر تجهيز المعاينة.");
+    } finally {
+      setBuilding(false);
+    }
+  };
+
   const handleCreate = async () => {
     setServerMsg("");
-  
-    if (!attachment || attachment.length === 0) {
-      setServerMsg("يرجى إضافة مرفق واحد على الأقل.");
-      return;
-    }
-  
     setSubmitting(true);
-  
 
-
-  
     try {
-      // 1) upload attachments to S3 (presigned)
-      const uploadedAttachments = [];
-  
-      if (attachment?.length > 0) {
-        for (const file of attachment) {
-          const presignRes = await fetch("/api/upload/presign", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              fileName: file.name,
-              fileType: file.type,
-              prefix: `payment-plans`, // تقدر تخلي companyKey إذا عندك
-            }),
-          });
-  
-          if (!presignRes.ok) throw new Error("Failed to get upload URL");
-          const { url, key, getUrl } = await presignRes.json();
-
-          const uploadRes = await fetch(url, {
-            method: "PUT",
-            body: file,
-            headers: { "Content-Type": file.type || "application/octet-stream" },
-          });
-          
-          if (!uploadRes.ok) throw new Error("Failed to upload file");
-          
-          uploadedAttachments.push({ key, name: file.name, url: getUrl || "" });
-        }
+      const pngs = await buildPagePngs();
+      if (!pngs.length) {
+        throw new Error("تعذر توليد صورة الفورم.");
       }
-  
-      // 2) create payment plan payload
+
+      const uploadedAttachments = [];
+
+      for (let i = 0; i < pngs.length; i++) {
+        const file = dataUrlToFile(pngs[i], `payment-plan-page-${i + 1}.png`);
+        const presignRes = await fetch("/api/upload/presign", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            fileName: file.name,
+            fileType: file.type,
+            prefix: "payment-plans",
+          }),
+        });
+
+        if (!presignRes.ok) throw new Error("Failed to get upload URL");
+        const { url, key, getUrl } = await presignRes.json();
+
+        const uploadRes = await fetch(url, {
+          method: "PUT",
+          body: file,
+          headers: { "Content-Type": file.type || "application/octet-stream" },
+        });
+
+        if (!uploadRes.ok) throw new Error("Failed to upload file");
+
+        uploadedAttachments.push({ key, name: file.name, url: getUrl || "" });
+      }
+
       const payload = {
         salesEmp: form.salesEmp,
         customer: form.customer,
@@ -474,9 +352,9 @@ const steps = useMemo(
         dateDMY: form.dateDMY,
         discount: form.discount,
         rows: cleanedRows,
-        attachments: uploadedAttachments, // ✅ مهم
+        attachments: uploadedAttachments,
       };
-  
+
       await onCreate?.(payload);
     } catch (e) {
       console.error(e);
@@ -488,7 +366,6 @@ const steps = useMemo(
 
   return (
     <div className={`${cairo.className}`}>
-      {/* Hidden render area فقط للطباعة/الصور */}
       <div className="sr-only" aria-hidden="true">
         <PaymentPlanA4Sheets
           form={form}
@@ -535,7 +412,6 @@ const steps = useMemo(
                         <button
                           type="button"
                           onClick={() => setActiveTab(s.key)}
-                          disabled={s.key === "Attachment" && !hasPrinted}
                           className={`flex items-center gap-2 px-3 py-2 w-full justify-center rounded-xl border text-sm transition
                             ${
                               active
@@ -544,7 +420,6 @@ const steps = useMemo(
                                 ? "bg-gray-200 text-gray-700 border-gray-300 hover:bg-gray-300"
                                 : "bg-white text-gray-700 border-gray-300 hover:bg-gray-100"
                             }
-                            ${s.key === "Attachment" && !hasPrinted ? "opacity-50 cursor-not-allowed" : ""}
                           `}
                         >
                           <span className="hidden sm:inline">{s.label}</span>
@@ -590,13 +465,14 @@ const steps = useMemo(
               >
                 {activeTab === "Header" && (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                   <input
-  type="text"
-  value={form.salesEmp}
-  readOnly
-  disabled
-  className="border border-gray-300 rounded-lg p-2 bg-gray-100 text-gray-800 cursor-not-allowed"
-/>
+                    <input
+                      type="text"
+                      placeholder="اسم موظف المبيعات"
+                      value={form.salesEmp}
+                      readOnly
+                      disabled
+                      className="border border-gray-300 rounded-lg p-2 bg-gray-100 text-gray-800 cursor-not-allowed"
+                    />
 
                     <input
                       type="date"
@@ -717,100 +593,6 @@ const steps = useMemo(
                   </div>
                 )}
 
-{activeTab === "Attachment" && (
-  <div className="space-y-4">
-    <div className="flex items-center justify-between">
-      <div>
-        <div className="text-sm font-semibold text-gray-800">المرفقات</div>
-        <div className="text-xs text-gray-500">تقدر ترفع صور / PDF / Excel</div>
-      </div>
-
-      {attachment?.length > 0 && (
-        <span className="text-xs px-2.5 py-1 rounded-full border border-black/10 bg-white/60 text-gray-700">
-          {attachment.length} file(s)
-        </span>
-      )}
-    </div>
-
-    <div
-      className={`rounded-2xl border border-black/10 bg-white/55 shadow-sm p-4 transition
-        ${dragOver ? "ring-2 ring-blue-300 bg-white/75" : ""}`}
-      onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDragOver(true); }}
-      onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setDragOver(false); }}
-      onDrop={(e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        setDragOver(false);
-        addFiles(Array.from(e.dataTransfer.files || []));
-      }}
-    >
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="h-11 w-11 rounded-2xl border border-black/10 bg-white/70 flex items-center justify-center text-gray-600">
-            <FiPaperclip className="text-lg" />
-          </div>
-          <div>
-            <div className="text-sm font-medium text-gray-800">رفع مرفق</div>
-            <div className="text-xs text-gray-500">اختار أو Drag & Drop</div>
-          </div>
-        </div>
-
-        <label className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-gray-800 text-white text-sm cursor-pointer hover:bg-gray-900 transition">
-          <FiPlus className="text-base" />
-          Add Files
-          <input
-            type="file"
-            className="hidden"
-            multiple
-            onChange={(e) => {
-              addFiles(Array.from(e.target.files || []));
-              e.target.value = "";
-            }}
-          />
-        </label>
-      </div>
-
-      {attachment?.length > 0 ? (
-        <div className="mt-4 space-y-2">
-          {attachment.map((file, i) => (
-            <div
-              key={i}
-              onClick={() => openAttachment(file)}
-              className="flex items-center justify-between gap-3 px-3 py-2 rounded-xl border border-black/10 bg-white/65 hover:bg-white/80 transition cursor-pointer"
-            >
-              <div className="min-w-0 flex items-center gap-2">
-                <div className="h-9 w-9 rounded-xl border border-black/10 bg-white/70 flex items-center justify-center text-gray-600">
-                  <FiFileText />
-                </div>
-                <div className="min-w-0">
-                  <div className="text-sm font-medium text-gray-800 truncate">{file.name}</div>
-                  <div className="text-xs text-gray-500">{(file.size / 1024 / 1024).toFixed(2)} MB</div>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setAttachment((prev) => (prev || []).filter((_, idx) => idx !== i));
-                }}
-                className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-xl border border-black/10 bg-white/70 text-gray-700 hover:bg-red-50 hover:text-red-600 transition"
-              >
-                <FiTrash2 className="text-[14px]" />
-                Remove
-              </button>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div className="mt-4 rounded-xl border border-black/10 bg-white/60 p-5 text-center text-xs text-gray-600">
-          ماكو مرفقات بعد
-        </div>
-      )}
-    </div>
-  </div>
-)}
-
                 {activeTab === "Footer" && (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <input
@@ -854,9 +636,6 @@ const steps = useMemo(
                         <div className="text-xs text-gray-500">رقم الوحدة</div>
                         <div className="font-extrabold text-gray-800">{form.unitNo || "-"}</div>
                       </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div className="p-3 rounded-xl bg-white/70 border border-black/10">
                         <div className="text-xs text-gray-500">الخصم</div>
                         <div className="font-extrabold text-gray-800">{form.discount || "-"}</div>
@@ -868,12 +647,10 @@ const steps = useMemo(
                     </div>
 
                     <div className="rounded-2xl border border-black/10 bg-white/70 overflow-hidden">
-                      <div className="px-4 py-3 border-b bg-white/60 font-extrabold text-gray-800 flex justify-between">
-                        <span>صفوف الدفعات: {cleanedRows.length}</span>
-                        <span>حد الطباعة للصفحة: {MAX_ROWS_PER_PAGE}</span>
+                      <div className="px-4 py-3 border-b bg-white/60 font-extrabold text-gray-800">
+                        صفوف الدفعات: {cleanedRows.length}
                       </div>
 
-                      {/* ✅ سكرول لتيبل الريفيو */}
                       <div className="overflow-x-auto">
                         <div className="max-h-[420px] overflow-y-auto">
                           <table className="min-w-full text-sm">
@@ -888,7 +665,7 @@ const steps = useMemo(
                             <tbody className="bg-white/70">
                               {cleanedRows.length ? (
                                 cleanedRows.map((r, i) => (
-                                  <tr key={i} className="border-t border-gray-200/60 hover:bg-white/80 transition">
+                                  <tr key={i} className="border-t border-gray-200/60">
                                     <td className="px-4 py-2 text-center">{r.payType || "-"}</td>
                                     <td className="px-4 py-2 text-center">
                                       {r.payDateYMD ? ymdToDMY(r.payDateYMD) : "-"}
@@ -915,8 +692,24 @@ const steps = useMemo(
                         مجموع المبالغ: {fmtInt(totalAmount)}
                       </div>
                     </div>
+
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="text-right text-xs text-gray-500 font-bold">
+                        عند الإنشاء تُولَّد صورة الفورم تلقائياً وترسل كاتاج للورك فلو.
+                      </div>
+                      <button
+                        type="button"
+                        onClick={openPreview}
+                        disabled={building || submitting}
+                        className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-extrabold hover:bg-blue-700 disabled:opacity-50"
+                      >
+                        <FiImage />
+                        Preview
+                      </button>
+                    </div>
                   </div>
                 )}
+
               </motion.div>
 
               {/* Footer Buttons */}
@@ -937,22 +730,12 @@ const steps = useMemo(
                     مسح الكل
                   </button>
 
-                  {activeTab === "Review" && (
-                    <button
-                      onClick={doPrint}
-                      disabled={submitting}
-                      className="px-5 py-2.5 rounded-lg flex items-center gap-2 font-extrabold bg-gray-700 hover:bg-gray-800 text-white disabled:opacity-50"
-                    >
-                      <FiPrinter /> طباعة
-                    </button>
-                  )}
-
-                  {activeTab === "Attachment" ? (
+                  {activeTab === "Review" ? (
                     <button
                       onClick={handleCreate}
-                      disabled={submitting || attachment.length === 0}
+                      disabled={submitting}
                       className={`px-5 py-2.5 rounded-lg flex items-center gap-2 font-extrabold text-white ${
-                        submitting || attachment.length === 0
+                        submitting
                           ? "bg-gray-400 cursor-not-allowed"
                           : "bg-gray-900 hover:bg-black"
                       }`}
@@ -973,18 +756,75 @@ const steps = useMemo(
                         const idx = steps.findIndex((s) => s.key === activeTab);
                         setActiveTab(steps[Math.min(idx + 1, steps.length - 1)].key);
                       }}
-                      disabled={activeTab === "Review" && !hasPrinted}
-                      whileHover={{ scale: (activeTab === "Review" && !hasPrinted) ? 1 : 1.03 }}
-                      className={`px-5 py-2.5 rounded-lg font-extrabold ${
-                        (activeTab === "Review" && !hasPrinted)
-                          ? "bg-gray-400 text-gray-200 cursor-not-allowed"
-                          : "bg-gray-700 text-white hover:bg-gray-800"
-                      }`}
+                      whileHover={{ scale: 1.03 }}
+                      className="px-5 py-2.5 rounded-lg font-extrabold bg-gray-700 text-white hover:bg-gray-800"
                     >
                       التالي →
                     </motion.button>
                   )}
                 </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showPreview && (
+          <motion.div
+            className="fixed inset-0 z-[60] bg-black/60 flex items-center justify-center p-4"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+          >
+            <motion.div
+              className="w-full max-w-md sm:max-w-2xl lg:max-w-3xl rounded-2xl bg-white shadow-2xl overflow-hidden flex flex-col max-h-[85vh]"
+              initial={{ y: 24, opacity: 0, scale: 0.98 }}
+              animate={{ y: 0, opacity: 1, scale: 1 }}
+              exit={{ y: 18, opacity: 0, scale: 0.98 }}
+              transition={{ type: "spring", stiffness: 140, damping: 18 }}
+            >
+              <div className="p-3 border-b flex items-center justify-between">
+                <div className="font-black text-gray-900 flex items-center gap-2">
+                  <FiImage /> Preview (A4)
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowPreview(false);
+                    setPreviewPngs([]);
+                  }}
+                  className="px-3 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center gap-2"
+                >
+                  <FiX /> Close
+                </button>
+              </div>
+
+              <div className="flex-1 bg-gray-50 overflow-y-auto">
+                {building && !previewPngs.length ? (
+                  <div className="h-48 flex items-center justify-center text-gray-600 font-bold">
+                    جارِ تجهيز المعاينة…
+                  </div>
+                ) : previewPngs.length ? (
+                  <div className="p-2 space-y-3">
+                    {previewPngs.map((src, i) => (
+                      <div
+                        key={i}
+                        className="w-full bg-white rounded-xl shadow overflow-hidden aspect-[210/297]"
+                      >
+                        <img
+                          src={src}
+                          alt={`page_${i + 1}`}
+                          className="w-full h-full object-contain block"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="h-48 flex items-center justify-center text-gray-600 font-bold">
+                    ماكو معاينة — تأكد من البيانات
+                  </div>
+                )}
               </div>
             </motion.div>
           </motion.div>

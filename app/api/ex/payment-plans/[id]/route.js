@@ -188,11 +188,9 @@ async function ensurePlanWorkflowStable(plan, forcedKey) {
     }
 
     const firstStep = plan.workflow?.steps?.[0];
-    const isFirstStepLast = plan.workflow?.steps?.length === 1;
 
     if (
       firstStep &&
-      !isFirstStepLast &&
       Array.isArray(plan.attachments) &&
       plan.attachments.length > 0 &&
       (!Array.isArray(firstStep.tagAttachments) || firstStep.tagAttachments.length === 0) &&
@@ -218,7 +216,6 @@ async function ensurePlanWorkflowStable(plan, forcedKey) {
   if (
     Array.isArray(newWorkflow.steps) &&
     newWorkflow.steps.length > 0 &&
-    newWorkflow.steps.length > 1 &&
     Array.isArray(plan.attachments) &&
     plan.attachments.length > 0
   ) {
