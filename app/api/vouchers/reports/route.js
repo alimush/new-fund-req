@@ -5,6 +5,11 @@ import Permissions from "@/models/Permissions";
 import { PERMISSIONS } from "@/lib/permission";
 import mongoose from "mongoose";
 import { COMPANIES } from "@/lib/voucher/companies";
+import {
+  parseFilterDayEnd,
+  parseFilterDayStart,
+  voucherEffectiveDateAddFields,
+} from "@/lib/voucher/voucherDate";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -230,16 +235,6 @@ export async function GET(req) {
       };
     }
 
-    if (fromDate || toDate) {
-      query.createdAt = {};
-      if (fromDate) query.createdAt.$gte = new Date(fromDate);
-      if (toDate) {
-        const end = new Date(toDate);
-        end.setHours(23, 59, 59, 999);
-        query.createdAt.$lte = end;
-      }
-    }
-
     if (q) {
       const smartOr = [
         { voucherNo: { $regex: escapeRegex(q), $options: "i" } },
@@ -258,12 +253,28 @@ export async function GET(req) {
       }
     }
 
-    const total = await col.countDocuments(query);
+    const pipeline = [{ $match: query }, voucherEffectiveDateAddFields()];
+
+    if (fromDate || toDate) {
+      const dateMatch = { _effDate: {} };
+      const start = parseFilterDayStart(fromDate);
+      const end = parseFilterDayEnd(toDate);
+      if (start) dateMatch._effDate.$gte = start;
+      if (end) dateMatch._effDate.$lte = end;
+      pipeline.push({ $match: dateMatch });
+    }
+
+    const countRows = await col.aggregate([...pipeline, { $count: "total" }]).toArray();
+    const total = countRows[0]?.total || 0;
+
     const results = await col
-      .find(query)
-      .sort({ createdAt: -1 })
-      .skip((page - 1) * pageSize)
-      .limit(pageSize)
+      .aggregate([
+        ...pipeline,
+        { $sort: { _effDate: -1, seq: -1, createdAt: -1 } },
+        { $skip: (page - 1) * pageSize },
+        { $limit: pageSize },
+        { $project: { _effDate: 0 } },
+      ])
       .toArray();
 
     return NextResponse.json({

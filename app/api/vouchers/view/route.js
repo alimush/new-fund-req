@@ -8,6 +8,7 @@ import { ObjectId } from "mongodb";
 import { COMPANIES } from "@/lib/voucher/companies";
 import VoucherCounter from "@/models/VoucherCounter";
 import { getModelForCompany } from "@/models/Request";
+import { buildVoucherDateFromParts } from "@/lib/voucher/voucherDate";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -122,13 +123,20 @@ function buildBody(body) {
   const rawAmount = String(body.vAmount ?? "").replace(/,/g, "");
   const numericAmount = isNaN(Number(rawAmount)) ? 0 : Number(rawAmount);
 
+  const vDateYY = normalize2(body.vDateYY);
+  const vDateMM = normalize2(body.vDateMM);
+  const vDateDD = normalize2(body.vDateDD);
+
   return {
     // Date Parts
     dateParts: {
-      yy: normalize2(body.vDateYY),
-      mm: normalize2(body.vDateMM),
-      dd: normalize2(body.vDateDD),
+      yy: vDateYY,
+      mm: vDateMM,
+      dd: vDateDD,
     },
+
+    voucherDate:
+      buildVoucherDateFromParts(vDateYY, vDateMM, vDateDD) || undefined,
 
     // Main Fields (Mapping to original schema)
     amount: numericAmount,
@@ -168,9 +176,9 @@ function buildBody(body) {
     vWords: String(body.vWords ?? "").trim(),
     vDesc: String(body.vDesc ?? "").trim(),
     vCurrency: body.vCurrency === "USD" ? "USD" : "IQD",
-    vDateYY: normalize2(body.vDateYY),
-    vDateMM: normalize2(body.vDateMM),
-    vDateDD: normalize2(body.vDateDD),
+    vDateYY,
+    vDateMM,
+    vDateDD,
   };
 }
 

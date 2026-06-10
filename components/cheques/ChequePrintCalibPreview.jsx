@@ -11,7 +11,8 @@ import {
   fieldWithTextLayout,
   layoutFromField,
 } from "@/lib/cheques/textFieldLayout";
-import { getA4LandscapeSize, getFieldOffset } from "@/lib/cheques/printCalib";
+import { getFieldOffset } from "@/lib/cheques/printCalib";
+import { getChequePageSize } from "@/lib/cheques/chequePageSize";
 
 const DATE_ORDER = ["dateDay", "dateMonth", "dateYear"];
 const TEXT_KEY = "text";
@@ -51,7 +52,7 @@ export default function ChequePrintCalibPreview({
   /** في نافذة ضبط الطباعة — إظهار صورة القالب مع البيانات */
   showChequeImage = false,
 }) {
-  const { pageWidthMm, pageHeightMm } = getA4LandscapeSize();
+  const { pageWidthMm, pageHeightMm } = getChequePageSize();
   const previewW = 300;
   const pxPerMm = previewW / pageWidthMm;
   const previewH = pageHeightMm * pxPerMm;

@@ -32,6 +32,7 @@ const Select = dynamic(() => import("react-select").then((m) => m.default), {
 });
 
 import { COMPANIES } from "@/lib/voucher/companies";
+import { formatVoucherDateDisplay } from "@/lib/voucher/voucherDate";
 
 const getCompanyName = (key) => {
   if (!key) return "-";
@@ -813,14 +814,7 @@ export default function VoucherReportsPage() {
         Bank: r.bank || "-",
         Description: r.description || "-",
         Notes: r.notes || "-",
-        Date:
-          r.vDateDD && r.vDateMM && r.vDateYY
-            ? `${r.vDateDD}/${r.vDateMM}/${r.vDateYY}`
-            : r.voucherDate
-            ? new Date(r.voucherDate).toLocaleDateString("en-GB")
-            : r.createdAt
-            ? new Date(r.createdAt).toLocaleDateString("en-GB")
-            : "-",
+        Date: formatVoucherDateDisplay(r),
       }));
 
       const ws = XLSX.utils.json_to_sheet(rowsExcel);
@@ -1285,13 +1279,7 @@ export default function VoucherReportsPage() {
                       </td>
 
                       <td className="px-6 py-4 text-right whitespace-nowrap text-slate-700">
-                        {r.vDateDD && r.vDateMM && r.vDateYY
-                          ? `${r.vDateDD}/${r.vDateMM}/${r.vDateYY}`
-                          : r.voucherDate
-                          ? new Date(r.voucherDate).toLocaleDateString("en-GB")
-                          : r.createdAt
-                          ? new Date(r.createdAt).toLocaleDateString("en-GB")
-                          : "-"}
+                        {formatVoucherDateDisplay(r)}
                       </td>
 
                       <td

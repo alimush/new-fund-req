@@ -389,9 +389,9 @@ export default function ChequePrintSettingsModal({
 
             <div className="flex-1 overflow-y-auto px-4 py-4 md:px-5">
               <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs font-semibold text-amber-900 leading-relaxed mb-4">
-                في نافذة الطباعة: <strong>Landscape</strong>،{" "}
-                <strong>Margins: None</strong>، <strong>Scale 100%</strong>،
-                وألغِ <strong>Headers and footers</strong>.
+                تفتح نافذة <strong>PDF</strong> بمقاس <strong>18.22 × 9 سم</strong> ثم الطباعة
+                تلقائياً. في نافذة الطباعة: <strong>Scale 100%</strong> وألغِ{" "}
+                <strong>Headers and footers</strong> و<strong>Two-sided</strong>.
               </div>
 
               <div className="grid gap-5 lg:grid-cols-[300px_1fr]">
@@ -418,37 +418,37 @@ export default function ChequePrintSettingsModal({
                         label="من الأعلى"
                         hint="تحريك الصك كاملاً"
                         valueMm={calib.pageTopMm}
-                        minCm={-0.5}
-                        maxCm={12}
+                        minCm={-1}
+                        maxCm={1}
                         showSlider
-                        sliderStep={0.05}
+                        sliderStep={0.01}
                         onChangeMm={(v) => patch("pageTopMm", v)}
                       />
                       <CmInputRow
                         label="من اليسار"
                         valueMm={calib.pageLeftMm}
-                        minCm={-0.5}
-                        maxCm={12}
+                        minCm={-1}
+                        maxCm={1}
                         showSlider
-                        sliderStep={0.05}
+                        sliderStep={0.01}
                         onChangeMm={(v) => patch("pageLeftMm", v)}
                       />
                       <CmInputRow
                         label="عرض الصك"
                         valueMm={calib.widthMm}
-                        minCm={12}
-                        maxCm={26}
+                        minCm={16}
+                        maxCm={18.22}
                         showSlider
-                        sliderStep={0.05}
+                        sliderStep={0.01}
                         onChangeMm={(v) => patch("widthMm", v)}
                       />
                       <CmInputRow
                         label="ارتفاع الصك"
                         valueMm={calib.heightMm}
-                        minCm={6}
-                        maxCm={15}
+                        minCm={7}
+                        maxCm={9}
                         showSlider
-                        sliderStep={0.05}
+                        sliderStep={0.01}
                         onChangeMm={(v) => patch("heightMm", v)}
                       />
                     </div>

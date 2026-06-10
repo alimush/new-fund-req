@@ -15,6 +15,7 @@ import User from "@/models/User";
 import { getModelForCompany } from "@/models/Request";
 import { findVoucherForRequest } from "@/lib/voucher/findVoucherForRequest";
 import { linkVoucherToRequest } from "@/lib/voucher/linkVoucherToRequest";
+import { buildVoucherDateFromParts } from "@/lib/voucher/voucherDate";
 
 export const runtime = "nodejs";
 
@@ -169,20 +170,6 @@ function safeString(v) {
 function toNumber(v, def = 0) {
   const n = Number(String(v ?? "").replace(/,/g, ""));
   return Number.isFinite(n) ? n : def;
-}
-
-function buildVoucherDate(yy, mm, dd) {
-  const y = safeString(yy);
-  const m = safeString(mm);
-  const d = safeString(dd);
-
-  if (!y || !m || !d) return new Date();
-
-  const fullYear = Number(y) >= 50 ? `19${y}` : `20${y}`;
-  const iso = `${fullYear}-${m.padStart(2, "0")}-${d.padStart(2, "0")}T00:00:00`;
-
-  const dt = new Date(iso);
-  return Number.isNaN(dt.getTime()) ? new Date() : dt;
 }
 
 function clampNumber(value, min, max, fallback) {
@@ -467,7 +454,7 @@ export async function POST(req) {
       requestId: requestId ? safeString(requestId) : null,
       requestCode: requestCodeHint || safeString(requestCode),
 
-      voucherDate: buildVoucherDate(vDateYY, vDateMM, vDateDD),
+      voucherDate: buildVoucherDateFromParts(vDateYY, vDateMM, vDateDD) || new Date(),
 
       dateParts: {
         yy: safeString(vDateYY),
