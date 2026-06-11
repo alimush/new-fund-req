@@ -365,6 +365,57 @@ if (action === "update") {
 
   return NextResponse.json({ success: true, data: request });
 }
+
+    /* ================= EDIT LAST STEP COMMENT ================= */
+    if (action === "edit_step_comment") {
+      const stepIndex = Number.isInteger(bodyStepIndex) ? bodyStepIndex : -1;
+      const lastIdx = (request.workflow?.steps?.length || 0) - 1;
+
+      if (stepIndex !== lastIdx || lastIdx < 0) {
+        return NextResponse.json(
+          { success: false, error: "Comment edit is allowed only on the final step" },
+          { status: 400 }
+        );
+      }
+
+      const step = request.workflow?.steps?.[stepIndex];
+      if (!step) {
+        return NextResponse.json({ success: false, error: "Invalid workflow step" }, { status: 400 });
+      }
+
+      if (String(request.status || "").toLowerCase() === "cancelled") {
+        return NextResponse.json({ success: false, error: "Request is cancelled" }, { status: 400 });
+      }
+
+      if (step.status !== "Approved") {
+        return NextResponse.json(
+          { success: false, error: "Comment can be edited only after final step approval" },
+          { status: 400 }
+        );
+      }
+
+      const actedById = step.actedBy ? String(step.actedBy) : "";
+      if (!actedById || actedById !== String(userId)) {
+        return NextResponse.json(
+          { success: false, error: "Only the user who approved this step can edit the comment" },
+          { status: 403 }
+        );
+      }
+
+      step.comment = String(note || "").trim();
+      request.markModified(`workflow.steps.${stepIndex}`);
+
+      request.approvalHistory.push({
+        user: userId,
+        action: "edit_step_comment",
+        note: step.comment,
+        date: new Date(),
+      });
+
+      await request.save();
+      return NextResponse.json({ success: true, data: request });
+    }
+
     /* ================= VALID ACTION ================= */
     if (action !== "approve" && action !== "reject" && action !== "delegate_voucher" && action !== "delegate_disburse_approve") {
       return NextResponse.json({ success: false, error: "Invalid action" }, { status: 400 });

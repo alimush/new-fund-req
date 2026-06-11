@@ -60,7 +60,7 @@ export default function RequestDetails({ id, companyKey }) {
   const [currentUser, setCurrentUser] = useState(null);
   const [pdfLoading, setPdfLoading] = useState(false);
   const [showCommentModal, setShowCommentModal] = useState(false);
-  const [commentAction, setCommentAction] = useState(null); // approve | reject | view
+  const [commentAction, setCommentAction] = useState(null); // approve | reject | view | edit_comment
   const [commentText, setCommentText] = useState("");
   const [activeStep, setActiveStep] = useState(null);
   const [showVoucherAttachModal, setShowVoucherAttachModal] = useState(false);
@@ -1165,6 +1165,7 @@ export default function RequestDetails({ id, companyKey }) {
                     canDelegateViewDisbursedVoucher && !showFullVoucherActions;
 
                   const isCurrent = idx === request.currentStep;
+                  const isCancelled = request.status === "Cancelled";
                   const canApproveFinalStep =
                     !isLast || approvalOnlyCompany || canDelegateVoucher;
 
@@ -1180,13 +1181,20 @@ export default function RequestDetails({ id, companyKey }) {
                         String(user.username) === String(currentUser.username)
                     );
 
+                  const canEditLastStepComment =
+                    isLast &&
+                    !isCancelled &&
+                    step.status === "Approved" &&
+                    request.status === "Approved" &&
+                    step.actedBy &&
+                    currentUser &&
+                    sameUser(step.actedBy, currentUser);
+
                   const hasComment = !!(step.comment && step.comment.trim());
                   const hasAttach =
                     (Array.isArray(step.tagAttachments) &&
                       step.tagAttachments.length > 0) ||
                     !!step.tag;
-
-                  const isCancelled = request.status === "Cancelled";
 
                   const cardBase = `
                     relative min-w-[320px] max-w-[360px] shrink-0 rounded-3xl p-5
@@ -1242,15 +1250,59 @@ export default function RequestDetails({ id, companyKey }) {
                         }}
                         className={`${cardBase} ${cardHover} ${currentRing}`}
                       >
-                        {(hasComment || hasAttach) && !isCancelled && (
-                          <div className="absolute left-3 top-3 flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-1 text-indigo-700 ring-1 ring-indigo-200/70">
-                            <FiMessageSquare className="text-sm" />
-                            <span className="text-[10px] font-extrabold">عرض</span>
+                        {!isCancelled && (hasComment || hasAttach || canEditLastStepComment) ? (
+                          <div className="absolute inset-x-3 top-3 z-20 flex items-start justify-between gap-2 pointer-events-none">
+                            {(hasComment || hasAttach) ? (
+                              <div className="pointer-events-auto flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-1 text-indigo-700 ring-1 ring-indigo-200/70">
+                                <FiMessageSquare className="text-sm" />
+                                <span className="text-[10px] font-extrabold">عرض</span>
+                              </div>
+                            ) : (
+                              <span />
+                            )}
+                            {canEditLastStepComment ? (
+                              <button
+                                type="button"
+                                title="تعديل التعليق"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActiveStep(idx);
+                                  setCommentAction("edit_comment");
+                                  setCommentText(step.comment || "");
+                                  const last =
+                                    Array.isArray(step.tagAttachments) &&
+                                    step.tagAttachments.length
+                                      ? step.tagAttachments[step.tagAttachments.length - 1]
+                                      : null;
+                                  setStepAttachment(
+                                    last?.url
+                                      ? {
+                                          url: last.url,
+                                          name: last.name,
+                                          type: last.type,
+                                          size: last.size,
+                                        }
+                                      : null
+                                  );
+                                  setShowCommentModal(true);
+                                }}
+                                className="pointer-events-auto inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-1 text-amber-900 ring-1 ring-amber-200/80 transition hover:bg-amber-100"
+                              >
+                                <FiEdit className="text-sm" />
+                                <span className="text-[10px] font-extrabold">تعديل</span>
+                              </button>
+                            ) : null}
                           </div>
-                        )}
+                        ) : null}
 
                         {/* HEADER */}
-                        <div className="relative flex items-center justify-between mb-4">
+                        <div
+                          className={`relative flex items-center justify-between mb-4 ${
+                            !isCancelled && (hasComment || hasAttach || canEditLastStepComment)
+                              ? "pt-7"
+                              : ""
+                          }`}
+                        >
                           <div className="flex items-center gap-3">
                             <div
                               className={`relative z-10 flex h-11 w-11 items-center justify-center rounded-2xl text-lg font-extrabold text-white ${
@@ -1676,7 +1728,8 @@ export default function RequestDetails({ id, companyKey }) {
               credentials: "include",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
-                action: commentAction,
+                action:
+                  commentAction === "edit_comment" ? "edit_step_comment" : commentAction,
                 note: commentText,
                 stepIndex: Number.isInteger(activeStep) ? activeStep : null,
               }),

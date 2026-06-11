@@ -96,6 +96,7 @@ export default function CommentModal({
   const isView = mode === "view";
   const isApprove = mode === "approve";
   const isReject = mode === "reject";
+  const isEditComment = mode === "edit_comment";
   const disableAll = submitting || loading;
 
   /* ======================= INIT ON OPEN ======================= */
@@ -146,6 +147,13 @@ export default function CommentModal({
       };
     }
 
+    if (isEditComment) {
+      return {
+        label: "EDIT",
+        cls: "bg-indigo-500/15 text-indigo-900 border-indigo-500/20",
+      };
+    }
+
     if (isApprove) {
       return {
         label: "APPROVE",
@@ -157,7 +165,7 @@ export default function CommentModal({
       label: "REJECT",
       cls: "bg-red-500/15 text-red-900 border-red-500/20",
     };
-  }, [isView, isApprove]);
+  }, [isView, isApprove, isEditComment]);
 
   const topInfo = useMemo(() => {
     if (isView) {
@@ -196,6 +204,15 @@ export default function CommentModal({
       };
     }
 
+    if (isEditComment) {
+      return {
+        title: "تعديل التعليق",
+        subtitle: "عدّل تعليق الخطوة الأخيرة ثم احفظ",
+        icon: <FiMessageSquare className="text-indigo-600" />,
+        bubble: "bg-indigo-500/10 border-indigo-500/15",
+      };
+    }
+
     if (isApprove) {
       return {
         title: "Ready to approve",
@@ -211,7 +228,7 @@ export default function CommentModal({
       icon: <FiXCircle className="text-red-600" />,
       bubble: "bg-red-500/10 border-red-500/15",
     };
-  }, [isView, isApprove, localStatus]);
+  }, [isView, isApprove, isEditComment, localStatus]);
 
   /* ======================= UPLOAD HELPERS ======================= */
   const uploadOneToS3 = async (pickedFile) => {
@@ -642,7 +659,7 @@ export default function CommentModal({
                   <FiPaperclip /> Attachment
                 </p>
 
-                {isView ? (
+                {isView || isEditComment ? (
                   <UploadedAttachmentCard />
                 ) : (
                   <>
@@ -734,14 +751,26 @@ export default function CommentModal({
                     inline-flex items-center justify-center gap-2 min-w-[120px]
                     px-4 py-2 rounded-2xl text-white font-extrabold
                     shadow-sm disabled:opacity-60 disabled:cursor-not-allowed
-                    ${isApprove ? "bg-green-600 hover:bg-green-700" : "bg-red-600 hover:bg-red-700"}
+                    ${
+                      isEditComment
+                        ? "bg-indigo-600 hover:bg-indigo-700"
+                        : isApprove
+                        ? "bg-green-600 hover:bg-green-700"
+                        : "bg-red-600 hover:bg-red-700"
+                    }
                   `}
                 >
                   {submitting || loading ? (
                     <>
                       <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                      {isApprove ? "جاري الموافقة..." : "جاري الرفض..."}
+                      {isEditComment
+                        ? "جاري الحفظ..."
+                        : isApprove
+                        ? "جاري الموافقة..."
+                        : "جاري الرفض..."}
                     </>
+                  ) : isEditComment ? (
+                    "حفظ التعليق"
                   ) : isApprove ? (
                     "موافقة"
                   ) : (
