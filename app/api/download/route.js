@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+export const maxDuration = 300;
+
 export async function GET(request) {
   try {
     const url = request.nextUrl.searchParams.get("url");

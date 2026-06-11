@@ -39,6 +39,11 @@ import VoucherModal from "@/components/VoucherModal";
 import html2canvas from "html2canvas";
 import { PDFDocument } from "pdf-lib";
 import PrintableRequestPDF from "@/components/PrintableRequestPDF";
+import {
+  appendAttachmentsToPdf,
+  buildSkippedAttachmentsMessage,
+  collectRequestPdfAttachments,
+} from "@/lib/requests/mergeRequestPdfAttachments";
 import CreateRequestModal from "@/components/CreateRequestModal";
 import VoucherAttachModal from "@/components/VoucherAttachModal";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -367,110 +372,39 @@ export default function RequestDetails({ id, companyKey }) {
       }
   
       // ==========================================
-      // 2) بعده: كل attachment بصفحة / صفحات
+      // 2) مرفقات الطلب + اتاج خطوات الورك فلو
       // ==========================================
-      const attachments = Array.isArray(request.attachments)
-        ? request.attachments
-        : [];
-  
-      for (const file of attachments) {
-        if (!file?.url) continue;
-  
-        try {
-          const res = await fetch(
-            `/api/download?url=${encodeURIComponent(file.url)}`,
-            {
-              cache: "no-store",
-            }
-          );
-  
-          if (!res.ok) {
-            console.error("❌ Failed to fetch attachment:", file.name, res.status);
-            continue;
-          }
-  
-          const contentType =
-            (file?.type || res.headers.get("content-type") || "").toLowerCase();
-  
-          const bytes = await res.arrayBuffer();
-          const lowerName = String(file?.name || "").toLowerCase();
-  
-          // ========= PDF =========
-          if (contentType.includes("pdf") || lowerName.endsWith(".pdf")) {
-            const attachmentPdf = await PDFDocument.load(bytes, {
-              ignoreEncryption: true,
-            });
-  
-            const copiedPages = await pdf.copyPages(
-              attachmentPdf,
-              attachmentPdf.getPageIndices()
-            );
-  
-            copiedPages.forEach((p) => pdf.addPage(p));
-            continue;
-          }
-  
-          // ========= JPG / JPEG =========
-          if (
-            contentType.includes("jpeg") ||
-            contentType.includes("jpg") ||
-            /\.(jpg|jpeg)$/i.test(lowerName)
-          ) {
-            const img = await pdf.embedJpg(bytes);
-            const page = pdf.addPage([595.28, 841.89]); // A4 portrait
-  
-            const imgScale = Math.min(595.28 / img.width, 841.89 / img.height);
-            const w = img.width * imgScale;
-            const h = img.height * imgScale;
-  
-            page.drawImage(img, {
-              x: (595.28 - w) / 2,
-              y: (841.89 - h) / 2,
-              width: w,
-              height: h,
-            });
-            continue;
-          }
-  
-          // ========= PNG =========
-          if (
-            contentType.includes("png") ||
-            /\.(png)$/i.test(lowerName)
-          ) {
-            const img = await pdf.embedPng(bytes);
-            const page = pdf.addPage([595.28, 841.89]); // A4 portrait
-  
-            const imgScale = Math.min(595.28 / img.width, 841.89 / img.height);
-            const w = img.width * imgScale;
-            const h = img.height * imgScale;
-  
-            page.drawImage(img, {
-              x: (595.28 - w) / 2,
-              y: (841.89 - h) / 2,
-              width: w,
-              height: h,
-            });
-            continue;
-          }
-  
-          console.warn("Unsupported attachment type:", file.name, contentType);
-        } catch (err) {
-          console.error("❌ Failed to append attachment:", file?.name, err);
-        }
-      }
-  
+      const attachments = collectRequestPdfAttachments(request);
+      const { skippedLarge, failed: failedAttachments } = await appendAttachmentsToPdf(
+        pdf,
+        attachments
+      );
+
       const pdfBytes = await pdf.save();
       const blob = new Blob([pdfBytes], { type: "application/pdf" });
-  
+
       const link = document.createElement("a");
       const objectUrl = URL.createObjectURL(blob);
       link.href = objectUrl;
       link.download = `Request-${request?.requestCode || request?._id}.pdf`;
       link.click();
-  
+
       URL.revokeObjectURL(objectUrl);
+
+      const skippedMsg = buildSkippedAttachmentsMessage(skippedLarge);
+      if (skippedMsg) {
+        alert(skippedMsg);
+      } else if (failedAttachments?.length) {
+        const names = failedAttachments.map((f) => f.name).filter(Boolean).join("، ");
+        alert(
+          names
+            ? `تم تحميل PDF الطلب، لكن بعض المرفقات لم تُدمج: ${names}`
+            : "تم تحميل PDF الطلب، لكن بعض المرفقات لم تُدمج."
+        );
+      }
     } catch (err) {
       console.error("❌ PDF generation failed:", err);
+      alert("تعذر إنشاء PDF. جرّب مرة أخرى أو قلّل حجم المرفقات.");
     } finally {
       root.classList.remove("no-pdf-effects");
       if (document.head.contains(style)) {
