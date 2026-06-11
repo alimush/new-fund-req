@@ -24,6 +24,7 @@ const PrintCalibSchema = new mongoose.Schema(
     scaleX: { type: Number, default: 100 },
     scaleY: { type: Number, default: 100 },
     fieldOffsets: { type: mongoose.Schema.Types.Mixed, default: {} },
+    fieldFontStyles: { type: mongoose.Schema.Types.Mixed, default: {} },
   },
   { _id: false }
 );

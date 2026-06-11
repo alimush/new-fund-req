@@ -8,11 +8,17 @@ import ChequePrintCalibPreview from "@/components/cheques/ChequePrintCalibPrevie
 import {
   cmToMm,
   defaultPrintCalib,
+  FONT_SIZE_SCALE_MAX,
+  FONT_SIZE_SCALE_MIN,
+  FONT_WEIGHT_MAX,
+  FONT_WEIGHT_MIN,
   formatCmFromMm,
+  getFieldFontStyle,
   getFieldOffset,
   mmToCm,
   normalizePrintCalib,
   parseCmInput,
+  DATE_GROUP_KEY,
   PRINT_FIELD_LABELS,
   printFieldOffsetKeys,
 } from "@/lib/cheques/printCalib";
@@ -184,31 +190,121 @@ function PercentInputRow({ label, hint, value, min, max, onChange, showSlider = 
   );
 }
 
-function FieldOffsetPanel({ label, offsetXmm, offsetYmm, onChangeX, onChangeY }) {
+function FontStyleRow({ label, fontSizeScale, fontWeight, onChangeScale, onChangeWeight }) {
+  const safeScale = Number.isFinite(fontSizeScale) ? fontSizeScale : 100;
+  const safeWeight = Number.isFinite(fontWeight) ? fontWeight : 700;
+
+  return (
+    <div className="grid gap-2 sm:grid-cols-2">
+      <label className="block rounded-xl border border-slate-200 bg-white px-3 py-2.5">
+        <div className="mb-1 flex items-center justify-between gap-2">
+          <span className="text-xs font-extrabold text-slate-700">{label}</span>
+          <span className="text-xs font-black text-blue-700 tabular-nums">{safeScale}%</span>
+        </div>
+        <input
+          type="range"
+          min={FONT_SIZE_SCALE_MIN}
+          max={FONT_SIZE_SCALE_MAX}
+          step={1}
+          value={safeScale}
+          onChange={(e) => onChangeScale(parseFloat(e.target.value))}
+          className="mb-2 w-full accent-blue-600"
+        />
+        <input
+          type="number"
+          min={FONT_SIZE_SCALE_MIN}
+          max={FONT_SIZE_SCALE_MAX}
+          value={safeScale}
+          onChange={(e) => {
+            const n = parseFloat(e.target.value);
+            if (Number.isFinite(n)) onChangeScale(n);
+          }}
+          className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm font-bold text-slate-900 tabular-nums focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+        />
+      </label>
+
+      <label className="block rounded-xl border border-slate-200 bg-white px-3 py-2.5">
+        <div className="mb-1 flex items-center justify-between gap-2">
+          <span className="text-xs font-extrabold text-slate-700">سُمك الخط (Bold)</span>
+          <span className="text-xs font-black text-slate-800 tabular-nums">{safeWeight}</span>
+        </div>
+        <input
+          type="range"
+          min={FONT_WEIGHT_MIN}
+          max={FONT_WEIGHT_MAX}
+          step={100}
+          value={safeWeight}
+          onChange={(e) => onChangeWeight(parseInt(e.target.value, 10))}
+          className="mb-2 w-full accent-slate-800"
+        />
+        <select
+          value={safeWeight}
+          onChange={(e) => onChangeWeight(parseInt(e.target.value, 10))}
+          className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm font-bold text-slate-900 focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200"
+        >
+          {[400, 500, 600, 700, 800, 900].map((w) => (
+            <option key={w} value={w}>
+              {w === 400
+                ? "عادي (400)"
+                : w === 700
+                ? "متوسط (700)"
+                : w === 800
+                ? "غامق (800)"
+                : w === 900
+                ? "أغمق (900)"
+                : `وزن ${w}`}
+            </option>
+          ))}
+        </select>
+      </label>
+    </div>
+  );
+}
+
+function FieldCalibPanel({
+  label,
+  offsetXmm,
+  offsetYmm,
+  fontSizeScale,
+  fontWeight,
+  onChangeX,
+  onChangeY,
+  onChangeFontScale,
+  onChangeFontWeight,
+}) {
   return (
     <div className="rounded-xl border border-slate-200 bg-slate-50/90 p-3">
       <p className="mb-2 text-[11px] font-extrabold text-slate-800">{label}</p>
-      <div className="grid gap-2 sm:grid-cols-2">
-        <CmInputRow
-          label="إزاحة أفقية"
-          hint="يمين / يسار"
-          valueMm={offsetXmm}
-          minCm={-2}
-          maxCm={2}
-          showSlider
-          sliderStep={0.01}
-          onChangeMm={onChangeX}
+      <div className="space-y-2">
+        <FontStyleRow
+          label="حجم الخط"
+          fontSizeScale={fontSizeScale}
+          fontWeight={fontWeight}
+          onChangeScale={onChangeFontScale}
+          onChangeWeight={onChangeFontWeight}
         />
-        <CmInputRow
-          label="إزاحة عمودية"
-          hint="أعلى / أسفل"
-          valueMm={offsetYmm}
-          minCm={-2}
-          maxCm={2}
-          showSlider
-          sliderStep={0.01}
-          onChangeMm={onChangeY}
-        />
+        <div className="grid gap-2 sm:grid-cols-2">
+          <CmInputRow
+            label="إزاحة أفقية"
+            hint="يمين / يسار"
+            valueMm={offsetXmm}
+            minCm={-2}
+            maxCm={2}
+            showSlider
+            sliderStep={0.01}
+            onChangeMm={onChangeX}
+          />
+          <CmInputRow
+            label="إزاحة عمودية"
+            hint="أعلى / أسفل"
+            valueMm={offsetYmm}
+            minCm={-2}
+            maxCm={2}
+            showSlider
+            sliderStep={0.01}
+            onChangeMm={onChangeY}
+          />
+        </div>
       </div>
     </div>
   );
@@ -248,9 +344,14 @@ export default function ChequePrintSettingsModal({
     const labelByKey = Object.fromEntries(
       list.map((f) => [f.key, f.label || f.key])
     );
+    const fieldByKey = Object.fromEntries(list.map((f) => [f.key, f]));
     return keys.map((key) => ({
       key,
       label: PRINT_FIELD_LABELS[key] || labelByKey[key] || key,
+      field:
+        key === DATE_GROUP_KEY
+          ? fieldByKey.dateDay || fieldByKey.dateMonth
+          : fieldByKey[key],
     }));
   }, [previewFields, template]);
 
@@ -295,6 +396,23 @@ export default function ChequePrintSettingsModal({
         previewFields
       )
     );
+  };
+
+  const patchFieldFont = (fieldKey, field, partial) => {
+    setCalib((prev) => {
+      const current = getFieldFontStyle(prev, fieldKey, field);
+      return normalizePrintCalib(
+        {
+          ...prev,
+          fieldFontStyles: {
+            ...(prev.fieldFontStyles || {}),
+            [fieldKey]: { ...current, ...partial },
+          },
+        },
+        template,
+        previewFields
+      );
+    });
   };
 
   const handleReset = () => setCalib(defaults);
@@ -361,7 +479,7 @@ export default function ChequePrintSettingsModal({
             initial={{ opacity: 0, scale: 0.96, y: 12 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.96, y: 8 }}
-            className="flex max-h-[92dvh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-white/50 bg-white shadow-2xl"
+            className="flex max-h-[94dvh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-white/50 bg-white shadow-2xl"
             dir="rtl"
             onClick={(e) => e.stopPropagation()}
           >
@@ -394,8 +512,8 @@ export default function ChequePrintSettingsModal({
                 <strong>Headers and footers</strong> و<strong>Two-sided</strong>.
               </div>
 
-              <div className="grid gap-5 lg:grid-cols-[300px_1fr]">
-                <div className="lg:sticky lg:top-0 lg:self-start">
+              <div className="grid gap-5 xl:grid-cols-[minmax(300px,460px)_1fr]">
+                <div className="xl:sticky xl:top-0 xl:self-start">
                   <ChequePrintCalibPreview
                     calib={calib}
                     template={template}
@@ -459,19 +577,28 @@ export default function ChequePrintSettingsModal({
                       ضبط كل حقل على حدة (طباعة فقط)
                     </p>
                     <p className="mb-3 text-[10px] font-semibold text-slate-500">
-                      لكل إنبت: إزاحة أفقية وعمودية بالسم — المعاينة live
+                      حجم الخط، السُمك، والإزاحة — التعديل يظهر مباشرة بالمعاينة
                     </p>
-                    <div className="space-y-2 max-h-[42vh] overflow-y-auto pr-1">
-                      {offsetFieldList.map(({ key, label }) => {
+                    <div className="space-y-2 max-h-[48vh] overflow-y-auto pr-1">
+                      {offsetFieldList.map(({ key, label, field }) => {
                         const o = getFieldOffset(calib, key);
+                        const font = getFieldFontStyle(calib, key, field);
                         return (
-                          <FieldOffsetPanel
+                          <FieldCalibPanel
                             key={key}
                             label={label}
                             offsetXmm={o.offsetXmm}
                             offsetYmm={o.offsetYmm}
+                            fontSizeScale={font.fontSizeScale}
+                            fontWeight={font.fontWeight}
                             onChangeX={(v) => patchField(key, { offsetXmm: v })}
                             onChangeY={(v) => patchField(key, { offsetYmm: v })}
+                            onChangeFontScale={(v) =>
+                              patchFieldFont(key, field, { fontSizeScale: v })
+                            }
+                            onChangeFontWeight={(w) =>
+                              patchFieldFont(key, field, { fontWeight: w })
+                            }
                           />
                         );
                       })}
