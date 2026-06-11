@@ -5,6 +5,7 @@ import React, { useMemo } from "react";
 const COMPANIES = [
   { key: "Al-Ghadeer", name: "طلبات الغدير", logo: "/الغدير.png" },
   { key: "Al-Rida", name: "طلبات الرضا", logo: "/الرضا.png" },
+  { key: "alleanza", name: "طلبات اليانزا", logo: "/اليانزا.png" },
   { key: "Al-Mezan", name: "طلبات الميزان", logo: "/الميزان.png" },
   { key: "Badur-Baghdad", name: "طلبات بدور بغداد", logo: "/بدور_بغداد.png" },
   { key: "Ghadeer-Karbala", name: "طلبات غدير كربلاء", logo: "/غدير_كربلاء.png" },

@@ -25,7 +25,8 @@ const COMPANY_OPTIONS = [
   "badur-Al-najaf",
   "010",
   "EX",
-  "old-data"
+  "old-data",
+  "alleanza"
   
 ];
 // 🧩 Icon لكل صلاحية (الخيار A)

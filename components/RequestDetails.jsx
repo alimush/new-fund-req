@@ -42,6 +42,11 @@ import PrintableRequestPDF from "@/components/PrintableRequestPDF";
 import CreateRequestModal from "@/components/CreateRequestModal";
 import VoucherAttachModal from "@/components/VoucherAttachModal";
 import { useRouter, useSearchParams } from "next/navigation";
+import {
+  supportsExpenseType,
+  isApprovalOnlyCompany,
+} from "@/lib/companies/expenseTypeCompanies";
+
 export default function RequestDetails({ id, companyKey }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -108,6 +113,7 @@ export default function RequestDetails({ id, companyKey }) {
     permissions.includes(PERMISSIONS.VOUCHER_DELEGATE);
   const canViewReceipts =
     Array.isArray(permissions) && permissions.includes(PERMISSIONS.RECEIPTS);
+  const approvalOnlyCompany = isApprovalOnlyCompany(companyKey);
 
   const voucherCompanyConfig = COMPANIES.find(
     (c) => String(c.key).trim().toLowerCase() === String(companyKey || "").trim().toLowerCase()
@@ -550,6 +556,15 @@ export default function RequestDetails({ id, companyKey }) {
       : "مصروف"
     : "غير مصروف";
 
+  const showExpenseType = supportsExpenseType(companyKey);
+  const expenseTypeLabel = request?.expenseType || "-";
+  const expenseTypeIsSpent = expenseTypeLabel === "مصروف";
+  const kpiColumnCount =
+    2 +
+    (showExpenseType ? 1 : 0) +
+    (canViewReceipts && !approvalOnlyCompany ? 1 : 0) +
+    1;
+
   const requestCodeLabel =
     request.requestCode || request.code || String(request._id || "").slice(-8) || "-";
 
@@ -658,6 +673,14 @@ export default function RequestDetails({ id, companyKey }) {
                 {request.department}
               </HeroMetaChip>
             ) : null}
+            {showExpenseType ? (
+              <HeroMetaChip
+                icon={<FiDollarSign className="text-sm" />}
+                iconColor={expenseTypeIsSpent ? "text-emerald-600" : "text-rose-600"}
+              >
+                {expenseTypeLabel}
+              </HeroMetaChip>
+            ) : null}
           </div>
 
           {(canCancel || canEdit || canPrint) && (
@@ -736,7 +759,13 @@ export default function RequestDetails({ id, companyKey }) {
 
         {/* =================== KPI STRIP =================== */}
         <motion.div
-          className={`mb-8 grid grid-cols-2 gap-3 sm:gap-4 ${canViewReceipts ? "lg:grid-cols-4" : "lg:grid-cols-3"}`}
+          className={`mb-8 grid grid-cols-2 gap-3 sm:gap-4 ${
+            kpiColumnCount >= 5
+              ? "lg:grid-cols-5"
+              : kpiColumnCount === 4
+              ? "lg:grid-cols-4"
+              : "lg:grid-cols-3"
+          }`}
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.08, duration: 0.4 }}
@@ -759,7 +788,22 @@ export default function RequestDetails({ id, companyKey }) {
             icon={<FiLayers />}
             iconColor="text-indigo-600"
           />
-          {canViewReceipts ? (
+          {showExpenseType ? (
+            <KpiCard
+              label="نوع المصروف"
+              value={expenseTypeLabel}
+              sub={
+                expenseTypeLabel === "مصروف"
+                  ? "مصروف"
+                  : expenseTypeLabel === "غير مصروف"
+                  ? "غير مصروف"
+                  : "لم يُحدَّد"
+              }
+              icon={<FiDollarSign />}
+              iconColor={expenseTypeIsSpent ? "text-emerald-600" : "text-rose-600"}
+            />
+          ) : null}
+          {canViewReceipts && !approvalOnlyCompany ? (
             <KpiCard
               label="حالة الصرف"
               value={disburseStatusLabel}
@@ -782,9 +826,14 @@ export default function RequestDetails({ id, companyKey }) {
           <Section title="معلومات الطلب" icon={<ColoredIcon color="text-blue-600"><FiInfo /></ColoredIcon>}>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <Info label="الشركة" value={companyLabel} icon={<FiUsers />} iconColor="text-blue-600" />
-              {companyKey === "Al-Rida" && (
-                <Info label="المصروفية" value={request.expenseType || "-"} icon={<FiDollarSign />} iconColor="text-emerald-600" />
-              )}
+              {showExpenseType ? (
+                <Info
+                  label="المصروفية"
+                  value={expenseTypeLabel}
+                  icon={<FiDollarSign />}
+                  iconColor={expenseTypeIsSpent ? "text-emerald-600" : "text-rose-600"}
+                />
+              ) : null}
               <Info label="اسم المشروع" value={projectName} icon={<FiLayers />} iconColor="text-indigo-600" className="sm:col-span-2" />
               <Info label="رمز الطلب" value={requestCodeLabel} icon={<FiHash />} iconColor="text-purple-600" />
               <Info label="النوع" value={request.requestType} icon={<FiInfo />} iconColor="text-teal-600" />
@@ -1117,7 +1166,7 @@ export default function RequestDetails({ id, companyKey }) {
 
                   const isCurrent = idx === request.currentStep;
                   const canApproveFinalStep =
-                    !isLast || (isLast && canDelegateVoucher);
+                    !isLast || approvalOnlyCompany || canDelegateVoucher;
 
                   const canAct =
                     (request.status === "Pending" ||
@@ -1356,7 +1405,7 @@ export default function RequestDetails({ id, companyKey }) {
                           </div>
                         )}
 
-                        {delegateAwaitingApprove && !isCancelled && (
+                        {delegateAwaitingApprove && !isCancelled && !approvalOnlyCompany && (
                           <div className="mt-4">
                             <button
                               type="button"
@@ -1410,6 +1459,7 @@ export default function RequestDetails({ id, companyKey }) {
 
 {(showFullVoucherActions || showDelegatePrintOnly) &&
   isFinalApproved &&
+  !approvalOnlyCompany &&
   ["Badur-Baghdad", "Al-Ghadeer", "010", "Tiba-Al-najaf", "Ghadeer-Karbala"].includes(companyKey) && (
     <div className="mt-4 flex flex-col gap-2">
       {voucherNoLabel ? (
@@ -1448,6 +1498,7 @@ export default function RequestDetails({ id, companyKey }) {
 {isFinalApproved &&
   isLastStepUser &&
   canDelegateVoucher &&
+  !approvalOnlyCompany &&
   !hasLinkedVoucher &&
   !delegateDisburseApproved &&
   ["Badur-Baghdad", "Al-Ghadeer", "010", "Tiba-Al-najaf", "Ghadeer-Karbala"].includes(companyKey) && (

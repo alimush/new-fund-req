@@ -41,6 +41,8 @@ const cards = [
     Icon: FiLayers,
     iconClass: "w-10 h-10 text-indigo-600",
   },
+
+  { key: "alleanza", name: "طلبات اليانزا", logo: "/اليانزا.png" },
   
   { key: "Al-Rida", name: "طلبات الرضا", logo: "/الرضا.png" },
   

@@ -21,6 +21,10 @@ import {
 } from "@/lib/notifications/notificationCounts";
 import StatusBadge from "@/components/StatusBadge";
 import CreateRequestModal from "@/components/CreateRequestModal";
+import {
+  supportsExpenseType,
+  isApprovalOnlyCompany,
+} from "@/lib/companies/expenseTypeCompanies";
 
 const norm = (v) => String(v ?? "").trim().toLowerCase();
 
@@ -204,8 +208,20 @@ function RequestCard({ r, variant = "default", companyKey }) {
 
       <div className="relative flex items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <StatusBadge status={r.status} />
+            {supportsExpenseType(companyKey) && r.expenseType ? (
+              <span
+                className={[
+                  "rounded-full px-2.5 py-0.5 text-[11px] font-extrabold ring-1",
+                  r.expenseType === "مصروف"
+                    ? "bg-emerald-50 text-emerald-800 ring-emerald-200"
+                    : "bg-rose-50 text-rose-800 ring-rose-200",
+                ].join(" ")}
+              >
+                {r.expenseType}
+              </span>
+            ) : null}
             <span className="text-[12px] font-semibold text-gray-600">{dateText}</span>
           </div>
 
@@ -260,6 +276,7 @@ function RequestCard({ r, variant = "default", companyKey }) {
 export default function RequestsPage({ companyKey }) {
   const router = useRouter();
   const { permissions, companies, user, permissionsLoaded } = usePermissions();
+  const approvalOnlyCompany = isApprovalOnlyCompany(companyKey);
 
   const canCreate =
     Array.isArray(permissions) &&
@@ -701,7 +718,7 @@ export default function RequestsPage({ companyKey }) {
               </div>
               <div className="flex flex-wrap items-center gap-2 pt-0.5">
                 <CountPill count={notifyApproval} tone="approval" label="قيد الموافقة" />
-                {canViewReceipts && !canDelegateVoucher && (
+                {canViewReceipts && !canDelegateVoucher && !approvalOnlyCompany && (
                   <CountPill
                     count={notifyDisbursement}
                     tone="disbursement"
@@ -978,7 +995,7 @@ export default function RequestsPage({ companyKey }) {
           </SectionShell>
         </div>
 
-        {canViewReceipts && (
+        {canViewReceipts && !approvalOnlyCompany && (
           <div
             className={
               canDelegateVoucher

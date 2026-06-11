@@ -23,6 +23,7 @@ import {
   getVoucherCompanyOptionsForDelegation,
   resolveVoucherCompanyKeyForUser,
 } from "@/lib/voucher/resolveVoucherCompanyKey";
+import { isApprovalOnlyCompany } from "@/lib/companies/expenseTypeCompanies";
 
 /* ======================= HELPERS ======================= */
 async function hasCompanyAccess(userId, company) {
@@ -606,7 +607,11 @@ if (action === "update") {
     if (action === "approve") {
       const lastIdx = request.workflow.steps.length - 1;
       const isLastStep = stepIndex === lastIdx;
-      if (isLastStep && !currentUserPerms.includes(PERMISSIONS.VOUCHER_DELEGATE)) {
+      if (
+        isLastStep &&
+        !isApprovalOnlyCompany(company) &&
+        !currentUserPerms.includes(PERMISSIONS.VOUCHER_DELEGATE)
+      ) {
         return NextResponse.json(
           { success: false, error: "Only delegated-permission user can approve final step" },
           { status: 403 }

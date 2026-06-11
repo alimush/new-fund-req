@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useToast } from "@/components/ui/ToastProvider";
+import { supportsExpenseType } from "@/lib/companies/expenseTypeCompanies";
 import { FiX } from "react-icons/fi";
 import {
     FiPaperclip,
@@ -423,8 +424,8 @@ const formatInputMoney = (v) => {
       <option value="سلفة">سلفة</option>
     </select>
 
-    {/* Expense Type (فقط للرضا) */}
-    {companyKey === "Al-Rida" && (
+    {/* Expense Type (الرضا + اليانزا) */}
+    {supportsExpenseType(companyKey) && (
       <div className="sm:col-span-2">
         <select
           value={expenseType}
@@ -976,7 +977,7 @@ const formatInputMoney = (v) => {
   )}
 </div>
 </div>
-{companyKey === "Al-Rida" && (
+{supportsExpenseType(companyKey) && (
   <div
     className="sm:col-span-2 group relative flex gap-3 p-3 rounded-xl
                border border-white/40

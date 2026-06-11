@@ -8,6 +8,7 @@ import { Types } from "mongoose";
 import { pendingApprovalMongoExtraMatch } from "@/lib/workflow/canApproveAtStep";
 import { countPendingDisbursement } from "@/lib/receipts/disbursementCount";
 import { PERMISSIONS } from "@/lib/permission";
+import { isApprovalOnlyCompany } from "@/lib/companies/expenseTypeCompanies";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -118,7 +119,7 @@ export async function GET(req) {
       const nApproval = await countPendingApprovals(Model, uid, userPermissions);
       const isVoucherDelegate = userPermissions.includes(PERMISSIONS.VOUCHER_DELEGATE);
       const nDisbursement =
-        canCountDisbursement && !isVoucherDelegate
+        canCountDisbursement && !isVoucherDelegate && !isApprovalOnlyCompany(company)
           ? await countPendingDisbursement(Model, {
               uid,
               username,
