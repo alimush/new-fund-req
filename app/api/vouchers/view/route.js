@@ -9,6 +9,7 @@ import { COMPANIES } from "@/lib/voucher/companies";
 import VoucherCounter from "@/models/VoucherCounter";
 import { getModelForCompany } from "@/models/Request";
 import { buildVoucherDateFromParts } from "@/lib/voucher/voucherDate";
+import { sanitizeFieldColorRuns } from "@/lib/voucher/fieldColorRuns";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -127,6 +128,25 @@ function buildBody(body) {
   const vDateMM = normalize2(body.vDateMM);
   const vDateDD = normalize2(body.vDateDD);
 
+  const fieldColorRuns = sanitizeFieldColorRuns(
+    body.fieldColorRuns || {},
+    {
+      words: body.vWords,
+      desc: body.vDesc,
+      bank: body.vBank,
+      fxRate: body.vFxRate,
+      receivedBy: body.vReceivedBy,
+      beneficiary: body.vBeneficiary,
+      notes: body.vNotes,
+      chequeNo: body.vChequeNo,
+      nationalId: body.vNationalId,
+      phone: body.vPhone,
+      sanadNo: body.vSanadNo,
+    },
+    fieldStyles,
+    globalTextStyle
+  );
+
   return {
     // Date Parts
     dateParts: {
@@ -161,6 +181,7 @@ function buildBody(body) {
 
     globalTextStyle,
     fieldStyles,
+    fieldColorRuns,
 
     // Legacy Support
     fontSizeAmount: String(amountStyle.fontSize),

@@ -119,6 +119,7 @@ export default function VoucherPage() {
 
   const [globalTextStyle, setGlobalTextStyle] = useState(DEFAULT_GLOBAL_TEXT_STYLE);
   const [fieldStyles, setFieldStyles] = useState(DEFAULT_FIELD_STYLES);
+  const [fieldColorRuns, setFieldColorRuns] = useState({});
 
   const chequeNoRef = useRef(null);
   const yyRef = useRef(null);
@@ -170,6 +171,7 @@ export default function VoucherPage() {
     const words = numberToArabicWords(cleaned);
     const currencyText = vCurrency === "USD" ? "دولار فقط لا غير" : "دينار فقط لا غير";
     setVWords(words ? `${words} ${currencyText}` : "");
+    setFieldColorRuns((prev) => ({ ...prev, words: [] }));
   }, [vAmount, vCurrency]);
 
   useEffect(() => {
@@ -252,6 +254,7 @@ export default function VoucherPage() {
 
           globalTextStyle,
           fieldStyles,
+          fieldColorRuns,
         }),
       });
 
@@ -508,6 +511,7 @@ export default function VoucherPage() {
 
           globalTextStyle,
           fieldStyles,
+          fieldColorRuns,
         }),
       });
 
@@ -897,6 +901,8 @@ export default function VoucherPage() {
           setGlobalTextStyle={setGlobalTextStyle}
           fieldStyles={fieldStyles}
           setFieldStyles={setFieldStyles}
+          fieldColorRuns={fieldColorRuns}
+          setFieldColorRuns={setFieldColorRuns}
         />
       </motion.div>
     </MotionConfig>

@@ -1,7 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import VoucherRichTextInput from "@/components/VoucherRichTextInput";
+import { applyColorToRange } from "@/lib/voucher/fieldColorRuns";
 import {
   FiPrinter,
   FiX,
@@ -164,9 +166,12 @@ export default function VoucherCanvasDialog({
   setGlobalTextStyle,
   fieldStyles = DEFAULT_FIELD_STYLES,
   setFieldStyles,
+  fieldColorRuns = {},
+  setFieldColorRuns,
   onImageLoad,
 }) {
   const [selectedField, setSelectedField] = useState(null);
+  const [fieldSelection, setFieldSelection] = useState(null);
 
   const [dateModalOpen, setDateModalOpen] = useState(false);
   const [tmpDate, setTmpDate] = useState({
@@ -263,12 +268,72 @@ export default function VoucherCanvasDialog({
     }));
   };
 
+  const fieldTextValues = useMemo(
+    () => ({
+      words: vWords,
+      desc: vDesc,
+      bank: vBank,
+      fxRate: vFxRate,
+      receivedBy: vReceivedBy,
+      beneficiary: vBeneficiary,
+      notes: vNotes,
+      chequeNo: vChequeNo,
+      nationalId: vNationalId,
+      phone: vPhone,
+      sanadNo: vSanadNo,
+    }),
+    [
+      vWords,
+      vDesc,
+      vBank,
+      vFxRate,
+      vReceivedBy,
+      vBeneficiary,
+      vNotes,
+      vChequeNo,
+      vNationalId,
+      vPhone,
+      vSanadNo,
+    ]
+  );
+
+  const updateFieldColorRuns = useCallback(
+    (fieldKey, runs) => {
+      if (!setFieldColorRuns) return;
+      setFieldColorRuns((prev) => ({
+        ...(prev || {}),
+        [fieldKey]: runs,
+      }));
+    },
+    [setFieldColorRuns]
+  );
+
   const setFieldColor = (fieldKey, color) => {
+    const normalized = normalizeColor(color, "#111827");
+
+    if (
+      fieldSelection?.fieldKey === fieldKey &&
+      fieldSelection.end > fieldSelection.start
+    ) {
+      const text = String(fieldTextValues[fieldKey] ?? "");
+      updateFieldColorRuns(
+        fieldKey,
+        applyColorToRange(
+          text,
+          fieldColorRuns?.[fieldKey] || [],
+          fieldSelection.start,
+          fieldSelection.end,
+          normalized
+        )
+      );
+      return;
+    }
+
     setFieldStyles((prev) => ({
       ...prev,
       [fieldKey]: {
         ...(prev?.[fieldKey] || {}),
-        color: normalizeColor(color, "#111827"),
+        color: normalized,
       },
     }));
   };
@@ -367,6 +432,18 @@ export default function VoucherCanvasDialog({
   const editableFieldProps = (fieldKey) => ({
     onFocus: () => setSelectedField(fieldKey),
     onClick: () => setSelectedField(fieldKey),
+  });
+
+  const richFieldProps = (fieldKey, value, onChange, options = {}) => ({
+    fieldKey,
+    value,
+    colorRuns: fieldColorRuns?.[fieldKey] || [],
+    defaultColor: getStyle(fieldKey).color,
+    onChange,
+    onColorRunsChange: (runs) => updateFieldColorRuns(fieldKey, runs),
+    onSelectionChange: setFieldSelection,
+    ...editableFieldProps(fieldKey),
+    ...options,
   });
 
   if (!selectedCompany) return null;
@@ -635,192 +712,161 @@ export default function VoucherCanvasDialog({
                             aria-label="IQD"
                           />
 
-                          <textarea
+                          <VoucherRichTextInput
                             ref={receivedByRef}
-                            value={vReceivedBy}
-                            onChange={(e) => setVReceivedBy(e.target.value)}
-                            rows={1}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") e.preventDefault();
-                            }}
-                            className="absolute resize-none"
-                            style={{
-                              ...pctStyle(EXTRA.receivedBy),
-                              width: `${EXTRA.receivedBy.width}%`,
-                              height: `${EXTRA.receivedBy.height}%`,
-                              ...oneLineRtl("receivedBy"),
-                            }}
-                            dir="rtl"
-                            {...editableFieldProps("receivedBy")}
+                            {...richFieldProps("receivedBy", vReceivedBy, setVReceivedBy, {
+                              singleLine: true,
+                              className: "absolute resize-none",
+                              style: {
+                                ...pctStyle(EXTRA.receivedBy),
+                                width: `${EXTRA.receivedBy.width}%`,
+                                height: `${EXTRA.receivedBy.height}%`,
+                                ...oneLineRtl("receivedBy"),
+                              },
+                              direction: "rtl",
+                            })}
                           />
 
                           {EXTRA.nationalId ? (
-                            <textarea
+                            <VoucherRichTextInput
                               ref={nationalIdRef}
-                              value={vNationalId}
-                              onChange={(e) => setVNationalId(e.target.value)}
-                              rows={1}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter") e.preventDefault();
-                              }}
-                              className="absolute resize-none"
-                              style={{
-                                ...pctStyle(EXTRA.nationalId),
-                                width: `${EXTRA.nationalId.width}%`,
-                                height: `${EXTRA.nationalId.height}%`,
-                                ...oneLineRtl("nationalId"),
-                              }}
-                              dir="rtl"
-                              {...editableFieldProps("nationalId")}
+                              {...richFieldProps("nationalId", vNationalId, setVNationalId, {
+                                singleLine: true,
+                                className: "absolute resize-none",
+                                style: {
+                                  ...pctStyle(EXTRA.nationalId),
+                                  width: `${EXTRA.nationalId.width}%`,
+                                  height: `${EXTRA.nationalId.height}%`,
+                                  ...oneLineRtl("nationalId"),
+                                },
+                                direction: "rtl",
+                              })}
                             />
                           ) : null}
 
                           {EXTRA.phone ? (
-                            <textarea
+                            <VoucherRichTextInput
                               ref={phoneRef}
-                              value={vPhone}
-                              onChange={(e) => setVPhone(e.target.value)}
-                              rows={1}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter") e.preventDefault();
-                              }}
-                              className="absolute resize-none"
-                              style={{
-                                ...pctStyle(EXTRA.phone),
-                                width: `${EXTRA.phone.width}%`,
-                                height: `${EXTRA.phone.height}%`,
-                                ...oneLineRtl("phone"),
-                              }}
-                              dir="rtl"
-                              {...editableFieldProps("phone")}
+                              {...richFieldProps("phone", vPhone, setVPhone, {
+                                singleLine: true,
+                                className: "absolute resize-none",
+                                style: {
+                                  ...pctStyle(EXTRA.phone),
+                                  width: `${EXTRA.phone.width}%`,
+                                  height: `${EXTRA.phone.height}%`,
+                                  ...oneLineRtl("phone"),
+                                },
+                                direction: "rtl",
+                              })}
                             />
                           ) : null}
 
                           {EXTRA.sanadNo ? (
-                            <textarea
+                            <VoucherRichTextInput
                               ref={sanadRef}
-                              value={vSanadNo}
-                              onChange={(e) => setVSanadNo(e.target.value)}
-                              rows={1}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter") e.preventDefault();
-                              }}
-                              className="absolute resize-none"
-                              style={{
-                                ...pctStyle(EXTRA.sanadNo),
-                                width: `${EXTRA.sanadNo.width}%`,
-                                height: `${EXTRA.sanadNo.height}%`,
-                                ...oneLineRtl("sanadNo"),
-                              }}
-                              dir="rtl"
-                              {...editableFieldProps("sanadNo")}
+                              {...richFieldProps("sanadNo", vSanadNo, setVSanadNo, {
+                                singleLine: true,
+                                className: "absolute resize-none",
+                                style: {
+                                  ...pctStyle(EXTRA.sanadNo),
+                                  width: `${EXTRA.sanadNo.width}%`,
+                                  height: `${EXTRA.sanadNo.height}%`,
+                                  ...oneLineRtl("sanadNo"),
+                                },
+                                direction: "rtl",
+                              })}
                             />
                           ) : null}
 
-                          <textarea
+                          <VoucherRichTextInput
                             ref={wordsRef}
-                            value={vWords}
-                            onChange={(e) => setVWords(e.target.value)}
-                            className="absolute resize-none"
-                            style={{
-                              ...pctStyle(POS.amountWords),
-                              width: `${POS.amountWords.width}%`,
-                              height: "13%",
-                              ...multiLineRtl("words"),
-                            }}
-                            dir="rtl"
-                            {...editableFieldProps("words")}
+                            {...richFieldProps("words", vWords, setVWords, {
+                              className: "absolute resize-none",
+                              style: {
+                                ...pctStyle(POS.amountWords),
+                                width: `${POS.amountWords.width}%`,
+                                height: "13%",
+                                ...multiLineRtl("words"),
+                              },
+                              direction: "rtl",
+                            })}
                           />
 
-                          <textarea
+                          <VoucherRichTextInput
                             ref={descRef}
-                            value={vDesc}
-                            onChange={(e) => setVDesc(e.target.value)}
-                            className="absolute resize-none"
-                            style={{
-                              ...pctStyle(POS.description),
-                              width: `${POS.description.width}%`,
-                              height: `${POS.description.height}%`,
-                              ...multiLineRtl("desc"),
-                            }}
-                            dir="rtl"
-                            {...editableFieldProps("desc")}
+                            {...richFieldProps("desc", vDesc, setVDesc, {
+                              className: "absolute resize-none",
+                              style: {
+                                ...pctStyle(POS.description),
+                                width: `${POS.description.width}%`,
+                                height: `${POS.description.height}%`,
+                                ...multiLineRtl("desc"),
+                              },
+                              direction: "rtl",
+                            })}
                           />
 
-                          <textarea
+                          <VoucherRichTextInput
                             ref={bankRef}
-                            value={vBank}
-                            onChange={(e) => setVBank(e.target.value)}
-                            rows={1}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") e.preventDefault();
-                            }}
-                            className="absolute resize-none"
-                            style={{
-                              ...pctStyle(EXTRA.bank),
-                              width: `${EXTRA.bank.width}%`,
-                              height: `${EXTRA.bank.height}%`,
-                              ...oneLineRtl("bank"),
-                            }}
-                            dir="rtl"
-                            {...editableFieldProps("bank")}
+                            {...richFieldProps("bank", vBank, setVBank, {
+                              singleLine: true,
+                              className: "absolute resize-none",
+                              style: {
+                                ...pctStyle(EXTRA.bank),
+                                width: `${EXTRA.bank.width}%`,
+                                height: `${EXTRA.bank.height}%`,
+                                ...oneLineRtl("bank"),
+                              },
+                              direction: "rtl",
+                            })}
                           />
 
                           {EXTRA.beneficiary ? (
-                            <textarea
+                            <VoucherRichTextInput
                               ref={beneficiaryRef}
-                              value={vBeneficiary}
-                              onChange={(e) => setVBeneficiary(e.target.value)}
-                              rows={1}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter") e.preventDefault();
-                              }}
-                              className="absolute resize-none"
-                              style={{
-                                ...pctStyle(EXTRA.beneficiary),
-                                width: `${EXTRA.beneficiary.width}%`,
-                                height: `${EXTRA.beneficiary.height}%`,
-                                ...oneLineRtl("beneficiary"),
-                              }}
-                              dir="rtl"
-                              {...editableFieldProps("beneficiary")}
+                              {...richFieldProps("beneficiary", vBeneficiary, setVBeneficiary, {
+                                singleLine: true,
+                                className: "absolute resize-none",
+                                style: {
+                                  ...pctStyle(EXTRA.beneficiary),
+                                  width: `${EXTRA.beneficiary.width}%`,
+                                  height: `${EXTRA.beneficiary.height}%`,
+                                  ...oneLineRtl("beneficiary"),
+                                },
+                                direction: "rtl",
+                              })}
                             />
                           ) : null}
 
                           {EXTRA.chequeNo ? (
-                            <textarea
+                            <VoucherRichTextInput
                               ref={chequeNoRef}
-                              value={vChequeNo}
-                              onChange={(e) => setVChequeNo(e.target.value)}
-                              rows={1}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter") e.preventDefault();
-                              }}
-                              className="absolute resize-none"
-                              style={{
-                                ...pctStyle(EXTRA.chequeNo),
-                                width: `${EXTRA.chequeNo.width}%`,
-                                height: `${EXTRA.chequeNo.height}%`,
-                                ...oneLineLtr("chequeNo"),
-                              }}
-                              dir="ltr"
-                              {...editableFieldProps("chequeNo")}
+                              {...richFieldProps("chequeNo", vChequeNo, setVChequeNo, {
+                                singleLine: true,
+                                className: "absolute resize-none",
+                                style: {
+                                  ...pctStyle(EXTRA.chequeNo),
+                                  width: `${EXTRA.chequeNo.width}%`,
+                                  height: `${EXTRA.chequeNo.height}%`,
+                                  ...oneLineLtr("chequeNo"),
+                                },
+                                direction: "ltr",
+                              })}
                             />
                           ) : null}
 
-                          <textarea
+                          <VoucherRichTextInput
                             ref={notesRef}
-                            value={vNotes}
-                            onChange={(e) => setVNotes(e.target.value)}
-                            className="absolute resize-none"
-                            style={{
-                              ...pctStyle(EXTRA.notes),
-                              width: `${EXTRA.notes.width}%`,
-                              height: `${EXTRA.notes.height}%`,
-                              ...multiLineRtl("notes"),
-                            }}
-                            dir="rtl"
-                            {...editableFieldProps("notes")}
+                            {...richFieldProps("notes", vNotes, setVNotes, {
+                              className: "absolute resize-none",
+                              style: {
+                                ...pctStyle(EXTRA.notes),
+                                width: `${EXTRA.notes.width}%`,
+                                height: `${EXTRA.notes.height}%`,
+                                ...multiLineRtl("notes"),
+                              },
+                              direction: "rtl",
+                            })}
                           />
 
                           <textarea
@@ -849,23 +895,19 @@ export default function VoucherCanvasDialog({
                             {...editableFieldProps("amount")}
                           />
 
-                          <textarea
+                          <VoucherRichTextInput
                             ref={fxRef}
-                            value={vFxRate}
-                            onChange={(e) => setVFxRate(e.target.value)}
-                            rows={1}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") e.preventDefault();
-                            }}
-                            className="absolute resize-none"
-                            style={{
-                              ...pctStyle(EXTRA.fxRate),
-                              width: `${EXTRA.fxRate.width}%`,
-                              height: `${EXTRA.fxRate.height}%`,
-                              ...oneLineLtr("fxRate"),
-                            }}
-                            dir="ltr"
-                            {...editableFieldProps("fxRate")}
+                            {...richFieldProps("fxRate", vFxRate, setVFxRate, {
+                              singleLine: true,
+                              className: "absolute resize-none",
+                              style: {
+                                ...pctStyle(EXTRA.fxRate),
+                                width: `${EXTRA.fxRate.width}%`,
+                                height: `${EXTRA.fxRate.height}%`,
+                                ...oneLineLtr("fxRate"),
+                              },
+                              direction: "ltr",
+                            })}
                           />
 
                           <label
@@ -1139,6 +1181,17 @@ export default function VoucherCanvasDialog({
                           onChange={(e) => selectedField && setFieldColor(selectedField, e.target.value)}
                           className="w-full h-10 rounded-xl border border-black/10 bg-white cursor-pointer disabled:opacity-40"
                         />
+                        {selectedField &&
+                        fieldSelection?.fieldKey === selectedField &&
+                        fieldSelection.end > fieldSelection.start ? (
+                          <p className="mt-2 text-xs font-bold text-emerald-700">
+                            سيتطبق اللون على النص المحدد فقط
+                          </p>
+                        ) : (
+                          <p className="mt-2 text-xs text-gray-600 leading-5">
+                            حدّد جزءًا من النص داخل الحقل ثم اختر اللون، أو اختر اللون لتغيير الحقل كاملًا.
+                          </p>
+                        )}
                       </div>
 
                       <button

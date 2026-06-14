@@ -268,6 +268,11 @@ const VoucherSchema = new mongoose.Schema(
       },
     },
 
+    fieldColorRuns: {
+      type: mongoose.Schema.Types.Mixed,
+      default: () => ({}),
+    },
+
     createdByUserId: {
       type: String,
       default: "",

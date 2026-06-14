@@ -9,6 +9,8 @@ import { toPng } from "html-to-image";
 import { Cairo } from "next/font/google";
 import VoucherDateModal from "@/components/VoucherDateModal";
 import VoucherCanvasDialog from "@/components/VoucherCanvasDialog";
+import VoucherColoredText from "@/components/VoucherColoredText";
+import { normalizeFieldColorRuns } from "@/lib/voucher/fieldColorRuns";
 // Shared imports
 import { 
   only2Digits, 
@@ -157,6 +159,7 @@ export default function VoucherViewPage() {
 
   const [globalTextStyle, setGlobalTextStyle] = useState(DEFAULT_GLOBAL_TEXT_STYLE);
   const [fieldStyles, setFieldStyles] = useState(DEFAULT_FIELD_STYLES);
+  const [fieldColorRuns, setFieldColorRuns] = useState({});
 
   const [showDateModal, setShowDateModal] = useState(false);
   const [tmpDate, setTmpDate] = useState({
@@ -209,6 +212,8 @@ export default function VoucherViewPage() {
       setFieldStyles(legacy.fields);
     }
 
+    setFieldColorRuns(normalizeFieldColorRuns(doc?.fieldColorRuns || {}));
+
     setVoucherNo(doc?.seq ?? doc?.voucherNo ?? doc?.number ?? null);
   }, []);
 
@@ -259,6 +264,7 @@ export default function VoucherViewPage() {
       vCurrency === "USD" ? "دولار فقط لا غير" : "دينار فقط لا غير";
 
     setVWords(`${numberToArabicWords(cleaned)} ${currencyText}`.trim());
+    setFieldColorRuns((prev) => ({ ...prev, words: [] }));
   }, [vAmount, vCurrency]);
 
   const fallbackVoucherDate = useMemo(() => {
@@ -413,6 +419,7 @@ export default function VoucherViewPage() {
         cbTwo,
         globalTextStyle,
         fieldStyles,
+        fieldColorRuns,
 
         // legacy support
         fontSizeAmount: String(getStyle("amount").fontSize),
@@ -867,13 +874,16 @@ export default function VoucherViewPage() {
                                   width: `${currentPOS.amountWords.width}%`,
                                   fontSize: `${wordsStyle.fontSize}px`,
                                   fontWeight: wordsStyle.fontWeight,
-                                  color: wordsStyle.color,
                                   direction: "rtl",
                                   textAlign: "right",
                                   whiteSpace: "normal",
                                 }}
                               >
-                                {vWords}
+                                <VoucherColoredText
+                                  text={vWords}
+                                  colorRuns={fieldColorRuns?.words}
+                                  defaultColor={wordsStyle.color}
+                                />
                               </div>
                             ) : null}
 
@@ -886,7 +896,6 @@ export default function VoucherViewPage() {
                                   maxHeight: `${currentPOS.description.height}%`,
                                   fontSize: `${descStyle.fontSize}px`,
                                   fontWeight: descStyle.fontWeight,
-                                  color: descStyle.color,
                                   overflow: "visible",
                                   direction: "rtl",
                                   textAlign: "right",
@@ -895,7 +904,11 @@ export default function VoucherViewPage() {
                                   wordBreak: "break-word",
                                 }}
                               >
-                                {vDesc}
+                                <VoucherColoredText
+                                  text={vDesc}
+                                  colorRuns={fieldColorRuns?.desc}
+                                  defaultColor={descStyle.color}
+                                />
                               </div>
                             ) : null}
 
@@ -908,13 +921,16 @@ export default function VoucherViewPage() {
                                   maxHeight: `${currentEXTRA.bank.height}%`,
                                   fontSize: `${bankStyle.fontSize}px`,
                                   fontWeight: bankStyle.fontWeight,
-                                  color: bankStyle.color,
                                   overflow: "visible",
                                   direction: "rtl",
                                   textAlign: "right",
                                 }}
                               >
-                                {vBank}
+                                <VoucherColoredText
+                                  text={vBank}
+                                  colorRuns={fieldColorRuns?.bank}
+                                  defaultColor={bankStyle.color}
+                                />
                               </div>
                             ) : null}
 
@@ -927,13 +943,16 @@ export default function VoucherViewPage() {
                                   maxHeight: `${currentEXTRA.fxRate.height}%`,
                                   fontSize: `${fxRateStyle.fontSize}px`,
                                   fontWeight: fxRateStyle.fontWeight,
-                                  color: fxRateStyle.color,
                                   overflow: "visible",
                                   direction: "ltr",
                                   textAlign: "left",
                                 }}
                               >
-                                {vFxRate}
+                                <VoucherColoredText
+                                  text={vFxRate}
+                                  colorRuns={fieldColorRuns?.fxRate}
+                                  defaultColor={fxRateStyle.color}
+                                />
                               </div>
                             ) : null}
 
@@ -946,13 +965,16 @@ export default function VoucherViewPage() {
                                   maxHeight: `${currentEXTRA.receivedBy.height}%`,
                                   fontSize: `${receivedByStyle.fontSize}px`,
                                   fontWeight: receivedByStyle.fontWeight,
-                                  color: receivedByStyle.color,
                                   overflow: "visible",
                                   direction: "rtl",
                                   textAlign: "right",
                                 }}
                               >
-                                {vReceivedBy}
+                                <VoucherColoredText
+                                  text={vReceivedBy}
+                                  colorRuns={fieldColorRuns?.receivedBy}
+                                  defaultColor={receivedByStyle.color}
+                                />
                               </div>
                             ) : null}
 
@@ -965,13 +987,16 @@ export default function VoucherViewPage() {
                                   maxHeight: `${currentEXTRA.beneficiary.height}%`,
                                   fontSize: `${beneficiaryStyle.fontSize}px`,
                                   fontWeight: beneficiaryStyle.fontWeight,
-                                  color: beneficiaryStyle.color,
                                   overflow: "visible",
                                   direction: "rtl",
                                   textAlign: "right",
                                 }}
                               >
-                                {vBeneficiary}
+                                <VoucherColoredText
+                                  text={vBeneficiary}
+                                  colorRuns={fieldColorRuns?.beneficiary}
+                                  defaultColor={beneficiaryStyle.color}
+                                />
                               </div>
                             ) : null}
 
@@ -984,7 +1009,6 @@ export default function VoucherViewPage() {
                                   maxHeight: `${currentEXTRA.notes.height}%`,
                                   fontSize: `${notesStyle.fontSize}px`,
                                   fontWeight: notesStyle.fontWeight,
-                                  color: notesStyle.color,
                                   overflow: "visible",
                                   direction: "rtl",
                                   textAlign: "right",
@@ -993,7 +1017,11 @@ export default function VoucherViewPage() {
                                   wordBreak: "break-word",
                                 }}
                               >
-                                {vNotes}
+                                <VoucherColoredText
+                                  text={vNotes}
+                                  colorRuns={fieldColorRuns?.notes}
+                                  defaultColor={notesStyle.color}
+                                />
                               </div>
                             ) : null}
 
@@ -1593,6 +1621,8 @@ export default function VoucherViewPage() {
   setGlobalTextStyle={guardSetter(setGlobalTextStyle)}
   fieldStyles={fieldStyles}
   setFieldStyles={guardSetter(setFieldStyles)}
+  fieldColorRuns={fieldColorRuns}
+  setFieldColorRuns={guardSetter(setFieldColorRuns)}
   onImageLoad={() => setImgReady(true)}
 />
               </motion.div>

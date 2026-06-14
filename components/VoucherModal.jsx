@@ -21,6 +21,7 @@ import {
   normalizeGlobalTextStyle,
   normalizeFieldStyles
 } from "@/lib/voucher/styles";
+import { normalizeFieldColorRuns } from "@/lib/voucher/fieldColorRuns";
 
 import {
   COMPANIES,
@@ -150,6 +151,7 @@ export default function VoucherModal({
 
   const [globalTextStyle, setGlobalTextStyle] = useState(DEFAULT_GLOBAL_TEXT_STYLE);
   const [fieldStyles, setFieldStyles] = useState(DEFAULT_FIELD_STYLES);
+  const [fieldColorRuns, setFieldColorRuns] = useState({});
 
   const templateCompanyKey = existingVoucher?.companyKey || companyKey;
 
@@ -242,6 +244,8 @@ export default function VoucherModal({
       setGlobalTextStyle(legacy.global);
       setFieldStyles(legacy.fields);
     }
+
+    setFieldColorRuns(normalizeFieldColorRuns(doc?.fieldColorRuns || {}));
   }, []);
 
   const loadExistingVoucher = useCallback(async () => {
@@ -580,6 +584,7 @@ export default function VoucherModal({
 
       globalTextStyle,
       fieldStyles,
+      fieldColorRuns,
 
       // legacy support
       fontSizeAmount: String(fieldStyles?.amount?.fontSize || 16),
@@ -682,6 +687,7 @@ export default function VoucherModal({
     }
     const currencyText = vCurrency === "USD" ? "دولار فقط لا غير" : "دينار فقط لا غير";
     setVWords(`${numberToArabicWords(cleaned)} ${currencyText}`.trim());
+    setFieldColorRuns((prev) => ({ ...prev, words: [] }));
   }, [open, vAmount, vCurrency]);
 
   if (!open || !selectedCompany) return null;
@@ -771,6 +777,8 @@ export default function VoucherModal({
       setGlobalTextStyle={isLockedAfterCreate ? noop : setGlobalTextStyle}
       fieldStyles={fieldStyles}
       setFieldStyles={isLockedAfterCreate ? noop : setFieldStyles}
+      fieldColorRuns={fieldColorRuns}
+      setFieldColorRuns={isLockedAfterCreate ? noop : setFieldColorRuns}
     />
   );
 }

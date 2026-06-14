@@ -16,6 +16,7 @@ import { getModelForCompany } from "@/models/Request";
 import { findVoucherForRequest } from "@/lib/voucher/findVoucherForRequest";
 import { linkVoucherToRequest } from "@/lib/voucher/linkVoucherToRequest";
 import { buildVoucherDateFromParts } from "@/lib/voucher/voucherDate";
+import { sanitizeFieldColorRuns } from "@/lib/voucher/fieldColorRuns";
 
 export const runtime = "nodejs";
 
@@ -308,6 +309,7 @@ export async function POST(req) {
 
       globalTextStyle,
       fieldStyles,
+      fieldColorRuns,
     } = body || {};
 
     if (!companyKey || !mode) {
@@ -484,6 +486,24 @@ export async function POST(req) {
 
       globalTextStyle: sanitizeGlobalTextStyle(globalTextStyle),
       fieldStyles: sanitizeFieldStyles(fieldStyles),
+      fieldColorRuns: sanitizeFieldColorRuns(
+        fieldColorRuns || {},
+        {
+          words: vWords,
+          desc: vDesc,
+          bank: vBank,
+          fxRate: vFxRate,
+          receivedBy: vReceivedBy,
+          beneficiary: vBeneficiary,
+          notes: vNotes,
+          chequeNo: vChequeNo,
+          nationalId: vNationalId,
+          phone: vPhone,
+          sanadNo: vSanadNo,
+        },
+        sanitizeFieldStyles(fieldStyles),
+        sanitizeGlobalTextStyle(globalTextStyle)
+      ),
 
       createdByUserId: userId,
       createdByName,
