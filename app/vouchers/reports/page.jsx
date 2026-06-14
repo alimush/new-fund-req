@@ -106,6 +106,174 @@ export default function VoucherReportsPage() {
   const [suggestPos, setSuggestPos] = useState({ top: 0, left: 0, width: 0 });
 
   const hasSearchedRef = useRef(false);
+  const tableScrollRef = useRef(null);
+  const hScrollTrackRef = useRef(null);
+  const hScrollDragRef = useRef(null);
+  const [tableHScroll, setTableHScroll] = useState({
+    scrollLeft: 0,
+    clientWidth: 0,
+    scrollWidth: 0,
+  });
+  const [fixedHScroll, setFixedHScroll] = useState({
+    visible: false,
+    left: 0,
+    width: 0,
+  });
+
+  const readTableScrollMetrics = useCallback(() => {
+    const el = tableScrollRef.current;
+    if (!el) return;
+    setTableHScroll({
+      scrollLeft: el.scrollLeft,
+      clientWidth: el.clientWidth,
+      scrollWidth: el.scrollWidth,
+    });
+  }, []);
+
+  const setTableScrollLeft = useCallback((nextLeft) => {
+    const el = tableScrollRef.current;
+    if (!el) return;
+    const max = Math.max(0, el.scrollWidth - el.clientWidth);
+    const clamped = Math.min(max, Math.max(0, nextLeft));
+    el.scrollLeft = clamped;
+    setTableHScroll({
+      scrollLeft: clamped,
+      clientWidth: el.clientWidth,
+      scrollWidth: el.scrollWidth,
+    });
+  }, []);
+
+  useEffect(() => {
+    const el = tableScrollRef.current;
+    if (!el) return;
+
+    readTableScrollMetrics();
+    el.addEventListener("scroll", readTableScrollMetrics, { passive: true });
+
+    const ro = new ResizeObserver(readTableScrollMetrics);
+    ro.observe(el);
+    window.addEventListener("resize", readTableScrollMetrics);
+
+    return () => {
+      el.removeEventListener("scroll", readTableScrollMetrics);
+      ro.disconnect();
+      window.removeEventListener("resize", readTableScrollMetrics);
+    };
+  }, [rows, loading, readTableScrollMetrics]);
+
+  useEffect(() => {
+    const el = tableScrollRef.current;
+    if (!el || rows.length === 0) {
+      setFixedHScroll({ visible: false, left: 0, width: 0 });
+      return;
+    }
+
+    const updateFixedBar = () => {
+      const rect = el.getBoundingClientRect();
+      const inView = rect.bottom > 0 && rect.top < window.innerHeight;
+      setFixedHScroll({
+        visible: inView && rect.width > 0,
+        left: rect.left,
+        width: rect.width,
+      });
+    };
+
+    updateFixedBar();
+    window.addEventListener("scroll", updateFixedBar, { passive: true, capture: true });
+    window.addEventListener("resize", updateFixedBar);
+
+    const ro = new ResizeObserver(updateFixedBar);
+    ro.observe(el);
+
+    return () => {
+      window.removeEventListener("scroll", updateFixedBar, { capture: true });
+      window.removeEventListener("resize", updateFixedBar);
+      ro.disconnect();
+    };
+  }, [rows, loading]);
+
+  const hScrollUi = useMemo(() => {
+    const { scrollLeft, clientWidth, scrollWidth } = tableHScroll;
+    const scrollable = Math.max(0, scrollWidth - clientWidth);
+    const trackWidth = clientWidth || 1;
+    const thumbWidth =
+      scrollable > 0
+        ? Math.max(56, (clientWidth / scrollWidth) * trackWidth)
+        : trackWidth;
+    const thumbTravel = Math.max(0, trackWidth - thumbWidth);
+    const thumbLeft =
+      scrollable > 0 ? (scrollLeft / scrollable) * thumbTravel : 0;
+
+    return {
+      scrollable,
+      thumbWidth,
+      thumbTravel,
+      thumbLeft,
+      canScroll: scrollable > 0,
+    };
+  }, [tableHScroll]);
+
+  const onHScrollThumbMouseDown = useCallback(
+    (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const el = tableScrollRef.current;
+      if (!el || hScrollUi.scrollable <= 0) return;
+
+      hScrollDragRef.current = {
+        startX: e.clientX,
+        startScrollLeft: el.scrollLeft,
+        scrollable: hScrollUi.scrollable,
+        thumbTravel: hScrollUi.thumbTravel,
+      };
+
+      const onMove = (ev) => {
+        const drag = hScrollDragRef.current;
+        if (!drag) return;
+        const deltaX = ev.clientX - drag.startX;
+        const scrollDelta =
+          drag.thumbTravel > 0
+            ? (deltaX / drag.thumbTravel) * drag.scrollable
+            : 0;
+        setTableScrollLeft(drag.startScrollLeft + scrollDelta);
+      };
+
+      const onUp = () => {
+        hScrollDragRef.current = null;
+        document.removeEventListener("mousemove", onMove);
+        document.removeEventListener("mouseup", onUp);
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+      };
+
+      document.body.style.cursor = "grabbing";
+      document.body.style.userSelect = "none";
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", onUp);
+    },
+    [hScrollUi, setTableScrollLeft]
+  );
+
+  const onHScrollTrackMouseDown = useCallback(
+    (e) => {
+      if (e.button !== 0 || !hScrollUi.canScroll) return;
+      const track = hScrollTrackRef.current;
+      if (!track || e.target !== track) return;
+
+      const rect = track.getBoundingClientRect();
+      const clickX = e.clientX - rect.left;
+      const targetThumbLeft = Math.min(
+        hScrollUi.thumbTravel,
+        Math.max(0, clickX - hScrollUi.thumbWidth / 2)
+      );
+      const newScrollLeft =
+        hScrollUi.thumbTravel > 0
+          ? (targetThumbLeft / hScrollUi.thumbTravel) * hScrollUi.scrollable
+          : 0;
+      setTableScrollLeft(newScrollLeft);
+    },
+    [hScrollUi, setTableScrollLeft]
+  );
 
   const { permissions } = usePermissions();
 
@@ -1133,6 +1301,45 @@ export default function VoucherReportsPage() {
           document.body
         )}
 
+      {portalReady &&
+        fixedHScroll.visible &&
+        rows.length > 0 &&
+        createPortal(
+          <div
+            ref={hScrollTrackRef}
+            role="scrollbar"
+            aria-orientation="horizontal"
+            aria-valuemin={0}
+            aria-valuemax={Math.max(0, hScrollUi.scrollable)}
+            aria-valuenow={tableHScroll.scrollLeft}
+            aria-controls="voucher-reports-table"
+            onMouseDown={onHScrollTrackMouseDown}
+            style={{
+              position: "fixed",
+              left: fixedHScroll.left,
+              width: fixedHScroll.width,
+              bottom: 12,
+              zIndex: 99990,
+            }}
+            className="relative h-5 shrink-0 rounded-xl border border-slate-300/80 bg-slate-200/95 px-1 shadow-lg backdrop-blur cursor-pointer select-none"
+            aria-label="تمرير أفقي للجدول"
+          >
+            <div
+              onMouseDown={onHScrollThumbMouseDown}
+              className={`absolute top-1/2 h-3.5 -translate-y-1/2 rounded-full border border-slate-400/40 shadow-sm ${
+                hScrollUi.canScroll
+                  ? "cursor-grab bg-slate-500 hover:bg-slate-600 active:cursor-grabbing"
+                  : "cursor-default bg-slate-400/70"
+              }`}
+              style={{
+                width: `${hScrollUi.thumbWidth}px`,
+                left: `${hScrollUi.thumbLeft}px`,
+              }}
+            />
+          </div>,
+          document.body
+        )}
+
       <AnimatePresence mode="wait">
         {loading ? (
           <motion.div className="flex flex-col items-center py-20">
@@ -1146,7 +1353,18 @@ export default function VoucherReportsPage() {
             transition={{ duration: 0.22, ease: "easeOut" }}
             className="relative z-0 overflow-hidden rounded-3xl border border-white/30 bg-white/55 backdrop-blur-xl shadow-[0_18px_55px_-28px_rgba(0,0,0,0.35)]"
           >
-            <div className="relative overflow-x-auto">
+            <div
+              id="voucher-reports-table"
+              ref={tableScrollRef}
+              onWheel={(e) => {
+                if (!e.shiftKey || !tableScrollRef.current) return;
+                e.preventDefault();
+                setTableScrollLeft(
+                  tableScrollRef.current.scrollLeft + e.deltaY
+                );
+              }}
+              className="relative overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+            >
               <table className="min-w-[1600px] w-full text-[15px] md:text-[16px] text-slate-800 font-bold">
                 <thead className="sticky top-0 z-10">
                   <tr className="bg-white/80 backdrop-blur border-b border-white/40">
