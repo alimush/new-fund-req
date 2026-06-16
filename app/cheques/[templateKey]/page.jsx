@@ -719,10 +719,19 @@ export default function ChequeEditorPage() {
         previewValues={values}
         dateShowSlashes={dateShowSlashes}
         textFieldLayout={textFieldLayout}
+        amountWordsLayout={amountWordsLayout}
+        amountWordsLine2Layout={amountWordsLine2Layout}
+        layoutFontScale={globalFontScale}
         onClose={() => setPrintModal({ open: false, mode: "data" })}
         onSaved={(saved) => setPrintCalib(saved)}
         onPrint={(calib, meta) =>
-          runPrint(printModal.mode, calib, true, meta?.printerName || "", meta?.copyCount)
+          runPrint(
+            meta?.printMode || printModal.mode,
+            calib,
+            true,
+            meta?.printerName || "",
+            meta?.copyCount
+          )
         }
       />
     </div>

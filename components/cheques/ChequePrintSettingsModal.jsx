@@ -392,6 +392,9 @@ export default function ChequePrintSettingsModal({
   previewValues = {},
   dateShowSlashes = true,
   textFieldLayout = null,
+  amountWordsLayout = null,
+  amountWordsLine2Layout = null,
+  layoutFontScale = 100,
 }) {
   const [portalReady, setPortalReady] = useState(false);
   const [calib, setCalib] = useState(() =>
@@ -697,10 +700,9 @@ export default function ChequePrintSettingsModal({
     setPrinting(true);
     setError("");
     try {
-      const printCalibForJob = mode === "imageOnly" ? resolvedWizardCalib : calib;
-      const ok = await onPrint?.(printCalibForJob, {
+      const ok = await onPrint?.(calib, {
         printerName: printerName.trim(),
-        copyCount: wizardTestCopyCount,
+        printMode: mode,
       });
       if (ok === false) setError("تعذرت الطباعة");
       else onClose?.();
@@ -793,7 +795,10 @@ export default function ChequePrintSettingsModal({
                     mode={mode}
                     dateShowSlashes={dateShowSlashes}
                     textFieldLayout={textFieldLayout}
-                    showChequeImage
+                    amountWordsLayout={amountWordsLayout}
+                    amountWordsLine2Layout={amountWordsLine2Layout}
+                    layoutFontScale={layoutFontScale}
+                    showChequeImage={mode === "withImage" || mode === "imageOnly"}
                   />
                 </div>
 

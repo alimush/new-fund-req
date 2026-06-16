@@ -5,6 +5,9 @@ import { isCanvasField } from "@/lib/cheques/templates";
 import { slashPositionBetween } from "@/lib/cheques/dateUtils";
 import { printFontSizeToPreviewPx } from "@/lib/cheques/chequeDesignMetrics";
 import {
+  AMOUNT_WORDS_KEY,
+  AMOUNT_WORDS_LINE2_KEY,
+  fieldWithChequePosition,
   fieldWithTextLayout,
   layoutFromField,
 } from "@/lib/cheques/textFieldLayout";
@@ -18,6 +21,7 @@ import { getA4PaperSize } from "@/lib/cheques/chequePageSize";
 
 const DATE_ORDER = ["dateDay", "dateMonth", "dateYear"];
 const TEXT_KEY = "text";
+const PER_CHEQUE_KEYS = new Set([TEXT_KEY, AMOUNT_WORDS_KEY, AMOUNT_WORDS_LINE2_KEY]);
 
 /** عرض معاينة ورقة A4 (Landscape) */
 const PREVIEW_PAGE_WIDTH_PX = 560;
@@ -55,6 +59,9 @@ export default function ChequePrintCalibPreview({
   mode = "data",
   dateShowSlashes = true,
   textFieldLayout = null,
+  amountWordsLayout = null,
+  amountWordsLine2Layout = null,
+  layoutFontScale = 100,
   showChequeImage = false,
 }) {
   const { pageWidthMm: paperW, pageHeightMm: paperH } = getA4PaperSize();
@@ -72,7 +79,7 @@ export default function ChequePrintCalibPreview({
   );
 
   const staticFields = useMemo(
-    () => list.filter((f) => f.key !== TEXT_KEY && isCanvasField(f)),
+    () => list.filter((f) => !PER_CHEQUE_KEYS.has(f.key) && isCanvasField(f)),
     [list]
   );
 
@@ -89,6 +96,26 @@ export default function ChequePrintCalibPreview({
   const textField = textBase
     ? fieldWithTextLayout(textBase, textFieldLayout || layoutFromField(textBase))
     : null;
+
+  const resolveAmountField = (key, layout) => {
+    const base = fieldByKey[key];
+    if (!base) return null;
+    const positioned = layout ? fieldWithChequePosition(base, layout) : base;
+    if (layout && (layout.fontSize != null || layout.fontWeight != null)) {
+      return {
+        ...positioned,
+        fontSize: layout.fontSize ?? positioned.fontSize,
+        fontWeight: layout.fontWeight ?? positioned.fontWeight,
+      };
+    }
+    return positioned;
+  };
+
+  const amountWordsField = resolveAmountField(AMOUNT_WORDS_KEY, amountWordsLayout);
+  const amountWordsLine2Field = resolveAmountField(
+    AMOUNT_WORDS_LINE2_KEY,
+    amountWordsLine2Layout
+  );
 
   const dateField = fieldByKey.dateDay;
   const dateFontStyle = getFieldFontStyle(calib, "date", dateField);
@@ -177,7 +204,9 @@ export default function ChequePrintCalibPreview({
                       template,
                       calib,
                       dateFontStyle,
-                      pxPerMm
+                      pxPerMm,
+                      3.2,
+                      layoutFontScale
                     );
                     return (
                       <div
@@ -214,7 +243,9 @@ export default function ChequePrintCalibPreview({
                   template,
                   calib,
                   fontStyle,
-                  pxPerMm
+                  pxPerMm,
+                  3.2,
+                  layoutFontScale
                 );
                 const isDate = f.type === "datePart";
                 const isAmount = f.type === "amount" || f.key === "amountNumeric";
@@ -239,6 +270,84 @@ export default function ChequePrintCalibPreview({
                 );
               })}
 
+              {amountWordsField && values?.[AMOUNT_WORDS_KEY] ? (
+                <div
+                  style={{
+                    ...fieldBox(amountWordsField),
+                    transform: fieldShiftPx(calib, AMOUNT_WORDS_KEY, pxPerMm),
+                  }}
+                >
+                  {(() => {
+                    const fontStyle = getFieldFontStyle(calib, AMOUNT_WORDS_KEY, amountWordsField);
+                    return (
+                      <span
+                        style={{
+                          fontSize: printFontSizeToPreviewPx(
+                            amountWordsField,
+                            template,
+                            calib,
+                            fontStyle,
+                            pxPerMm,
+                            3.2,
+                            layoutFontScale
+                          ),
+                          fontWeight: fontStyle.fontWeight,
+                          width: "100%",
+                          textAlign: "right",
+                          direction: "rtl",
+                          whiteSpace: "nowrap",
+                          overflow: "hidden",
+                          color: fontStyle.color,
+                        }}
+                      >
+                        {values[AMOUNT_WORDS_KEY]}
+                      </span>
+                    );
+                  })()}
+                </div>
+              ) : null}
+
+              {amountWordsLine2Field && values?.[AMOUNT_WORDS_LINE2_KEY] ? (
+                <div
+                  style={{
+                    ...fieldBox(amountWordsLine2Field),
+                    transform: fieldShiftPx(calib, AMOUNT_WORDS_LINE2_KEY, pxPerMm),
+                  }}
+                >
+                  {(() => {
+                    const fontStyle = getFieldFontStyle(
+                      calib,
+                      AMOUNT_WORDS_LINE2_KEY,
+                      amountWordsLine2Field
+                    );
+                    return (
+                      <span
+                        style={{
+                          fontSize: printFontSizeToPreviewPx(
+                            amountWordsLine2Field,
+                            template,
+                            calib,
+                            fontStyle,
+                            pxPerMm,
+                            3.2,
+                            layoutFontScale
+                          ),
+                          fontWeight: fontStyle.fontWeight,
+                          width: "100%",
+                          textAlign: "right",
+                          direction: "rtl",
+                          whiteSpace: "nowrap",
+                          overflow: "hidden",
+                          color: fontStyle.color,
+                        }}
+                      >
+                        {values[AMOUNT_WORDS_LINE2_KEY]}
+                      </span>
+                    );
+                  })()}
+                </div>
+              ) : null}
+
               {textField && values?.[TEXT_KEY] ? (
                 <div
                   style={{
@@ -256,7 +365,9 @@ export default function ChequePrintCalibPreview({
                             template,
                             calib,
                             fontStyle,
-                            pxPerMm
+                            pxPerMm,
+                            3.2,
+                            layoutFontScale
                           ),
                           fontWeight: fontStyle.fontWeight,
                           width: "100%",

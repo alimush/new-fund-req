@@ -25,7 +25,7 @@ function ChequeViewInner() {
       .join(" — ") || "صك";
 
   const runPrint = useCallback(
-    async (mode, printCalib, useProvidedCalib = false, copyCount) => {
+    async (mode, printCalib, useProvidedCalib = false, copyCount, printerName = "") => {
       if (!printPayload?.template) return false;
       const base = {
         ...printPayload,
@@ -34,6 +34,7 @@ function ChequeViewInner() {
         layoutFontScale: printPayload?.layoutFontScale,
         useProvidedCalib,
         copyCount,
+        printerName,
       };
       if (mode === "data") {
         return printChequeData({
@@ -167,11 +168,22 @@ function ChequeViewInner() {
         previewValues={printPayload?.values}
         dateShowSlashes={printPayload?.dateShowSlashes}
         textFieldLayout={printPayload?.textFieldLayout}
+        amountWordsLayout={printPayload?.amountWordsLayout}
+        amountWordsLine2Layout={printPayload?.amountWordsLine2Layout}
+        layoutFontScale={printPayload?.layoutFontScale}
         onClose={() => setPrintModal({ open: false, mode: "data" })}
         onSaved={(saved) =>
           setPrintPayload((prev) => (prev ? { ...prev, printCalib: saved } : prev))
         }
-        onPrint={(calib, meta) => runPrint(printModal.mode, calib, true, meta?.copyCount)}
+        onPrint={(calib, meta) =>
+          runPrint(
+            meta?.printMode || printModal.mode,
+            calib,
+            true,
+            meta?.copyCount,
+            meta?.printerName || printPayload?.printerName || ""
+          )
+        }
       />
     </div>
   );

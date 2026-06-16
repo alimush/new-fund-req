@@ -18,7 +18,6 @@ import ChequeCanvas from "@/components/cheques/ChequeCanvas";
 import { getChequeTemplate } from "@/lib/cheques/templates";
 import {
   fieldsFromTemplate,
-  mergeTemplateFields,
 } from "@/lib/cheques/mergeFields";
 import { chequeDocToValues } from "@/lib/cheques/chequeDocToValues";
 import {
@@ -32,6 +31,7 @@ import {
   LAYOUT_FONT_SCALE_DEFAULT,
   clampLayoutFontScale,
 } from "@/lib/cheques/chequeDesignMetrics";
+import { fetchChequePrintBundle } from "@/lib/cheques/fetchPrintCalib";
 import ChequePrintSettingsModal from "@/components/cheques/ChequePrintSettingsModal";
 import { useChequeAccess } from "@/components/cheques/useChequeAccess";
 
@@ -107,23 +107,20 @@ export function ChequeViewContent({ chequeId, onReady, className = "" }) {
       let slashes = tpl.dateShowSlashesDefault ?? true;
       let printCalib = defaultPrintCalib(tpl, fields);
       let layoutFontScale = LAYOUT_FONT_SCALE_DEFAULT;
+      let printerName = "";
 
       try {
-        const layoutRes = await fetch(
-          `/api/cheques/layout?templateKey=${encodeURIComponent(data.templateKey)}`,
-          { cache: "no-store" }
+        const bundle = await fetchChequePrintBundle(data.templateKey, tpl, fields);
+        fields = Array.isArray(bundle?.fields) && bundle.fields.length ? bundle.fields : fields;
+        slashes =
+          typeof bundle?.dateShowSlashes === "boolean"
+            ? bundle.dateShowSlashes
+            : slashes;
+        printCalib = bundle?.printCalib || defaultPrintCalib(tpl, fields);
+        layoutFontScale = clampLayoutFontScale(
+          bundle?.globalFontScale ?? layoutFontScale
         );
-        const layoutJson = await layoutRes.json();
-        if (layoutJson?.success) {
-          if (Array.isArray(layoutJson.data) && layoutJson.data.length) {
-            fields = mergeTemplateFields(tpl, layoutJson.data);
-          }
-          if (typeof layoutJson.dateShowSlashes === "boolean") {
-            slashes = layoutJson.dateShowSlashes;
-          }
-          printCalib = layoutJson.printCalib || defaultPrintCalib(tpl, fields);
-          layoutFontScale = clampLayoutFontScale(layoutJson.globalFontScale ?? 100);
-        }
+        printerName = String(bundle?.printerName || "").trim();
       } catch {
         //
       }
@@ -144,6 +141,7 @@ export function ChequeViewContent({ chequeId, onReady, className = "" }) {
         amountWordsLine2Layout: data.amountWordsLine2Layout || null,
         printCalib,
         layoutFontScale,
+        printerName,
         doc: data,
       });
     } catch (err) {
@@ -267,7 +265,13 @@ export default function ChequeViewDrawer({ open, chequeId, onClose }) {
       .filter(Boolean)
       .join(" — ") || "صك";
 
-  const runPrint = async (mode, printCalib, useProvidedCalib = false, copyCount) => {
+  const runPrint = async (
+    mode,
+    printCalib,
+    useProvidedCalib = false,
+    copyCount,
+    printerName = ""
+  ) => {
     if (!printPayload?.template) return false;
     const base = {
       ...printPayload,
@@ -275,6 +279,7 @@ export default function ChequeViewDrawer({ open, chequeId, onClose }) {
       printCalib,
       useProvidedCalib,
       copyCount,
+      printerName,
     };
     if (mode === "data") {
       return printChequeData({
@@ -430,11 +435,20 @@ export default function ChequeViewDrawer({ open, chequeId, onClose }) {
         textFieldLayout={printPayload?.textFieldLayout}
         amountWordsLayout={printPayload?.amountWordsLayout}
         amountWordsLine2Layout={printPayload?.amountWordsLine2Layout}
+        layoutFontScale={printPayload?.layoutFontScale}
         onClose={() => setPrintModal({ open: false, mode: "data" })}
         onSaved={(saved) =>
           setPrintPayload((prev) => (prev ? { ...prev, printCalib: saved } : prev))
         }
-        onPrint={(calib, meta) => runPrint(printModal.mode, calib, true, meta?.copyCount)}
+        onPrint={(calib, meta) =>
+          runPrint(
+            meta?.printMode || printModal.mode,
+            calib,
+            true,
+            meta?.copyCount,
+            meta?.printerName || printPayload?.printerName || ""
+          )
+        }
       />
     </AnimatePresence>,
     document.body
