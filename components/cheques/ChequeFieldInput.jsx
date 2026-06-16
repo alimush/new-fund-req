@@ -3,7 +3,6 @@
 import { Cairo } from "next/font/google";
 import { only2Digits, formatAmount } from "@/lib/voucher/utils";
 import { onlyDatePart } from "@/lib/cheques/dateUtils";
-import { useAutoFitFontSize } from "@/components/cheques/useAutoFitFontSize";
 import { singleLineText } from "@/lib/cheques/singleLineText";
 import { fieldDesignFontPx } from "@/lib/cheques/chequeDesignMetrics";
 
@@ -13,6 +12,7 @@ const cairo = Cairo({
 });
 
 const fontFamily = cairo.style.fontFamily;
+const CANVAS_TEXT_COLOR = "#0f172a";
 
 function fieldTextStyle(field, isCanvas, designScale = 1) {
   const weight = field?.fontWeight ?? 700;
@@ -24,6 +24,8 @@ function fieldTextStyle(field, isCanvas, designScale = 1) {
     fontFamily,
     fontSize: `${px}px`,
     fontWeight: weight,
+    color: CANVAS_TEXT_COLOR,
+    WebkitTextFillColor: CANVAS_TEXT_COLOR,
   };
 }
 
@@ -41,15 +43,8 @@ export default function ChequeFieldInput({
   const v = value ?? "";
   const isCanvas = variant === "canvas";
   const scale = isCanvas ? designScale : 1;
-  const autoFitAmountWords = isCanvas && field?.key === "amountWords";
-  const maxFitPx = fieldDesignFontPx(field, 14) * scale;
-  const minFitPx = 7 * scale;
-  const { ref: autoFitRef, fit: amountWordsFit } = useAutoFitFontSize({
-    enabled: autoFitAmountWords,
-    text: v,
-    maxFontSize: maxFitPx,
-    minFontSize: minFitPx,
-  });
+  const isAmountWordsLine =
+    field?.key === "amountWords" || field?.key === "amountWordsLine2";
   const textStyle = fieldTextStyle(field, isCanvas, scale);
 
   const canvasClass = `
@@ -111,13 +106,13 @@ export default function ChequeFieldInput({
     );
   }
 
-  if (field.type === "textarea" && field.key === "amountWords") {
-    const useFittedSize = autoFitAmountWords && amountWordsFit != null;
-
+  if (field.type === "textarea" && isAmountWordsLine) {
     return (
       <input
-        ref={autoFitAmountWords ? autoFitRef : undefined}
         type="text"
+        spellCheck={false}
+        autoComplete="off"
+        autoCorrect="off"
         value={v}
         onChange={(e) => onChange(singleLineText(e.target.value))}
         onKeyDown={(e) => {
@@ -142,15 +137,7 @@ export default function ChequeFieldInput({
         ].join(" ")}
         style={{
           ...textStyle,
-          ...(useFittedSize
-            ? {
-                fontSize: `${amountWordsFit.fontSize}px`,
-                lineHeight: 1.2,
-                fontWeight: amountWordsFit.fontWeight,
-                paddingTop: `${amountWordsFit.paddingTop * scale}px`,
-                color: amountWordsFit.color,
-              }
-            : {}),
+          lineHeight: 1.2,
         }}
         {...common}
       />

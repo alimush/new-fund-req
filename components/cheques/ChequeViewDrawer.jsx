@@ -28,6 +28,10 @@ import {
 } from "@/lib/cheques/formatCheque";
 import { printChequeData, printChequeImageOnly, printChequeWithImage } from "@/lib/cheques/printCheque";
 import { defaultPrintCalib } from "@/lib/cheques/printCalib";
+import {
+  LAYOUT_FONT_SCALE_DEFAULT,
+  clampLayoutFontScale,
+} from "@/lib/cheques/chequeDesignMetrics";
 import ChequePrintSettingsModal from "@/components/cheques/ChequePrintSettingsModal";
 import { useChequeAccess } from "@/components/cheques/useChequeAccess";
 
@@ -50,6 +54,7 @@ export function ChequeViewContent({ chequeId, onReady, className = "" }) {
   const [mergedFields, setMergedFields] = useState([]);
   const [dateShowSlashes, setDateShowSlashes] = useState(true);
   const [values, setValues] = useState({});
+  const [globalFontScale, setGlobalFontScale] = useState(LAYOUT_FONT_SCALE_DEFAULT);
 
   const template = useMemo(
     () => (doc?.templateKey ? getChequeTemplate(doc.templateKey) : null),
@@ -61,6 +66,18 @@ export function ChequeViewContent({ chequeId, onReady, className = "" }) {
     if (!lay || typeof lay.top !== "number") return null;
     return lay;
   }, [doc?.textFieldLayout]);
+
+  const amountWordsLayout = useMemo(() => {
+    const lay = doc?.amountWordsLayout;
+    if (!lay || typeof lay.top !== "number") return null;
+    return lay;
+  }, [doc?.amountWordsLayout]);
+
+  const amountWordsLine2Layout = useMemo(() => {
+    const lay = doc?.amountWordsLine2Layout;
+    if (!lay || typeof lay.top !== "number") return null;
+    return lay;
+  }, [doc?.amountWordsLine2Layout]);
 
   const loadCheque = useCallback(async () => {
     if (!chequeId) return;
@@ -89,6 +106,7 @@ export function ChequeViewContent({ chequeId, onReady, className = "" }) {
       let fields = fieldsFromTemplate(tpl);
       let slashes = tpl.dateShowSlashesDefault ?? true;
       let printCalib = defaultPrintCalib(tpl, fields);
+      let layoutFontScale = LAYOUT_FONT_SCALE_DEFAULT;
 
       try {
         const layoutRes = await fetch(
@@ -104,6 +122,7 @@ export function ChequeViewContent({ chequeId, onReady, className = "" }) {
             slashes = layoutJson.dateShowSlashes;
           }
           printCalib = layoutJson.printCalib || defaultPrintCalib(tpl, fields);
+          layoutFontScale = clampLayoutFontScale(layoutJson.globalFontScale ?? 100);
         }
       } catch {
         //
@@ -111,6 +130,7 @@ export function ChequeViewContent({ chequeId, onReady, className = "" }) {
 
       setMergedFields(fields);
       setDateShowSlashes(slashes);
+      setGlobalFontScale(layoutFontScale);
       const vals = chequeDocToValues(data);
       setValues(vals);
       onReady?.({
@@ -120,7 +140,10 @@ export function ChequeViewContent({ chequeId, onReady, className = "" }) {
         values: vals,
         dateShowSlashes: slashes,
         textFieldLayout: data.textFieldLayout || null,
+        amountWordsLayout: data.amountWordsLayout || null,
+        amountWordsLine2Layout: data.amountWordsLine2Layout || null,
         printCalib,
+        layoutFontScale,
         doc: data,
       });
     } catch (err) {
@@ -179,6 +202,11 @@ export function ChequeViewContent({ chequeId, onReady, className = "" }) {
           <div className="rounded-xl border border-slate-200/90 bg-white px-3 py-2.5">
             <p className="text-[10px] font-extrabold text-slate-500 mb-0.5">المبلغ كتابة</p>
             <p className="text-xs font-bold text-slate-800 leading-relaxed">{doc.amountWords || "—"}</p>
+            {doc.amountWordsLine2 ? (
+              <p className="text-xs font-bold text-slate-800 leading-relaxed mt-0.5">
+                {doc.amountWordsLine2}
+              </p>
+            ) : null}
           </div>
           {doc.text ? (
             <div className="rounded-xl border border-slate-200/90 bg-white px-3 py-2.5">
@@ -198,6 +226,9 @@ export function ChequeViewContent({ chequeId, onReady, className = "" }) {
               values={values}
               dateShowSlashes={dateShowSlashes}
               textFieldLayout={textFieldLayout}
+              amountWordsLayout={amountWordsLayout}
+              amountWordsLine2Layout={amountWordsLine2Layout}
+              globalFontScale={globalFontScale}
               viewMode
             />
           </div>
@@ -208,7 +239,7 @@ export function ChequeViewContent({ chequeId, onReady, className = "" }) {
 }
 
 export default function ChequeViewDrawer({ open, chequeId, onClose }) {
-  const { canLayoutEditor } = useChequeAccess();
+  const { canManagePrintSettings } = useChequeAccess();
   const [portalReady, setPortalReady] = useState(false);
   const [printing, setPrinting] = useState(false);
   const [printingImage, setPrintingImage] = useState(false);
@@ -236,13 +267,14 @@ export default function ChequeViewDrawer({ open, chequeId, onClose }) {
       .filter(Boolean)
       .join(" — ") || "صك";
 
-  const runPrint = async (mode, printCalib, useProvidedCalib = false) => {
+  const runPrint = async (mode, printCalib, useProvidedCalib = false, copyCount) => {
     if (!printPayload?.template) return false;
     const base = {
       ...printPayload,
       title: printTitle,
       printCalib,
       useProvidedCalib,
+      copyCount,
     };
     if (mode === "data") {
       return printChequeData({
@@ -259,10 +291,7 @@ export default function ChequeViewDrawer({ open, chequeId, onClose }) {
       });
     }
     return printChequeImageOnly({
-      template: printPayload.template,
-      fields: printPayload.fields,
-      title: printTitle,
-      printCalib,
+      ...base,
       onStart: () => setPrintingImage(true),
       onEnd: () => setPrintingImage(false),
     });
@@ -344,16 +373,18 @@ export default function ChequeViewDrawer({ open, chequeId, onClose }) {
                   <FiPrinter className={printingImage ? "animate-pulse" : ""} />
                   {printingImage ? "جاري الطباعة…" : "طباعة الصك"}
                 </button>
-                <button
-                  type="button"
-                  onClick={() => openPrintModal("data")}
-                  disabled={!printPayload?.template}
-                  title="ضبط إعدادات الطباعة المحفوظة لهذا القالب"
-                  className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-extrabold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
-                >
-                  <FiSliders />
-                  ضبط الطباعة
-                </button>
+                {canManagePrintSettings ? (
+                  <button
+                    type="button"
+                    onClick={() => openPrintModal("data")}
+                    disabled={!printPayload?.template}
+                    title="ضبط إعدادات الطباعة المحفوظة لهذا القالب"
+                    className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-extrabold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                  >
+                    <FiSliders />
+                    ضبط الطباعة
+                  </button>
+                ) : null}
                 <Link
                   href={`/cheques/view?id=${encodeURIComponent(chequeId)}`}
                   target="_blank"
@@ -392,16 +423,18 @@ export default function ChequeViewDrawer({ open, chequeId, onClose }) {
         template={printPayload?.template}
         templateKey={printPayload?.templateKey}
         initialCalib={printPayload?.printCalib}
-        canSave={canLayoutEditor}
+        canSave={canManagePrintSettings}
         previewFields={printPayload?.fields}
         previewValues={printPayload?.values}
         dateShowSlashes={printPayload?.dateShowSlashes}
         textFieldLayout={printPayload?.textFieldLayout}
+        amountWordsLayout={printPayload?.amountWordsLayout}
+        amountWordsLine2Layout={printPayload?.amountWordsLine2Layout}
         onClose={() => setPrintModal({ open: false, mode: "data" })}
         onSaved={(saved) =>
           setPrintPayload((prev) => (prev ? { ...prev, printCalib: saved } : prev))
         }
-        onPrint={(calib) => runPrint(printModal.mode, calib, true)}
+        onPrint={(calib, meta) => runPrint(printModal.mode, calib, true, meta?.copyCount)}
       />
     </AnimatePresence>,
     document.body

@@ -15,11 +15,17 @@ import {
 } from "@/lib/cheques/mergeFields";
 import {
   normalizePrintCalib,
+  normalizeWizardCalibSource,
   printCalibPayload,
+  wizardPrintCalibPayload,
 } from "@/lib/cheques/printCalib";
+import { normalizeWizardPrintCalib } from "@/lib/cheques/wizardCopyLayouts";
+import { normalizeWizardTestCopyCount } from "@/lib/cheques/chequePrintPageStyles";
+import { clampLayoutFontScale } from "@/lib/cheques/chequeDesignMetrics";
 import {
   requireChequeAccess,
   requireChequeEditor,
+  requireManagePermissions,
 } from "@/lib/cheques/chequeAuth";
 
 export const runtime = "nodejs";
@@ -62,6 +68,15 @@ export async function GET(req) {
     const mergedFields =
       data.length > 0 ? mergeTemplateFields(tpl, data) : fieldsFromTemplate(tpl);
     const printCalib = normalizePrintCalib(doc?.printCalib, tpl, mergedFields);
+    const globalFontScale = clampLayoutFontScale(doc?.globalFontScale ?? 100);
+    const wizardCalibSource = normalizeWizardCalibSource(doc?.wizardCalibSource);
+    const wizardTestCopyCount = normalizeWizardTestCopyCount(doc?.wizardTestCopyCount);
+    const wizardPrintCalib = normalizeWizardPrintCalib(
+      doc?.wizardPrintCalib,
+      tpl,
+      mergedFields,
+      wizardTestCopyCount
+    );
 
     return NextResponse.json({
       success: true,
@@ -69,6 +84,10 @@ export async function GET(req) {
       data,
       dateShowSlashes,
       printCalib,
+      wizardCalibSource,
+      wizardPrintCalib,
+      wizardTestCopyCount,
+      globalFontScale,
       updatedAt: doc?.updatedAt || null,
     });
   } catch (err) {
@@ -93,14 +112,21 @@ export async function POST(req) {
       );
     }
 
-    const editor = await requireChequeEditor(userId);
-    if (!editor.ok) return editor.res;
+    const body = await req.json();
+    const templateKey = String(body?.templateKey || "").trim();
+    const printCalibOnly = Boolean(body?.printCalibOnly);
+    const wizardCalibOnly = Boolean(body?.wizardCalibOnly);
+
+    if (printCalibOnly || wizardCalibOnly) {
+      const access = await requireManagePermissions(userId);
+      if (!access.ok) return access.res;
+    } else {
+      const editor = await requireChequeEditor(userId);
+      if (!editor.ok) return editor.res;
+    }
 
     const user = await User.findById(userId).select("username").lean();
     const username = String(user?.username || "").trim();
-
-    const body = await req.json();
-    const templateKey = String(body?.templateKey || "").trim();
 
     if (!isValidChequeTemplateKey(templateKey)) {
       return NextResponse.json(
@@ -110,7 +136,51 @@ export async function POST(req) {
     }
 
     const tpl = getChequeTemplate(templateKey);
-    const printCalibOnly = Boolean(body?.printCalibOnly);
+
+    if (wizardCalibOnly) {
+      const existing = await ChequeLayout.findOne({ templateKey }).lean();
+      const existingLayout = filterLayoutForTemplate(tpl, existing?.fields || []);
+      const existingFields =
+        existingLayout.length > 0
+          ? mergeTemplateFields(tpl, existingLayout)
+          : fieldsFromTemplate(tpl);
+      const wizardCalibSource = normalizeWizardCalibSource(body?.wizardCalibSource);
+      const wizardTestCopyCount = normalizeWizardTestCopyCount(
+        body?.wizardTestCopyCount ?? existing?.wizardTestCopyCount
+      );
+      const wizardPrintCalib = wizardPrintCalibPayload(
+        body?.wizardPrintCalib,
+        tpl,
+        existingFields,
+        wizardTestCopyCount
+      );
+      const setWizard = {
+        templateKey,
+        wizardPrintCalib,
+        wizardCalibSource,
+        wizardTestCopyCount,
+        updatedBy: username,
+      };
+      const doc = await ChequeLayout.findOneAndUpdate(
+        { templateKey },
+        { $set: setWizard },
+        { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true }
+      ).lean();
+
+      return NextResponse.json({
+        success: true,
+        templateKey,
+        wizardCalibSource: normalizeWizardCalibSource(doc?.wizardCalibSource),
+        wizardPrintCalib: normalizeWizardPrintCalib(
+          doc?.wizardPrintCalib,
+          tpl,
+          existingFields,
+          normalizeWizardTestCopyCount(doc?.wizardTestCopyCount)
+        ),
+        wizardTestCopyCount: normalizeWizardTestCopyCount(doc?.wizardTestCopyCount),
+        printCalib: normalizePrintCalib(doc?.printCalib, tpl, existingFields),
+      });
+    }
 
     if (printCalibOnly) {
       const existing = await ChequeLayout.findOne({ templateKey }).lean();
@@ -120,15 +190,31 @@ export async function POST(req) {
           ? mergeTemplateFields(tpl, existingLayout)
           : fieldsFromTemplate(tpl);
       const printCalib = printCalibPayload(body?.printCalib, tpl, existingFields);
+      const wizardTestCopyCount = normalizeWizardTestCopyCount(
+        body?.wizardTestCopyCount ?? existing?.wizardTestCopyCount
+      );
+      const setFields = {
+        templateKey,
+        printCalib,
+        updatedBy: username,
+      };
+      if (body?.wizardCalibSource != null) {
+        setFields.wizardCalibSource = normalizeWizardCalibSource(body.wizardCalibSource);
+      }
+      if (body?.wizardPrintCalib != null) {
+        setFields.wizardPrintCalib = wizardPrintCalibPayload(
+          body.wizardPrintCalib,
+          tpl,
+          existingFields,
+          wizardTestCopyCount
+        );
+      }
+      if (body?.wizardTestCopyCount != null) {
+        setFields.wizardTestCopyCount = wizardTestCopyCount;
+      }
       const doc = await ChequeLayout.findOneAndUpdate(
         { templateKey },
-        {
-          $set: {
-            templateKey,
-            printCalib,
-            updatedBy: username,
-          },
-        },
+        { $set: setFields },
         { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true }
       ).lean();
 
@@ -136,6 +222,14 @@ export async function POST(req) {
         success: true,
         templateKey,
         printCalib: normalizePrintCalib(doc?.printCalib, tpl, existingFields),
+        wizardCalibSource: normalizeWizardCalibSource(doc?.wizardCalibSource),
+        wizardPrintCalib: normalizeWizardPrintCalib(
+          doc?.wizardPrintCalib,
+          tpl,
+          existingFields,
+          normalizeWizardTestCopyCount(doc?.wizardTestCopyCount)
+        ),
+        wizardTestCopyCount: normalizeWizardTestCopyCount(doc?.wizardTestCopyCount),
       });
     }
 
@@ -151,6 +245,9 @@ export async function POST(req) {
       dateShowSlashes,
       updatedBy: username,
     };
+    if (body?.globalFontScale != null) {
+      update.globalFontScale = clampLayoutFontScale(body.globalFontScale);
+    }
     if (body?.printCalib != null) {
       update.printCalib = printCalibPayload(body.printCalib, tpl, fields);
     }
@@ -171,6 +268,7 @@ export async function POST(req) {
       templateKey,
       dateShowSlashes: savedSlashes,
       printCalib: normalizePrintCalib(doc?.printCalib, tpl, fields),
+      globalFontScale: clampLayoutFontScale(doc?.globalFontScale ?? 100),
       data: { ...doc, fields, dateShowSlashes: savedSlashes },
     });
   } catch (err) {

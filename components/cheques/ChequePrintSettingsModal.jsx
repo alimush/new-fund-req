@@ -3,13 +3,26 @@
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { FiPrinter, FiSave, FiX, FiRotateCcw } from "react-icons/fi";
+import { FiPrinter, FiSave, FiX, FiRotateCcw, FiTarget, FiMove } from "react-icons/fi";
 import ChequePrintCalibPreview from "@/components/cheques/ChequePrintCalibPreview";
+import ChequeCalibWizard from "@/components/cheques/ChequeCalibWizard";
+import ChequePrintPositionEditor from "@/components/cheques/ChequePrintPositionEditor";
+import SheetOrientationControls from "@/components/cheques/SheetOrientationControls";
 import {
+  fetchPrinterCalibrationList,
+} from "@/lib/cheques/fetchPrintCalib";
+import {
+  readStoredPrinterName,
+  writeStoredPrinterName,
+} from "@/lib/cheques/printerCalibration";
+import {
+  applyGlobalTextColorToCalib,
   cmToMm,
   defaultPrintCalib,
   FONT_SIZE_SCALE_MAX,
   FONT_SIZE_SCALE_MIN,
+  GLOBAL_FONT_SIZE_SCALE_MAX,
+  GLOBAL_FONT_SIZE_SCALE_MIN,
   FONT_WEIGHT_MAX,
   FONT_WEIGHT_MIN,
   formatCmFromMm,
@@ -17,11 +30,23 @@ import {
   getFieldOffset,
   mmToCm,
   normalizePrintCalib,
+  normalizeWizardCalibSource,
   parseCmInput,
+  resolveWizardPrintCalib,
+  WIZARD_CALIB_SOURCE_SEPARATE,
+  WIZARD_CALIB_SOURCE_SHARED,
   DATE_GROUP_KEY,
+  DEFAULT_PRINT_FIELD_COLOR,
   PRINT_FIELD_LABELS,
   printFieldOffsetKeys,
 } from "@/lib/cheques/printCalib";
+import { normalizeWizardPrintCalib } from "@/lib/cheques/wizardCopyLayouts";
+import {
+  normalizeWizardTestCopyCount,
+  WIZARD_TEST_COPY_DEFAULT,
+  WIZARD_TEST_COPY_MAX,
+  WIZARD_TEST_COPY_MIN,
+} from "@/lib/cheques/chequePrintPageStyles";
 
 const MODE_LABELS = {
   data: "طباعة على صك فارغ",
@@ -261,16 +286,51 @@ function FontStyleRow({ label, fontSizeScale, fontWeight, onChangeScale, onChang
   );
 }
 
+function FieldColorRow({ label, color, onChangeColor, resetColor = DEFAULT_PRINT_FIELD_COLOR }) {
+  const safeColor = color || DEFAULT_PRINT_FIELD_COLOR;
+
+  return (
+    <label className="block rounded-xl border border-slate-200 bg-white px-3 py-2.5">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <span className="text-xs font-extrabold text-slate-700">{label}</span>
+        <span
+          className="inline-block h-6 w-6 shrink-0 rounded border border-slate-300"
+          style={{ backgroundColor: safeColor }}
+          aria-hidden
+        />
+      </div>
+      <div className="flex items-center gap-2">
+        <input
+          type="color"
+          value={safeColor}
+          onChange={(e) => onChangeColor(e.target.value)}
+          className="h-10 min-w-0 flex-1 cursor-pointer rounded-lg border border-slate-200 bg-white"
+        />
+        <button
+          type="button"
+          onClick={() => onChangeColor(resetColor)}
+          className="shrink-0 rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-[10px] font-extrabold text-slate-700 hover:bg-slate-100"
+        >
+          افتراضي
+        </button>
+      </div>
+    </label>
+  );
+}
+
 function FieldCalibPanel({
   label,
   offsetXmm,
   offsetYmm,
   fontSizeScale,
   fontWeight,
+  color,
+  globalTextColor,
   onChangeX,
   onChangeY,
   onChangeFontScale,
   onChangeFontWeight,
+  onChangeColor,
 }) {
   return (
     <div className="rounded-xl border border-slate-200 bg-slate-50/90 p-3">
@@ -282,6 +342,12 @@ function FieldCalibPanel({
           fontWeight={fontWeight}
           onChangeScale={onChangeFontScale}
           onChangeWeight={onChangeFontWeight}
+        />
+        <FieldColorRow
+          label="لون الخط"
+          color={color}
+          resetColor={globalTextColor}
+          onChangeColor={onChangeColor}
         />
         <div className="grid gap-2 sm:grid-cols-2">
           <CmInputRow
@@ -317,6 +383,8 @@ export default function ChequePrintSettingsModal({
   template,
   templateKey,
   initialCalib,
+  initialWizardCalibSource = WIZARD_CALIB_SOURCE_SHARED,
+  initialWizardPrintCalib = null,
   canSave = false,
   onPrint,
   onSaved,
@@ -331,7 +399,19 @@ export default function ChequePrintSettingsModal({
   );
   const [printing, setPrinting] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [savingPrinter, setSavingPrinter] = useState(false);
+  const [saveMessage, setSaveMessage] = useState("");
   const [error, setError] = useState("");
+  const [printerName, setPrinterName] = useState("");
+  const [calibrationList, setCalibrationList] = useState([]);
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [positionEditorOpen, setPositionEditorOpen] = useState(false);
+  const [wizardPositionEditorOpen, setWizardPositionEditorOpen] = useState(false);
+  const [wizardCalibSource, setWizardCalibSource] = useState(WIZARD_CALIB_SOURCE_SHARED);
+  const [wizardCalib, setWizardCalib] = useState(() =>
+    normalizeWizardPrintCalib(initialWizardPrintCalib, template || null, previewFields)
+  );
+  const [wizardTestCopyCount, setWizardTestCopyCount] = useState(WIZARD_TEST_COPY_DEFAULT);
 
   const defaults = useMemo(
     () => defaultPrintCalib(template, previewFields),
@@ -360,8 +440,115 @@ export default function ChequePrintSettingsModal({
   useEffect(() => {
     if (!open || !template) return;
     setCalib(normalizePrintCalib(initialCalib, template, previewFields));
+    setWizardCalibSource(normalizeWizardCalibSource(initialWizardCalibSource));
+    setWizardCalib(
+      normalizeWizardPrintCalib(
+        initialWizardPrintCalib || defaults,
+        template,
+        previewFields,
+        wizardTestCopyCount
+      )
+    );
     setError("");
-  }, [open, initialCalib, template, previewFields]);
+    setSaveMessage("");
+    if (templateKey) {
+      setPrinterName(readStoredPrinterName(templateKey));
+      fetchPrinterCalibrationList(templateKey).then(setCalibrationList);
+      fetch(`/api/cheques/layout?templateKey=${encodeURIComponent(templateKey)}`, {
+        cache: "no-store",
+      })
+        .then((r) => r.json())
+        .then((json) => {
+          if (!json?.success) return;
+          setWizardCalibSource(normalizeWizardCalibSource(json.wizardCalibSource));
+          setWizardCalib(
+            normalizeWizardPrintCalib(
+              json.wizardPrintCalib,
+              template,
+              previewFields,
+              normalizeWizardTestCopyCount(json.wizardTestCopyCount)
+            )
+          );
+          setWizardTestCopyCount(normalizeWizardTestCopyCount(json.wizardTestCopyCount));
+        })
+        .catch(() => {});
+    }
+  }, [
+    open,
+    initialCalib,
+    initialWizardCalibSource,
+    initialWizardPrintCalib,
+    template,
+    previewFields,
+    templateKey,
+    defaults,
+  ]);
+
+  const resolvedWizardCalib = useMemo(
+    () =>
+      resolveWizardPrintCalib({
+        printCalib: calib,
+        wizardPrintCalib: wizardCalib,
+        wizardCalibSource,
+        template,
+        fields: previewFields,
+        copyCount: wizardTestCopyCount,
+      }),
+    [calib, wizardCalib, wizardCalibSource, template, previewFields, wizardTestCopyCount]
+  );
+
+  const saveWizardLayout = async (nextWizardCalib) => {
+    if (!templateKey) return false;
+    try {
+      const res = await fetch("/api/cheques/layout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          templateKey,
+          wizardCalibOnly: true,
+          wizardCalibSource: WIZARD_CALIB_SOURCE_SEPARATE,
+          wizardPrintCalib: nextWizardCalib,
+          wizardTestCopyCount,
+        }),
+      });
+      const json = await res.json();
+      if (!json?.success) return false;
+      setWizardCalibSource(WIZARD_CALIB_SOURCE_SEPARATE);
+      setWizardCalib(
+        normalizeWizardPrintCalib(
+          json.wizardPrintCalib,
+          template,
+          previewFields,
+          wizardTestCopyCount
+        )
+      );
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const loadPrinterCalibration = async (name) => {
+    const trimmed = String(name || "").trim();
+    if (!templateKey || !trimmed) return;
+    try {
+      const res = await fetch(
+        `/api/cheques/calibration?templateKey=${encodeURIComponent(templateKey)}&printerName=${encodeURIComponent(trimmed)}`,
+        { cache: "no-store" }
+      );
+      const json = await res.json();
+      if (json?.success && json.printCalib) {
+        setCalib(normalizePrintCalib(json.printCalib, template, previewFields));
+      }
+    } catch {
+      //
+    }
+  };
+
+  const handlePrinterNameChange = (name) => {
+    setPrinterName(name);
+    if (templateKey) writeStoredPrinterName(templateKey, name);
+  };
 
   useEffect(() => {
     if (!open) return;
@@ -377,9 +564,12 @@ export default function ChequePrintSettingsModal({
   }, [open, onClose]);
 
   const patch = (key, val) => {
-    setCalib((prev) =>
-      normalizePrintCalib({ ...prev, [key]: val }, template, previewFields)
-    );
+    setCalib((prev) => {
+      if (key === "globalTextColor") {
+        return applyGlobalTextColorToCalib(prev, val, template, previewFields);
+      }
+      return normalizePrintCalib({ ...prev, [key]: val }, template, previewFields);
+    });
   };
 
   const patchField = (fieldKey, partial) => {
@@ -417,10 +607,47 @@ export default function ChequePrintSettingsModal({
 
   const handleReset = () => setCalib(defaults);
 
+  const handleSavePrinter = async () => {
+    const name = printerName.trim();
+    if (!name || !templateKey) {
+      setError("أدخل اسم الطابعة قبل الحفظ");
+      return;
+    }
+    setSavingPrinter(true);
+    setError("");
+    setSaveMessage("");
+    try {
+      const res = await fetch("/api/cheques/calibration", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          templateKey,
+          printerName: name,
+          printCalib: calib,
+          isDefault: true,
+        }),
+      });
+      const json = await res.json();
+      if (!json?.success) {
+        setError(json?.error || "فشل حفظ معايرة الطابعة");
+        return;
+      }
+      setCalib(normalizePrintCalib(json.printCalib, template, previewFields));
+      writeStoredPrinterName(templateKey, name);
+      setCalibrationList(await fetchPrinterCalibrationList(templateKey));
+      setSaveMessage(`تم حفظ معايرة الطابعة «${name}»`);
+    } catch {
+      setError("خطأ في الاتصال");
+    } finally {
+      setSavingPrinter(false);
+    }
+  };
+
   const handleSave = async () => {
     if (!canSave || !templateKey) return;
     setSaving(true);
     setError("");
+    setSaveMessage("");
     try {
       const res = await fetch("/api/cheques/layout", {
         method: "POST",
@@ -429,6 +656,9 @@ export default function ChequePrintSettingsModal({
           templateKey,
           printCalibOnly: true,
           printCalib: calib,
+          wizardCalibSource,
+          wizardPrintCalib: wizardCalib,
+          wizardTestCopyCount,
         }),
       });
       const json = await res.json();
@@ -438,7 +668,24 @@ export default function ChequePrintSettingsModal({
       }
       const saved = normalizePrintCalib(json.printCalib, template, previewFields);
       setCalib(saved);
+      if (json.wizardCalibSource != null) {
+        setWizardCalibSource(normalizeWizardCalibSource(json.wizardCalibSource));
+      }
+      if (json.wizardPrintCalib) {
+        setWizardCalib(
+          normalizeWizardPrintCalib(
+            json.wizardPrintCalib,
+            template,
+            previewFields,
+            wizardTestCopyCount
+          )
+        );
+      }
+      if (json.wizardTestCopyCount != null) {
+        setWizardTestCopyCount(normalizeWizardTestCopyCount(json.wizardTestCopyCount));
+      }
       onSaved?.(saved);
+      setSaveMessage("تم حفظ إعدادات الطباعة (الخط، اللون، والمواضع) للقالب");
     } catch {
       setError("خطأ في الاتصال");
     } finally {
@@ -450,7 +697,11 @@ export default function ChequePrintSettingsModal({
     setPrinting(true);
     setError("");
     try {
-      const ok = await onPrint?.(calib);
+      const printCalibForJob = mode === "imageOnly" ? resolvedWizardCalib : calib;
+      const ok = await onPrint?.(printCalibForJob, {
+        printerName: printerName.trim(),
+        copyCount: wizardTestCopyCount,
+      });
       if (ok === false) setError("تعذرت الطباعة");
       else onClose?.();
     } catch {
@@ -462,7 +713,14 @@ export default function ChequePrintSettingsModal({
 
   if (!portalReady) return null;
 
-  return createPortal(
+  const wizardImageUrl =
+    template?.image && typeof window !== "undefined"
+      ? new URL(template.image, window.location.origin).href
+      : template?.image || null;
+
+  return (
+    <>
+      {createPortal(
     <AnimatePresence>
       {open && template ? (
         <motion.div
@@ -492,7 +750,7 @@ export default function ChequePrintSettingsModal({
                   {MODE_LABELS[mode] || "ضبط الطباعة"}
                 </h3>
                 <p className="mt-1 text-xs font-semibold text-slate-500">
-                  القياسات بالسنتيمتر (مثال: 18.22 سم) — لا تؤثر على الشاشة
+                  ورقة A4 — منطقة الصك {formatCmFromMm(178)} × {formatCmFromMm(82)} سم
                 </p>
               </div>
               <button
@@ -507,10 +765,23 @@ export default function ChequePrintSettingsModal({
 
             <div className="flex-1 overflow-y-auto px-4 py-4 md:px-5">
               <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs font-semibold text-amber-900 leading-relaxed mb-4">
-                تفتح نافذة <strong>PDF</strong> بمقاس <strong>18.22 × 9 سم</strong> ثم الطباعة
-                تلقائياً. في نافذة الطباعة: <strong>Scale 100%</strong> وألغِ{" "}
+                تفتح نافذة طباعة المتصفح على <strong>ورقة A4 عرضي (Landscape)</strong> — الحقول
+                فقط داخل منطقة الصك (بدون خلفية). في نافذة الطباعة:{" "}
+                <strong>Landscape</strong>، <strong>Scale Default (100%)</strong>، وألغِ{" "}
                 <strong>Headers and footers</strong> و<strong>Two-sided</strong>.
               </div>
+
+              <button
+                type="button"
+                onClick={() => setPositionEditorOpen(true)}
+                className="mb-4 flex w-full items-center justify-center gap-2 rounded-xl border-2 border-sky-300 bg-sky-50 px-4 py-3 text-sm font-extrabold text-sky-950 hover:bg-sky-100"
+              >
+                <FiMove size={16} />
+                تحكم بموضع البيانات على الورقة
+              </button>
+              <p className="-mt-2 mb-4 text-center text-[10px] font-semibold text-slate-500">
+                افتح محرّراً مرئياً — اسحب الحقول أو منطقة الصك ثم احفظ
+              </p>
 
               <div className="grid gap-5 xl:grid-cols-[minmax(300px,460px)_1fr]">
                 <div className="xl:sticky xl:top-0 xl:self-start">
@@ -527,6 +798,202 @@ export default function ChequePrintSettingsModal({
                 </div>
 
                 <div className="space-y-4">
+                  <div className="rounded-xl border border-violet-200 bg-violet-50/70 p-3">
+                    <p className="mb-2 text-xs font-extrabold text-violet-950">
+                      معايرة الطابعة
+                    </p>
+                    <p className="mb-3 text-[10px] font-semibold text-violet-900/80">
+                      كل طابعة لها إعداداتها — تُحفظ لحسابك وتُطبّق تلقائياً
+                    </p>
+                    <div className="space-y-2">
+                      <label className="block rounded-xl border border-violet-200 bg-white px-3 py-2.5">
+                        <span className="mb-1 block text-xs font-extrabold text-slate-700">
+                          اسم الطابعة
+                        </span>
+                        <input
+                          type="text"
+                          value={printerName}
+                          onChange={(e) => handlePrinterNameChange(e.target.value)}
+                          placeholder="مثال: Canon MF633 — الدرج 1"
+                          className="w-full rounded-lg border border-slate-200 px-2.5 py-2 text-sm font-bold text-slate-900"
+                        />
+                      </label>
+                      {calibrationList.length > 0 ? (
+                        <label className="block rounded-xl border border-violet-200 bg-white px-3 py-2.5">
+                          <span className="mb-1 block text-xs font-extrabold text-slate-700">
+                            معايرة محفوظة
+                          </span>
+                          <select
+                            className="w-full rounded-lg border border-slate-200 px-2.5 py-2 text-sm font-bold text-slate-900"
+                            defaultValue=""
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              if (!v) return;
+                              handlePrinterNameChange(v);
+                              loadPrinterCalibration(v);
+                            }}
+                          >
+                            <option value="">— اختر —</option>
+                            {calibrationList.map((item) => (
+                              <option key={item._id} value={item.printerName}>
+                                {item.printerName}
+                                {item.isDefault ? " (افتراضي)" : ""}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      ) : null}
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => loadPrinterCalibration(printerName)}
+                          disabled={!printerName.trim()}
+                          className="rounded-xl border border-violet-300 bg-white px-3 py-2 text-[11px] font-extrabold text-violet-900 hover:bg-violet-100 disabled:opacity-50"
+                        >
+                          تحميل معايرة
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleSavePrinter}
+                          disabled={savingPrinter || !printerName.trim()}
+                          className="rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-2 text-[11px] font-extrabold text-emerald-900 hover:bg-emerald-100 disabled:opacity-50"
+                        >
+                          {savingPrinter ? "جاري الحفظ…" : "حفظ لهذه الطابعة"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setWizardOpen(true)}
+                          className="inline-flex items-center gap-1 rounded-xl border border-violet-400 bg-violet-600 px-3 py-2 text-[11px] font-extrabold text-white hover:bg-violet-700"
+                        >
+                          <FiTarget size={13} />
+                          Wizard معايرة
+                        </button>
+                      </div>
+                      <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50/90 p-3">
+                        <p className="mb-2 text-xs font-extrabold text-amber-950">
+                          موضع ورقة المعايرة (Wizard)
+                        </p>
+                        <div className="space-y-2">
+                          <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-amber-100 bg-white px-2.5 py-2">
+                            <input
+                              type="radio"
+                              name="wizard-calib-source"
+                              className="mt-0.5"
+                              checked={wizardCalibSource === WIZARD_CALIB_SOURCE_SHARED}
+                              onChange={() =>
+                                setWizardCalibSource(WIZARD_CALIB_SOURCE_SHARED)
+                              }
+                            />
+                            <span className="text-[11px] font-semibold leading-relaxed text-slate-800">
+                              نفس إحداثيات «تحكم بموضع البيانات على الورقة»
+                            </span>
+                          </label>
+                          <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-amber-100 bg-white px-2.5 py-2">
+                            <input
+                              type="radio"
+                              name="wizard-calib-source"
+                              className="mt-0.5"
+                              checked={wizardCalibSource === WIZARD_CALIB_SOURCE_SEPARATE}
+                              onChange={() => {
+                                setWizardCalibSource(WIZARD_CALIB_SOURCE_SEPARATE);
+                                setWizardCalib((prev) =>
+                                  normalizeWizardPrintCalib(
+                                    prev || calib,
+                                    template,
+                                    previewFields,
+                                    wizardTestCopyCount
+                                  )
+                                );
+                              }}
+                            />
+                            <span className="text-[11px] font-semibold leading-relaxed text-slate-800">
+                              موضع خاص لورقة اختبار المعايرة (Wizard)
+                            </span>
+                          </label>
+                        </div>
+                        {wizardCalibSource === WIZARD_CALIB_SOURCE_SEPARATE ? (
+                          <button
+                            type="button"
+                            onClick={() => setWizardPositionEditorOpen(true)}
+                            className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border-2 border-amber-400 bg-amber-100 px-3 py-2.5 text-[11px] font-extrabold text-amber-950 hover:bg-amber-200"
+                          >
+                            <FiTarget size={14} />
+                            تحكم بموضع الورقة للمعايرة
+                          </button>
+                        ) : (
+                          <p className="mt-2 text-[10px] font-semibold text-amber-900/80">
+                            يستخدم نفس موضع منطقة الصك من زر «تحكم بموضع البيانات» أعلاه.
+                          </p>
+                        )}
+                        <div className="mt-3 rounded-lg border border-amber-100 bg-white px-2.5 py-2.5">
+                          <p className="mb-2 text-[11px] font-extrabold text-amber-950">
+                            عدد النسخ على ورقة المعايرة
+                          </p>
+                          <div className="flex flex-wrap gap-2">
+                            {Array.from(
+                              { length: WIZARD_TEST_COPY_MAX - WIZARD_TEST_COPY_MIN + 1 },
+                              (_, i) => WIZARD_TEST_COPY_MIN + i
+                            ).map((n) => (
+                              <button
+                                key={n}
+                                type="button"
+                                onClick={() => {
+                                  setWizardTestCopyCount(n);
+                                  setWizardCalib((prev) =>
+                                    normalizeWizardPrintCalib(
+                                      prev,
+                                      template,
+                                      previewFields,
+                                      n
+                                    )
+                                  );
+                                }}
+                                className={`rounded-lg px-3 py-1.5 text-[11px] font-extrabold transition ${
+                                  wizardTestCopyCount === n
+                                    ? "bg-amber-500 text-white"
+                                    : "border border-amber-200 bg-amber-50 text-amber-950 hover:bg-amber-100"
+                                }`}
+                              >
+                                {n === 1 ? "صك واحد" : `${n} نسخ`}
+                              </button>
+                            ))}
+                          </div>
+                          <p className="mt-2 text-[10px] font-semibold text-slate-500 leading-relaxed">
+                            {wizardTestCopyCount === 3
+                              ? "3 نسخ — يمكن ضبط كل نسخة بحرية من «تحكم بموضع الورقة للمعايرة»."
+                              : wizardTestCopyCount === 2
+                              ? "نسختان — يمكن تحريك كل واحدة بشكل مستقل."
+                              : "نسخة واحدة للمعايرة البسيطة."}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-blue-200 bg-blue-50/60 p-3">
+                    <p className="mb-2 text-xs font-extrabold text-blue-950">
+                      حجم ولون الخط العام عند الطباعة
+                    </p>
+                    <p className="mb-3 text-[10px] font-semibold text-blue-900/80">
+                      يطبّق على كل البيانات معاً — يمكن تجاوزه لكل حقل على حدة أدناه
+                    </p>
+                    <div className="space-y-3">
+                      <PercentInputRow
+                        label="مقياس حجم الخط لكل الحقول"
+                        value={calib.globalFontSizeScale}
+                        min={GLOBAL_FONT_SIZE_SCALE_MIN}
+                        max={GLOBAL_FONT_SIZE_SCALE_MAX}
+                        showSlider
+                        onChange={(v) => patch("globalFontSizeScale", v)}
+                      />
+                      <FieldColorRow
+                        label="لون الخط لكل الحقول"
+                        color={calib.globalTextColor}
+                        onChangeColor={(c) => patch("globalTextColor", c)}
+                      />
+                    </div>
+                  </div>
+
                   <div>
                     <p className="mb-2 text-xs font-extrabold text-slate-800">
                       موضع وحجم الصك على الورقة
@@ -534,10 +1001,10 @@ export default function ChequePrintSettingsModal({
                     <div className="grid gap-3 sm:grid-cols-2">
                       <CmInputRow
                         label="من الأعلى"
-                        hint="تحريك الصك كاملاً"
+                        hint="تحريك منطقة الصك على الورقة"
                         valueMm={calib.pageTopMm}
-                        minCm={-1}
-                        maxCm={1}
+                        minCm={0}
+                        maxCm={13}
                         showSlider
                         sliderStep={0.01}
                         onChangeMm={(v) => patch("pageTopMm", v)}
@@ -545,8 +1012,8 @@ export default function ChequePrintSettingsModal({
                       <CmInputRow
                         label="من اليسار"
                         valueMm={calib.pageLeftMm}
-                        minCm={-1}
-                        maxCm={1}
+                        minCm={0}
+                        maxCm={12}
                         showSlider
                         sliderStep={0.01}
                         onChangeMm={(v) => patch("pageLeftMm", v)}
@@ -555,7 +1022,7 @@ export default function ChequePrintSettingsModal({
                         label="عرض الصك"
                         valueMm={calib.widthMm}
                         minCm={16}
-                        maxCm={18.22}
+                        maxCm={17.8}
                         showSlider
                         sliderStep={0.01}
                         onChangeMm={(v) => patch("widthMm", v)}
@@ -564,10 +1031,20 @@ export default function ChequePrintSettingsModal({
                         label="ارتفاع الصك"
                         valueMm={calib.heightMm}
                         minCm={7}
-                        maxCm={9}
+                        maxCm={8.2}
                         showSlider
                         sliderStep={0.01}
                         onChangeMm={(v) => patch("heightMm", v)}
+                      />
+                    </div>
+                    <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/80 p-3">
+                      <SheetOrientationControls
+                        rotationDeg={calib.sheetRotationDeg ?? 0}
+                        flipHorizontal={Boolean(calib.flipHorizontal)}
+                        flipVertical={Boolean(calib.flipVertical)}
+                        onRotation={(deg) => patch("sheetRotationDeg", deg)}
+                        onFlipHorizontal={(v) => patch("flipHorizontal", v)}
+                        onFlipVertical={(v) => patch("flipVertical", v)}
                       />
                     </div>
                   </div>
@@ -577,7 +1054,7 @@ export default function ChequePrintSettingsModal({
                       ضبط كل حقل على حدة (طباعة فقط)
                     </p>
                     <p className="mb-3 text-[10px] font-semibold text-slate-500">
-                      حجم الخط، السُمك، والإزاحة — التعديل يظهر مباشرة بالمعاينة
+                      حجم الخط، السُمك، اللون، والإزاحة — التعديل يظهر مباشرة بالمعاينة
                     </p>
                     <div className="space-y-2 max-h-[48vh] overflow-y-auto pr-1">
                       {offsetFieldList.map(({ key, label, field }) => {
@@ -591,6 +1068,8 @@ export default function ChequePrintSettingsModal({
                             offsetYmm={o.offsetYmm}
                             fontSizeScale={font.fontSizeScale}
                             fontWeight={font.fontWeight}
+                            color={font.color}
+                            globalTextColor={calib.globalTextColor}
                             onChangeX={(v) => patchField(key, { offsetXmm: v })}
                             onChangeY={(v) => patchField(key, { offsetYmm: v })}
                             onChangeFontScale={(v) =>
@@ -599,6 +1078,7 @@ export default function ChequePrintSettingsModal({
                             onChangeFontWeight={(w) =>
                               patchFieldFont(key, field, { fontWeight: w })
                             }
+                            onChangeColor={(c) => patchFieldFont(key, field, { color: c })}
                           />
                         );
                       })}
@@ -653,6 +1133,9 @@ export default function ChequePrintSettingsModal({
               {error ? (
                 <p className="mt-4 text-sm font-bold text-red-600">{error}</p>
               ) : null}
+              {saveMessage ? (
+                <p className="mt-4 text-sm font-bold text-emerald-700">{saveMessage}</p>
+              ) : null}
             </div>
 
             <footer className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-slate-200 bg-slate-50 px-4 py-3 md:px-5">
@@ -700,5 +1183,82 @@ export default function ChequePrintSettingsModal({
       ) : null}
     </AnimatePresence>,
     document.body
+      )}
+      <ChequeCalibWizard
+        open={wizardOpen}
+        onClose={() => setWizardOpen(false)}
+        template={template}
+        templateKey={templateKey}
+        fields={previewFields}
+        calib={resolvedWizardCalib}
+        wizardCalibSource={wizardCalibSource}
+        copyCount={wizardTestCopyCount}
+        printerName={printerName}
+        imageUrl={wizardImageUrl}
+        onApplyCalib={(next) => {
+          if (wizardCalibSource === WIZARD_CALIB_SOURCE_SEPARATE) {
+            setWizardCalib(
+              normalizeWizardPrintCalib(next, template, previewFields, wizardTestCopyCount)
+            );
+          } else {
+            setCalib(normalizePrintCalib(next, template, previewFields));
+          }
+        }}
+        onSaveWizardLayout={saveWizardLayout}
+        onSavePrinterCalib={async (saved, name) => {
+          setCalib(normalizePrintCalib(saved, template, previewFields));
+          writeStoredPrinterName(templateKey, name);
+          setCalibrationList(await fetchPrinterCalibrationList(templateKey));
+          setSaveMessage(`تم حفظ معايرة الطابعة «${name}» من Wizard`);
+        }}
+      />
+      <ChequePrintPositionEditor
+        open={positionEditorOpen}
+        onClose={() => setPositionEditorOpen(false)}
+        calib={calib}
+        onCalibChange={(next) => setCalib(next)}
+        template={template}
+        templateKey={templateKey}
+        fields={previewFields}
+        values={previewValues}
+        dateShowSlashes={dateShowSlashes}
+        textFieldLayout={textFieldLayout}
+        canSave={canSave}
+        purpose="data"
+        onSaved={(saved) => {
+          setCalib(saved);
+          onSaved?.(saved);
+          setSaveMessage("تم حفظ مواضع البيانات على الورقة");
+        }}
+      />
+      <ChequePrintPositionEditor
+        open={wizardPositionEditorOpen}
+        onClose={() => setWizardPositionEditorOpen(false)}
+        calib={wizardCalib}
+        onCalibChange={(next) =>
+          setWizardCalib(
+            normalizeWizardPrintCalib(next, template, previewFields, wizardTestCopyCount)
+          )
+        }
+        template={template}
+        templateKey={templateKey}
+        fields={previewFields}
+        values={previewValues}
+        dateShowSlashes={dateShowSlashes}
+        textFieldLayout={textFieldLayout}
+        canSave={canSave}
+        purpose="wizard"
+        wizardCalibSource={WIZARD_CALIB_SOURCE_SEPARATE}
+        wizardCopyCount={wizardTestCopyCount}
+        onSaved={(saved, json) => {
+          setWizardCalib(saved);
+          setWizardCalibSource(WIZARD_CALIB_SOURCE_SEPARATE);
+          if (json?.wizardTestCopyCount != null) {
+            setWizardTestCopyCount(normalizeWizardTestCopyCount(json.wizardTestCopyCount));
+          }
+          setSaveMessage("تم حفظ مواضع النسخ للمعايرة");
+        }}
+      />
+    </>
   );
 }

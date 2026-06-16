@@ -10,6 +10,13 @@ import {
 } from "react-icons/fi";
 import { exportLayoutForTemplatesFile } from "@/lib/cheques/mergeFields";
 import { isCanvasField } from "@/lib/cheques/templates";
+import { fieldPositionMm, formatMm } from "@/lib/cheques/coordinates";
+import {
+  LAYOUT_FONT_SCALE_DEFAULT,
+  LAYOUT_FONT_SCALE_MAX,
+  LAYOUT_FONT_SCALE_MIN,
+  clampLayoutFontScale,
+} from "@/lib/cheques/chequeDesignMetrics";
 
 function NumControl({ label, value, onChange, min = 0, max = 100, step = 0.5 }) {
   return (
@@ -43,6 +50,8 @@ export default function ChequeLayoutPanel({
   onDateShowSlashesChange,
   onSaveDateStyle,
   savingDateStyle = false,
+  globalFontScale = LAYOUT_FONT_SCALE_DEFAULT,
+  onGlobalFontScaleChange,
 }) {
   const selected = useMemo(
     () => fields.find((f) => f.key === selectedKey) || null,
@@ -124,6 +133,33 @@ export default function ChequeLayoutPanel({
         </p>
       </div>
 
+      <div className="rounded-2xl border border-emerald-200 bg-emerald-50/80 p-4">
+        <p className="mb-2 flex items-center gap-2 text-xs font-extrabold text-emerald-950">
+          <FiType size={14} />
+          حجم الخط العام
+        </p>
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <span className="text-[11px] font-semibold text-emerald-900/80">كل الحقول على الصورة</span>
+          <span className="text-sm font-black text-emerald-800 tabular-nums">
+            {clampLayoutFontScale(globalFontScale)}%
+          </span>
+        </div>
+        <input
+          type="range"
+          min={LAYOUT_FONT_SCALE_MIN}
+          max={LAYOUT_FONT_SCALE_MAX}
+          step={1}
+          value={clampLayoutFontScale(globalFontScale)}
+          onChange={(e) =>
+            onGlobalFontScaleChange?.(parseInt(e.target.value, 10))
+          }
+          className="w-full accent-emerald-600"
+        />
+        <p className="mt-2 text-[10px] font-semibold text-emerald-900/75 leading-relaxed">
+          يكبّر أو يصغّر كل البيانات معاً — اضغط «حفظ تخطيط هذا الصك» لتثبيته
+        </p>
+      </div>
+
       <div className="rounded-2xl border border-slate-200 bg-white p-3 max-h-[220px] overflow-y-auto">
         <p className="text-xs font-extrabold text-slate-700 mb-2">الحقول</p>
         <div className="flex flex-col gap-1">
@@ -154,6 +190,14 @@ export default function ChequeLayoutPanel({
       {selected ? (
         <div className="rounded-2xl border border-slate-200 bg-slate-50/90 p-4 space-y-3">
           <p className="text-sm font-extrabold text-slate-800">{selected.label}</p>
+          {template ? (
+            <p className="rounded-lg bg-slate-100 px-2 py-1.5 text-[10px] font-bold text-slate-600 leading-relaxed">
+              {(() => {
+                const pos = fieldPositionMm(selected, template);
+                return `mm: X ${formatMm(pos.xMm)} · Y ${formatMm(pos.yMm)} · ${formatMm(pos.widthMm)}×${formatMm(pos.heightMm)} (ورقة ${formatMm(pos.sheetWidthMm)}×${formatMm(pos.sheetHeightMm)})`;
+              })()}
+            </p>
+          ) : null}
           <div className="grid grid-cols-2 gap-2">
             <NumControl
               label="X (يسار %)"

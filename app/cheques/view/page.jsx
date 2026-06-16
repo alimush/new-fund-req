@@ -12,7 +12,7 @@ import { useChequeAccess } from "@/components/cheques/useChequeAccess";
 function ChequeViewInner() {
   const searchParams = useSearchParams();
   const id = String(searchParams.get("id") || "").trim();
-  const { canUseCheques, canLayoutEditor, ready } = useChequeAccess();
+  const { canUseCheques, canManagePrintSettings, ready } = useChequeAccess();
   const [printing, setPrinting] = useState(false);
   const [printingImage, setPrintingImage] = useState(false);
   const [printingWithData, setPrintingWithData] = useState(false);
@@ -25,13 +25,15 @@ function ChequeViewInner() {
       .join(" — ") || "صك";
 
   const runPrint = useCallback(
-    async (mode, printCalib, useProvidedCalib = false) => {
+    async (mode, printCalib, useProvidedCalib = false, copyCount) => {
       if (!printPayload?.template) return false;
       const base = {
         ...printPayload,
         title: printTitle,
         printCalib,
+        layoutFontScale: printPayload?.layoutFontScale,
         useProvidedCalib,
+        copyCount,
       };
       if (mode === "data") {
         return printChequeData({
@@ -48,10 +50,7 @@ function ChequeViewInner() {
         });
       }
       return printChequeImageOnly({
-        template: printPayload.template,
-        fields: printPayload.fields,
-        title: printTitle,
-        printCalib,
+        ...base,
         onStart: () => setPrintingImage(true),
         onEnd: () => setPrintingImage(false),
       });
@@ -142,16 +141,18 @@ function ChequeViewInner() {
             <FiPrinter className={printingImage ? "animate-pulse" : ""} />
             {printingImage ? "جاري الطباعة…" : "طباعة الصك"}
           </button>
-          <button
-            type="button"
-            onClick={() => openPrintModal("data")}
-            disabled={!printPayload}
-            title="ضبط إعدادات الطباعة المحفوظة لهذا القالب"
-            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-extrabold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
-          >
-            <FiSliders />
-            ضبط الطباعة
-          </button>
+          {canManagePrintSettings ? (
+            <button
+              type="button"
+              onClick={() => openPrintModal("data")}
+              disabled={!printPayload}
+              title="ضبط إعدادات الطباعة المحفوظة لهذا القالب"
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-extrabold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+            >
+              <FiSliders />
+              ضبط الطباعة
+            </button>
+          ) : null}
         </div>
       </div>
       <ChequeViewContent chequeId={id} onReady={setPrintPayload} />
@@ -161,7 +162,7 @@ function ChequeViewInner() {
         template={printPayload?.template}
         templateKey={printPayload?.templateKey}
         initialCalib={printPayload?.printCalib}
-        canSave={canLayoutEditor}
+        canSave={canManagePrintSettings}
         previewFields={printPayload?.fields}
         previewValues={printPayload?.values}
         dateShowSlashes={printPayload?.dateShowSlashes}
@@ -170,7 +171,7 @@ function ChequeViewInner() {
         onSaved={(saved) =>
           setPrintPayload((prev) => (prev ? { ...prev, printCalib: saved } : prev))
         }
-        onPrint={(calib) => runPrint(printModal.mode, calib, true)}
+        onPrint={(calib, meta) => runPrint(printModal.mode, calib, true, meta?.copyCount)}
       />
     </div>
   );

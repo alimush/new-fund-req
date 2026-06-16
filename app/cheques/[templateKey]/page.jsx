@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { motion } from "framer-motion";
@@ -18,15 +18,20 @@ import ChequePrintSettingsModal from "@/components/cheques/ChequePrintSettingsMo
 import { getChequeTemplate, isValidChequeTemplateKey } from "@/lib/cheques/templates";
 import { getChequePrintDimensions } from "@/lib/cheques/chequePrintDimensions";
 import {
+  LAYOUT_FONT_SCALE_DEFAULT,
+  clampLayoutFontScale,
+} from "@/lib/cheques/chequeDesignMetrics";
+import {
   fieldsFromTemplate,
   layoutPayloadFromFields,
   mergeTemplateFields,
 } from "@/lib/cheques/mergeFields";
-import { amountNumericToWordsLines } from "@/lib/cheques/amountWords";
-import { singleLineText } from "@/lib/cheques/singleLineText";
+import { mergeAmountWordsLines } from "@/lib/cheques/amountWords";
+import { clampTextLayout, layoutFromField, AMOUNT_WORDS_KEY, AMOUNT_WORDS_LINE2_KEY } from "@/lib/cheques/textFieldLayout";
 import ChequeCanvas, {
   buildEmptyChequeValues,
   chequeValuesToPayload,
+  getDefaultAmountWordsLayouts,
   getDefaultTextFieldLayout,
 } from "@/components/cheques/ChequeCanvas";
 import ChequeInputsSidebar from "@/components/cheques/ChequeInputsSidebar";
@@ -34,10 +39,17 @@ import ChequeLayoutPanel from "@/components/cheques/ChequeLayoutPanel";
 import { useToast } from "@/components/ui/ToastProvider";
 import { useChequeAccess } from "@/components/cheques/useChequeAccess";
 
+function fontPartial(partial) {
+  const out = {};
+  if (partial?.fontSize != null) out.fontSize = partial.fontSize;
+  if (partial?.fontWeight != null) out.fontWeight = partial.fontWeight;
+  return out;
+}
+
 export default function ChequeEditorPage() {
   const params = useParams();
   const { showToast } = useToast();
-  const { canUseCheques, canLayoutEditor, ready } = useChequeAccess();
+  const { canUseCheques, canLayoutEditor, canManagePrintSettings, ready } = useChequeAccess();
   const templateKey = String(params?.templateKey || "").trim();
 
   const baseTemplate = useMemo(
@@ -63,8 +75,11 @@ export default function ChequeEditorPage() {
   const [savingDateStyle, setSavingDateStyle] = useState(false);
   const [dateShowSlashes, setDateShowSlashes] = useState(true);
   const [textFieldLayout, setTextFieldLayout] = useState(null);
+  const [amountWordsLayout, setAmountWordsLayout] = useState(null);
+  const [amountWordsLine2Layout, setAmountWordsLine2Layout] = useState(null);
   const [lastSavedId, setLastSavedId] = useState(null);
   const [printCalib, setPrintCalib] = useState(null);
+  const [globalFontScale, setGlobalFontScale] = useState(LAYOUT_FONT_SCALE_DEFAULT);
   const [printModal, setPrintModal] = useState({ open: false, mode: "data" });
   const [printing, setPrinting] = useState(false);
 
@@ -96,6 +111,7 @@ export default function ChequeEditorPage() {
               ? json.dateShowSlashes
               : fallbackSlashes,
           printCalib: json.printCalib || defaultPrintCalib(baseTemplate, fields),
+          globalFontScale: clampLayoutFontScale(json.globalFontScale ?? 100),
         };
       }
     } catch {
@@ -108,6 +124,7 @@ export default function ChequeEditorPage() {
         baseTemplate,
         fieldsFromTemplate(baseTemplate)
       ),
+      globalFontScale: LAYOUT_FONT_SCALE_DEFAULT,
     };
   }, [baseTemplate, templateKey]);
 
@@ -127,12 +144,17 @@ export default function ChequeEditorPage() {
 
     let cancelled = false;
     (async () => {
-      const { fields, dateShowSlashes: slashes, printCalib: calib } = await loadLayout();
+      const { fields, dateShowSlashes: slashes, printCalib: calib, globalFontScale: scale } =
+        await loadLayout();
       if (cancelled) return;
       setMergedFields(fields);
       setDateShowSlashes(slashes);
       setPrintCalib(calib);
+      setGlobalFontScale(scale ?? LAYOUT_FONT_SCALE_DEFAULT);
       setTextFieldLayout(getDefaultTextFieldLayout(fields));
+      const amountLayouts = getDefaultAmountWordsLayouts(fields);
+      setAmountWordsLayout(amountLayouts.amountWordsLayout);
+      setAmountWordsLine2Layout(amountLayouts.amountWordsLine2Layout);
       setValues(buildEmptyChequeValues(baseTemplate, fields));
       setLastSavedId(null);
       setLayoutSelectedKey(fields[0]?.key || null);
@@ -146,20 +168,48 @@ export default function ChequeEditorPage() {
     setValues((prev) => {
       const merged = typeof next === "function" ? next(prev) : next;
       if (merged.amountNumeric !== prev.amountNumeric && !layoutMode) {
-        const { line1 } = amountNumericToWordsLines(merged.amountNumeric);
-        return {
-          ...merged,
-          amountWords: singleLineText(line1),
-        };
+        const amountField = mergedFields.find((f) => f.key === AMOUNT_WORDS_KEY);
+        return mergeAmountWordsLines(
+          merged,
+          amountField,
+          baseTemplate,
+          globalFontScale
+        );
       }
       return merged;
     });
-  }, [layoutMode]);
+  }, [layoutMode, mergedFields, baseTemplate, globalFontScale]);
+
+  const wasLayoutModeRef = useRef(layoutMode);
+
+  useEffect(() => {
+    const exitingLayout = wasLayoutModeRef.current && !layoutMode;
+    wasLayoutModeRef.current = layoutMode;
+    if (!exitingLayout || !baseTemplate) return;
+
+    setValues((prev) => {
+      if (!prev.amountNumeric) return prev;
+      const amountField = mergedFields.find((f) => f.key === AMOUNT_WORDS_KEY);
+      return mergeAmountWordsLines(
+        prev,
+        amountField,
+        baseTemplate,
+        globalFontScale
+      );
+    });
+
+    const amountLayouts = getDefaultAmountWordsLayouts(mergedFields);
+    setAmountWordsLayout(amountLayouts.amountWordsLayout);
+    setAmountWordsLine2Layout(amountLayouts.amountWordsLine2Layout);
+  }, [layoutMode, baseTemplate, mergedFields, globalFontScale]);
 
   const resetForm = useCallback(() => {
     if (!baseTemplate) return;
     setValues(buildEmptyChequeValues(baseTemplate, mergedFields));
     setTextFieldLayout(getDefaultTextFieldLayout(mergedFields));
+    const amountLayouts = getDefaultAmountWordsLayouts(mergedFields);
+    setAmountWordsLayout(amountLayouts.amountWordsLayout);
+    setAmountWordsLine2Layout(amountLayouts.amountWordsLine2Layout);
     setLastSavedId(null);
     setActiveField(null);
   }, [baseTemplate, mergedFields]);
@@ -168,16 +218,102 @@ export default function ChequeEditorPage() {
     setMergedFields((prev) =>
       prev.map((f) => (f.key === key ? { ...f, ...partial } : f))
     );
-  }, []);
 
-  const postLayout = async (slashes) => {
+    const fp = fontPartial(partial);
+    if (!Object.keys(fp).length) return;
+
+    if (key === AMOUNT_WORDS_KEY) {
+      setAmountWordsLayout((prev) => {
+        const base =
+          prev ||
+          getDefaultAmountWordsLayouts(mergedFields).amountWordsLayout ||
+          layoutFromField(mergedFields.find((f) => f.key === AMOUNT_WORDS_KEY));
+        return clampTextLayout(fp, base);
+      });
+    }
+    if (key === AMOUNT_WORDS_LINE2_KEY) {
+      setAmountWordsLine2Layout((prev) => {
+        const base =
+          prev ||
+          getDefaultAmountWordsLayouts(mergedFields).amountWordsLine2Layout ||
+          layoutFromField(mergedFields.find((f) => f.key === AMOUNT_WORDS_LINE2_KEY));
+        return clampTextLayout(fp, base);
+      });
+    }
+  }, [mergedFields]);
+
+  const handleAmountWordsLayoutChange = useCallback(
+    (partial) => {
+      setAmountWordsLayout((prev) => {
+        const defaults = getDefaultAmountWordsLayouts(mergedFields);
+        const base =
+          prev ||
+          defaults.amountWordsLayout ||
+          layoutFromField(mergedFields.find((f) => f.key === AMOUNT_WORDS_KEY));
+        return clampTextLayout({ ...partial }, base);
+      });
+
+      const fp = fontPartial(partial);
+      if (Object.keys(fp).length) {
+        setMergedFields((prev) =>
+          prev.map((f) => (f.key === AMOUNT_WORDS_KEY ? { ...f, ...fp } : f))
+        );
+      }
+    },
+    [mergedFields]
+  );
+
+  const handleAmountWordsLine2LayoutChange = useCallback(
+    (partial) => {
+      setAmountWordsLine2Layout((prev) => {
+        const defaults = getDefaultAmountWordsLayouts(mergedFields);
+        const base =
+          prev ||
+          defaults.amountWordsLine2Layout ||
+          layoutFromField(mergedFields.find((f) => f.key === AMOUNT_WORDS_LINE2_KEY));
+        return clampTextLayout({ ...partial }, base);
+      });
+
+      const fp = fontPartial(partial);
+      if (Object.keys(fp).length) {
+        setMergedFields((prev) =>
+          prev.map((f) => (f.key === AMOUNT_WORDS_LINE2_KEY ? { ...f, ...fp } : f))
+        );
+      }
+    },
+    [mergedFields]
+  );
+
+  const buildLayoutFieldsForSave = useCallback(() => {
+    return mergedFields.map((f) => {
+      if (f.key === AMOUNT_WORDS_KEY && amountWordsLayout) {
+        return {
+          ...f,
+          fontSize: amountWordsLayout.fontSize ?? f.fontSize,
+          fontWeight: amountWordsLayout.fontWeight ?? f.fontWeight,
+        };
+      }
+      if (f.key === AMOUNT_WORDS_LINE2_KEY && amountWordsLine2Layout) {
+        return {
+          ...f,
+          fontSize: amountWordsLine2Layout.fontSize ?? f.fontSize,
+          fontWeight: amountWordsLine2Layout.fontWeight ?? f.fontWeight,
+        };
+      }
+      return f;
+    });
+  }, [mergedFields, amountWordsLayout, amountWordsLine2Layout]);
+
+  const postLayout = async (slashes, fieldsOverride) => {
+    const fields = fieldsOverride || mergedFields;
     const res = await fetch("/api/cheques/layout", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         templateKey,
-        fields: layoutPayloadFromFields(mergedFields, baseTemplate),
+        fields: layoutPayloadFromFields(fields, baseTemplate),
         dateShowSlashes: slashes,
+        globalFontScale,
       }),
     });
     return res.json();
@@ -213,7 +349,9 @@ export default function ChequeEditorPage() {
   const handleSaveLayout = async () => {
     setSavingLayout(true);
     try {
-      const json = await postLayout(dateShowSlashes);
+      const fieldsToSave = buildLayoutFieldsForSave();
+      setMergedFields(fieldsToSave);
+      const json = await postLayout(dateShowSlashes, fieldsToSave);
       if (!json?.success) {
         showToast(json?.error || "فشل حفظ التخطيط", "error");
         return;
@@ -223,7 +361,19 @@ export default function ChequeEditorPage() {
       const refreshed = await loadLayout();
       setMergedFields(refreshed.fields);
       setDateShowSlashes(refreshed.dateShowSlashes);
+      setGlobalFontScale(refreshed.globalFontScale ?? LAYOUT_FONT_SCALE_DEFAULT);
       setTextFieldLayout(getDefaultTextFieldLayout(refreshed.fields));
+      const amountLayouts = getDefaultAmountWordsLayouts(refreshed.fields);
+      setAmountWordsLayout(amountLayouts.amountWordsLayout);
+      setAmountWordsLine2Layout(amountLayouts.amountWordsLine2Layout);
+      setValues((prev) =>
+        mergeAmountWordsLines(
+          prev,
+          refreshed.fields.find((f) => f.key === "amountWords"),
+          baseTemplate,
+          refreshed.globalFontScale ?? LAYOUT_FONT_SCALE_DEFAULT
+        )
+      );
     } catch {
       showToast("خطأ في الاتصال", "error");
     } finally {
@@ -236,7 +386,11 @@ export default function ChequeEditorPage() {
     const defaults = fieldsFromTemplate(baseTemplate);
     setMergedFields(defaults);
     setDateShowSlashes(baseTemplate.dateShowSlashesDefault ?? true);
+    setGlobalFontScale(LAYOUT_FONT_SCALE_DEFAULT);
     setTextFieldLayout(getDefaultTextFieldLayout(defaults));
+    const amountLayouts = getDefaultAmountWordsLayouts(defaults);
+    setAmountWordsLayout(amountLayouts.amountWordsLayout);
+    setAmountWordsLine2Layout(amountLayouts.amountWordsLine2Layout);
     showToast(`إعادة افتراضيات «${baseTemplate.name}» فقط — احفظ لتثبيتها`, "info");
   };
 
@@ -250,7 +404,7 @@ export default function ChequeEditorPage() {
     await runPrint(mode, null, false);
   };
 
-  const runPrint = async (mode, calib, useProvidedCalib = false) => {
+  const runPrint = async (mode, calib, useProvidedCalib = false, printerName = "", copyCount) => {
     if (!template) return false;
     const base = {
       template,
@@ -259,9 +413,14 @@ export default function ChequeEditorPage() {
       values,
       dateShowSlashes,
       textFieldLayout,
+      amountWordsLayout,
+      amountWordsLine2Layout,
       title: template.name,
       printCalib: calib,
+      layoutFontScale: globalFontScale,
       useProvidedCalib,
+      printerName,
+      copyCount,
     };
     if (mode === "data") {
       return printChequeData({
@@ -278,10 +437,9 @@ export default function ChequeEditorPage() {
       });
     }
     return printChequeImageOnly({
-      template,
-      fields: mergedFields,
-      title: template.name,
-      printCalib: calib,
+      ...base,
+      useProvidedCalib,
+      copyCount,
       onStart: () => setPrintingImage(true),
       onEnd: () => setPrintingImage(false),
     });
@@ -292,7 +450,14 @@ export default function ChequeEditorPage() {
     setSaving(true);
     try {
       const payload = {
-        ...chequeValuesToPayload(templateKey, values, template, textFieldLayout),
+        ...chequeValuesToPayload(
+          templateKey,
+          values,
+          template,
+          textFieldLayout,
+          amountWordsLayout,
+          amountWordsLine2Layout
+        ),
         status: "issued",
       };
 
@@ -445,16 +610,18 @@ export default function ChequeEditorPage() {
             <FiPrinter className={saving ? "animate-pulse" : ""} />
             {saving ? "جاري الإنشاء والطباعة…" : "إنشاء وطباعة"}
           </button>
-          <button
-            type="button"
-            onClick={() => openPrintModal("data")}
-            disabled={layoutMode}
-            title="ضبط إعدادات الطباعة المحفوظة لهذا القالب"
-            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-extrabold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-          >
-            <FiSliders />
-            ضبط الطباعة
-          </button>
+          {canManagePrintSettings ? (
+            <button
+              type="button"
+              onClick={() => openPrintModal("data")}
+              disabled={layoutMode}
+              title="ضبط إعدادات الطباعة المحفوظة لهذا القالب"
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-extrabold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            >
+              <FiSliders />
+              ضبط الطباعة
+            </button>
+          ) : null}
         </div>
       </div>
 
@@ -485,6 +652,8 @@ export default function ChequeEditorPage() {
             onDateShowSlashesChange={setDateShowSlashes}
             onSaveDateStyle={handleSaveDateStyle}
             savingDateStyle={savingDateStyle}
+            globalFontScale={globalFontScale}
+            onGlobalFontScaleChange={setGlobalFontScale}
           />
         ) : (
           <ChequeInputsSidebar
@@ -495,6 +664,11 @@ export default function ChequeEditorPage() {
             activeField={activeField}
             onFieldFocus={setActiveField}
             onFieldBlur={() => setActiveField(null)}
+            globalFontScale={globalFontScale}
+            amountWordsLayout={amountWordsLayout}
+            amountWordsLine2Layout={amountWordsLine2Layout}
+            onAmountWordsLayoutChange={handleAmountWordsLayoutChange}
+            onAmountWordsLine2LayoutChange={handleAmountWordsLine2LayoutChange}
           />
         )}
 
@@ -525,8 +699,11 @@ export default function ChequeEditorPage() {
             dateShowSlashes={dateShowSlashes}
             textFieldLayout={textFieldLayout}
             onTextFieldLayoutChange={setTextFieldLayout}
+            amountWordsLayout={amountWordsLayout}
+            amountWordsLine2Layout={amountWordsLine2Layout}
             textFieldAdjustable={!layoutMode}
             printMode={printPreviewMode}
+            globalFontScale={globalFontScale}
           />
         </motion.div>
       </div>
@@ -537,14 +714,16 @@ export default function ChequeEditorPage() {
         template={template}
         templateKey={templateKey}
         initialCalib={printCalib}
-        canSave={canLayoutEditor}
+        canSave={canManagePrintSettings}
         previewFields={mergedFields}
         previewValues={values}
         dateShowSlashes={dateShowSlashes}
         textFieldLayout={textFieldLayout}
         onClose={() => setPrintModal({ open: false, mode: "data" })}
         onSaved={(saved) => setPrintCalib(saved)}
-        onPrint={(calib) => runPrint(printModal.mode, calib, true)}
+        onPrint={(calib, meta) =>
+          runPrint(printModal.mode, calib, true, meta?.printerName || "", meta?.copyCount)
+        }
       />
     </div>
   );

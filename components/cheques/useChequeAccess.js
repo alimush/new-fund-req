@@ -6,6 +6,7 @@ import { usePermissions } from "@/context/PermissionContext";
 import {
   canAccessCheques,
   canEditChequeLayout,
+  canManageChequePrintSettings,
 } from "@/lib/cheques/chequePermissions";
 
 /** حماية صفحات الصكوك — يتطلب صلاحية «صكوك» */
@@ -23,6 +24,11 @@ export function useChequeAccess() {
     [permissions]
   );
 
+  const canManagePrintSettings = useMemo(
+    () => canManageChequePrintSettings(permissions),
+    [permissions]
+  );
+
   const ready = Boolean(user?.id) && Array.isArray(permissions);
 
   useEffect(() => {
@@ -32,5 +38,5 @@ export function useChequeAccess() {
     }
   }, [ready, canUseCheques, router]);
 
-  return { canUseCheques, canLayoutEditor, ready };
+  return { canUseCheques, canLayoutEditor, canManagePrintSettings, ready };
 }

@@ -1,22 +1,50 @@
 "use client";
 
-import { FiCalendar, FiHash, FiDollarSign, FiDatabase } from "react-icons/fi";
+import { FiCalendar, FiHash, FiDollarSign, FiDatabase, FiType } from "react-icons/fi";
 import ChequeFieldInput from "@/components/cheques/ChequeFieldInput";
 import { amountNumericToWordsLines } from "@/lib/cheques/amountWords";
 import { datePartsFromIso, isoFromDateParts } from "@/lib/cheques/dateUtils";
 import { singleLineText } from "@/lib/cheques/singleLineText";
+import {
+  AMOUNT_WORDS_KEY,
+  AMOUNT_WORDS_LINE2_KEY,
+} from "@/lib/cheques/textFieldLayout";
 
-function withAmountWords(values, amountVal) {
-  const { line1 } = amountNumericToWordsLines(amountVal);
+function NumControl({ label, value, onChange, min = 0, max = 100, step = 1 }) {
+  return (
+    <div>
+      <label className="text-[10px] font-bold text-slate-500">{label}</label>
+      <input
+        type="number"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="mt-0.5 w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm font-bold text-slate-800"
+      />
+    </div>
+  );
+}
+
+function withAmountWords(values, amountVal, template, fields, globalFontScale = 100) {
+  const line1Field = (fields || []).find((f) => f.key === "amountWords");
+  const { line1, line2 } = amountNumericToWordsLines(
+    amountVal,
+    line1Field,
+    template,
+    globalFontScale
+  );
   return {
     ...values,
     amountNumeric: amountVal,
     amountWords: singleLineText(line1),
+    amountWordsLine2: singleLineText(line2),
   };
 }
 
 const DATE_KEYS = ["dateDay", "dateMonth", "dateYear"];
-const AMOUNT_KEYS = ["amountNumeric", "amountWords"];
+const AMOUNT_KEYS = ["amountNumeric", "amountWords", "amountWordsLine2"];
 
 function Section({ title, icon: Icon, children }) {
   return (
@@ -39,6 +67,11 @@ export default function ChequeInputsSidebar({
   onFieldFocus,
   onFieldBlur,
   autoAmountWords = true,
+  globalFontScale = 100,
+  amountWordsLayout = null,
+  amountWordsLine2Layout = null,
+  onAmountWordsLayoutChange,
+  onAmountWordsLine2LayoutChange,
 }) {
   if (!template) return null;
 
@@ -56,6 +89,21 @@ export default function ChequeInputsSidebar({
   );
 
   const isoDate = isoFromDateParts(values);
+
+  const amountWordsLineField =
+    activeField === AMOUNT_WORDS_KEY || activeField === AMOUNT_WORDS_LINE2_KEY
+      ? fieldByKey[activeField]
+      : null;
+
+  const patchActiveAmountWordsLine = (partial) => {
+    if (activeField === AMOUNT_WORDS_KEY) {
+      onAmountWordsLayoutChange?.(partial);
+      return;
+    }
+    if (activeField === AMOUNT_WORDS_LINE2_KEY) {
+      onAmountWordsLine2LayoutChange?.(partial);
+    }
+  };
 
   return (
     <aside className="flex flex-col gap-4 w-full lg:w-[300px] xl:w-[320px] shrink-0">
@@ -180,7 +228,9 @@ export default function ChequeInputsSidebar({
                   value={values[key]}
                   onChange={(val) => {
                     if (key === "amountNumeric" && autoAmountWords) {
-                      onChange?.(withAmountWords(values, val));
+                      onChange?.(
+                        withAmountWords(values, val, template, fields, globalFontScale)
+                      );
                       return;
                     }
                     set(key, val);
@@ -199,10 +249,47 @@ export default function ChequeInputsSidebar({
             المبلغ بالأرقام يُحوَّل تلقائياً إلى كتابة (حتى المليارات)
           </p>
         ) : null}
+        {amountWordsLineField ? (
+          <div className="rounded-xl border border-emerald-200 bg-white p-3 mt-3 space-y-2">
+            <p className="flex items-center gap-2 text-xs font-extrabold text-emerald-900">
+              <FiType size={14} />
+              خط {amountWordsLineField.label}
+            </p>
+            <p className="text-[10px] font-semibold text-emerald-800/80">
+              يُطبَّق على الصك فوراً — يُحفظ مع القالب عند «حفظ تخطيط هذا الصك»
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              <NumControl
+                label="حجم الخط px"
+                value={amountWordsLineField?.fontSize ?? 14}
+                min={8}
+                max={48}
+                step={1}
+                onChange={(v) => patchActiveAmountWordsLine({ fontSize: v })}
+              />
+              <NumControl
+                label="سماكة الخط"
+                value={amountWordsLineField?.fontWeight ?? 700}
+                min={400}
+                max={900}
+                step={100}
+                onChange={(v) => patchActiveAmountWordsLine({ fontWeight: v })}
+              />
+            </div>
+          </div>
+        ) : (
+          <p className="text-[10px] text-slate-500 font-semibold mt-2">
+            انقر سطر المبلغ كتابة على الصك لتعديل حجم خطه
+          </p>
+        )}
       </Section>
 
       <p className="text-[11px] text-sky-700 font-semibold text-center leading-relaxed px-1 rounded-lg bg-sky-50 py-2">
         حقل text: حرّكه وكبّره من الصورة (الشريط الأزرق) — يُحفظ مع هذا الصك فقط
+      </p>
+
+      <p className="text-[11px] text-emerald-800 font-semibold text-center leading-relaxed px-1 rounded-lg bg-emerald-50 py-2">
+        سطرا المبلغ كتابة: انقر السطر على الصك ثم عدّل حجم الخط من «المبلغ»
       </p>
 
       <p className="text-[11px] text-slate-500 font-semibold text-center leading-relaxed px-1">

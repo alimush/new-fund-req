@@ -9,6 +9,18 @@ const DatePartsSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const FieldLayoutSchema = new mongoose.Schema(
+  {
+    top: { type: Number },
+    left: { type: Number },
+    width: { type: Number },
+    height: { type: Number },
+    fontSize: { type: Number },
+    fontWeight: { type: Number },
+  },
+  { _id: false }
+);
+
 const ChequeSchema = new mongoose.Schema(
   {
     templateKey: {
@@ -43,14 +55,10 @@ const ChequeSchema = new mongoose.Schema(
     text: { type: String, default: "" },
 
     /** موضع/حجم حقل text لهذا الصك فقط */
-    textFieldLayout: {
-      top: { type: Number },
-      left: { type: Number },
-      width: { type: Number },
-      height: { type: Number },
-      fontSize: { type: Number },
-      fontWeight: { type: Number },
-    },
+    textFieldLayout: { type: FieldLayoutSchema, default: undefined },
+    /** موضع سطري المبلغ كتابة — وضع الإدخال */
+    amountWordsLayout: { type: FieldLayoutSchema, default: undefined },
+    amountWordsLine2Layout: { type: FieldLayoutSchema, default: undefined },
 
     currency: { type: String, default: "IQD" },
     bearer: { type: Boolean, default: false },

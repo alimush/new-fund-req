@@ -23,8 +23,15 @@ const PrintCalibSchema = new mongoose.Schema(
     offsetYmm: { type: Number, default: 0 },
     scaleX: { type: Number, default: 100 },
     scaleY: { type: Number, default: 100 },
+    sheetRotationDeg: { type: Number, default: 0 },
+    flipHorizontal: { type: Boolean, default: false },
+    flipVertical: { type: Boolean, default: false },
+    globalFontSizeScale: { type: Number, default: 130 },
+    globalTextColor: { type: String, default: "#0f172a" },
     fieldOffsets: { type: mongoose.Schema.Types.Mixed, default: {} },
     fieldFontStyles: { type: mongoose.Schema.Types.Mixed, default: {} },
+    /** مواضع النسخ الثلاث لمعايرة Wizard — مفاتيح "1" | "2" | "3" */
+    wizardCopyLayouts: { type: mongoose.Schema.Types.Mixed, default: null },
   },
   { _id: false }
 );
@@ -39,7 +46,18 @@ const ChequeLayoutSchema = new mongoose.Schema(
     },
     fields: { type: [FieldLayoutSchema], default: [] },
     dateShowSlashes: { type: Boolean, default: true },
+    /** مقياس حجم الخط العام للحقول على صورة الصك (%) */
+    globalFontScale: { type: Number, default: 100 },
     printCalib: { type: PrintCalibSchema, default: null },
+    /** shared = نفس موضع البيانات | separate = موضع خاص بمعايرة Wizard */
+    wizardCalibSource: {
+      type: String,
+      enum: ["shared", "separate"],
+      default: "shared",
+    },
+    wizardPrintCalib: { type: PrintCalibSchema, default: null },
+    /** عدد نسخ صفحة اختبار Wizard على ورقة واحدة (1–3) */
+    wizardTestCopyCount: { type: Number, default: 3, min: 1, max: 3 },
     updatedBy: { type: String, default: "" },
   },
   { timestamps: true }

@@ -16,6 +16,7 @@ import {
   FiFilter,
   FiPieChart,
   FiEye,
+  FiPrinter,
 } from "react-icons/fi";
 import { CHEQUE_TEMPLATES } from "@/lib/cheques/templates";
 import {
@@ -241,6 +242,13 @@ export default function ChequeReportsPage() {
             <FiDownload />
             Excel
           </button>
+          <Link
+            href="/cheques/reports/prints"
+            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-extrabold text-slate-800 shadow-sm hover:bg-slate-50"
+          >
+            <FiPrinter />
+            سجل الطباعة
+          </Link>
           <Link
             href="/cheques"
             className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 px-4 py-2.5 text-sm font-extrabold text-white shadow-md hover:shadow-lg transition"
