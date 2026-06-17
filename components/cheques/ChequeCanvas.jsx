@@ -31,7 +31,6 @@ const cairo = Cairo({
 
 const DATE_ORDER = ["dateDay", "dateMonth", "dateYear"];
 const TEXT_KEY = "text";
-const PER_CHEQUE_KEYS = new Set([TEXT_KEY]);
 
 const fieldStyle = (f) => ({
   position: "absolute",
@@ -82,10 +81,9 @@ export default function ChequeCanvas({
     layoutMode ? layoutFromField(baseField) : savedLayout || layoutFromField(baseField);
 
   const textDisplayLayout = resolveDisplayLayout(textBaseField, textFieldLayout);
-  const textFieldForRender = fieldWithChequeLayout(textBaseField, textDisplayLayout);
 
-  const staticFields = useMemo(
-    () => list.filter((f) => isCanvasField(f) && !PER_CHEQUE_KEYS.has(f.key)),
+  const canvasFields = useMemo(
+    () => list.filter((f) => isCanvasField(f) && f.key !== TEXT_KEY),
     [list]
   );
 
@@ -133,8 +131,11 @@ export default function ChequeCanvas({
 
   const fieldForCanvasRender = useCallback(
     (f) => {
-      const scaled = displayField(f);
-      if (layoutMode) return scaled;
+      if (layoutMode) return displayField(f);
+
+      if (f.key === TEXT_KEY) {
+        return displayField(fieldWithChequeLayout(textBaseField, textDisplayLayout));
+      }
 
       const layout =
         f.key === AMOUNT_WORDS_KEY
@@ -142,20 +143,27 @@ export default function ChequeCanvas({
           : f.key === AMOUNT_WORDS_LINE2_KEY
           ? amountWordsLine2Layout
           : null;
-      if (!layout) return scaled;
+      if (!layout) return displayField(f);
 
-      if (viewMode && (layout.fontSize != null || layout.fontWeight != null)) {
-        const withSavedFont = displayField({
+      let scaled = displayField(f);
+      if (layout.fontSize != null || layout.fontWeight != null) {
+        scaled = displayField({
           ...f,
           fontSize: layout.fontSize ?? f.fontSize,
           fontWeight: layout.fontWeight ?? f.fontWeight,
         });
-        return fieldWithChequePosition(withSavedFont, layout);
       }
 
       return fieldWithChequePosition(scaled, layout);
     },
-    [displayField, layoutMode, viewMode, amountWordsLayout, amountWordsLine2Layout]
+    [
+      displayField,
+      layoutMode,
+      amountWordsLayout,
+      amountWordsLine2Layout,
+      textBaseField,
+      textDisplayLayout,
+    ]
   );
 
   const amountWordsRenderField = useMemo(() => {
@@ -253,6 +261,8 @@ export default function ChequeCanvas({
   );
 
   const startPerChequeMove = (e, currentLayout, onLayoutChange) => {
+    e.preventDefault();
+    e.stopPropagation();
     const rect = getRect();
     if (!rect || !currentLayout) return;
 
@@ -292,10 +302,10 @@ export default function ChequeCanvas({
   };
 
   const startPerChequeResize = (e, currentLayout, onLayoutChange) => {
-    const rect = getRect();
-    if (!rect || !currentLayout) return;
     e.preventDefault();
     e.stopPropagation();
+    const rect = getRect();
+    if (!rect || !currentLayout) return;
 
     dragRef.current = {
       mode: "per-cheque-resize",
@@ -332,41 +342,34 @@ export default function ChequeCanvas({
     window.addEventListener("mouseup", onUp);
   };
 
-  const renderAdjustableField = ({
-    fieldKey,
-    fieldForRender,
-    displayLayout,
-    onLayoutChange,
-    dragLabel,
-    ringClass = "ring-sky-400/80",
-    barClass = "bg-sky-500/25 border-sky-400/40",
-    labelClass = "text-sky-800",
-    resizeClass = "border-sky-600",
-    zClass = "z-20",
-  }) => {
-    if (!fieldForRender) return null;
+  const renderTextField = () => {
+    if (!textBaseField) return null;
+
+    const fieldForRender = fieldForCanvasRender(textBaseField);
     const adjustable = textFieldAdjustable && !layoutMode && !viewMode;
-    const isLayoutSelected = layoutMode && !viewMode && layoutSelectedKey === fieldKey;
-    const isActive = activeField === fieldKey && !layoutMode && !viewMode;
+    const isLayoutSelected = layoutMode && !viewMode && layoutSelectedKey === TEXT_KEY;
+    const isActive = activeField === TEXT_KEY && !layoutMode && !viewMode;
 
     return (
       <div
-        key={fieldKey}
+        key={TEXT_KEY}
         style={fieldStyle(fieldForRender)}
-        className={`${zClass} flex flex-col items-stretch justify-start ${
-          adjustable ? `ring-2 ${ringClass} ring-offset-1 rounded-sm` : ""
+        className={`z-20 flex flex-col items-stretch justify-start ${
+          adjustable ? "ring-2 ring-sky-400/80 ring-offset-1 rounded-sm" : ""
         } ${
           isLayoutSelected
             ? "ring-2 ring-amber-500 rounded-sm bg-amber-100/25 cursor-move"
+            : isActive
+            ? "ring-2 ring-emerald-500/70 ring-offset-1 rounded-sm"
             : ""
-        } ${isActive ? "ring-2 ring-emerald-500/60" : ""}`}
+        }`}
         onMouseDown={(e) => {
-          if (layoutMode && !viewMode) startLayoutDrag(e, fieldKey);
+          if (layoutMode && !viewMode) startLayoutDrag(e, TEXT_KEY);
         }}
         onClick={(e) => {
           if (layoutMode && !viewMode) {
             e.stopPropagation();
-            onLayoutSelectField?.(fieldKey);
+            onLayoutSelectField?.(TEXT_KEY);
           }
         }}
       >
@@ -375,28 +378,30 @@ export default function ChequeCanvas({
             role="button"
             tabIndex={-1}
             title="اسحب لتحريك الحقل"
-            onMouseDown={(e) => startPerChequeMove(e, displayLayout, onLayoutChange)}
-            className={`shrink-0 h-5 flex items-center justify-center gap-1 cursor-move border-b rounded-t-sm ${barClass}`}
+            onMouseDown={(e) =>
+              startPerChequeMove(e, textDisplayLayout, onTextFieldLayoutChange)
+            }
+            className="shrink-0 h-5 flex items-center justify-center gap-1 cursor-move border-b rounded-t-sm bg-sky-500/25 border-sky-400/40"
           >
-            <span className={`text-[9px] font-extrabold px-1 ${labelClass}`}>
-              ⋮⋮ {dragLabel}
+            <span className="text-[9px] font-extrabold px-1 text-sky-800">
+              ⋮⋮ text — اسحب للتحريك
             </span>
           </div>
         ) : null}
 
         <div className="relative flex-1 min-h-0 flex flex-col">
           <ChequeFieldInput
-            field={displayField(fieldForRender)}
-            value={values?.[fieldKey]}
-            onChange={(val) => set(fieldKey, val)}
+            field={fieldForRender}
+            value={values?.[TEXT_KEY]}
+            onChange={(val) => set(TEXT_KEY, val)}
             variant="canvas"
             designScale={fontScale}
             isActive={layoutMode ? isLayoutSelected : isActive}
             readOnly={isReadOnly}
             onFocus={() => {
               if (viewMode) return;
-              if (layoutMode) onLayoutSelectField?.(fieldKey);
-              else onFieldFocus?.(fieldKey);
+              if (layoutMode) onLayoutSelectField?.(TEXT_KEY);
+              else onFieldFocus?.(TEXT_KEY);
             }}
             onBlur={onFieldBlur}
           />
@@ -406,12 +411,12 @@ export default function ChequeCanvas({
               role="button"
               tabIndex={-1}
               title="اسحب لتكبير/تصغير"
-              onMouseDown={(e) => startPerChequeResize(e, displayLayout, onLayoutChange)}
-              className={`absolute bottom-0 left-0 w-5 h-5 cursor-se-resize flex items-end justify-start z-30`}
+              onMouseDown={(e) =>
+                startPerChequeResize(e, textDisplayLayout, onTextFieldLayoutChange)
+              }
+              className="absolute bottom-0 left-0 w-5 h-5 cursor-se-resize flex items-end justify-start z-30"
             >
-              <span
-                className={`block w-3.5 h-3.5 border-r-2 border-b-2 rounded-br-sm bg-white/80 ${resizeClass}`}
-              />
+              <span className="block w-3.5 h-3.5 border-r-2 border-b-2 rounded-br-sm bg-white/80 border-sky-600" />
             </div>
           ) : null}
         </div>
@@ -422,20 +427,30 @@ export default function ChequeCanvas({
   const renderFieldBox = (f, opts = {}) => {
     const { isLayoutSelected = false, extraClass = "" } = opts;
     const fieldForRender = fieldForCanvasRender(f);
+    const isActive = !viewMode && !layoutMode && activeField === f.key;
+
     return (
       <div
         key={f.key}
         ref={f.key === AMOUNT_WORDS_KEY ? amountWordsLine1BoxRef : undefined}
         style={fieldStyle(fieldForRender)}
-        className={`z-10 transition-opacity ${extraClass} ${
+        className={`flex flex-col items-stretch justify-start transition-opacity ${
+          isActive ? "z-30" : "z-10"
+        } ${extraClass} ${
           viewMode
             ? "pointer-events-none"
             : layoutMode
             ? "cursor-move"
             : activeField && activeField !== f.key
-            ? "opacity-70"
+            ? "opacity-75"
             : "opacity-100"
-        } ${isLayoutSelected ? "ring-2 ring-amber-500 rounded-sm bg-amber-100/25" : ""}`}
+        } ${
+          isLayoutSelected
+            ? "ring-2 ring-amber-500 rounded-sm bg-amber-100/25"
+            : isActive
+            ? "ring-2 ring-emerald-500/70 ring-offset-1 rounded-sm"
+            : ""
+        }`}
         onMouseDown={(e) => {
           if (layoutMode && !viewMode) startLayoutDrag(e, f.key);
         }}
@@ -446,20 +461,23 @@ export default function ChequeCanvas({
           }
         }}
       >
-        <ChequeFieldInput
-          field={fieldForRender}
-          value={values?.[f.key]}
-          onChange={(val) => set(f.key, val)}
-          variant="canvas"
-          designScale={fontScale}
-          isActive={!viewMode && (layoutMode ? isLayoutSelected : activeField === f.key)}
-          readOnly={isReadOnly}
-          onFocus={() => {
-            if (layoutMode) onLayoutSelectField?.(f.key);
-            else onFieldFocus?.(f.key);
-          }}
-          onBlur={onFieldBlur}
-        />
+        <div className="relative flex-1 min-h-0 flex flex-col">
+          <ChequeFieldInput
+            field={fieldForRender}
+            value={values?.[f.key]}
+            onChange={(val) => set(f.key, val)}
+            variant="canvas"
+            designScale={fontScale}
+            isActive={!viewMode && (layoutMode ? isLayoutSelected : isActive)}
+            readOnly={isReadOnly}
+            onFocus={() => {
+              if (viewMode) return;
+              if (layoutMode) onLayoutSelectField?.(f.key);
+              else onFieldFocus?.(f.key);
+            }}
+            onBlur={onFieldBlur}
+          />
+        </div>
       </div>
     );
   };
@@ -520,19 +538,13 @@ export default function ChequeCanvas({
           </div>
         ))}
 
-        {staticFields.map((f) =>
+        {canvasFields.map((f) =>
           renderFieldBox(f, {
             isLayoutSelected: layoutMode && layoutSelectedKey === f.key,
           })
         )}
 
-        {renderAdjustableField({
-          fieldKey: TEXT_KEY,
-          fieldForRender: textFieldForRender,
-          displayLayout: textDisplayLayout,
-          onLayoutChange: onTextFieldLayoutChange,
-          dragLabel: "text — اسحب للتحريك",
-        })}
+        {renderTextField()}
       </div>
     </div>
   );

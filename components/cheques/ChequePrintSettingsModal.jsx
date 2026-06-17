@@ -700,8 +700,9 @@ export default function ChequePrintSettingsModal({
     setPrinting(true);
     setError("");
     try {
-      const ok = await onPrint?.(calib, {
+      const ok = await onPrint?.(mode === "imageOnly" ? resolvedWizardCalib : calib, {
         printerName: printerName.trim(),
+        copyCount: mode === "imageOnly" ? wizardTestCopyCount : undefined,
         printMode: mode,
       });
       if (ok === false) setError("تعذرت الطباعة");
@@ -767,10 +768,15 @@ export default function ChequePrintSettingsModal({
 
             <div className="flex-1 overflow-y-auto px-4 py-4 md:px-5">
               <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs font-semibold text-amber-900 leading-relaxed mb-4">
-                تفتح نافذة طباعة المتصفح على <strong>ورقة A4 عرضي (Landscape)</strong> — الحقول
-                فقط داخل منطقة الصك (بدون خلفية). في نافذة الطباعة:{" "}
-                <strong>Landscape</strong>، <strong>Scale Default (100%)</strong>، وألغِ{" "}
+                تفتح نافذة طباعة المتصفح على <strong>ورقة A4 عرضي (Landscape)</strong>. في نافذة
+                الطباعة: <strong>Landscape</strong>، <strong>Scale Default (100%)</strong>، وألغِ{" "}
                 <strong>Headers and footers</strong> و<strong>Two-sided</strong>.
+              </div>
+              <div className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-2.5 text-xs font-semibold text-sky-900 leading-relaxed mb-4">
+                إعدادات <strong>الخط واللون والموضع</strong> هنا مرتبطة مع{" "}
+                <strong>طباعة على صك فارغ</strong> و<strong>طباعة الصك والبيانات</strong> — أي
+                تعديل يُطبَّق على الاثنين معاً. زر <strong>طباعة الصك</strong> (صورة فقط) يبقى
+                على إعدادات <strong>Wizard</strong> المنفصلة أدناه.
               </div>
 
               <button
@@ -798,7 +804,7 @@ export default function ChequePrintSettingsModal({
                     amountWordsLayout={amountWordsLayout}
                     amountWordsLine2Layout={amountWordsLine2Layout}
                     layoutFontScale={layoutFontScale}
-                    showChequeImage={mode === "withImage" || mode === "imageOnly"}
+                    showChequeImage={mode === "withImage"}
                   />
                 </div>
 

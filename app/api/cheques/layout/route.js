@@ -24,7 +24,6 @@ import { normalizeWizardTestCopyCount } from "@/lib/cheques/chequePrintPageStyle
 import { clampLayoutFontScale } from "@/lib/cheques/chequeDesignMetrics";
 import {
   requireChequeAccess,
-  requireChequeEditor,
   requireManagePermissions,
 } from "@/lib/cheques/chequeAuth";
 
@@ -117,13 +116,8 @@ export async function POST(req) {
     const printCalibOnly = Boolean(body?.printCalibOnly);
     const wizardCalibOnly = Boolean(body?.wizardCalibOnly);
 
-    if (printCalibOnly || wizardCalibOnly) {
-      const access = await requireManagePermissions(userId);
-      if (!access.ok) return access.res;
-    } else {
-      const editor = await requireChequeEditor(userId);
-      if (!editor.ok) return editor.res;
-    }
+    const access = await requireManagePermissions(userId);
+    if (!access.ok) return access.res;
 
     const user = await User.findById(userId).select("username").lean();
     const username = String(user?.username || "").trim();
