@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { FaUserCircle, FaBars, FaHome, FaUserPlus, FaSignOutAlt } from "react-icons/fa";
 import { GoWorkflow } from "react-icons/go";
 import { useRouter, usePathname } from "next/navigation";
@@ -13,6 +13,7 @@ import { hasPermission, PERMISSIONS } from "@/lib/permission";
 import { IoReceipt } from "react-icons/io5";
 import { FaFileInvoice } from "react-icons/fa";
 import { FiClock, FiLink, FiCreditCard } from "react-icons/fi";
+import { resolveHeaderTitle } from "@/lib/headerTitle";
 
 const poppins = Poppins({
   subsets: ["latin"],
@@ -57,6 +58,8 @@ export default function Header({ onLogout }) {
 
   const canAccessCheques = hasPermission(permissions, PERMISSIONS.CHEQUES);
 
+  const headerTitle = useMemo(() => resolveHeaderTitle(pathname), [pathname]);
+
   const handleLogout = async () => {
     try {
       sessionStorage.clear();
@@ -96,12 +99,13 @@ export default function Header({ onLogout }) {
         </div>
 
         {/* Center title */}
-        <div className="flex justify-center">
+        <div className="flex min-w-0 justify-center px-1">
           <h1
             onClick={() => router.push("/home")}
-            className="cursor-pointer bg-gradient-to-r from-slate-100 via-white to-slate-200 bg-clip-text text-base font-extrabold tracking-tight text-transparent transition hover:opacity-80 sm:text-lg md:text-xl"
+            title={headerTitle}
+            className="cursor-pointer truncate bg-gradient-to-r from-slate-100 via-white to-slate-200 bg-clip-text text-center text-base font-extrabold tracking-tight text-transparent transition hover:opacity-80 sm:text-lg md:max-w-[min(100%,28rem)] md:text-xl"
           >
-            Fund Request
+            {headerTitle}
           </h1>
         </div>
 
