@@ -85,10 +85,8 @@ export default function ChequeCanvas({
 
   const textBaseField = fieldByKey[TEXT_KEY];
 
-  const resolveDisplayLayout = (baseField, savedLayout) =>
-    layoutMode ? layoutFromField(baseField) : savedLayout || layoutFromField(baseField);
-
-  const textDisplayLayout = resolveDisplayLayout(textBaseField, textFieldLayout);
+  const textDisplayLayout =
+    textFieldLayout || layoutFromField(textBaseField);
 
   const canvasFields = useMemo(
     () => list.filter((f) => isCanvasField(f) && f.key !== TEXT_KEY),
@@ -139,9 +137,8 @@ export default function ChequeCanvas({
 
   const fieldForCanvasRender = useCallback(
     (f) => {
-      if (layoutMode) return displayField(f);
-
       if (f.key === TEXT_KEY) {
+        if (!textBaseField) return displayField(f);
         return displayField(fieldWithChequeLayout(textBaseField, textDisplayLayout));
       }
 
@@ -173,7 +170,6 @@ export default function ChequeCanvas({
     },
     [
       displayField,
-      layoutMode,
       amountWordsLayout,
       amountWordsLine2Layout,
       textBaseField,
@@ -380,7 +376,13 @@ export default function ChequeCanvas({
             : ""
         }`}
         onMouseDown={(e) => {
-          if (layoutMode && !viewMode) startLayoutDrag(e, TEXT_KEY);
+          if (layoutMode && !viewMode) {
+            if (onTextFieldLayoutChange) {
+              startPerChequeMove(e, textDisplayLayout, onTextFieldLayoutChange);
+            } else {
+              startLayoutDrag(e, TEXT_KEY);
+            }
+          }
         }}
         onClick={(e) => {
           if (layoutMode && !viewMode) {
@@ -389,23 +391,7 @@ export default function ChequeCanvas({
           }
         }}
       >
-        {adjustable ? (
-          <div
-            role="button"
-            tabIndex={-1}
-            title="اسحب لتحريك الحقل"
-            onMouseDown={(e) =>
-              startPerChequeMove(e, textDisplayLayout, onTextFieldLayoutChange)
-            }
-            className="shrink-0 h-5 flex items-center justify-center gap-1 cursor-move border-b rounded-t-sm bg-sky-500/25 border-sky-400/40"
-          >
-            <span className="text-[9px] font-extrabold px-1 text-sky-800">
-              ⋮⋮ text — اسحب للتحريك
-            </span>
-          </div>
-        ) : null}
-
-        <div className="relative flex-1 min-h-0 flex flex-col">
+        <div className="relative flex-1 min-h-0 flex flex-col w-full h-full">
           <ChequeFieldInput
             field={fieldForRender}
             value={values?.[TEXT_KEY]}
@@ -423,17 +409,35 @@ export default function ChequeCanvas({
           />
 
           {adjustable ? (
-            <div
-              role="button"
-              tabIndex={-1}
-              title="اسحب لتكبير/تصغير"
-              onMouseDown={(e) =>
-                startPerChequeResize(e, textDisplayLayout, onTextFieldLayoutChange)
-              }
-              className="absolute bottom-0 left-0 w-5 h-5 cursor-se-resize flex items-end justify-start z-30"
-            >
-              <span className="block w-3.5 h-3.5 border-r-2 border-b-2 rounded-br-sm bg-white/80 border-sky-600" />
-            </div>
+            <>
+              <div
+                role="button"
+                tabIndex={-1}
+                title="اسحب لتحريك الحقل"
+                aria-label="تحريك الحقل"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  startPerChequeMove(e, textDisplayLayout, onTextFieldLayoutChange);
+                }}
+                className="absolute top-0 right-0 z-30 flex h-4 w-4 cursor-move items-center justify-center rounded-bl-sm bg-sky-600/90 text-white shadow-sm hover:bg-sky-700"
+              >
+                <span className="text-[7px] leading-none font-black tracking-tighter">⋮⋮</span>
+              </div>
+              <div
+                role="button"
+                tabIndex={-1}
+                title="اسحب لتكبير/تصغير"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  startPerChequeResize(e, textDisplayLayout, onTextFieldLayoutChange);
+                }}
+                className="absolute bottom-0 left-0 w-5 h-5 cursor-se-resize flex items-end justify-start z-30"
+              >
+                <span className="block w-3.5 h-3.5 border-r-2 border-b-2 rounded-br-sm bg-white/80 border-sky-600" />
+              </div>
+            </>
           ) : null}
         </div>
       </div>

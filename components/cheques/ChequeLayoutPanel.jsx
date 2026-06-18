@@ -18,6 +18,23 @@ import {
   clampLayoutFontScale,
 } from "@/lib/cheques/chequeDesignMetrics";
 
+import { TEXT_KEY, AMOUNT_WORDS_KEY, AMOUNT_WORDS_LINE2_KEY } from "@/lib/cheques/textFieldLayout";
+
+function resolvePanelField(key, fields, layouts = {}) {
+  const base = (fields || []).find((f) => f.key === key);
+  if (!base) return null;
+  if (key === TEXT_KEY && layouts.textFieldLayout) {
+    return { ...base, ...layouts.textFieldLayout };
+  }
+  if (key === AMOUNT_WORDS_KEY && layouts.amountWordsLayout) {
+    return { ...base, ...layouts.amountWordsLayout };
+  }
+  if (key === AMOUNT_WORDS_LINE2_KEY && layouts.amountWordsLine2Layout) {
+    return { ...base, ...layouts.amountWordsLine2Layout };
+  }
+  return base;
+}
+
 function NumControl({ label, value, onChange, min = 0, max = 100, step = 0.5 }) {
   return (
     <div>
@@ -52,10 +69,18 @@ export default function ChequeLayoutPanel({
   savingDateStyle = false,
   globalFontScale = LAYOUT_FONT_SCALE_DEFAULT,
   onGlobalFontScaleChange,
+  textFieldLayout = null,
+  amountWordsLayout = null,
+  amountWordsLine2Layout = null,
 }) {
   const selected = useMemo(
-    () => fields.find((f) => f.key === selectedKey) || null,
-    [fields, selectedKey]
+    () =>
+      resolvePanelField(selectedKey, fields, {
+        textFieldLayout,
+        amountWordsLayout,
+        amountWordsLine2Layout,
+      }),
+    [fields, selectedKey, textFieldLayout, amountWordsLayout, amountWordsLine2Layout]
   );
 
   const patch = (partial) => {

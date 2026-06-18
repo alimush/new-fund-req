@@ -27,7 +27,14 @@ import {
   mergeTemplateFields,
 } from "@/lib/cheques/mergeFields";
 import { mergeAmountWordsLines } from "@/lib/cheques/amountWords";
-import { clampTextLayout, layoutFromField, AMOUNT_WORDS_KEY, AMOUNT_WORDS_LINE2_KEY } from "@/lib/cheques/textFieldLayout";
+import {
+  clampTextLayout,
+  layoutFromField,
+  AMOUNT_WORDS_KEY,
+  AMOUNT_WORDS_LINE2_KEY,
+  TEXT_KEY,
+  mergePerChequeLayoutsIntoFields,
+} from "@/lib/cheques/textFieldLayout";
 import ChequeCanvas, {
   buildEmptyChequeValues,
   chequeValuesToPayload,
@@ -229,59 +236,67 @@ export default function ChequeEditorPage() {
   }, [baseTemplate, mergedFields]);
 
   const handleFieldLayoutChange = useCallback((key, partial) => {
+    if (key === TEXT_KEY) {
+      setTextFieldLayout((prev) => {
+        const base =
+          prev || layoutFromField(mergedFields.find((f) => f.key === TEXT_KEY));
+        return clampTextLayout(partial, base);
+      });
+      setMergedFields((prev) =>
+        prev.map((f) => (f.key === TEXT_KEY ? { ...f, ...partial } : f))
+      );
+      return;
+    }
+
+    if (key === AMOUNT_WORDS_KEY || key === AMOUNT_WORDS_LINE2_KEY) {
+      const defaults = getDefaultAmountWordsLayouts(mergedFields);
+      const layoutKey =
+        key === AMOUNT_WORDS_KEY ? "amountWordsLayout" : "amountWordsLine2Layout";
+      const setLayout =
+        key === AMOUNT_WORDS_KEY ? setAmountWordsLayout : setAmountWordsLine2Layout;
+
+      setLayout((prev) => {
+        const base =
+          prev ||
+          defaults[layoutKey] ||
+          layoutFromField(mergedFields.find((f) => f.key === key));
+        return clampTextLayout(partial, base);
+      });
+
+      const fp = fontPartial(partial);
+      if (Object.keys(fp).length) {
+        setAmountWordsLayout((prev) => {
+          const base =
+            prev ||
+            defaults.amountWordsLayout ||
+            layoutFromField(mergedFields.find((f) => f.key === AMOUNT_WORDS_KEY));
+          return clampTextLayout(fp, base);
+        });
+        setAmountWordsLine2Layout((prev) => {
+          const base =
+            prev ||
+            defaults.amountWordsLine2Layout ||
+            layoutFromField(mergedFields.find((f) => f.key === AMOUNT_WORDS_LINE2_KEY));
+          return clampTextLayout(fp, base);
+        });
+        setMergedFields((prev) =>
+          prev.map((f) =>
+            f.key === AMOUNT_WORDS_KEY || f.key === AMOUNT_WORDS_LINE2_KEY
+              ? { ...f, ...fp }
+              : f
+          )
+        );
+      } else {
+        setMergedFields((prev) =>
+          prev.map((f) => (f.key === key ? { ...f, ...partial } : f))
+        );
+      }
+      return;
+    }
+
     setMergedFields((prev) =>
       prev.map((f) => (f.key === key ? { ...f, ...partial } : f))
     );
-
-    const fp = fontPartial(partial);
-    if (!Object.keys(fp).length) return;
-
-    if (key === AMOUNT_WORDS_KEY) {
-      setAmountWordsLayout((prev) => {
-        const base =
-          prev ||
-          getDefaultAmountWordsLayouts(mergedFields).amountWordsLayout ||
-          layoutFromField(mergedFields.find((f) => f.key === AMOUNT_WORDS_KEY));
-        return clampTextLayout(fp, base);
-      });
-      setAmountWordsLine2Layout((prev) => {
-        const base =
-          prev ||
-          getDefaultAmountWordsLayouts(mergedFields).amountWordsLine2Layout ||
-          layoutFromField(mergedFields.find((f) => f.key === AMOUNT_WORDS_LINE2_KEY));
-        return clampTextLayout(fp, base);
-      });
-      setMergedFields((prev) =>
-        prev.map((f) =>
-          f.key === AMOUNT_WORDS_KEY || f.key === AMOUNT_WORDS_LINE2_KEY
-            ? { ...f, ...fp }
-            : f
-        )
-      );
-    }
-    if (key === AMOUNT_WORDS_LINE2_KEY) {
-      setAmountWordsLine2Layout((prev) => {
-        const base =
-          prev ||
-          getDefaultAmountWordsLayouts(mergedFields).amountWordsLine2Layout ||
-          layoutFromField(mergedFields.find((f) => f.key === AMOUNT_WORDS_LINE2_KEY));
-        return clampTextLayout(fp, base);
-      });
-      setAmountWordsLayout((prev) => {
-        const base =
-          prev ||
-          getDefaultAmountWordsLayouts(mergedFields).amountWordsLayout ||
-          layoutFromField(mergedFields.find((f) => f.key === AMOUNT_WORDS_KEY));
-        return clampTextLayout(fp, base);
-      });
-      setMergedFields((prev) =>
-        prev.map((f) =>
-          f.key === AMOUNT_WORDS_KEY || f.key === AMOUNT_WORDS_LINE2_KEY
-            ? { ...f, ...fp }
-            : f
-        )
-      );
-    }
   }, [mergedFields]);
 
   const handleAmountWordsLayoutChange = useCallback(
@@ -351,24 +366,30 @@ export default function ChequeEditorPage() {
   );
 
   const buildLayoutFieldsForSave = useCallback(() => {
-    return mergedFields.map((f) => {
-      if (f.key === AMOUNT_WORDS_KEY && amountWordsLayout) {
-        return {
-          ...f,
-          fontSize: amountWordsLayout.fontSize ?? f.fontSize,
-          fontWeight: amountWordsLayout.fontWeight ?? f.fontWeight,
-        };
-      }
-      if (f.key === AMOUNT_WORDS_LINE2_KEY && amountWordsLine2Layout) {
-        return {
-          ...f,
-          fontSize: amountWordsLine2Layout.fontSize ?? f.fontSize,
-          fontWeight: amountWordsLine2Layout.fontWeight ?? f.fontWeight,
-        };
-      }
-      return f;
+    return mergePerChequeLayoutsIntoFields(mergedFields, {
+      textFieldLayout,
+      amountWordsLayout,
+      amountWordsLine2Layout,
     });
-  }, [mergedFields, amountWordsLayout, amountWordsLine2Layout]);
+  }, [mergedFields, textFieldLayout, amountWordsLayout, amountWordsLine2Layout]);
+
+  const handleTextFieldLayoutChange = useCallback(
+    (partial) => {
+      setTextFieldLayout((prev) => {
+        const base =
+          prev || layoutFromField(mergedFields.find((f) => f.key === TEXT_KEY));
+        const next =
+          typeof partial === "function"
+            ? partial(base)
+            : clampTextLayout(partial, base);
+        setMergedFields((fields) =>
+          fields.map((f) => (f.key === TEXT_KEY ? { ...f, ...next } : f))
+        );
+        return next;
+      });
+    },
+    [mergedFields]
+  );
 
   const postLayout = async (slashes, fieldsOverride) => {
     const fields = fieldsOverride || mergedFields;
@@ -428,10 +449,11 @@ export default function ChequeEditorPage() {
       setMergedFields(refreshed.fields);
       setDateShowSlashes(refreshed.dateShowSlashes);
       setGlobalFontScale(refreshed.globalFontScale ?? LAYOUT_FONT_SCALE_DEFAULT);
-      setTextFieldLayout(getDefaultTextFieldLayout(refreshed.fields));
-      const amountLayouts = getDefaultAmountWordsLayouts(refreshed.fields);
-      setAmountWordsLayout(amountLayouts.amountWordsLayout);
-      setAmountWordsLine2Layout(amountLayouts.amountWordsLine2Layout);
+      const savedTextLayout = getDefaultTextFieldLayout(refreshed.fields);
+      const savedAmountLayouts = getDefaultAmountWordsLayouts(refreshed.fields);
+      setTextFieldLayout(savedTextLayout);
+      setAmountWordsLayout(savedAmountLayouts.amountWordsLayout);
+      setAmountWordsLine2Layout(savedAmountLayouts.amountWordsLine2Layout);
       setValues((prev) =>
         mergeAmountWordsLines(
           prev,
@@ -602,8 +624,14 @@ export default function ChequeEditorPage() {
                 if (enteringLayout) {
                   const textF = mergedFields.find((f) => f.key === "text");
                   setLayoutSelectedKey(textF?.key || mergedFields[0]?.key || null);
-                } else {
-                  setTextFieldLayout(getDefaultTextFieldLayout(mergedFields));
+                  setTextFieldLayout(
+                    (prev) => prev || getDefaultTextFieldLayout(mergedFields)
+                  );
+                  const amountLayouts = getDefaultAmountWordsLayouts(mergedFields);
+                  setAmountWordsLayout((prev) => prev || amountLayouts.amountWordsLayout);
+                  setAmountWordsLine2Layout(
+                    (prev) => prev || amountLayouts.amountWordsLine2Layout
+                  );
                 }
               }}
               className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-extrabold ${
@@ -709,6 +737,9 @@ export default function ChequeEditorPage() {
             savingDateStyle={savingDateStyle}
             globalFontScale={globalFontScale}
             onGlobalFontScaleChange={setGlobalFontScale}
+            textFieldLayout={textFieldLayout}
+            amountWordsLayout={amountWordsLayout}
+            amountWordsLine2Layout={amountWordsLine2Layout}
           />
         ) : (
           <ChequeInputsSidebar
@@ -730,7 +761,7 @@ export default function ChequeEditorPage() {
           <p className="hidden md:block text-xs font-bold text-slate-500 mb-3 text-center">
             {layoutMode
               ? "لتعديل افتراضي text (المستشار): اختر text واسحبه أو عدّل X/Y — ثم احفظ التخطيط"
-              : "معاينة بالحجم الفعلي للصك (17.80 × 8.20 سم) — حقل text: حرّكه من الشريط الأزرق"}
+              : "معاينة بالحجم الفعلي للصك (17.80 × 8.20 سم) — حقل text: اسحب الزاوية العليا للتحريك"}
           </p>
           <div className="flex justify-center overflow-x-auto pb-1">
             <ChequeCanvas
@@ -746,7 +777,7 @@ export default function ChequeEditorPage() {
               onFieldLayoutChange={handleFieldLayoutChange}
               dateShowSlashes={dateShowSlashes}
               textFieldLayout={textFieldLayout}
-              onTextFieldLayoutChange={setTextFieldLayout}
+              onTextFieldLayoutChange={handleTextFieldLayoutChange}
               amountWordsLayout={amountWordsLayout}
               amountWordsLine2Layout={amountWordsLine2Layout}
               textFieldAdjustable={!layoutMode}
@@ -761,7 +792,7 @@ export default function ChequeEditorPage() {
               textFieldLayout={textFieldLayout}
               amountWordsLayout={amountWordsLayout}
               amountWordsLine2Layout={amountWordsLine2Layout}
-              onTextFieldLayoutChange={setTextFieldLayout}
+              onTextFieldLayoutChange={handleTextFieldLayoutChange}
               onAmountWordsLayoutChange={handleAmountWordsLayoutChange}
               onAmountWordsLine2LayoutChange={handleAmountWordsLine2LayoutChange}
               onFieldLayoutChange={handleFieldLayoutChange}
