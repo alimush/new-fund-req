@@ -593,18 +593,16 @@ export default function ChequeEditorPage() {
             <FiPrinter className={printingWithData ? "animate-pulse" : ""} />
             {printingWithData ? "جاري الطباعة…" : "طباعة الصك والبيانات"}
           </button>
-          {canManagePrintSettings ? (
-            <button
-              type="button"
-              onClick={() => quickPrint("imageOnly")}
-              disabled={printingImage || printingWithData || printing || saving || layoutMode || !template?.image}
-              title="طباعة صورة الصك فقط بدون بيانات — للتجربة"
-              className="inline-flex items-center gap-2 rounded-xl border border-violet-300 bg-violet-50 px-4 py-2.5 text-sm font-extrabold text-violet-900 hover:bg-violet-100 disabled:opacity-50"
-            >
-              <FiPrinter className={printingImage ? "animate-pulse" : ""} />
-              {printingImage ? "جاري الطباعة…" : "طباعة الصك"}
-            </button>
-          ) : null}
+          <button
+            type="button"
+            onClick={() => quickPrint("imageOnly")}
+            disabled={printingImage || printingWithData || printing || saving || layoutMode || !template?.image}
+            title="طباعة صورة الصك فقط بدون بيانات"
+            className="inline-flex items-center gap-2 rounded-xl border border-violet-300 bg-violet-50 px-4 py-2.5 text-sm font-extrabold text-violet-900 hover:bg-violet-100 disabled:opacity-50"
+          >
+            <FiPrinter className={printingImage ? "animate-pulse" : ""} />
+            {printingImage ? "جاري الطباعة…" : "طباعة الصك"}
+          </button>
           <button
             type="button"
             onClick={handleCreateAndPrint}
