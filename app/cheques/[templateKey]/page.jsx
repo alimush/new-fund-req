@@ -49,7 +49,7 @@ function fontPartial(partial) {
 export default function ChequeEditorPage() {
   const params = useParams();
   const { showToast } = useToast();
-  const { canUseCheques, canManagePrintSettings, ready } = useChequeAccess();
+  const { canUseCheques, canLayoutEditor, canManagePrintSettings, ready } = useChequeAccess();
   const templateKey = String(params?.templateKey || "").trim();
 
   const baseTemplate = useMemo(
@@ -123,10 +123,10 @@ export default function ChequeEditorPage() {
   }, [baseTemplate, templateKey]);
 
   useEffect(() => {
-    if (!canManagePrintSettings && layoutMode) {
+    if (!canLayoutEditor && layoutMode) {
       setLayoutMode(false);
     }
-  }, [canManagePrintSettings, layoutMode]);
+  }, [canLayoutEditor, layoutMode]);
 
   useEffect(() => {
     if (!baseTemplate) return;
@@ -521,7 +521,7 @@ export default function ChequeEditorPage() {
         </div>
 
         <div className="flex flex-wrap gap-2">
-          {canManagePrintSettings ? (
+          {canLayoutEditor ? (
             <button
               type="button"
               onClick={() => {

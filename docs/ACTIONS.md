@@ -79,7 +79,7 @@
 | إصدار صك | `/cheques/[templateKey]` | `POST /api/cheques` | `CHEQUES` |
 | تقارير | `/cheques/reports` | `GET /api/cheques/reports` | `CHEQUES` |
 | عرض | `/cheques/view?id=` | `GET /api/cheques/[id]` | `CHEQUES` |
-| ترتيب الحقول | `ChequeLayoutPanel` | `GET/POST /api/cheques/layout` | `CHEQUES_EDITOR` |
+| ترتيب الحقول | `ChequeLayoutPanel` | `GET/POST /api/cheques/layout` | `CHEQUES_FIELD_LAYOUT` |
 
 ### 6) إدارة النظام
 
@@ -275,7 +275,8 @@
 | `VOUCHERS_*` | وصولات حسب الشركة (رئيسي/فرعي) |
 | `VOUCHERS_REPORTS_VIEW` | تقارير وصولات |
 | `CHEQUES` | نظام صكوك كامل |
-| `CHEQUES_EDITOR` | ترتيب حقول الصك |
+| `CHEQUES_FIELD_LAYOUT` | ترتيب حقول الصك (وضع الإدخال) |
+| `CHEQUES_EDITOR` | قديم — يُعادل `CHEQUES_FIELD_LAYOUT` |
 | `MANAGE_PERMISSIONS` | إدارة صلاحيات + workflow |
 | `EX`, `EX_*` | طلبات الحجز |
 
