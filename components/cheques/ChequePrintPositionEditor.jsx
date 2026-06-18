@@ -24,6 +24,7 @@ import {
   resolveFieldOffsetKey,
   chequeSheetTransformStyle,
   normalizeSheetRotationDeg,
+  wizardPrintCalibPayload,
 } from "@/lib/cheques/printCalib";
 import {
   ensureWizardCopyLayouts,
@@ -538,9 +539,14 @@ export default function ChequePrintPositionEditor({
           isWizardPurpose
             ? {
                 templateKey,
-                wizardCalibOnly: true,
-                wizardCalibSource,
-                wizardPrintCalib: calib,
+                printCalibOnly: true,
+                printCalib: wizardPrintCalibPayload(
+                  calib,
+                  template,
+                  list,
+                  wizardCopyTotal
+                ),
+                wizardCalibSource: "shared",
                 wizardTestCopyCount: wizardCopyTotal,
               }
             : {
@@ -556,13 +562,13 @@ export default function ChequePrintPositionEditor({
         return;
       }
       const saved = isWizardPurpose
-        ? normalizeWizardPrintCalib(json.wizardPrintCalib, template, list, wizardCopyTotal)
+        ? normalizeWizardPrintCalib(json.printCalib, template, list, wizardCopyTotal)
         : normalizePrintCalib(json.printCalib, template, list);
       onCalibChange?.(saved);
       onSaved?.(saved, json);
       setSaveMessage(
         isWizardPurpose
-          ? "تم حفظ موضع ورقة المعايرة — يُستخدم في Wizard فقط"
+          ? "تم حفظ مواضع النسخ — تُستخدم في طباعة الصك"
           : "تم حفظ مواضع البيانات — تُطبّق على كل أزرار الطباعة"
       );
       setTimeout(() => onClose?.(), 700);

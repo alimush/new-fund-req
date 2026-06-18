@@ -30,11 +30,10 @@ import {
   getFieldOffset,
   mmToCm,
   normalizePrintCalib,
-  normalizeWizardCalibSource,
   parseCmInput,
   resolveWizardPrintCalib,
-  WIZARD_CALIB_SOURCE_SEPARATE,
   WIZARD_CALIB_SOURCE_SHARED,
+  wizardPrintCalibPayload,
   DATE_GROUP_KEY,
   DEFAULT_PRINT_FIELD_COLOR,
   PRINT_FIELD_LABELS,
@@ -383,8 +382,6 @@ export default function ChequePrintSettingsModal({
   template,
   templateKey,
   initialCalib,
-  initialWizardCalibSource = WIZARD_CALIB_SOURCE_SHARED,
-  initialWizardPrintCalib = null,
   canSave = false,
   onPrint,
   onSaved,
@@ -410,10 +407,6 @@ export default function ChequePrintSettingsModal({
   const [wizardOpen, setWizardOpen] = useState(false);
   const [positionEditorOpen, setPositionEditorOpen] = useState(false);
   const [wizardPositionEditorOpen, setWizardPositionEditorOpen] = useState(false);
-  const [wizardCalibSource, setWizardCalibSource] = useState(WIZARD_CALIB_SOURCE_SHARED);
-  const [wizardCalib, setWizardCalib] = useState(() =>
-    normalizeWizardPrintCalib(initialWizardPrintCalib, template || null, previewFields)
-  );
   const [wizardTestCopyCount, setWizardTestCopyCount] = useState(WIZARD_TEST_COPY_DEFAULT);
 
   const defaults = useMemo(
@@ -442,14 +435,13 @@ export default function ChequePrintSettingsModal({
 
   useEffect(() => {
     if (!open || !template) return;
-    setCalib(normalizePrintCalib(initialCalib, template, previewFields));
-    setWizardCalibSource(normalizeWizardCalibSource(initialWizardCalibSource));
-    setWizardCalib(
+    const copies = normalizeWizardTestCopyCount(wizardTestCopyCount);
+    setCalib(
       normalizeWizardPrintCalib(
-        initialWizardPrintCalib || defaults,
+        initialCalib || defaults,
         template,
         previewFields,
-        wizardTestCopyCount
+        copies
       )
     );
     setError("");
@@ -463,73 +455,34 @@ export default function ChequePrintSettingsModal({
         .then((r) => r.json())
         .then((json) => {
           if (!json?.success) return;
-          setWizardCalibSource(normalizeWizardCalibSource(json.wizardCalibSource));
-          setWizardCalib(
-            normalizeWizardPrintCalib(
-              json.wizardPrintCalib,
-              template,
-              previewFields,
-              normalizeWizardTestCopyCount(json.wizardTestCopyCount)
-            )
-          );
-          setWizardTestCopyCount(normalizeWizardTestCopyCount(json.wizardTestCopyCount));
+          const count = normalizeWizardTestCopyCount(json.wizardTestCopyCount);
+          setWizardTestCopyCount(count);
+          if (json.printCalib) {
+            setCalib(
+              normalizeWizardPrintCalib(json.printCalib, template, previewFields, count)
+            );
+          }
         })
         .catch(() => {});
     }
-  }, [
-    open,
-    initialCalib,
-    initialWizardCalibSource,
-    initialWizardPrintCalib,
-    template,
-    previewFields,
-    templateKey,
-    defaults,
-  ]);
+  }, [open, initialCalib, template, previewFields, templateKey, defaults]);
+
+  const calibWithCopies = useMemo(
+    () =>
+      normalizeWizardPrintCalib(calib, template, previewFields, wizardTestCopyCount),
+    [calib, template, previewFields, wizardTestCopyCount]
+  );
 
   const resolvedWizardCalib = useMemo(
     () =>
       resolveWizardPrintCalib({
         printCalib: calib,
-        wizardPrintCalib: wizardCalib,
-        wizardCalibSource,
         template,
         fields: previewFields,
         copyCount: wizardTestCopyCount,
       }),
-    [calib, wizardCalib, wizardCalibSource, template, previewFields, wizardTestCopyCount]
+    [calib, template, previewFields, wizardTestCopyCount]
   );
-
-  const saveWizardLayout = async (nextWizardCalib) => {
-    if (!templateKey) return false;
-    try {
-      const res = await fetch("/api/cheques/layout", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          templateKey,
-          wizardCalibOnly: true,
-          wizardCalibSource: WIZARD_CALIB_SOURCE_SEPARATE,
-          wizardPrintCalib: nextWizardCalib,
-          wizardTestCopyCount,
-        }),
-      });
-      const json = await res.json();
-      if (!json?.success) return false;
-      setWizardCalibSource(WIZARD_CALIB_SOURCE_SEPARATE);
-      setWizardCalib(
-        normalizeWizardPrintCalib(
-          json.wizardPrintCalib,
-          template,
-          previewFields,
-          wizardTestCopyCount
-        )
-      );
-      return true;
-    } catch {
-      return false;
-    }
-  };
 
   const loadPrinterCalibration = async (name) => {
     const trimmed = String(name || "").trim();
@@ -608,7 +561,10 @@ export default function ChequePrintSettingsModal({
     });
   };
 
-  const handleReset = () => setCalib(defaults);
+  const handleReset = () =>
+    setCalib(
+      normalizeWizardPrintCalib(defaults, template, previewFields, wizardTestCopyCount)
+    );
 
   const handleSavePrinter = async () => {
     const name = printerName.trim();
@@ -626,7 +582,12 @@ export default function ChequePrintSettingsModal({
         body: JSON.stringify({
           templateKey,
           printerName: name,
-          printCalib: calib,
+          printCalib: wizardPrintCalibPayload(
+            calib,
+            template,
+            previewFields,
+            wizardTestCopyCount
+          ),
           isDefault: true,
         }),
       });
@@ -658,9 +619,13 @@ export default function ChequePrintSettingsModal({
         body: JSON.stringify({
           templateKey,
           printCalibOnly: true,
-          printCalib: calib,
-          wizardCalibSource,
-          wizardPrintCalib: wizardCalib,
+          printCalib: wizardPrintCalibPayload(
+            calib,
+            template,
+            previewFields,
+            wizardTestCopyCount
+          ),
+          wizardCalibSource: WIZARD_CALIB_SOURCE_SHARED,
           wizardTestCopyCount,
         }),
       });
@@ -669,26 +634,18 @@ export default function ChequePrintSettingsModal({
         setError(json?.error || "فشل حفظ الإعدادات");
         return;
       }
-      const saved = normalizePrintCalib(json.printCalib, template, previewFields);
+      const saved = normalizeWizardPrintCalib(
+        json.printCalib,
+        template,
+        previewFields,
+        wizardTestCopyCount
+      );
       setCalib(saved);
-      if (json.wizardCalibSource != null) {
-        setWizardCalibSource(normalizeWizardCalibSource(json.wizardCalibSource));
-      }
-      if (json.wizardPrintCalib) {
-        setWizardCalib(
-          normalizeWizardPrintCalib(
-            json.wizardPrintCalib,
-            template,
-            previewFields,
-            wizardTestCopyCount
-          )
-        );
-      }
       if (json.wizardTestCopyCount != null) {
         setWizardTestCopyCount(normalizeWizardTestCopyCount(json.wizardTestCopyCount));
       }
       onSaved?.(saved);
-      setSaveMessage("تم حفظ إعدادات الطباعة (الخط، اللون، والمواضع) للقالب");
+      setSaveMessage("تم حفظ إعدادات الطباعة والمعايرة للقالب");
     } catch {
       setError("خطأ في الاتصال");
     } finally {
@@ -700,7 +657,9 @@ export default function ChequePrintSettingsModal({
     setPrinting(true);
     setError("");
     try {
-      const ok = await onPrint?.(mode === "imageOnly" ? resolvedWizardCalib : calib, {
+      const ok = await onPrint?.(
+        mode === "imageOnly" ? resolvedWizardCalib : calib,
+        {
         printerName: printerName.trim(),
         copyCount: mode === "imageOnly" ? wizardTestCopyCount : undefined,
         printMode: mode,
@@ -747,7 +706,7 @@ export default function ChequePrintSettingsModal({
             <header className="flex shrink-0 items-start justify-between gap-3 border-b border-slate-200 px-4 py-3 md:px-5">
               <div>
                 <p className="text-[11px] font-extrabold text-violet-700">
-                  إعدادات الطباعة فقط
+                  إعدادات الطباعة والمعايرة
                 </p>
                 <h3 className="text-base font-extrabold text-slate-900">
                   {MODE_LABELS[mode] || "ضبط الطباعة"}
@@ -773,10 +732,9 @@ export default function ChequePrintSettingsModal({
                 <strong>Headers and footers</strong> و<strong>Two-sided</strong>.
               </div>
               <div className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-2.5 text-xs font-semibold text-sky-900 leading-relaxed mb-4">
-                إعدادات <strong>الخط واللون والموضع</strong> هنا مرتبطة مع{" "}
-                <strong>طباعة على صك فارغ</strong> و<strong>طباعة الصك والبيانات</strong> — أي
-                تعديل يُطبَّق على الاثنين معاً. زر <strong>طباعة الصك</strong> (صورة فقط) يبقى
-                على إعدادات <strong>Wizard</strong> المنفصلة أدناه.
+                إعدادات واحدة لكل أنواع الطباعة: <strong>صك فارغ</strong>،{" "}
+                <strong>صك مع بيانات</strong>، و<strong>طباعة الصك</strong> — نفس موضع الورقة
+                ومعايرة Wizard.
               </div>
 
               <button
@@ -882,61 +840,20 @@ export default function ChequePrintSettingsModal({
                       </div>
                       <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50/90 p-3">
                         <p className="mb-2 text-xs font-extrabold text-amber-950">
-                          موضع ورقة المعايرة (Wizard)
+                          موضع النسخ على الورقة (طباعة الصك)
                         </p>
-                        <div className="space-y-2">
-                          <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-amber-100 bg-white px-2.5 py-2">
-                            <input
-                              type="radio"
-                              name="wizard-calib-source"
-                              className="mt-0.5"
-                              checked={wizardCalibSource === WIZARD_CALIB_SOURCE_SHARED}
-                              onChange={() =>
-                                setWizardCalibSource(WIZARD_CALIB_SOURCE_SHARED)
-                              }
-                            />
-                            <span className="text-[11px] font-semibold leading-relaxed text-slate-800">
-                              نفس إحداثيات «تحكم بموضع البيانات على الورقة»
-                            </span>
-                          </label>
-                          <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-amber-100 bg-white px-2.5 py-2">
-                            <input
-                              type="radio"
-                              name="wizard-calib-source"
-                              className="mt-0.5"
-                              checked={wizardCalibSource === WIZARD_CALIB_SOURCE_SEPARATE}
-                              onChange={() => {
-                                setWizardCalibSource(WIZARD_CALIB_SOURCE_SEPARATE);
-                                setWizardCalib((prev) =>
-                                  normalizeWizardPrintCalib(
-                                    prev || calib,
-                                    template,
-                                    previewFields,
-                                    wizardTestCopyCount
-                                  )
-                                );
-                              }}
-                            />
-                            <span className="text-[11px] font-semibold leading-relaxed text-slate-800">
-                              موضع خاص لورقة اختبار المعايرة (Wizard)
-                            </span>
-                          </label>
-                        </div>
-                        {wizardCalibSource === WIZARD_CALIB_SOURCE_SEPARATE ? (
-                          <button
-                            type="button"
-                            onClick={() => setWizardPositionEditorOpen(true)}
-                            className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border-2 border-amber-400 bg-amber-100 px-3 py-2.5 text-[11px] font-extrabold text-amber-950 hover:bg-amber-200"
-                          >
-                            <FiTarget size={14} />
-                            تحكم بموضع الورقة للمعايرة
-                          </button>
-                        ) : (
-                          <p className="mt-2 text-[10px] font-semibold text-amber-900/80">
-                            يستخدم نفس موضع منطقة الصك من زر «تحكم بموضع البيانات» أعلاه.
-                          </p>
-                        )}
-                        <div className="mt-3 rounded-lg border border-amber-100 bg-white px-2.5 py-2.5">
+                        <p className="mb-3 text-[10px] font-semibold text-amber-900/80 leading-relaxed">
+                          نفس إعدادات Wizard — يتحكم بموضع كل نسخة عند طباعة صورة الصك فقط.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => setWizardPositionEditorOpen(true)}
+                          className="mb-3 flex w-full items-center justify-center gap-2 rounded-xl border-2 border-amber-400 bg-amber-100 px-3 py-2.5 text-[11px] font-extrabold text-amber-950 hover:bg-amber-200"
+                        >
+                          <FiTarget size={14} />
+                          تحكم بموضع النسخ على الورقة
+                        </button>
+                        <div className="rounded-lg border border-amber-100 bg-white px-2.5 py-2.5">
                           <p className="mb-2 text-[11px] font-extrabold text-amber-950">
                             عدد النسخ على ورقة المعايرة
                           </p>
@@ -950,7 +867,7 @@ export default function ChequePrintSettingsModal({
                                 type="button"
                                 onClick={() => {
                                   setWizardTestCopyCount(n);
-                                  setWizardCalib((prev) =>
+                                  setCalib((prev) =>
                                     normalizeWizardPrintCalib(
                                       prev,
                                       template,
@@ -1202,22 +1119,19 @@ export default function ChequePrintSettingsModal({
         templateKey={templateKey}
         fields={previewFields}
         calib={resolvedWizardCalib}
-        wizardCalibSource={wizardCalibSource}
+        wizardCalibSource={WIZARD_CALIB_SOURCE_SHARED}
         copyCount={wizardTestCopyCount}
         printerName={printerName}
         imageUrl={wizardImageUrl}
         onApplyCalib={(next) => {
-          if (wizardCalibSource === WIZARD_CALIB_SOURCE_SEPARATE) {
-            setWizardCalib(
-              normalizeWizardPrintCalib(next, template, previewFields, wizardTestCopyCount)
-            );
-          } else {
-            setCalib(normalizePrintCalib(next, template, previewFields));
-          }
+          setCalib(
+            normalizeWizardPrintCalib(next, template, previewFields, wizardTestCopyCount)
+          );
         }}
-        onSaveWizardLayout={saveWizardLayout}
         onSavePrinterCalib={async (saved, name) => {
-          setCalib(normalizePrintCalib(saved, template, previewFields));
+          setCalib(
+            normalizeWizardPrintCalib(saved, template, previewFields, wizardTestCopyCount)
+          );
           writeStoredPrinterName(templateKey, name);
           setCalibrationList(await fetchPrinterCalibrationList(templateKey));
           setSaveMessage(`تم حفظ معايرة الطابعة «${name}» من Wizard`);
@@ -1245,9 +1159,9 @@ export default function ChequePrintSettingsModal({
       <ChequePrintPositionEditor
         open={wizardPositionEditorOpen}
         onClose={() => setWizardPositionEditorOpen(false)}
-        calib={wizardCalib}
+        calib={calibWithCopies}
         onCalibChange={(next) =>
-          setWizardCalib(
+          setCalib(
             normalizeWizardPrintCalib(next, template, previewFields, wizardTestCopyCount)
           )
         }
@@ -1259,15 +1173,14 @@ export default function ChequePrintSettingsModal({
         textFieldLayout={textFieldLayout}
         canSave={canSave}
         purpose="wizard"
-        wizardCalibSource={WIZARD_CALIB_SOURCE_SEPARATE}
+        wizardCalibSource={WIZARD_CALIB_SOURCE_SHARED}
         wizardCopyCount={wizardTestCopyCount}
         onSaved={(saved, json) => {
-          setWizardCalib(saved);
-          setWizardCalibSource(WIZARD_CALIB_SOURCE_SEPARATE);
+          setCalib(saved);
           if (json?.wizardTestCopyCount != null) {
             setWizardTestCopyCount(normalizeWizardTestCopyCount(json.wizardTestCopyCount));
           }
-          setSaveMessage("تم حفظ مواضع النسخ للمعايرة");
+          setSaveMessage("تم حفظ مواضع النسخ — تُستخدم في طباعة الصك");
         }}
       />
     </>

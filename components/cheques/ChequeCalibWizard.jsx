@@ -116,18 +116,6 @@ export default function ChequeCalibWizard({
       const next = buildAdjustedCalib();
       onApplyCalib?.(next);
 
-      if (wizardCalibSource === "separate") {
-        if (onSaveWizardLayout) {
-          const ok = await onSaveWizardLayout(next);
-          if (!ok) {
-            setError("فشل حفظ موضع ورقة المعايرة");
-            return;
-          }
-        }
-        handleClose();
-        return;
-      }
-
       const res = await fetch("/api/cheques/calibration", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

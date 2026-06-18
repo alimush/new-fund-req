@@ -18,6 +18,7 @@ import {
   normalizeWizardCalibSource,
   printCalibPayload,
   wizardPrintCalibPayload,
+  WIZARD_CALIB_SOURCE_SHARED,
 } from "@/lib/cheques/printCalib";
 import { normalizeWizardPrintCalib } from "@/lib/cheques/wizardCopyLayouts";
 import { normalizeWizardTestCopyCount } from "@/lib/cheques/chequePrintPageStyles";
@@ -67,12 +68,17 @@ export async function GET(req) {
 
     const mergedFields =
       data.length > 0 ? mergeTemplateFields(tpl, data) : fieldsFromTemplate(tpl);
-    const printCalib = normalizePrintCalib(doc?.printCalib, tpl, mergedFields);
     const globalFontScale = clampLayoutFontScale(doc?.globalFontScale ?? 100);
     const wizardCalibSource = normalizeWizardCalibSource(doc?.wizardCalibSource);
     const wizardTestCopyCount = normalizeWizardTestCopyCount(doc?.wizardTestCopyCount);
+    const printCalib = normalizeWizardPrintCalib(
+      doc?.printCalib,
+      tpl,
+      mergedFields,
+      wizardTestCopyCount
+    );
     const wizardPrintCalib = normalizeWizardPrintCalib(
-      doc?.wizardPrintCalib,
+      doc?.wizardPrintCalib || doc?.printCalib,
       tpl,
       mergedFields,
       wizardTestCopyCount
@@ -189,28 +195,25 @@ export async function POST(req) {
         existingLayout.length > 0
           ? mergeTemplateFields(tpl, existingLayout)
           : fieldsFromTemplate(tpl);
-      const printCalib = printCalibPayload(body?.printCalib, tpl, existingFields);
       const wizardTestCopyCount = normalizeWizardTestCopyCount(
         body?.wizardTestCopyCount ?? existing?.wizardTestCopyCount
+      );
+      const printCalib = wizardPrintCalibPayload(
+        body?.printCalib,
+        tpl,
+        existingFields,
+        wizardTestCopyCount
       );
       const setFields = {
         templateKey,
         printCalib,
+        wizardCalibSource: WIZARD_CALIB_SOURCE_SHARED,
+        wizardPrintCalib: printCalib,
+        wizardTestCopyCount,
         updatedBy: username,
       };
       if (body?.wizardCalibSource != null) {
         setFields.wizardCalibSource = normalizeWizardCalibSource(body.wizardCalibSource);
-      }
-      if (body?.wizardPrintCalib != null) {
-        setFields.wizardPrintCalib = wizardPrintCalibPayload(
-          body.wizardPrintCalib,
-          tpl,
-          existingFields,
-          wizardTestCopyCount
-        );
-      }
-      if (body?.wizardTestCopyCount != null) {
-        setFields.wizardTestCopyCount = wizardTestCopyCount;
       }
       const doc = await ChequeLayout.findOneAndUpdate(
         { templateKey },
