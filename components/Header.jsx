@@ -59,6 +59,7 @@ export default function Header({ onLogout }) {
   const canAccessCheques = hasPermission(permissions, PERMISSIONS.CHEQUES);
 
   const headerTitle = useMemo(() => resolveHeaderTitle(pathname), [pathname]);
+  const isLoginPage = pathname === "/login";
 
   const handleLogout = async () => {
     try {
@@ -101,9 +102,11 @@ export default function Header({ onLogout }) {
         {/* Center title */}
         <div className="flex min-w-0 justify-center px-1">
           <h1
-            onClick={() => router.push("/home")}
+            onClick={isLoginPage ? undefined : () => router.push("/home")}
             title={headerTitle}
-            className="cursor-pointer truncate bg-gradient-to-r from-slate-100 via-white to-slate-200 bg-clip-text text-center text-base font-extrabold tracking-tight text-transparent transition hover:opacity-80 sm:text-lg md:max-w-[min(100%,28rem)] md:text-xl"
+            className={`truncate bg-gradient-to-r from-slate-100 via-white to-slate-200 bg-clip-text text-center text-base font-extrabold tracking-tight text-transparent sm:text-lg md:max-w-[min(100%,28rem)] md:text-xl ${
+              isLoginPage ? "cursor-default" : "cursor-pointer transition hover:opacity-80"
+            }`}
           >
             {headerTitle}
           </h1>
