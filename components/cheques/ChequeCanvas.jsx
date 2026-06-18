@@ -12,6 +12,7 @@ import {
   fieldDisplayHeightPercent,
   fieldWithLayoutFontScale,
   getChequeAspectRatioCss,
+  getChequePhysicalSizeStyle,
   screenFontScaleFromWidth,
 } from "@/lib/cheques/chequeDesignMetrics";
 import {
@@ -20,6 +21,7 @@ import {
   clampTextLayout,
   fieldWithChequeLayout,
   fieldWithChequePosition,
+  getAmountWordsSharedFont,
   layoutFromField,
 } from "@/lib/cheques/textFieldLayout";
 import { mergeAmountWordsLines } from "@/lib/cheques/amountWords";
@@ -65,6 +67,8 @@ export default function ChequeCanvas({
   viewMode = false,
   /** معاينة مواضع الطباعة على صك فارغ — بدون صورة القالب */
   printMode = false,
+  /** عرض الصك بالحجم الفعلي (مم) — مطابق للطباعة */
+  physicalSize = false,
   /** مقياس خط عام من تخطيط القالب (%) */
   globalFontScale = 100,
 }) {
@@ -149,8 +153,15 @@ export default function ChequeCanvas({
           : null;
       if (!layout) return displayField(f);
 
+      const shared = getAmountWordsSharedFont(amountWordsLayout, amountWordsLine2Layout);
       let scaled = displayField(f);
-      if (layout.fontSize != null || layout.fontWeight != null) {
+      if (shared?.fontSize != null || shared?.fontWeight != null) {
+        scaled = displayField({
+          ...f,
+          fontSize: shared.fontSize ?? f.fontSize,
+          fontWeight: shared.fontWeight ?? f.fontWeight,
+        });
+      } else if (layout.fontSize != null || layout.fontWeight != null) {
         scaled = displayField({
           ...f,
           fontSize: layout.fontSize ?? f.fontSize,
@@ -348,6 +359,7 @@ export default function ChequeCanvas({
 
   const renderTextField = () => {
     if (!textBaseField) return null;
+    if (viewMode && !String(values?.[TEXT_KEY] || "").trim()) return null;
 
     const fieldForRender = fieldForCanvasRender(textBaseField);
     const adjustable = textFieldAdjustable && !layoutMode && !viewMode;
@@ -510,18 +522,27 @@ export default function ChequeCanvas({
   };
 
   const showTemplateImage = !printMode;
+  const physicalStyle = physicalSize && template ? getChequePhysicalSizeStyle(template) : null;
 
   return (
     <div
       ref={containerRef}
-      className={`relative w-full mx-auto ${
+      className={`relative mx-auto ${
+        physicalSize ? "shrink-0 shadow-lg ring-1 ring-slate-300/80" : "w-full"
+      } ${
         printMode
           ? "ring-2 ring-dashed ring-slate-400/80 rounded-lg bg-transparent"
           : layoutMode
           ? "ring-2 ring-amber-400 ring-offset-2 rounded-lg"
+          : physicalSize
+          ? "rounded-sm bg-white"
           : ""
       }`}
-      style={{ aspectRatio: getChequeAspectRatioCss(template) }}
+      style={
+        physicalStyle
+          ? physicalStyle
+          : { aspectRatio: getChequeAspectRatioCss(template) }
+      }
     >
       {showTemplateImage ? (
         <Image
@@ -529,8 +550,10 @@ export default function ChequeCanvas({
           alt={template.name}
           fill
           priority
-          className="object-contain pointer-events-none"
-          sizes="(max-width: 1200px) 100vw, 900px"
+          className={`pointer-events-none ${
+            physicalSize ? "object-fill" : "object-contain"
+          }`}
+          sizes={physicalSize ? "178mm" : "(max-width: 1200px) 100vw, 900px"}
         />
       ) : (
         <div
@@ -565,11 +588,15 @@ export default function ChequeCanvas({
           </div>
         ))}
 
-        {canvasFields.map((f) =>
-          renderFieldBox(f, {
+        {canvasFields.map((f) => {
+          if (viewMode) {
+            const val = values?.[f.key];
+            if (val == null || String(val).trim() === "") return null;
+          }
+          return renderFieldBox(f, {
             isLayoutSelected: layoutMode && layoutSelectedKey === f.key,
-          })
-        )}
+          });
+        })}
 
         {renderTextField()}
       </div>

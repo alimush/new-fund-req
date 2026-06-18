@@ -39,6 +39,7 @@ import {
   PRINT_FIELD_LABELS,
   printFieldOffsetKeys,
 } from "@/lib/cheques/printCalib";
+import { AMOUNT_WORDS_KEY, AMOUNT_WORDS_LINE2_KEY } from "@/lib/cheques/textFieldLayout";
 import { normalizeWizardPrintCalib } from "@/lib/cheques/wizardCopyLayouts";
 import {
   normalizeWizardTestCopyCount,
@@ -547,13 +548,25 @@ export default function ChequePrintSettingsModal({
   const patchFieldFont = (fieldKey, field, partial) => {
     setCalib((prev) => {
       const current = getFieldFontStyle(prev, fieldKey, field);
+      const next = { ...current, ...partial };
+      const fieldFontStyles = {
+        ...(prev.fieldFontStyles || {}),
+        [fieldKey]: next,
+      };
+      if (fieldKey === AMOUNT_WORDS_KEY || fieldKey === AMOUNT_WORDS_LINE2_KEY) {
+        fieldFontStyles[AMOUNT_WORDS_KEY] = {
+          ...(prev.fieldFontStyles?.[AMOUNT_WORDS_KEY] || {}),
+          ...next,
+        };
+        fieldFontStyles[AMOUNT_WORDS_LINE2_KEY] = {
+          ...(prev.fieldFontStyles?.[AMOUNT_WORDS_LINE2_KEY] || {}),
+          ...next,
+        };
+      }
       return normalizePrintCalib(
         {
           ...prev,
-          fieldFontStyles: {
-            ...(prev.fieldFontStyles || {}),
-            [fieldKey]: { ...current, ...partial },
-          },
+          fieldFontStyles,
         },
         template,
         previewFields

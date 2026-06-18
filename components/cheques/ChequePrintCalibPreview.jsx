@@ -7,6 +7,8 @@ import { printFontSizeToPreviewPx } from "@/lib/cheques/chequeDesignMetrics";
 import {
   AMOUNT_WORDS_KEY,
   AMOUNT_WORDS_LINE2_KEY,
+  amountWordsPrintCalibKey,
+  fieldWithAmountWordsSharedFont,
   fieldWithChequePosition,
   fieldWithTextLayout,
   layoutFromField,
@@ -101,14 +103,11 @@ export default function ChequePrintCalibPreview({
     const base = fieldByKey[key];
     if (!base) return null;
     const positioned = layout ? fieldWithChequePosition(base, layout) : base;
-    if (layout && (layout.fontSize != null || layout.fontWeight != null)) {
-      return {
-        ...positioned,
-        fontSize: layout.fontSize ?? positioned.fontSize,
-        fontWeight: layout.fontWeight ?? positioned.fontWeight,
-      };
-    }
-    return positioned;
+    return fieldWithAmountWordsSharedFont(
+      positioned,
+      amountWordsLayout,
+      amountWordsLine2Layout
+    );
   };
 
   const amountWordsField = resolveAmountField(AMOUNT_WORDS_KEY, amountWordsLayout);
@@ -317,7 +316,7 @@ export default function ChequePrintCalibPreview({
                   {(() => {
                     const fontStyle = getFieldFontStyle(
                       calib,
-                      AMOUNT_WORDS_LINE2_KEY,
+                      amountWordsPrintCalibKey(AMOUNT_WORDS_LINE2_KEY),
                       amountWordsLine2Field
                     );
                     return (

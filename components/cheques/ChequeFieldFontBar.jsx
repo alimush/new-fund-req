@@ -7,6 +7,7 @@ import {
   AMOUNT_WORDS_KEY,
   AMOUNT_WORDS_LINE2_KEY,
   clampTextLayout,
+  getAmountWordsSharedFont,
   layoutFromField,
 } from "@/lib/cheques/textFieldLayout";
 
@@ -30,22 +31,37 @@ function resolveLayout(fieldKey, field, layouts) {
   if (fieldKey === TEXT_KEY && layouts.textFieldLayout) {
     return layouts.textFieldLayout;
   }
-  if (fieldKey === AMOUNT_WORDS_KEY && layouts.amountWordsLayout) {
-    return layouts.amountWordsLayout;
-  }
-  if (fieldKey === AMOUNT_WORDS_LINE2_KEY && layouts.amountWordsLine2Layout) {
-    return layouts.amountWordsLine2Layout;
+  if (fieldKey === AMOUNT_WORDS_KEY || fieldKey === AMOUNT_WORDS_LINE2_KEY) {
+    return (
+      layouts.amountWordsLayout ||
+      layouts.amountWordsLine2Layout ||
+      null
+    );
   }
   return null;
 }
 
 function resolveFontSize(fieldKey, field, layouts) {
+  if (fieldKey === AMOUNT_WORDS_KEY || fieldKey === AMOUNT_WORDS_LINE2_KEY) {
+    const shared = getAmountWordsSharedFont(
+      layouts.amountWordsLayout,
+      layouts.amountWordsLine2Layout
+    );
+    if (shared?.fontSize != null) return shared.fontSize;
+  }
   const saved = resolveLayout(fieldKey, field, layouts);
   if (saved?.fontSize != null) return saved.fontSize;
   return field?.fontSize ?? 14;
 }
 
 function resolveFontWeight(fieldKey, field, layouts) {
+  if (fieldKey === AMOUNT_WORDS_KEY || fieldKey === AMOUNT_WORDS_LINE2_KEY) {
+    const shared = getAmountWordsSharedFont(
+      layouts.amountWordsLayout,
+      layouts.amountWordsLine2Layout
+    );
+    if (shared?.fontWeight != null) return shared.fontWeight;
+  }
   const saved = resolveLayout(fieldKey, field, layouts);
   if (saved?.fontWeight != null) return saved.fontWeight;
   return field?.fontWeight ?? 700;
@@ -92,11 +108,8 @@ export default function ChequeFieldFontBar({
       );
       return;
     }
-    if (activeField === AMOUNT_WORDS_KEY) {
+    if (activeField === AMOUNT_WORDS_KEY || activeField === AMOUNT_WORDS_LINE2_KEY) {
       onAmountWordsLayoutChange?.(partial);
-      return;
-    }
-    if (activeField === AMOUNT_WORDS_LINE2_KEY) {
       onAmountWordsLine2LayoutChange?.(partial);
       return;
     }

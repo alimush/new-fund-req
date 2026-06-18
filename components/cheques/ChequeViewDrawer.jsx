@@ -217,18 +217,24 @@ export function ChequeViewContent({ chequeId, onReady, className = "" }) {
         </aside>
 
         <div className="flex-1 min-w-0 order-1 xl:order-2">
-          <div className="rounded-3xl border border-slate-200 bg-white p-4 md:p-6 shadow-inner">
-            <ChequeCanvas
-              template={template}
-              fields={mergedFields}
-              values={values}
-              dateShowSlashes={dateShowSlashes}
-              textFieldLayout={textFieldLayout}
-              amountWordsLayout={amountWordsLayout}
-              amountWordsLine2Layout={amountWordsLine2Layout}
-              globalFontScale={globalFontScale}
-              viewMode
-            />
+          <div className="rounded-3xl border border-slate-200/80 bg-white p-3 md:p-5 shadow-[0_24px_70px_-32px_rgba(0,0,0,0.25)]">
+            <p className="hidden md:block text-xs font-bold text-slate-500 mb-3 text-center">
+              معاينة بالحجم الفعلي للصك (17.80 × 8.20 سم)
+            </p>
+            <div className="flex justify-center overflow-x-auto pb-1">
+              <ChequeCanvas
+                template={template}
+                fields={mergedFields}
+                values={values}
+                dateShowSlashes={dateShowSlashes}
+                textFieldLayout={textFieldLayout}
+                amountWordsLayout={amountWordsLayout}
+                amountWordsLine2Layout={amountWordsLine2Layout}
+                globalFontScale={globalFontScale}
+                viewMode
+                physicalSize
+              />
+            </div>
           </div>
         </div>
       </div>

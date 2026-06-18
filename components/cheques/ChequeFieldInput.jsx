@@ -82,6 +82,7 @@ export default function ChequeFieldInput({
   `;
 
   const className = isCanvas ? canvasClass : sidebarClass;
+  const canvasPlaceholder = readOnly ? "" : undefined;
 
   const common = {
     onFocus,
@@ -100,7 +101,7 @@ export default function ChequeFieldInput({
         dir="ltr"
         value={v}
         onChange={(e) => onChange(onlyDatePart(e.target.value, maxLen))}
-        placeholder={field.label}
+        placeholder={canvasPlaceholder ?? field.label}
         className={`${className} text-center`}
         style={textStyle}
         {...common}
@@ -144,7 +145,7 @@ export default function ChequeFieldInput({
           const end = el.selectionEnd ?? v.length;
           onChange(singleLineText(`${v.slice(0, start)}${pasted}${v.slice(end)}`));
         }}
-        placeholder={field.label}
+        placeholder={canvasPlaceholder ?? field.label}
         dir="rtl"
         className={[
           className,
@@ -171,7 +172,7 @@ export default function ChequeFieldInput({
       <textarea
         value={v}
         onChange={(e) => onChange(e.target.value)}
-        placeholder={field.label}
+        placeholder={canvasPlaceholder ?? field.label}
         rows={isCanvas ? canvasRows : sidebarRows}
         dir="rtl"
         wrap="soft"
@@ -204,7 +205,7 @@ export default function ChequeFieldInput({
         value={v}
         readOnly={readOnly || Boolean(field.readOnly)}
         onChange={(e) => !readOnly && !field.readOnly && onChange(e.target.value)}
-        placeholder={field.placeholder || field.label}
+        placeholder={(isCanvas ? canvasPlaceholder : undefined) ?? field.placeholder ?? field.label}
         dir="rtl"
         spellCheck={false}
         autoComplete="off"
@@ -237,7 +238,7 @@ export default function ChequeFieldInput({
       value={v}
       readOnly={readOnly || Boolean(field.readOnly)}
       onChange={(e) => !readOnly && !field.readOnly && onChange(e.target.value)}
-      placeholder={field.placeholder || field.label}
+      placeholder={(isCanvas ? canvasPlaceholder : undefined) ?? field.placeholder ?? field.label}
       dir="rtl"
       className={`${className} text-right`}
       style={textStyle}

@@ -244,6 +244,20 @@ export default function ChequeEditorPage() {
           layoutFromField(mergedFields.find((f) => f.key === AMOUNT_WORDS_KEY));
         return clampTextLayout(fp, base);
       });
+      setAmountWordsLine2Layout((prev) => {
+        const base =
+          prev ||
+          getDefaultAmountWordsLayouts(mergedFields).amountWordsLine2Layout ||
+          layoutFromField(mergedFields.find((f) => f.key === AMOUNT_WORDS_LINE2_KEY));
+        return clampTextLayout(fp, base);
+      });
+      setMergedFields((prev) =>
+        prev.map((f) =>
+          f.key === AMOUNT_WORDS_KEY || f.key === AMOUNT_WORDS_LINE2_KEY
+            ? { ...f, ...fp }
+            : f
+        )
+      );
     }
     if (key === AMOUNT_WORDS_LINE2_KEY) {
       setAmountWordsLine2Layout((prev) => {
@@ -253,6 +267,20 @@ export default function ChequeEditorPage() {
           layoutFromField(mergedFields.find((f) => f.key === AMOUNT_WORDS_LINE2_KEY));
         return clampTextLayout(fp, base);
       });
+      setAmountWordsLayout((prev) => {
+        const base =
+          prev ||
+          getDefaultAmountWordsLayouts(mergedFields).amountWordsLayout ||
+          layoutFromField(mergedFields.find((f) => f.key === AMOUNT_WORDS_KEY));
+        return clampTextLayout(fp, base);
+      });
+      setMergedFields((prev) =>
+        prev.map((f) =>
+          f.key === AMOUNT_WORDS_KEY || f.key === AMOUNT_WORDS_LINE2_KEY
+            ? { ...f, ...fp }
+            : f
+        )
+      );
     }
   }, [mergedFields]);
 
@@ -269,8 +297,20 @@ export default function ChequeEditorPage() {
 
       const fp = fontPartial(partial);
       if (Object.keys(fp).length) {
+        setAmountWordsLine2Layout((prev) => {
+          const defaults = getDefaultAmountWordsLayouts(mergedFields);
+          const base =
+            prev ||
+            defaults.amountWordsLine2Layout ||
+            layoutFromField(mergedFields.find((f) => f.key === AMOUNT_WORDS_LINE2_KEY));
+          return clampTextLayout(fp, base);
+        });
         setMergedFields((prev) =>
-          prev.map((f) => (f.key === AMOUNT_WORDS_KEY ? { ...f, ...fp } : f))
+          prev.map((f) =>
+            f.key === AMOUNT_WORDS_KEY || f.key === AMOUNT_WORDS_LINE2_KEY
+              ? { ...f, ...fp }
+              : f
+          )
         );
       }
     },
@@ -290,8 +330,20 @@ export default function ChequeEditorPage() {
 
       const fp = fontPartial(partial);
       if (Object.keys(fp).length) {
+        setAmountWordsLayout((prev) => {
+          const defaults = getDefaultAmountWordsLayouts(mergedFields);
+          const base =
+            prev ||
+            defaults.amountWordsLayout ||
+            layoutFromField(mergedFields.find((f) => f.key === AMOUNT_WORDS_KEY));
+          return clampTextLayout(fp, base);
+        });
         setMergedFields((prev) =>
-          prev.map((f) => (f.key === AMOUNT_WORDS_LINE2_KEY ? { ...f, ...fp } : f))
+          prev.map((f) =>
+            f.key === AMOUNT_WORDS_KEY || f.key === AMOUNT_WORDS_LINE2_KEY
+              ? { ...f, ...fp }
+              : f
+          )
         );
       }
     },
@@ -678,27 +730,30 @@ export default function ChequeEditorPage() {
           <p className="hidden md:block text-xs font-bold text-slate-500 mb-3 text-center">
             {layoutMode
               ? "لتعديل افتراضي text (المستشار): اختر text واسحبه أو عدّل X/Y — ثم احفظ التخطيط"
-              : "حقل text: حرّكه وكبّره من الصورة (الشريط الأزرق) — حجم الخط من الشريط أسفل الصورة"}
+              : "معاينة بالحجم الفعلي للصك (17.80 × 8.20 سم) — حقل text: حرّكه من الشريط الأزرق"}
           </p>
-          <ChequeCanvas
-            template={template}
-            fields={mergedFields}
-            values={values}
-            onChange={handleValuesChange}
-            activeField={activeField}
-            onFieldFocus={setActiveField}
-            layoutMode={layoutMode}
-            layoutSelectedKey={layoutSelectedKey}
-            onLayoutSelectField={setLayoutSelectedKey}
-            onFieldLayoutChange={handleFieldLayoutChange}
-            dateShowSlashes={dateShowSlashes}
-            textFieldLayout={textFieldLayout}
-            onTextFieldLayoutChange={setTextFieldLayout}
-            amountWordsLayout={amountWordsLayout}
-            amountWordsLine2Layout={amountWordsLine2Layout}
-            textFieldAdjustable={!layoutMode}
-            globalFontScale={globalFontScale}
-          />
+          <div className="flex justify-center overflow-x-auto pb-1">
+            <ChequeCanvas
+              template={template}
+              fields={mergedFields}
+              values={values}
+              onChange={handleValuesChange}
+              activeField={activeField}
+              onFieldFocus={setActiveField}
+              layoutMode={layoutMode}
+              layoutSelectedKey={layoutSelectedKey}
+              onLayoutSelectField={setLayoutSelectedKey}
+              onFieldLayoutChange={handleFieldLayoutChange}
+              dateShowSlashes={dateShowSlashes}
+              textFieldLayout={textFieldLayout}
+              onTextFieldLayoutChange={setTextFieldLayout}
+              amountWordsLayout={amountWordsLayout}
+              amountWordsLine2Layout={amountWordsLine2Layout}
+              textFieldAdjustable={!layoutMode}
+              globalFontScale={globalFontScale}
+              physicalSize
+            />
+          </div>
           {!layoutMode ? (
             <ChequeFieldFontBar
               activeField={activeField}
