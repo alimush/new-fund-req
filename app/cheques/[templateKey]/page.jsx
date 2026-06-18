@@ -14,6 +14,7 @@ import {
 } from "react-icons/fi";
 import { printChequeData, printChequeImageOnly, printChequeWithImage } from "@/lib/cheques/printCheque";
 import { defaultPrintCalib } from "@/lib/cheques/printCalib";
+import { syncPrintCalibFontsFromLayout } from "@/lib/cheques/chequeFontSync";
 import ChequePrintSettingsModal from "@/components/cheques/ChequePrintSettingsModal";
 import { getChequeTemplate, isValidChequeTemplateKey } from "@/lib/cheques/templates";
 import {
@@ -157,6 +158,25 @@ export default function ChequeEditorPage() {
       cancelled = true;
     };
   }, [templateKey, baseTemplate, loadLayout]);
+
+  const layoutFontLayouts = useMemo(
+    () => ({
+      textFieldLayout,
+      amountWordsLayout,
+      amountWordsLine2Layout,
+    }),
+    [textFieldLayout, amountWordsLayout, amountWordsLine2Layout]
+  );
+
+  const syncedPrintCalib = useMemo(() => {
+    if (!printCalib || !baseTemplate || !mergedFields.length) return printCalib;
+    return syncPrintCalibFontsFromLayout(
+      printCalib,
+      mergedFields,
+      baseTemplate,
+      layoutFontLayouts
+    );
+  }, [printCalib, mergedFields, baseTemplate, layoutFontLayouts]);
 
   const handleValuesChange = useCallback((next) => {
     setValues((prev) => {
@@ -395,7 +415,7 @@ export default function ChequeEditorPage() {
 
   const quickPrint = async (mode) => {
     if (!template || layoutMode) return;
-    await runPrint(mode, null, false);
+    await runPrint(mode, syncedPrintCalib, Boolean(syncedPrintCalib));
   };
 
   const runPrint = async (mode, calib, useProvidedCalib = false, printerName = "", copyCount, printMode) => {
@@ -702,7 +722,7 @@ export default function ChequeEditorPage() {
         mode={printModal.mode}
         template={template}
         templateKey={templateKey}
-        initialCalib={printCalib}
+        initialCalib={syncedPrintCalib}
         canSave={canManagePrintSettings}
         previewFields={mergedFields}
         previewValues={values}

@@ -1,5 +1,6 @@
 "use client";
 
+import { useLayoutEffect, useRef } from "react";
 import { Cairo } from "next/font/google";
 import { only2Digits, formatAmount } from "@/lib/voucher/utils";
 import { onlyDatePart } from "@/lib/cheques/dateUtils";
@@ -13,6 +14,11 @@ const cairo = Cairo({
 
 const fontFamily = cairo.style.fontFamily;
 const CANVAS_TEXT_COLOR = "#0f172a";
+const CANVAS_TEXT_LINE_HEIGHT = 1.5;
+
+function canvasTextMinHeightPx(fontPx) {
+  return Math.ceil(fontPx * CANVAS_TEXT_LINE_HEIGHT + 8);
+}
 
 function fieldTextStyle(field, isCanvas, designScale = 1) {
   const weight = field?.fontWeight ?? 700;
@@ -47,13 +53,25 @@ export default function ChequeFieldInput({
     field?.key === "amountWords" || field?.key === "amountWordsLine2";
   const textStyle = fieldTextStyle(field, isCanvas, scale);
 
+  const isSingleLineCanvasText = isCanvas && field?.type === "text";
+  const canvasFontPx = isCanvas ? fieldDesignFontPx(field, 14) * scale : 0;
+  const canvasTextRef = useRef(null);
+
+  useLayoutEffect(() => {
+    if (!isSingleLineCanvasText) return;
+    const el = canvasTextRef.current;
+    if (!el) return;
+    el.style.height = "0px";
+    el.style.height = `${Math.max(canvasTextMinHeightPx(canvasFontPx), el.scrollHeight + 4)}px`;
+  }, [isSingleLineCanvasText, v, canvasFontPx, field?.fontWeight, field?.fontSize]);
+
   const canvasClass = `
-    w-full h-full bg-transparent border-0 outline-none resize-none
-    text-[#0f172a] leading-tight
+    w-full ${isSingleLineCanvasText ? "h-auto" : "h-full leading-tight"} bg-transparent border-0 outline-none resize-none
+    text-[#0f172a]
     placeholder:text-slate-400/80 placeholder:font-semibold
     rounded-sm transition-shadow
     ${!field?.fontSize && isCanvas ? "font-extrabold" : ""}
-    ${isActive ? "ring-2 ring-emerald-500 ring-offset-1 bg-emerald-50/30" : "focus:ring-2 focus:ring-emerald-500/50"}
+    ${isActive ? "ring-2 ring-emerald-500 ring-inset bg-emerald-50/30" : "focus:ring-2 focus:ring-emerald-500/50"}
   `;
 
   const sidebarClass = `
@@ -171,6 +189,42 @@ export default function ChequeFieldInput({
         style={{
           ...textStyle,
           verticalAlign: "top",
+        }}
+        {...common}
+      />
+    );
+  }
+
+  if (field.type === "text" && isSingleLineCanvasText) {
+    const minH = canvasTextMinHeightPx(canvasFontPx);
+    return (
+      <textarea
+        ref={canvasTextRef}
+        rows={1}
+        value={v}
+        readOnly={readOnly || Boolean(field.readOnly)}
+        onChange={(e) => !readOnly && !field.readOnly && onChange(e.target.value)}
+        placeholder={field.placeholder || field.label}
+        dir="rtl"
+        spellCheck={false}
+        autoComplete="off"
+        autoCorrect="off"
+        onKeyDown={(e) => {
+          if (e.key === "Enter") e.preventDefault();
+        }}
+        className={`${className} text-right block whitespace-nowrap overflow-x-auto overflow-y-visible`}
+        style={{
+          ...textStyle,
+          lineHeight: CANVAS_TEXT_LINE_HEIGHT,
+          minHeight: `${minH}px`,
+          height: `${minH}px`,
+          paddingTop: "5px",
+          paddingBottom: "5px",
+          paddingLeft: 0,
+          paddingRight: 0,
+          boxSizing: "border-box",
+          overflowY: "visible",
+          fieldSizing: "content",
         }}
         {...common}
       />

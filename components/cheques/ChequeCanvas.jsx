@@ -9,6 +9,7 @@ import { getTodayDateParts, slashPositionBetween } from "@/lib/cheques/dateUtils
 import { isCanvasField } from "@/lib/cheques/templates";
 import {
   fieldDesignFontPx,
+  fieldDisplayHeightPercent,
   fieldWithLayoutFontScale,
   getChequeAspectRatioCss,
   screenFontScaleFromWidth,
@@ -32,13 +33,16 @@ const cairo = Cairo({
 const DATE_ORDER = ["dateDay", "dateMonth", "dateYear"];
 const TEXT_KEY = "text";
 
-const fieldStyle = (f) => ({
-  position: "absolute",
-  top: `${f.top}%`,
-  left: `${f.left}%`,
-  width: `${f.width}%`,
-  height: `${f.height}%`,
-});
+function fieldBoxStyle(f, template, globalFontScale) {
+  const height = fieldDisplayHeightPercent(f, template, globalFontScale);
+  return {
+    position: "absolute",
+    top: `${f.top}%`,
+    left: `${f.left}%`,
+    width: `${f.width}%`,
+    height: `${height}%`,
+  };
+}
 
 export default function ChequeCanvas({
   template,
@@ -353,7 +357,7 @@ export default function ChequeCanvas({
     return (
       <div
         key={TEXT_KEY}
-        style={fieldStyle(fieldForRender)}
+        style={fieldBoxStyle(fieldForRender, template, globalFontScale)}
         className={`z-20 flex flex-col items-stretch justify-start ${
           adjustable ? "ring-2 ring-sky-400/80 ring-offset-1 rounded-sm" : ""
         } ${
@@ -428,13 +432,18 @@ export default function ChequeCanvas({
     const { isLayoutSelected = false, extraClass = "" } = opts;
     const fieldForRender = fieldForCanvasRender(f);
     const isActive = !viewMode && !layoutMode && activeField === f.key;
+    const isSingleLineText = f.type === "text";
 
     return (
       <div
         key={f.key}
         ref={f.key === AMOUNT_WORDS_KEY ? amountWordsLine1BoxRef : undefined}
-        style={fieldStyle(fieldForRender)}
-        className={`flex flex-col items-stretch justify-start transition-opacity ${
+        style={fieldBoxStyle(fieldForRender, template, globalFontScale)}
+        className={`transition-opacity overflow-visible ${
+          isSingleLineText
+            ? "flex items-center"
+            : "flex flex-col items-stretch justify-start"
+        } ${
           isActive ? "z-30" : "z-10"
         } ${extraClass} ${
           viewMode
@@ -461,7 +470,7 @@ export default function ChequeCanvas({
           }
         }}
       >
-        <div className="relative flex-1 min-h-0 flex flex-col">
+        {isSingleLineText ? (
           <ChequeFieldInput
             field={fieldForRender}
             value={values?.[f.key]}
@@ -477,7 +486,25 @@ export default function ChequeCanvas({
             }}
             onBlur={onFieldBlur}
           />
-        </div>
+        ) : (
+          <div className="relative flex-1 min-h-0 flex flex-col w-full">
+            <ChequeFieldInput
+              field={fieldForRender}
+              value={values?.[f.key]}
+              onChange={(val) => set(f.key, val)}
+              variant="canvas"
+              designScale={fontScale}
+              isActive={!viewMode && (layoutMode ? isLayoutSelected : isActive)}
+              readOnly={isReadOnly}
+              onFocus={() => {
+                if (viewMode) return;
+                if (layoutMode) onLayoutSelectField?.(f.key);
+                else onFieldFocus?.(f.key);
+              }}
+              onBlur={onFieldBlur}
+            />
+          </div>
+        )}
       </div>
     );
   };
