@@ -686,7 +686,7 @@ export default function ChequeEditorPage() {
             className="inline-flex items-center gap-2 text-sm font-bold text-slate-600 hover:text-slate-900 mb-2"
           >
             <FiArrowRight />
-            {isMustasharTemplateKey(templateKey) ? "أفرع المستشار" : "نظام الصكوك"}
+            {isMustasharTemplateKey(templateKey) ? "صكوك مصرف المستشار" : "نظام الصكوك"}
           </Link>
           <h1 className="text-xl md:text-2xl font-extrabold text-slate-900">
             {template.name}
