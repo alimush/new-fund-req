@@ -74,7 +74,7 @@ export default function MustasharBranchesPage() {
             نظام الصكوك
           </Link>
           <h1 className="text-2xl md:text-3xl font-extrabold text-slate-900">
-            صكوك مصرف المستشار — اختر الفرع
+            مصرف المستشار — اختر الفرع
           </h1>
           <p className="mt-2 max-w-2xl text-slate-600 font-semibold text-[15px] leading-relaxed">
             {parentTemplate?.bankName} — نفس مقاس الصك ومواضع البيانات وحجم الخط لكل

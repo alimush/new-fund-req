@@ -146,19 +146,13 @@ export default function ChequesHomePage() {
                 </div>
               </div>
               <div className="p-5">
-                {tpl.key !== "mustashar_ghadeer" ? (
-                  <>
-                    <p className="text-slate-700 font-bold text-sm">{tpl.bankName}</p>
-                    <p className="text-slate-500 text-xs font-semibold mt-1 truncate">
-                      {tpl.drawerName}
-                    </p>
-                  </>
+                <p className="text-slate-700 font-bold text-sm">{tpl.bankName}</p>
+                {tpl.key !== "mustashar_ghadeer" && tpl.drawerName ? (
+                  <p className="text-slate-500 text-xs font-semibold mt-1 truncate">
+                    {tpl.drawerName}
+                  </p>
                 ) : null}
-                <span
-                  className={`inline-flex items-center rounded-xl bg-emerald-50 px-3 py-1.5 text-emerald-800 text-sm font-extrabold group-hover:bg-emerald-100 ${
-                    tpl.key === "mustashar_ghadeer" ? "" : "mt-4"
-                  }`}
-                >
+                <span className="mt-4 inline-flex items-center rounded-xl bg-emerald-50 px-3 py-1.5 text-emerald-800 text-sm font-extrabold group-hover:bg-emerald-100">
                   {tpl.key === "mustashar_ghadeer"
                     ? "اختر الفرع ←"
                     : "فتح وإدخال البيانات ←"}
