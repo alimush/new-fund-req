@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import dynamic from "next/dynamic";
 import * as XLSX from "xlsx";
 import {
@@ -87,6 +87,20 @@ export default function ChequeReportsPage() {
   const [q, setQ] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [uploadingId, setUploadingId] = useState(null);
+  const [attachmentsModal, setAttachmentsModal] = useState({
+    open: false,
+    rowId: null,
+    rowName: "",
+    attachments: [],
+  });
+  const [deleteAttConfirm, setDeleteAttConfirm] = useState({
+    open: false,
+    rowId: null,
+    att: null,
+  });
+  const [deletingAttKey, setDeletingAttKey] = useState(null);
+  const fileInputRefs = useRef({});
   const openCheque = useCallback((row) => {
     if (!row?._id) return;
     window.open(
@@ -95,6 +109,201 @@ export default function ChequeReportsPage() {
       "noopener,noreferrer"
     );
   }, []);
+
+  const openAttachmentsModal = useCallback((row) => {
+    setAttachmentsModal({
+      open: true,
+      rowId: row._id,
+      rowName: row.chequeNumber || row.branchName || row.templateName || "—",
+      attachments: Array.isArray(row.attachments) ? row.attachments : [],
+    });
+  }, []);
+
+  const closeAttachmentsModal = useCallback(() => {
+    setAttachmentsModal({
+      open: false,
+      rowId: null,
+      rowName: "",
+      attachments: [],
+    });
+  }, []);
+
+  const attachmentMatches = useCallback((a, att) => {
+    if (!a || !att) return false;
+    const k = String(att.key || "").trim();
+    const u = String(att.url || "").trim();
+    if (k && String(a.key || "").trim() === k) return true;
+    if (u && String(a.url || "").trim() === u) return true;
+    return false;
+  }, []);
+
+  const requestDeleteAttachment = useCallback((rowId, att) => {
+    if (!rowId || !att) return;
+    const key = String(att.key || "").trim();
+    const url = String(att.url || "").trim();
+    if (!key && !url) {
+      showToast("لا يمكن تحديد هذا الاتاج للحذف.", "warning");
+      return;
+    }
+    setDeleteAttConfirm({ open: true, rowId, att });
+  }, [showToast]);
+
+  const handleDeleteAttachmentConfirmed = useCallback(async () => {
+    const { rowId, att } = deleteAttConfirm;
+    if (!rowId || !att) return;
+
+    const deleteKey = String(att.key || "").trim();
+    const deleteUrl = String(att.url || "").trim();
+    const matchId = deleteKey || deleteUrl;
+    if (!matchId) return;
+
+    try {
+      setDeletingAttKey(matchId);
+      const res = await fetch(`/api/cheques/${encodeURIComponent(String(rowId))}`, {
+        method: "PUT",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...(deleteKey ? { deleteAttachmentKey: deleteKey } : {}),
+          ...(deleteUrl ? { deleteAttachmentUrl: deleteUrl } : {}),
+        }),
+      });
+
+      const json = await res.json();
+      if (!json?.success) {
+        throw new Error(json?.error || "فشل حذف الاتاج");
+      }
+
+      setRows((prev) =>
+        prev.map((x) =>
+          String(x._id) === String(rowId)
+            ? {
+                ...x,
+                attachments: (Array.isArray(x.attachments) ? x.attachments : []).filter(
+                  (a) => !attachmentMatches(a, att)
+                ),
+              }
+            : x
+        )
+      );
+
+      setAttachmentsModal((prev) => ({
+        ...prev,
+        attachments: (Array.isArray(prev.attachments) ? prev.attachments : []).filter(
+          (a) => !attachmentMatches(a, att)
+        ),
+      }));
+
+      setDeleteAttConfirm({ open: false, rowId: null, att: null });
+      showToast("تم حذف الاتاج", "success");
+    } catch (err) {
+      console.error("Delete cheque attachment error:", err);
+      showToast(err.message || "فشل حذف الاتاج", "error");
+    } finally {
+      setDeletingAttKey(null);
+    }
+  }, [deleteAttConfirm, attachmentMatches, showToast]);
+
+  const triggerAttachmentPick = useCallback((rowId) => {
+    const ref = fileInputRefs.current[rowId];
+    if (ref) ref.click();
+  }, []);
+
+  const handleUploadAttachments = useCallback(
+    async (row, files) => {
+      if (!row?._id || !files?.length) return;
+
+      try {
+        setUploadingId(row._id);
+        const uploadedAttachments = [];
+        const branchPart = String(row.branchKey || "main").trim() || "main";
+        const templatePart = String(row.templateKey || "cheque").trim();
+
+        for (const file of files) {
+          const presignRes = await fetch("/api/upload/presign", {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              fileName: file.name,
+              fileType: file.type || "application/octet-stream",
+              prefix: `cheques/${templatePart}/${branchPart}/${row._id}`,
+            }),
+          });
+
+          const presignJson = await presignRes.json();
+          if (!presignJson?.success) {
+            throw new Error(presignJson?.error || "تعذر إنشاء رابط الرفع");
+          }
+
+          const uploadUrl = presignJson.url;
+          const fileKey = presignJson.key;
+          const fileUrl = presignJson.getUrl || "";
+
+          if (!uploadUrl || !fileKey) {
+            throw new Error("استجابة الرفع ناقصة");
+          }
+
+          const uploadRes = await fetch(uploadUrl, {
+            method: "PUT",
+            headers: {
+              "Content-Type": file.type || "application/octet-stream",
+            },
+            body: file,
+          });
+
+          if (!uploadRes.ok) {
+            throw new Error(`فشل رفع ${file.name}`);
+          }
+
+          const attachment = {
+            key: fileKey,
+            name: file.name,
+            url: fileUrl,
+            contentType: file.type || "application/octet-stream",
+            size: file.size || 0,
+            uploadedAt: new Date().toISOString(),
+          };
+
+          const saveRes = await fetch(`/api/cheques/${encodeURIComponent(String(row._id))}`, {
+            method: "PUT",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ attachment }),
+          });
+
+          const saveJson = await saveRes.json();
+          if (!saveJson?.success) {
+            throw new Error(saveJson?.error || `تعذر حفظ ${file.name}`);
+          }
+
+          uploadedAttachments.push(attachment);
+        }
+
+        setRows((prev) =>
+          prev.map((x) =>
+            x._id === row._id
+              ? {
+                  ...x,
+                  attachments: [
+                    ...(Array.isArray(x.attachments) ? x.attachments : []),
+                    ...uploadedAttachments,
+                  ],
+                }
+              : x
+          )
+        );
+
+        showToast("تم رفع الاتاجات بنجاح", "success");
+      } catch (err) {
+        console.error("Upload cheque attachments error:", err);
+        showToast(err.message || "فشل رفع الاتاجات", "error");
+      } finally {
+        setUploadingId(null);
+      }
+    },
+    [showToast]
+  );
 
   const buildQuery = useCallback((p, overrides = null) => {
     const tpl = overrides?.templateFilter ?? templateFilter;
@@ -369,7 +578,7 @@ export default function ChequeReportsPage() {
 
       <div className="rounded-3xl border border-white/70 bg-white/90 backdrop-blur-xl shadow-[0_18px_50px_-30px_rgba(0,0,0,0.2)] overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[960px] text-sm">
+          <table className="w-full min-w-[1100px] text-sm">
             <thead>
               <tr className="bg-gradient-to-l from-slate-50 to-emerald-50/80 border-b border-slate-200">
                 {[
@@ -384,6 +593,7 @@ export default function ChequeReportsPage() {
                   "المبلغ كتابة",
                   "أنشئ بواسطة",
                   "تاريخ الحفظ",
+                  "الاتاجات",
                 ].map((h) => (
                   <th
                     key={h}
@@ -397,13 +607,13 @@ export default function ChequeReportsPage() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={11} className="px-4 py-16 text-center text-slate-500 font-bold">
+                  <td colSpan={12} className="px-4 py-16 text-center text-slate-500 font-bold">
                     جاري التحميل…
                   </td>
                 </tr>
               ) : rows.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="px-4 py-16 text-center text-slate-500 font-bold">
+                  <td colSpan={12} className="px-4 py-16 text-center text-slate-500 font-bold">
                     لا توجد صكوك مطابقة
                   </td>
                 </tr>
@@ -430,7 +640,14 @@ export default function ChequeReportsPage() {
                       {(page - 1) * PAGE_SIZE + idx + 1}
                     </td>
                     <td className="px-3 py-3 font-extrabold text-slate-800 max-w-[140px]">
-                      <span className="line-clamp-2">{r.templateName || r.templateKey}</span>
+                      <span className="line-clamp-2">
+                        {r.branchName || r.templateName || r.templateKey}
+                      </span>
+                      {r.branchName && r.templateName && r.branchName !== r.templateName ? (
+                        <span className="mt-0.5 block text-[11px] font-semibold text-slate-500 line-clamp-1">
+                          {r.templateName}
+                        </span>
+                      ) : null}
                     </td>
                     <td className="px-3 py-3 font-bold text-slate-800 tabular-nums">
                       {r.chequeNumber || "—"}
@@ -454,6 +671,51 @@ export default function ChequeReportsPage() {
                     <td className="px-3 py-3 font-semibold text-slate-500 whitespace-nowrap text-[12px]">
                       {formatSavedAt(r.createdAt)}
                     </td>
+                    <td
+                      className="px-3 py-3 text-right whitespace-nowrap"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <input
+                        type="file"
+                        hidden
+                        multiple
+                        ref={(el) => {
+                          fileInputRefs.current[r._id] = el;
+                        }}
+                        onChange={(e) => {
+                          const files = Array.from(e.target.files || []);
+                          if (files.length) handleUploadAttachments(r, files);
+                          e.target.value = "";
+                        }}
+                      />
+
+                      <div className="flex flex-col items-end gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => triggerAttachmentPick(r._id)}
+                          disabled={uploadingId === r._id}
+                          className={`rounded-xl border px-3 py-1.5 text-[12px] font-extrabold transition ${
+                            uploadingId === r._id
+                              ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
+                              : "border-slate-200 bg-white text-slate-900 hover:bg-slate-50"
+                          }`}
+                        >
+                          {uploadingId === r._id ? "جاري الرفع…" : "رفع مرفق"}
+                        </button>
+
+                        {Array.isArray(r.attachments) && r.attachments.length > 0 ? (
+                          <button
+                            type="button"
+                            onClick={() => openAttachmentsModal(r)}
+                            className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-1.5 text-[12px] font-extrabold text-blue-700 hover:bg-blue-100"
+                          >
+                            عرض الاتاجات ({r.attachments.length})
+                          </button>
+                        ) : (
+                          <span className="text-[11px] text-slate-400">لا يوجد</span>
+                        )}
+                      </div>
+                    </td>
                   </tr>
                 ))
               )}
@@ -469,6 +731,140 @@ export default function ChequeReportsPage() {
           />
         </div>
       </div>
+
+      <AnimatePresence>
+        {attachmentsModal.open && (
+          <motion.div
+            className="fixed inset-0 z-[99999] bg-black/40 flex items-center justify-center p-4"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={closeAttachmentsModal}
+          >
+            <motion.div
+              initial={{ scale: 0.96, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.96, opacity: 0 }}
+              transition={{ duration: 0.18 }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-2xl rounded-3xl bg-white shadow-2xl border border-slate-200 overflow-hidden"
+            >
+              <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={closeAttachmentsModal}
+                  className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-slate-700 font-extrabold hover:bg-slate-50"
+                >
+                  إغلاق
+                </button>
+
+                <div className="text-right">
+                  <div className="text-lg font-extrabold text-slate-900">الاتاجات</div>
+                  <div className="text-sm text-slate-500 font-bold">
+                    الصك: {attachmentsModal.rowName}
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-5 max-h-[70vh] overflow-y-auto space-y-3">
+                {attachmentsModal.attachments.length > 0 ? (
+                  attachmentsModal.attachments.map((att, idx) => (
+                    <div
+                      key={`${att.key || att.name}-${idx}`}
+                      className="rounded-2xl border border-slate-200 p-4 flex items-center justify-between gap-3"
+                    >
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          disabled={Boolean(deletingAttKey)}
+                          onClick={() =>
+                            requestDeleteAttachment(attachmentsModal.rowId, att)
+                          }
+                          className="px-3 py-2 rounded-xl border border-red-200 bg-red-50 text-red-700 text-[13px] font-extrabold hover:bg-red-100 disabled:opacity-50"
+                        >
+                          حذف الاتاج
+                        </button>
+                        <a
+                          href={att?.url ? encodeURI(att.url) : "#"}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-3 py-2 rounded-xl border border-blue-200 bg-blue-50 text-blue-700 text-[13px] font-extrabold hover:bg-blue-100"
+                        >
+                          فتح
+                        </a>
+                      </div>
+
+                      <div className="text-right min-w-0">
+                        <div className="font-extrabold text-slate-900 truncate">
+                          {att.name || `ملف ${idx + 1}`}
+                        </div>
+                        <div className="text-xs text-slate-500 truncate">
+                          {att.contentType || "—"}
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-center text-slate-500 font-extrabold py-8">
+                    لا توجد اتاجات
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {deleteAttConfirm.open && deleteAttConfirm.att && (
+          <motion.div
+            className="fixed inset-0 z-[100000] bg-black/45 flex items-center justify-center p-4"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() =>
+              !deletingAttKey &&
+              setDeleteAttConfirm({ open: false, rowId: null, att: null })
+            }
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl border border-slate-200 text-right"
+            >
+              <h3 className="text-lg font-extrabold text-slate-900">تأكيد حذف الاتاج</h3>
+              <p className="mt-3 text-sm text-slate-600 leading-relaxed">
+                هل تريد حذف الملف التالي من هذا الصك؟ لا يمكن التراجع عن هذه العملية.
+              </p>
+              <p className="mt-2 rounded-xl bg-slate-50 border border-slate-200 px-3 py-2 text-sm font-extrabold text-slate-900 truncate">
+                {deleteAttConfirm.att.name || "ملف مرفق"}
+              </p>
+              <div className="mt-6 flex flex-row-reverse gap-3">
+                <button
+                  type="button"
+                  disabled={Boolean(deletingAttKey)}
+                  onClick={handleDeleteAttachmentConfirmed}
+                  className="flex-1 rounded-xl bg-red-600 py-2.5 text-sm font-extrabold text-white hover:bg-red-700 disabled:opacity-50"
+                >
+                  {deletingAttKey ? "جاري الحذف…" : "تأكيد الحذف"}
+                </button>
+                <button
+                  type="button"
+                  disabled={Boolean(deletingAttKey)}
+                  onClick={() =>
+                    setDeleteAttConfirm({ open: false, rowId: null, att: null })
+                  }
+                  className="flex-1 rounded-xl border border-slate-300 bg-white py-2.5 text-sm font-extrabold text-slate-800 hover:bg-slate-50 disabled:opacity-50"
+                >
+                  إلغاء
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

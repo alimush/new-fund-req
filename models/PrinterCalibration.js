@@ -17,6 +17,11 @@ const PrintCalibNestedSchema = new mongoose.Schema(
     globalTextColor: { type: String, default: "#0f172a" },
     fieldOffsets: { type: mongoose.Schema.Types.Mixed, default: {} },
     fieldFontStyles: { type: mongoose.Schema.Types.Mixed, default: {} },
+    wizardGuideStyle: {
+      type: String,
+      enum: ["coordinates", "frame"],
+      default: "coordinates",
+    },
   },
   { _id: false }
 );

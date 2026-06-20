@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { FiPrinter, FiSave, FiX, FiRotateCcw, FiTarget, FiMove } from "react-icons/fi";
+import { FiPrinter, FiSave, FiX, FiRotateCcw, FiTarget, FiMove, FiBookmark } from "react-icons/fi";
 import ChequePrintCalibPreview from "@/components/cheques/ChequePrintCalibPreview";
 import ChequeCalibWizard from "@/components/cheques/ChequeCalibWizard";
 import ChequePrintPositionEditor from "@/components/cheques/ChequePrintPositionEditor";
@@ -409,6 +409,10 @@ export default function ChequePrintSettingsModal({
   const [positionEditorOpen, setPositionEditorOpen] = useState(false);
   const [wizardPositionEditorOpen, setWizardPositionEditorOpen] = useState(false);
   const [wizardTestCopyCount, setWizardTestCopyCount] = useState(WIZARD_TEST_COPY_DEFAULT);
+  const [baselineLabelDraft, setBaselineLabelDraft] = useState("");
+  const [savedBaselineLabel, setSavedBaselineLabel] = useState("");
+  const [savedBaselineCalib, setSavedBaselineCalib] = useState(null);
+  const [savingBaseline, setSavingBaseline] = useState(false);
 
   const defaults = useMemo(
     () => defaultPrintCalib(template, previewFields),
@@ -462,6 +466,21 @@ export default function ChequePrintSettingsModal({
             setCalib(
               normalizeWizardPrintCalib(json.printCalib, template, previewFields, count)
             );
+          }
+          const baselineLabel = String(json.printCalibBaselineLabel || "").trim();
+          setSavedBaselineLabel(baselineLabel);
+          setBaselineLabelDraft(baselineLabel);
+          if (json.printCalibBaseline) {
+            setSavedBaselineCalib(
+              normalizeWizardPrintCalib(
+                json.printCalibBaseline,
+                template,
+                previewFields,
+                count
+              )
+            );
+          } else {
+            setSavedBaselineCalib(null);
           }
         })
         .catch(() => {});
@@ -578,6 +597,109 @@ export default function ChequePrintSettingsModal({
     setCalib(
       normalizeWizardPrintCalib(defaults, template, previewFields, wizardTestCopyCount)
     );
+
+  const handleSaveBaseline = async () => {
+    if (!canSave || !templateKey) return;
+    setSavingBaseline(true);
+    setError("");
+    setSaveMessage("");
+    try {
+      const label = baselineLabelDraft.trim() || "المرجع المحفوظ";
+      const res = await fetch("/api/cheques/layout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          templateKey,
+          savePrintCalibBaseline: true,
+          printCalibBaselineLabel: label,
+          printCalib: wizardPrintCalibPayload(
+            calib,
+            template,
+            previewFields,
+            wizardTestCopyCount
+          ),
+          wizardTestCopyCount,
+        }),
+      });
+      const json = await res.json();
+      if (!json?.success) {
+        setError(json?.error || "فشل حفظ المرجع");
+        return;
+      }
+      const savedLabel = String(json.printCalibBaselineLabel || label).trim();
+      const saved = normalizeWizardPrintCalib(
+        json.printCalibBaseline,
+        template,
+        previewFields,
+        wizardTestCopyCount
+      );
+      setSavedBaselineLabel(savedLabel);
+      setBaselineLabelDraft(savedLabel);
+      setSavedBaselineCalib(saved);
+      setSaveMessage(`تم حفظ المرجع «${savedLabel}» — استخدم زر العودة للاستعادة`);
+    } catch {
+      setError("خطأ في الاتصال");
+    } finally {
+      setSavingBaseline(false);
+    }
+  };
+
+  const handleRestoreBaseline = async () => {
+    if (!savedBaselineCalib) {
+      setError("لا يوجد مرجع محفوظ — احفظ المرجع أولاً");
+      return;
+    }
+    const restored = normalizeWizardPrintCalib(
+      savedBaselineCalib,
+      template,
+      previewFields,
+      wizardTestCopyCount
+    );
+    setCalib(restored);
+    setError("");
+    setSaveMessage(
+      savedBaselineLabel
+        ? `تمت العودة للمرجع «${savedBaselineLabel}»`
+        : "تمت العودة للمرجع المحفوظ"
+    );
+
+    if (!canSave || !templateKey) return;
+    try {
+      const res = await fetch("/api/cheques/layout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          templateKey,
+          printCalibOnly: true,
+          printCalib: wizardPrintCalibPayload(
+            restored,
+            template,
+            previewFields,
+            wizardTestCopyCount
+          ),
+          wizardCalibSource: WIZARD_CALIB_SOURCE_SHARED,
+          wizardTestCopyCount,
+        }),
+      });
+      const json = await res.json();
+      if (!json?.success) return;
+      const saved = normalizeWizardPrintCalib(
+        json.printCalib,
+        template,
+        previewFields,
+        wizardTestCopyCount
+      );
+      setCalib(saved);
+      onSaved?.(saved);
+      setSaveMessage(
+        savedBaselineLabel
+          ? `تمت العودة للمرجع «${savedBaselineLabel}» وتثبيتها للطباعة`
+          : "تمت العودة للمرجع المحفوظ وتثبيتها للطباعة"
+      );
+    } catch {
+      //
+    }
+  };
 
   const handleSavePrinter = async () => {
     const name = printerName.trim();
@@ -761,6 +883,59 @@ export default function ChequePrintSettingsModal({
               <p className="-mt-2 mb-4 text-center text-[10px] font-semibold text-slate-500">
                 افتح محرّراً مرئياً — اسحب الحقول أو منطقة الصك ثم احفظ
               </p>
+
+              {canSave ? (
+                <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50/70 p-3">
+                  <p className="mb-2 text-xs font-extrabold text-emerald-950">
+                    مرجع ثابت لموضع البيانات
+                  </p>
+                  <p className="mb-3 text-[10px] font-semibold text-emerald-900/80 leading-relaxed">
+                    احفظ الإعدادات الحالية باسم — ثم ارجع إليها دائماً بزر واحد حتى بعد
+                    التجربة أو التعديل.
+                  </p>
+                  <label className="mb-2 block rounded-xl border border-emerald-200 bg-white px-3 py-2.5">
+                    <span className="mb-1 block text-xs font-extrabold text-slate-700">
+                      اسم المرجع
+                    </span>
+                    <input
+                      type="text"
+                      value={baselineLabelDraft}
+                      onChange={(e) => setBaselineLabelDraft(e.target.value)}
+                      placeholder="مثال: ضبط الطابعة الرئيسي — يونيو 2026"
+                      className="w-full rounded-lg border border-slate-200 px-2.5 py-2 text-sm font-bold text-slate-900"
+                    />
+                  </label>
+                  {savedBaselineLabel ? (
+                    <p className="mb-2 text-[10px] font-bold text-emerald-800">
+                      المرجع المحفوظ: «{savedBaselineLabel}»
+                    </p>
+                  ) : (
+                    <p className="mb-2 text-[10px] font-semibold text-slate-500">
+                      لم يُحفظ مرجع بعد
+                    </p>
+                  )}
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={handleSaveBaseline}
+                      disabled={savingBaseline || saving || printing}
+                      className="inline-flex flex-1 min-w-[140px] items-center justify-center gap-1.5 rounded-xl border border-emerald-400 bg-emerald-600 px-3 py-2.5 text-xs font-extrabold text-white hover:bg-emerald-700 disabled:opacity-60"
+                    >
+                      <FiBookmark size={14} />
+                      {savingBaseline ? "جاري الحفظ…" : "حفظ المرجع الحالي"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleRestoreBaseline}
+                      disabled={!savedBaselineCalib || savingBaseline || printing}
+                      className="inline-flex flex-1 min-w-[140px] items-center justify-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-xs font-extrabold text-slate-800 hover:bg-slate-50 disabled:opacity-50"
+                    >
+                      <FiRotateCcw size={14} />
+                      العودة للمرجع المحفوظ
+                    </button>
+                  </div>
+                </div>
+              ) : null}
 
               <div className="grid gap-5 xl:grid-cols-[minmax(300px,460px)_1fr]">
                 <div className="xl:sticky xl:top-0 xl:self-start">
@@ -1161,8 +1336,12 @@ export default function ChequePrintSettingsModal({
         values={previewValues}
         dateShowSlashes={dateShowSlashes}
         textFieldLayout={textFieldLayout}
+        amountWordsLayout={amountWordsLayout}
+        amountWordsLine2Layout={amountWordsLine2Layout}
+        layoutFontScale={layoutFontScale}
         canSave={canSave}
         purpose="data"
+        imageUrl={wizardImageUrl}
         onSaved={(saved) => {
           setCalib(saved);
           onSaved?.(saved);

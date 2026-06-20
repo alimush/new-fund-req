@@ -1,11 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { FiCheck, FiPrinter, FiX } from "react-icons/fi";
 import { buildCalibTestPrintHtml } from "@/lib/cheques/buildCalibTestHtml";
 import { runChequePrintHtml } from "@/lib/cheques/runChequePrintHtml";
-import { cmToMm, formatCmFromMm, parseCmInput } from "@/lib/cheques/printCalib";
+import {
+  cmToMm,
+  formatCmFromMm,
+  normalizeWizardGuideStyle,
+  parseCmInput,
+  WIZARD_GUIDE_STYLE_COORDINATES,
+  WIZARD_GUIDE_STYLE_FRAME,
+} from "@/lib/cheques/printCalib";
 
 function ShiftInput({ label, hint, valueMm, onChangeMm }) {
   const [draft, setDraft] = useState(formatCmFromMm(valueMm));
@@ -57,13 +64,26 @@ export default function ChequeCalibWizard({
   const [saving, setSaving] = useState(false);
   const [shiftRightMm, setShiftRightMm] = useState(0);
   const [shiftDownMm, setShiftDownMm] = useState(0);
+  const [guideStyle, setGuideStyle] = useState(WIZARD_GUIDE_STYLE_COORDINATES);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!open) return;
+    setGuideStyle(normalizeWizardGuideStyle(calib?.wizardGuideStyle));
+  }, [open, calib?.wizardGuideStyle]);
 
   const reset = () => {
     setStep(1);
     setShiftRightMm(0);
     setShiftDownMm(0);
+    setGuideStyle(normalizeWizardGuideStyle(calib?.wizardGuideStyle));
     setError("");
+  };
+
+  const handleGuideStyleChange = (style) => {
+    const next = normalizeWizardGuideStyle(style);
+    setGuideStyle(next);
+    onApplyCalib?.({ ...calib, wizardGuideStyle: next });
   };
 
   const handleClose = () => {
@@ -77,7 +97,7 @@ export default function ChequeCalibWizard({
     try {
       const html = buildCalibTestPrintHtml({
         template,
-        printCalib: calib,
+        printCalib: { ...calib, wizardGuideStyle: guideStyle },
         fields,
         imageUrl,
         title: "معايرة الطابعة",
@@ -95,6 +115,7 @@ export default function ChequeCalibWizard({
 
   const buildAdjustedCalib = () => ({
     ...calib,
+    wizardGuideStyle: guideStyle,
     offsetXmm: (Number(calib?.offsetXmm) || 0) + shiftRightMm,
     offsetYmm: (Number(calib?.offsetYmm) || 0) + shiftDownMm,
   });
@@ -184,13 +205,63 @@ export default function ChequeCalibWizard({
 
           {step === 1 ? (
             <div className="space-y-3">
+              <div className="rounded-xl border border-slate-200 bg-slate-50/90 p-3">
+                <p className="mb-2 text-xs font-extrabold text-slate-800">دليل المعايرة على الورقة</p>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <label
+                    className={`flex cursor-pointer items-start gap-2 rounded-xl border px-3 py-2.5 ${
+                      guideStyle === WIZARD_GUIDE_STYLE_COORDINATES
+                        ? "border-violet-400 bg-violet-50 ring-2 ring-violet-200"
+                        : "border-slate-200 bg-white hover:bg-slate-50"
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="wizardGuideStyle"
+                      className="mt-1 accent-violet-600"
+                      checked={guideStyle === WIZARD_GUIDE_STYLE_COORDINATES}
+                      onChange={() => handleGuideStyleChange(WIZARD_GUIDE_STYLE_COORDINATES)}
+                    />
+                    <span>
+                      <span className="block text-xs font-extrabold text-slate-900">إحداثيات</span>
+                      <span className="block text-[10px] font-semibold text-slate-500 mt-0.5">
+                        خطوط متقاطعة + علامات REF + زوايا زرقاء
+                      </span>
+                    </span>
+                  </label>
+                  <label
+                    className={`flex cursor-pointer items-start gap-2 rounded-xl border px-3 py-2.5 ${
+                      guideStyle === WIZARD_GUIDE_STYLE_FRAME
+                        ? "border-red-400 bg-red-50 ring-2 ring-red-200"
+                        : "border-slate-200 bg-white hover:bg-slate-50"
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="wizardGuideStyle"
+                      className="mt-1 accent-red-600"
+                      checked={guideStyle === WIZARD_GUIDE_STYLE_FRAME}
+                      onChange={() => handleGuideStyleChange(WIZARD_GUIDE_STYLE_FRAME)}
+                    />
+                    <span>
+                      <span className="block text-xs font-extrabold text-slate-900">إطار أحمر</span>
+                      <span className="block text-[10px] font-semibold text-slate-500 mt-0.5">
+                        إطار أحمر حول حدود الصك فقط
+                      </span>
+                    </span>
+                  </label>
+                </div>
+              </div>
               <p className="text-sm font-semibold text-slate-600 leading-relaxed">
                 ستُطبع{" "}
                 <strong>
                   {copyCount === 1 ? "نسخة واحدة" : `${copyCount} نسخ`}
                 </strong>{" "}
                 على ورقة واحدة — كل نسخة بموضعها المحفوظ. اطبعها على Scale{" "}
-                <strong>100%</strong> و A4 <strong>أفقي</strong> ثم قارن موضع العلامات.
+                <strong>100%</strong> و A4 <strong>أفقي</strong> ثم{" "}
+                {guideStyle === WIZARD_GUIDE_STYLE_FRAME
+                  ? "قارن الإطار الأحمر مع حدود الصك الفعلي."
+                  : "قارن موضع العلامات."}
               </p>
               <button
                 type="button"
@@ -211,8 +282,18 @@ export default function ChequeCalibWizard({
           {step === 2 ? (
             <div className="space-y-3">
               <p className="text-sm font-semibold text-slate-600 leading-relaxed">
-                إذا كانت العلامات انزاحت على الورقة، أدخل قيم التصحيح بالسنتيمتر.{" "}
-                <strong>يمين = موجب</strong>، <strong>أسفل = موجب</strong>.
+                {guideStyle === WIZARD_GUIDE_STYLE_FRAME ? (
+                  <>
+                    إذا كان <strong>الإطار الأحمر</strong> انزاح عن حدود الصك الفعلي، أدخل قيم
+                    التصحيح بالسنتيمتر. <strong>يمين = موجب</strong>،{" "}
+                    <strong>أسفل = موجب</strong>.
+                  </>
+                ) : (
+                  <>
+                    إذا كانت العلامات انزاحت على الورقة، أدخل قيم التصحيح بالسنتيمتر.{" "}
+                    <strong>يمين = موجب</strong>، <strong>أسفل = موجب</strong>.
+                  </>
+                )}
               </p>
               <div className="grid gap-2 sm:grid-cols-2">
                 <ShiftInput

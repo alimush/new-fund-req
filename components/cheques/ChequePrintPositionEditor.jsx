@@ -5,12 +5,18 @@ import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { FiMove, FiSave, FiX, FiRotateCcw, FiRotateCw } from "react-icons/fi";
 import SheetOrientationControls from "@/components/cheques/SheetOrientationControls";
-import { isCanvasField } from "@/lib/cheques/templates";
+import { isPrintField } from "@/lib/cheques/templates";
 import { slashPositionBetween } from "@/lib/cheques/dateUtils";
 import { printFontSizeToPreviewPx } from "@/lib/cheques/chequeDesignMetrics";
 import {
   fieldWithTextLayout,
   layoutFromField,
+  AMOUNT_WORDS_KEY,
+  AMOUNT_WORDS_LINE2_KEY,
+  amountWordsPrintCalibKey,
+  fieldWithAmountWordsSharedFont,
+  fieldWithChequePosition,
+  getAmountWordsSharedFont,
 } from "@/lib/cheques/textFieldLayout";
 import { getA4PaperSize } from "@/lib/cheques/chequePageSize";
 import {
@@ -18,6 +24,7 @@ import {
   formatCmFromMm,
   getFieldFontStyle,
   getFieldOffset,
+  getImageSheetCalib,
   normalizePrintCalib,
   PRINT_FIELD_LABELS,
   printFieldOffsetKeys,
@@ -34,6 +41,7 @@ import {
 
 const DATE_ORDER = ["dateDay", "dateMonth", "dateYear"];
 const TEXT_KEY = "text";
+const PER_CHEQUE_KEYS = new Set([TEXT_KEY, AMOUNT_WORDS_KEY, AMOUNT_WORDS_LINE2_KEY]);
 const PREVIEW_PAGE_WIDTH_PX = 720;
 
 const DEMO_VALUES = {
@@ -81,7 +89,8 @@ function fieldShiftPx(calib, key, pxPerMm) {
 
 const MODE_LABELS = {
   field: "حقل واحد",
-  sheet: "منطقة الصك",
+  sheet: "منطقة البيانات",
+  imageSheet: "صورة الصك",
   global: "كل البيانات",
 };
 
@@ -96,11 +105,15 @@ export default function ChequePrintPositionEditor({
   values = {},
   dateShowSlashes = true,
   textFieldLayout = null,
+  amountWordsLayout = null,
+  amountWordsLine2Layout = null,
+  layoutFontScale = 100,
   canSave = false,
   onSaved,
   purpose = "data",
   wizardCalibSource = "shared",
   wizardCopyCount = 3,
+  imageUrl = null,
 }) {
   const isWizardPurpose = purpose === "wizard";
   const wizardCopyTotal = Math.max(1, Math.min(3, Math.round(Number(wizardCopyCount) || 3)));
@@ -133,8 +146,28 @@ export default function ChequePrintPositionEditor({
   );
 
   const staticFields = useMemo(
-    () => list.filter((f) => f.key !== TEXT_KEY && isCanvasField(f)),
+    () => list.filter((f) => !PER_CHEQUE_KEYS.has(f.key) && isPrintField(f)),
     [list]
+  );
+
+  const resolveAmountField = useCallback(
+    (key, layout) => {
+      const base = fieldByKey[key];
+      if (!base) return null;
+      const positioned = layout ? fieldWithChequePosition(base, layout) : base;
+      return fieldWithAmountWordsSharedFont(
+        positioned,
+        amountWordsLayout,
+        amountWordsLine2Layout
+      );
+    },
+    [fieldByKey, amountWordsLayout, amountWordsLine2Layout]
+  );
+
+  const amountWordsField = resolveAmountField(AMOUNT_WORDS_KEY, amountWordsLayout);
+  const amountWordsLine2Field = resolveAmountField(
+    AMOUNT_WORDS_LINE2_KEY,
+    amountWordsLine2Layout
   );
 
   const offsetKeys = useMemo(
@@ -164,6 +197,33 @@ export default function ChequePrintPositionEditor({
   const sx = calib.scaleX / 100;
   const sy = calib.scaleY / 100;
   const sheetTransform = chequeSheetTransformStyle(calib);
+
+  const imageSheet = useMemo(
+    () => getImageSheetCalib(calib, template, list),
+    [calib, template, list]
+  );
+  const imageSheetW = imageSheet.widthMm * pxPerMmPage;
+  const imageSheetH = imageSheet.heightMm * pxPerMmPage;
+  const imageSheetTop = imageSheet.pageTopMm * pxPerMmPage;
+  const imageSheetLeft = imageSheet.pageLeftMm * pxPerMmPage;
+  const imageSheetTransform = chequeSheetTransformStyle(imageSheet);
+  const imageSx = imageSheet.scaleX / 100;
+  const imageSy = imageSheet.scaleY / 100;
+  const showImageSheet = !isWizardPurpose && Boolean(imageUrl);
+
+  const previewFontPx = useCallback(
+    (field, fontStyle, fallbackMm = 3.2) =>
+      printFontSizeToPreviewPx(
+        field,
+        template,
+        calib,
+        fontStyle,
+        pxPerMmSheet,
+        fallbackMm,
+        layoutFontScale
+      ),
+    [template, calib, pxPerMmSheet, layoutFontScale]
+  );
 
   const wizardCopyLayouts = useMemo(() => {
     if (!isWizardPurpose) return null;
@@ -212,6 +272,22 @@ export default function ChequePrintPositionEditor({
     [calib, list, onCalibChange, template]
   );
 
+  const patchImageSheet = useCallback(
+    (partial) => {
+      onCalibChange?.(
+        normalizePrintCalib(
+          {
+            ...calib,
+            imageSheet: { ...imageSheet, ...partial },
+          },
+          template,
+          list
+        )
+      );
+    },
+    [calib, imageSheet, list, onCalibChange, template]
+  );
+
   const patchField = useCallback(
     (fieldKey, partial) => {
       onCalibChange?.(
@@ -251,25 +327,42 @@ export default function ChequePrintPositionEditor({
 
   const startSheetDrag = useCallback(
     (e, copyIndex = null) => {
-      if (mode !== "sheet") return;
+      if (mode !== "sheet" && mode !== "imageSheet") return;
       e.preventDefault();
       e.stopPropagation();
       const copy = isWizardPurpose ? copyIndex ?? selectedCopy : null;
       const layout = isWizardPurpose ? wizardCopyLayouts?.[String(copy)] : null;
+      const isImage = mode === "imageSheet";
       dragRef.current = {
-        kind: isWizardPurpose ? "wizard-sheet" : "sheet",
+        kind: isWizardPurpose ? "wizard-sheet" : isImage ? "image-sheet" : "sheet",
         copy,
         startX: e.clientX,
         startY: e.clientY,
-        startTop: isWizardPurpose ? layout?.pageTopMm ?? 0 : calib.pageTopMm,
-        startLeft: isWizardPurpose ? layout?.pageLeftMm ?? 0 : calib.pageLeftMm,
+        startTop: isWizardPurpose
+          ? layout?.pageTopMm ?? 0
+          : isImage
+          ? imageSheet.pageTopMm
+          : calib.pageTopMm,
+        startLeft: isWizardPurpose
+          ? layout?.pageLeftMm ?? 0
+          : isImage
+          ? imageSheet.pageLeftMm
+          : calib.pageLeftMm,
         pxPerMm: pxPerMmPage,
         calibSnap: calib,
+        imageSheetSnap: imageSheet,
       };
 
       const onMove = (ev) => {
         const d = dragRef.current;
-        if (!d || (d.kind !== "sheet" && d.kind !== "wizard-sheet")) return;
+        if (
+          !d ||
+          (d.kind !== "sheet" &&
+            d.kind !== "wizard-sheet" &&
+            d.kind !== "image-sheet")
+        ) {
+          return;
+        }
         const dx = (ev.clientX - d.startX) / d.pxPerMm;
         const dy = (ev.clientY - d.startY) / d.pxPerMm;
         if (d.kind === "wizard-sheet") {
@@ -289,6 +382,21 @@ export default function ChequePrintPositionEditor({
               template,
               list,
               wizardCopyTotal
+            )
+          );
+        } else if (d.kind === "image-sheet") {
+          onCalibChange?.(
+            normalizePrintCalib(
+              {
+                ...d.calibSnap,
+                imageSheet: {
+                  ...d.imageSheetSnap,
+                  pageLeftMm: d.startLeft + dx,
+                  pageTopMm: d.startTop + dy,
+                },
+              },
+              template,
+              list
             )
           );
         } else {
@@ -321,6 +429,7 @@ export default function ChequePrintPositionEditor({
       selectedCopy,
       wizardCopyLayouts,
       calib,
+      imageSheet,
       pxPerMmPage,
       onCalibChange,
       template,
@@ -332,7 +441,7 @@ export default function ChequePrintPositionEditor({
 
   const startSheetRotate = useCallback(
     (e, copyIndex = null) => {
-      if (mode !== "sheet") return;
+      if (mode !== "sheet" && mode !== "imageSheet") return;
       e.preventDefault();
       e.stopPropagation();
 
@@ -341,17 +450,26 @@ export default function ChequePrintPositionEditor({
 
       const copy = isWizardPurpose ? copyIndex ?? selectedCopy : null;
       const layout = isWizardPurpose ? wizardCopyLayouts?.[String(copy)] : null;
+      const isImage = mode === "imageSheet";
       const localTop = isWizardPurpose
         ? (layout?.pageTopMm ?? 0) * pxPerMmPage
+        : isImage
+        ? imageSheetTop
         : sheetTop;
       const localLeft = isWizardPurpose
         ? (layout?.pageLeftMm ?? 0) * pxPerMmPage
+        : isImage
+        ? imageSheetLeft
         : sheetLeft;
       const localW = isWizardPurpose
         ? (layout?.widthMm ?? calib.widthMm) * pxPerMmPage
+        : isImage
+        ? imageSheetW
         : sheetW;
       const localH = isWizardPurpose
         ? (layout?.heightMm ?? calib.heightMm) * pxPerMmPage
+        : isImage
+        ? imageSheetH
         : sheetH;
 
       const pageRect = pageEl.getBoundingClientRect();
@@ -360,21 +478,35 @@ export default function ChequePrintPositionEditor({
       const baseCornerDeg = (Math.atan2(localH, localW) * 180) / Math.PI;
       const startRot = isWizardPurpose
         ? normalizeSheetRotationDeg(layout?.sheetRotationDeg ?? 0)
+        : isImage
+        ? normalizeSheetRotationDeg(imageSheet.sheetRotationDeg)
         : normalizeSheetRotationDeg(calib.sheetRotationDeg);
 
       dragRef.current = {
-        kind: isWizardPurpose ? "wizard-sheet-rotate" : "sheet-rotate",
+        kind: isWizardPurpose
+          ? "wizard-sheet-rotate"
+          : isImage
+          ? "image-sheet-rotate"
+          : "sheet-rotate",
         copy,
         pivotX,
         pivotY,
         baseCornerDeg,
         calibSnap: calib,
+        imageSheetSnap: imageSheet,
         startRot,
       };
 
       const onMove = (ev) => {
         const d = dragRef.current;
-        if (!d || (d.kind !== "sheet-rotate" && d.kind !== "wizard-sheet-rotate")) return;
+        if (
+          !d ||
+          (d.kind !== "sheet-rotate" &&
+            d.kind !== "wizard-sheet-rotate" &&
+            d.kind !== "image-sheet-rotate")
+        ) {
+          return;
+        }
         const pointerDeg =
           (Math.atan2(ev.clientY - d.pivotY, ev.clientX - d.pivotX) * 180) / Math.PI;
         const nextRot = normalizeSheetRotationDeg(pointerDeg - d.baseCornerDeg);
@@ -392,6 +524,17 @@ export default function ChequePrintPositionEditor({
               template,
               list,
               wizardCopyTotal
+            )
+          );
+        } else if (d.kind === "image-sheet-rotate") {
+          onCalibChange?.(
+            normalizePrintCalib(
+              {
+                ...d.calibSnap,
+                imageSheet: { ...d.imageSheetSnap, sheetRotationDeg: nextRot },
+              },
+              template,
+              list
             )
           );
         } else {
@@ -423,6 +566,11 @@ export default function ChequePrintPositionEditor({
       sheetTop,
       sheetW,
       sheetH,
+      imageSheetLeft,
+      imageSheetTop,
+      imageSheetW,
+      imageSheetH,
+      imageSheet,
       calib,
       pxPerMmPage,
       onCalibChange,
@@ -602,17 +750,21 @@ export default function ChequePrintPositionEditor({
               <h2 className="text-lg font-extrabold text-white">
                 {isWizardPurpose
                   ? `A4 عرضي — اسحب كل نسخة من الـ ${wizardCopyTotal} بحرية`
-                  : "A4 عرضي — اسحب الحقول أو منطقة الصك"}
+                  : "A4 عرضي — منطقة البيانات وصورة الصك بشكل مستقل"}
               </h2>
               <p className="mt-0.5 text-xs font-semibold text-slate-400">
                 {isWizardPurpose
                   ? `اختر نسخة ثم حرّكها أو دوّرها بشكل مستقل (١–${wizardCopyTotal})`
-                  : "انقر مرتين على أي حقل لتحديده — اسحب لتغيير موضعه على الورقة البيضاء"}
+                  : "حرّك منطقة البيانات أو صورة الصك — الصورة تظهر فقط عند طباعة الصك والبيانات معاً"}
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               {Object.entries(MODE_LABELS)
-                .filter(([key]) => !isWizardPurpose || key === "sheet")
+                .filter(([key]) => {
+                  if (isWizardPurpose) return key === "sheet";
+                  if (key === "imageSheet") return showImageSheet;
+                  return true;
+                })
                 .map(([key, label]) => (
                 <button
                   key={key}
@@ -714,9 +866,68 @@ export default function ChequePrintPositionEditor({
                   : null}
 
                 {!isWizardPurpose ? (
+                <>
+                {showImageSheet ? (
+                  <div
+                    className="absolute overflow-visible"
+                    style={{
+                      top: imageSheetTop,
+                      left: imageSheetLeft,
+                      width: imageSheetW,
+                      height: imageSheetH,
+                      outline:
+                        mode === "imageSheet"
+                          ? "3px solid #f59e0b"
+                          : "2px dashed #fbbf24",
+                      boxShadow:
+                        mode === "imageSheet"
+                          ? "0 0 0 4px rgba(245,158,11,0.25)"
+                          : "none",
+                      cursor: mode === "imageSheet" ? "move" : "default",
+                      zIndex: 5,
+                      ...imageSheetTransform,
+                    }}
+                    onMouseDown={(e) => {
+                      if (mode === "imageSheet") startSheetDrag(e);
+                    }}
+                  >
+                    <div
+                      className="absolute inset-0 bg-cover bg-center bg-no-repeat"
+                      style={{
+                        backgroundImage: `url(${imageUrl})`,
+                        transform: `scale(${imageSx}, ${imageSy})`,
+                        transformOrigin: "top left",
+                      }}
+                    />
+                    <div className="pointer-events-none absolute left-1 top-1 rounded bg-amber-600/90 px-2 py-0.5 text-[10px] font-extrabold text-white">
+                      صورة الصك
+                    </div>
+                    {mode === "imageSheet" ? (
+                      <>
+                        <div
+                          role="button"
+                          tabIndex={-1}
+                          className="absolute -top-8 left-0 z-50 cursor-move rounded bg-amber-500 px-2 py-1 text-[10px] font-extrabold text-white shadow"
+                          onMouseDown={startSheetDrag}
+                        >
+                          ⋮⋮ اسحب صورة الصك
+                        </div>
+                        <div
+                          role="button"
+                          tabIndex={-1}
+                          title="اسحب لتدوير صورة الصك"
+                          className="absolute -bottom-4 -right-4 z-50 flex h-8 w-8 cursor-grab items-center justify-center rounded-full border-2 border-white bg-amber-500 text-white shadow-lg active:cursor-grabbing"
+                          onMouseDown={startSheetRotate}
+                        >
+                          <FiRotateCw size={14} />
+                        </div>
+                      </>
+                    ) : null}
+                  </div>
+                ) : null}
                 <div
                   ref={sheetRef}
-                  className="absolute overflow-visible bg-white"
+                  className={`absolute overflow-visible ${showImageSheet ? "bg-transparent" : "bg-white"}`}
                   style={{
                     top: sheetTop,
                     left: sheetLeft,
@@ -726,8 +937,12 @@ export default function ChequePrintPositionEditor({
                     boxShadow:
                       mode === "sheet"
                         ? "0 0 0 4px rgba(14,165,233,0.25)"
+                        : showImageSheet
+                        ? "none"
                         : "0 0 0 1px rgba(14,165,233,0.35)",
                     cursor: mode === "sheet" ? "move" : "default",
+                    zIndex: 10,
+                    pointerEvents: mode === "imageSheet" ? "none" : "auto",
                     ...sheetTransform,
                   }}
                   onMouseDown={(e) => {
@@ -741,7 +956,7 @@ export default function ChequePrintPositionEditor({
                       className="absolute -top-8 left-0 z-20 cursor-move rounded bg-sky-600 px-2 py-1 text-[10px] font-extrabold text-white shadow"
                       onMouseDown={startSheetDrag}
                     >
-                      ⋮⋮ اسحب لتحريك منطقة الصك
+                      ⋮⋮ اسحب منطقة البيانات
                     </div>
                   ) : null}
 
@@ -790,13 +1005,7 @@ export default function ChequePrintPositionEditor({
                                 alignItems: "center",
                                 justifyContent: "center",
                                 fontWeight: dateFontStyle.fontWeight,
-                                fontSize: printFontSizeToPreviewPx(
-                                  a || dateField,
-                                  template,
-                                  calib,
-                                  dateFontStyle,
-                                  pxPerMmSheet
-                                ),
+                                fontSize: previewFontPx(a || dateField, dateFontStyle),
                                 color: dateFontStyle.color,
                                 transform: shift
                                   ? `translate(-50%, 0) ${shift}`
@@ -817,13 +1026,7 @@ export default function ChequePrintPositionEditor({
                       if (val == null || val === "") return null;
                       const resolved = resolveFieldOffsetKey(f.key);
                       const fontStyle = getFieldFontStyle(calib, f.key, f);
-                      const fs = printFontSizeToPreviewPx(
-                        f,
-                        template,
-                        calib,
-                        fontStyle,
-                        pxPerMmSheet
-                      );
+                      const fs = previewFontPx(f, fontStyle);
                       const isDate = f.type === "datePart";
                       const isAmount = f.type === "amount" || f.key === "amountNumeric";
                       const shift = fieldShiftPx(calib, f.key, pxPerMmSheet);
@@ -860,6 +1063,101 @@ export default function ChequePrintPositionEditor({
                       );
                     })}
 
+                    {amountWordsField && displayValues?.[AMOUNT_WORDS_KEY] ? (
+                      <div
+                        style={{
+                          ...fieldBox(amountWordsField),
+                          transform: fieldShiftPx(calib, AMOUNT_WORDS_KEY, pxPerMmSheet),
+                          cursor: mode === "field" ? "grab" : "default",
+                          outline:
+                            mode === "field" && selectedKey === AMOUNT_WORDS_KEY
+                              ? "2px dashed #2563eb"
+                              : "1px dashed transparent",
+                          background:
+                            mode === "field" && selectedKey === AMOUNT_WORDS_KEY
+                              ? "rgba(37,99,235,0.06)"
+                              : "transparent",
+                          pointerEvents: mode === "field" ? "auto" : "none",
+                        }}
+                        onMouseDown={(e) => startFieldDrag(e, AMOUNT_WORDS_KEY)}
+                        onDoubleClick={() => setSelectedKey(AMOUNT_WORDS_KEY)}
+                      >
+                        <span
+                          style={{
+                            fontSize: previewFontPx(
+                              amountWordsField,
+                              getFieldFontStyle(calib, AMOUNT_WORDS_KEY, amountWordsField)
+                            ),
+                            fontWeight: getFieldFontStyle(
+                              calib,
+                              AMOUNT_WORDS_KEY,
+                              amountWordsField
+                            ).fontWeight,
+                            width: "100%",
+                            textAlign: "right",
+                            direction: "rtl",
+                            whiteSpace: "nowrap",
+                            overflow: "hidden",
+                            color: getFieldFontStyle(calib, AMOUNT_WORDS_KEY, amountWordsField)
+                              .color,
+                          }}
+                        >
+                          {displayValues[AMOUNT_WORDS_KEY]}
+                        </span>
+                      </div>
+                    ) : null}
+
+                    {amountWordsLine2Field && displayValues?.[AMOUNT_WORDS_LINE2_KEY] ? (
+                      <div
+                        style={{
+                          ...fieldBox(amountWordsLine2Field),
+                          transform: fieldShiftPx(calib, AMOUNT_WORDS_LINE2_KEY, pxPerMmSheet),
+                          cursor: mode === "field" ? "grab" : "default",
+                          outline:
+                            mode === "field" && selectedKey === AMOUNT_WORDS_LINE2_KEY
+                              ? "2px dashed #2563eb"
+                              : "1px dashed transparent",
+                          background:
+                            mode === "field" && selectedKey === AMOUNT_WORDS_LINE2_KEY
+                              ? "rgba(37,99,235,0.06)"
+                              : "transparent",
+                          pointerEvents: mode === "field" ? "auto" : "none",
+                        }}
+                        onMouseDown={(e) => startFieldDrag(e, AMOUNT_WORDS_LINE2_KEY)}
+                        onDoubleClick={() => setSelectedKey(AMOUNT_WORDS_LINE2_KEY)}
+                      >
+                        <span
+                          style={{
+                            fontSize: previewFontPx(
+                              amountWordsLine2Field,
+                              getFieldFontStyle(
+                                calib,
+                                amountWordsPrintCalibKey(AMOUNT_WORDS_LINE2_KEY),
+                                amountWordsLine2Field
+                              )
+                            ),
+                            fontWeight: getFieldFontStyle(
+                              calib,
+                              amountWordsPrintCalibKey(AMOUNT_WORDS_LINE2_KEY),
+                              amountWordsLine2Field
+                            ).fontWeight,
+                            width: "100%",
+                            textAlign: "right",
+                            direction: "rtl",
+                            whiteSpace: "nowrap",
+                            overflow: "hidden",
+                            color: getFieldFontStyle(
+                              calib,
+                              amountWordsPrintCalibKey(AMOUNT_WORDS_LINE2_KEY),
+                              amountWordsLine2Field
+                            ).color,
+                          }}
+                        >
+                          {displayValues[AMOUNT_WORDS_LINE2_KEY]}
+                        </span>
+                      </div>
+                    ) : null}
+
                     {textField && displayValues?.[TEXT_KEY] ? (
                       <div
                         style={{
@@ -881,12 +1179,9 @@ export default function ChequePrintPositionEditor({
                       >
                         <span
                           style={{
-                            fontSize: printFontSizeToPreviewPx(
+                            fontSize: previewFontPx(
                               textField,
-                              template,
-                              calib,
-                              getFieldFontStyle(calib, TEXT_KEY, textField),
-                              pxPerMmSheet
+                              getFieldFontStyle(calib, TEXT_KEY, textField)
                             ),
                             fontWeight: getFieldFontStyle(calib, TEXT_KEY, textField).fontWeight,
                             width: "100%",
@@ -903,6 +1198,7 @@ export default function ChequePrintPositionEditor({
                     ) : null}
                   </div>
                 </div>
+                </>
                 ) : null}
               </div>
             </div>
@@ -979,9 +1275,15 @@ export default function ChequePrintPositionEditor({
                   </div>
                 ) : null}
 
-                {mode === "sheet" ? (
+                {mode === "sheet" || mode === "imageSheet" ? (
                   <div className="space-y-3">
-                    <div className="rounded-xl border border-sky-500/30 bg-sky-500/10 p-3 text-xs font-semibold text-sky-100">
+                    <div
+                      className={`rounded-xl border p-3 text-xs font-semibold ${
+                        mode === "imageSheet"
+                          ? "border-amber-500/30 bg-amber-500/10 text-amber-100"
+                          : "border-sky-500/30 bg-sky-500/10 text-sky-100"
+                      }`}
+                    >
                       {isWizardPurpose ? (
                         <>
                           النسخة <strong>{selectedCopy}</strong> — اسحب الإطار أو المقبض الدائري.
@@ -991,9 +1293,19 @@ export default function ChequePrintPositionEditor({
                             {normalizeSheetRotationDeg(activeCopyLayout?.sheetRotationDeg ?? 0)}°
                           </p>
                         </>
+                      ) : mode === "imageSheet" ? (
+                        <>
+                          اسحب إطار صورة الصك — تُطبع مع البيانات فقط (لا تُطبع عند طباعة البيانات
+                          وحدها).
+                          <p className="mt-2 text-amber-200/80">
+                            من الأعلى: {formatCmFromMm(imageSheet.pageTopMm)} سم — من اليسار:{" "}
+                            {formatCmFromMm(imageSheet.pageLeftMm)} سم — زاوية:{" "}
+                            {normalizeSheetRotationDeg(imageSheet.sheetRotationDeg)}°
+                          </p>
+                        </>
                       ) : (
                         <>
-                          اسحب الإطار للتحريك — أو المقبض الدائري من الزاوية للتدوير الحر.
+                          اسحب إطار البيانات — أو المقبض الدائري من الزاوية للتدوير الحر.
                           <p className="mt-2 text-sky-200/80">
                             من الأعلى: {formatCmFromMm(calib.pageTopMm)} سم — من اليسار:{" "}
                             {formatCmFromMm(calib.pageLeftMm)} سم — زاوية:{" "}
@@ -1008,26 +1320,37 @@ export default function ChequePrintPositionEditor({
                         rotationDeg={
                           isWizardPurpose
                             ? activeCopyLayout?.sheetRotationDeg ?? 0
+                            : mode === "imageSheet"
+                            ? imageSheet.sheetRotationDeg ?? 0
                             : calib.sheetRotationDeg ?? 0
                         }
                         flipHorizontal={Boolean(
                           isWizardPurpose
                             ? activeCopyLayout?.flipHorizontal
+                            : mode === "imageSheet"
+                            ? imageSheet.flipHorizontal
                             : calib.flipHorizontal
                         )}
                         flipVertical={Boolean(
-                          isWizardPurpose ? activeCopyLayout?.flipVertical : calib.flipVertical
+                          isWizardPurpose
+                            ? activeCopyLayout?.flipVertical
+                            : mode === "imageSheet"
+                            ? imageSheet.flipVertical
+                            : calib.flipVertical
                         )}
                         onRotation={(deg) => {
                           if (isWizardPurpose) patchWizardCopy(selectedCopy, { sheetRotationDeg: deg });
+                          else if (mode === "imageSheet") patchImageSheet({ sheetRotationDeg: deg });
                           else patch("sheetRotationDeg", deg);
                         }}
                         onFlipHorizontal={(v) => {
                           if (isWizardPurpose) patchWizardCopy(selectedCopy, { flipHorizontal: v });
+                          else if (mode === "imageSheet") patchImageSheet({ flipHorizontal: v });
                           else patch("flipHorizontal", v);
                         }}
                         onFlipVertical={(v) => {
                           if (isWizardPurpose) patchWizardCopy(selectedCopy, { flipVertical: v });
+                          else if (mode === "imageSheet") patchImageSheet({ flipVertical: v });
                           else patch("flipVertical", v);
                         }}
                       />

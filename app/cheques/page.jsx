@@ -111,16 +111,26 @@ export default function ChequesHomePage() {
         animate="show"
         className="grid gap-6 sm:grid-cols-2"
       >
-        {CHEQUE_TEMPLATES.map((tpl) => (
+        {CHEQUE_TEMPLATES.map((tpl) => {
+          const cardImage =
+            tpl.key === "mustashar_ghadeer"
+              ? "/assets/cheques/branches/mib_main.png"
+              : tpl.image;
+
+          return (
           <motion.div key={tpl.key} variants={item}>
             <Link
-              href={`/cheques/${tpl.key}`}
+              href={
+                tpl.key === "mustashar_ghadeer"
+                  ? "/cheques/mustashar_ghadeer/branches"
+                  : `/cheques/${tpl.key}`
+              }
               className="group block overflow-hidden rounded-3xl border border-white/60 bg-white/70 backdrop-blur-xl shadow-[0_18px_50px_-28px_rgba(0,0,0,0.35)] transition hover:shadow-[0_22px_60px_-24px_rgba(16,185,129,0.35)] hover:-translate-y-1"
             >
               <div
                 className="relative h-36 bg-gradient-to-br from-slate-100 to-slate-200 overflow-hidden"
                 style={{
-                  backgroundImage: `url(${tpl.image})`,
+                  backgroundImage: `url(${cardImage})`,
                   backgroundSize: "cover",
                   backgroundPosition: "center",
                 }}
@@ -141,12 +151,15 @@ export default function ChequesHomePage() {
                   {tpl.drawerName}
                 </p>
                 <span className="mt-4 inline-flex items-center rounded-xl bg-emerald-50 px-3 py-1.5 text-emerald-800 text-sm font-extrabold group-hover:bg-emerald-100">
-                  فتح وإدخال البيانات ←
+                  {tpl.key === "mustashar_ghadeer"
+                    ? "اختر الفرع ←"
+                    : "فتح وإدخال البيانات ←"}
                 </span>
               </div>
             </Link>
           </motion.div>
-        ))}
+          );
+        })}
       </motion.div>
     </div>
   );

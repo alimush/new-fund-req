@@ -83,6 +83,14 @@ export async function GET(req) {
       mergedFields,
       wizardTestCopyCount
     );
+    const printCalibBaseline = doc?.printCalibBaseline
+      ? normalizeWizardPrintCalib(
+          doc.printCalibBaseline,
+          tpl,
+          mergedFields,
+          wizardTestCopyCount
+        )
+      : null;
 
     return NextResponse.json({
       success: true,
@@ -94,6 +102,8 @@ export async function GET(req) {
       wizardPrintCalib,
       wizardTestCopyCount,
       globalFontScale,
+      printCalibBaselineLabel: String(doc?.printCalibBaselineLabel || "").trim(),
+      printCalibBaseline,
       updatedAt: doc?.updatedAt || null,
     });
   } catch (err) {
@@ -122,8 +132,9 @@ export async function POST(req) {
     const templateKey = String(body?.templateKey || "").trim();
     const printCalibOnly = Boolean(body?.printCalibOnly);
     const wizardCalibOnly = Boolean(body?.wizardCalibOnly);
+    const savePrintCalibBaseline = Boolean(body?.savePrintCalibBaseline);
 
-    if (printCalibOnly || wizardCalibOnly) {
+    if (printCalibOnly || wizardCalibOnly || savePrintCalibBaseline) {
       const access = await requireManagePermissions(userId);
       if (!access.ok) return access.res;
     } else {
@@ -142,6 +153,49 @@ export async function POST(req) {
     }
 
     const tpl = getChequeTemplate(templateKey);
+
+    if (savePrintCalibBaseline) {
+      const existing = await ChequeLayout.findOne({ templateKey }).lean();
+      const existingLayout = filterLayoutForTemplate(tpl, existing?.fields || []);
+      const existingFields =
+        existingLayout.length > 0
+          ? mergeTemplateFields(tpl, existingLayout)
+          : fieldsFromTemplate(tpl);
+      const wizardTestCopyCount = normalizeWizardTestCopyCount(
+        body?.wizardTestCopyCount ?? existing?.wizardTestCopyCount
+      );
+      const baseline = wizardPrintCalibPayload(
+        body?.printCalib,
+        tpl,
+        existingFields,
+        wizardTestCopyCount
+      );
+      const label = String(body?.printCalibBaselineLabel || "").trim() || "المرجع المحفوظ";
+      const doc = await ChequeLayout.findOneAndUpdate(
+        { templateKey },
+        {
+          $set: {
+            templateKey,
+            printCalibBaseline: baseline,
+            printCalibBaselineLabel: label,
+            updatedBy: username,
+          },
+        },
+        { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true }
+      ).lean();
+
+      return NextResponse.json({
+        success: true,
+        templateKey,
+        printCalibBaselineLabel: String(doc?.printCalibBaselineLabel || "").trim(),
+        printCalibBaseline: normalizeWizardPrintCalib(
+          doc?.printCalibBaseline,
+          tpl,
+          existingFields,
+          wizardTestCopyCount
+        ),
+      });
+    }
 
     if (wizardCalibOnly) {
       const existing = await ChequeLayout.findOne({ templateKey }).lean();

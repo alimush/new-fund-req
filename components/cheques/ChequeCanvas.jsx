@@ -312,47 +312,6 @@ export default function ChequeCanvas({
     window.addEventListener("mouseup", onUp);
   };
 
-  const startPerChequeResize = (e, currentLayout, onLayoutChange) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const rect = getRect();
-    if (!rect || !currentLayout) return;
-
-    dragRef.current = {
-      mode: "per-cheque-resize",
-      startX: e.clientX,
-      startY: e.clientY,
-      startWidth: currentLayout.width,
-      startHeight: currentLayout.height,
-      rectW: rect.width,
-      rectH: rect.height,
-      layout: currentLayout,
-      onLayoutChange,
-    };
-
-    const onMove = (ev) => {
-      const d = dragRef.current;
-      if (!d || d.mode !== "per-cheque-resize") return;
-      const dw = ((ev.clientX - d.startX) / d.rectW) * 100;
-      const dh = ((ev.clientY - d.startY) / d.rectH) * 100;
-      d.onLayoutChange?.(
-        clampTextLayout(
-          { width: d.startWidth + dw, height: d.startHeight + dh },
-          d.layout
-        )
-      );
-    };
-
-    const onUp = () => {
-      dragRef.current = null;
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-    };
-
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-  };
-
   const renderTextField = () => {
     if (!textBaseField) return null;
     if (viewMode && !String(values?.[TEXT_KEY] || "").trim()) return null;
@@ -367,12 +326,12 @@ export default function ChequeCanvas({
         key={TEXT_KEY}
         style={fieldBoxStyle(fieldForRender, template, globalFontScale)}
         className={`z-20 flex flex-col items-stretch justify-start ${
-          adjustable ? "ring-2 ring-sky-400/80 ring-offset-1 rounded-sm" : ""
-        } ${
           isLayoutSelected
             ? "ring-2 ring-amber-500 rounded-sm bg-amber-100/25 cursor-move"
             : isActive
             ? "ring-2 ring-emerald-500/70 ring-offset-1 rounded-sm"
+            : adjustable
+            ? "ring-2 ring-sky-400/80 ring-offset-1 rounded-sm"
             : ""
         }`}
         onMouseDown={(e) => {
@@ -410,33 +369,26 @@ export default function ChequeCanvas({
 
           {adjustable ? (
             <>
-              <div
-                role="button"
-                tabIndex={-1}
-                title="اسحب لتحريك الحقل"
-                aria-label="تحريك الحقل"
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  startPerChequeMove(e, textDisplayLayout, onTextFieldLayoutChange);
-                }}
-                className="absolute top-0 right-0 z-30 flex h-4 w-4 cursor-move items-center justify-center rounded-bl-sm bg-sky-600/90 text-white shadow-sm hover:bg-sky-700"
-              >
-                <span className="text-[7px] leading-none font-black tracking-tighter">⋮⋮</span>
-              </div>
-              <div
-                role="button"
-                tabIndex={-1}
-                title="اسحب لتكبير/تصغير"
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  startPerChequeResize(e, textDisplayLayout, onTextFieldLayoutChange);
-                }}
-                className="absolute bottom-0 left-0 w-5 h-5 cursor-se-resize flex items-end justify-start z-30"
-              >
-                <span className="block w-3.5 h-3.5 border-r-2 border-b-2 rounded-br-sm bg-white/80 border-sky-600" />
-              </div>
+              {[
+                "top-0 inset-x-0 h-3 cursor-move",
+                "bottom-0 inset-x-0 h-3 cursor-move",
+                "left-0 inset-y-0 w-3 cursor-move",
+                "right-0 inset-y-0 w-3 cursor-move",
+              ].map((edgeClass) => (
+                <div
+                  key={edgeClass}
+                  role="button"
+                  tabIndex={-1}
+                  title="اسحب لتحريك الحقل"
+                  aria-label="تحريك الحقل"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    startPerChequeMove(e, textDisplayLayout, onTextFieldLayoutChange);
+                  }}
+                  className={`absolute z-30 ${edgeClass}`}
+                />
+              ))}
             </>
           ) : null}
         </div>
@@ -644,6 +596,9 @@ export function chequeValuesToPayload(
   const amountRaw = cleanAmount(values?.amountNumeric);
   return {
     templateKey,
+    branchKey: template?.branchKey || "",
+    branchName: template?.name || "",
+    templateName: template?.name || "",
     chequeNumber: values?.chequeNumber || "",
     accountNumber: values?.accountNumber || "",
     branch: template?.branch || "",

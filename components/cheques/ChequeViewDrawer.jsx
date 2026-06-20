@@ -17,6 +17,10 @@ import {
 import ChequeCanvas from "@/components/cheques/ChequeCanvas";
 import { getChequeTemplate } from "@/lib/cheques/templates";
 import {
+  applyBranchToTemplate,
+  fetchBranchForChequeDoc,
+} from "@/lib/cheques/chequeBranches";
+import {
   fieldsFromTemplate,
 } from "@/lib/cheques/mergeFields";
 import { chequeDocToValues } from "@/lib/cheques/chequeDocToValues";
@@ -51,15 +55,17 @@ export function ChequeViewContent({ chequeId, onReady, className = "" }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [doc, setDoc] = useState(null);
+  const [branch, setBranch] = useState(null);
   const [mergedFields, setMergedFields] = useState([]);
   const [dateShowSlashes, setDateShowSlashes] = useState(true);
   const [values, setValues] = useState({});
   const [globalFontScale, setGlobalFontScale] = useState(LAYOUT_FONT_SCALE_DEFAULT);
 
-  const template = useMemo(
-    () => (doc?.templateKey ? getChequeTemplate(doc.templateKey) : null),
-    [doc?.templateKey]
-  );
+  const template = useMemo(() => {
+    const base = doc?.templateKey ? getChequeTemplate(doc.templateKey) : null;
+    if (!base) return null;
+    return branch ? applyBranchToTemplate(base, branch) : base;
+  }, [doc?.templateKey, branch]);
 
   const textFieldLayout = useMemo(() => {
     const lay = doc?.textFieldLayout;
@@ -97,7 +103,11 @@ export function ChequeViewContent({ chequeId, onReady, className = "" }) {
       const data = json.data;
       setDoc(data);
 
+      const branchData = await fetchBranchForChequeDoc(data);
+      setBranch(branchData);
+
       const tpl = getChequeTemplate(data.templateKey);
+      const resolvedTemplate = branchData ? applyBranchToTemplate(tpl, branchData) : tpl;
       if (!tpl) {
         setError("قالب الصك غير معروف");
         return;
@@ -110,13 +120,13 @@ export function ChequeViewContent({ chequeId, onReady, className = "" }) {
       let printerName = "";
 
       try {
-        const bundle = await fetchChequePrintBundle(data.templateKey, tpl, fields);
+        const bundle = await fetchChequePrintBundle(data.templateKey, resolvedTemplate, fields);
         fields = Array.isArray(bundle?.fields) && bundle.fields.length ? bundle.fields : fields;
         slashes =
           typeof bundle?.dateShowSlashes === "boolean"
             ? bundle.dateShowSlashes
             : slashes;
-        printCalib = bundle?.printCalib || defaultPrintCalib(tpl, fields);
+        printCalib = bundle?.printCalib || defaultPrintCalib(resolvedTemplate, fields);
         layoutFontScale = clampLayoutFontScale(
           bundle?.globalFontScale ?? layoutFontScale
         );
@@ -131,7 +141,7 @@ export function ChequeViewContent({ chequeId, onReady, className = "" }) {
       const vals = chequeDocToValues(data);
       setValues(vals);
       onReady?.({
-        template: tpl,
+        template: resolvedTemplate,
         templateKey: data.templateKey,
         fields,
         values: vals,
@@ -179,6 +189,11 @@ export function ChequeViewContent({ chequeId, onReady, className = "" }) {
           <div className="rounded-2xl border border-emerald-200/80 bg-emerald-50/50 px-4 py-3 mb-3">
             <p className="text-xs font-bold text-emerald-800/80">نوع الصك</p>
             <p className="text-sm font-extrabold text-emerald-950">{doc.templateName}</p>
+            {doc.branchName || branch?.name ? (
+              <p className="text-[11px] font-bold text-emerald-900/90 mt-1">
+                {doc.branchName || branch?.name}
+              </p>
+            ) : null}
             <p className="text-[11px] text-slate-600 font-semibold mt-1">{doc.bankName}</p>
           </div>
           <MetaRow icon={FiHash} label="رقم الصك" value={doc.chequeNumber} />
@@ -208,7 +223,7 @@ export function ChequeViewContent({ chequeId, onReady, className = "" }) {
           </div>
           {doc.text ? (
             <div className="rounded-xl border border-slate-200/90 bg-white px-3 py-2.5">
-              <p className="text-[10px] font-extrabold text-slate-500 mb-0.5">نص إضافي</p>
+              <p className="text-[10px] font-extrabold text-slate-500 mb-0.5">المدير المفوض</p>
               <p className="text-xs font-bold text-slate-800 whitespace-pre-wrap">{doc.text}</p>
             </div>
           ) : null}

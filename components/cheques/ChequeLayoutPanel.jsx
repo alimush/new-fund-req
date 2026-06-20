@@ -204,7 +204,7 @@ export default function ChequeLayoutPanel({
               {f.label}
               {f.key === "text" ? (
                 <span className="block text-[10px] font-semibold opacity-80">
-                  الافتراضي لهذا النوع من الصك
+                  موضع افتراضي — يسار الصك
                 </span>
               ) : null}
             </button>

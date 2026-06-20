@@ -105,10 +105,14 @@ export async function POST(req) {
     }
 
     const tpl = getChequeTemplate(templateKey);
+    const branchKey = String(body?.branchKey || "").trim().toLowerCase();
+    const branchName = String(body?.branchName || body?.branchLabel || "").trim();
 
     const doc = await Cheque.create({
       templateKey,
-      templateName: tpl?.name || "",
+      branchKey,
+      branchName,
+      templateName: String(body?.templateName || tpl?.name || "").trim() || tpl?.name || "",
       bankName: tpl?.bankName || "",
       bankNameEn: tpl?.bankNameEn || "",
       drawerName: tpl?.drawerName || "",

@@ -1,10 +1,11 @@
 "use client";
 
-import { FiCalendar, FiHash, FiDollarSign, FiDatabase } from "react-icons/fi";
+import { FiCalendar, FiHash, FiDollarSign, FiDatabase, FiUser } from "react-icons/fi";
 import ChequeFieldInput from "@/components/cheques/ChequeFieldInput";
 import { amountNumericToWordsLines } from "@/lib/cheques/amountWords";
 import { datePartsFromIso, isoFromDateParts } from "@/lib/cheques/dateUtils";
 import { singleLineText } from "@/lib/cheques/singleLineText";
+import { TEXT_KEY } from "@/lib/cheques/textFieldLayout";
 
 function withAmountWords(values, amountVal, template, fields, globalFontScale = 100) {
   const line1Field = (fields || []).find((f) => f.key === "amountWords");
@@ -60,7 +61,8 @@ export default function ChequeInputsSidebar({
     (f) =>
       !DATE_KEYS.includes(f.key) &&
       !AMOUNT_KEYS.includes(f.key) &&
-      !f.sidebarOnly
+      !f.sidebarOnly &&
+      f.key !== TEXT_KEY
   );
 
   const isoDate = isoFromDateParts(values);
@@ -142,6 +144,26 @@ export default function ChequeInputsSidebar({
             ))}
           </div>
 
+        </Section>
+      ) : null}
+
+      {fieldByKey[TEXT_KEY] ? (
+        <Section title="المدير المفوض" icon={FiUser}>
+          <label className="block text-[11px] font-bold text-slate-500 mb-1">
+            {fieldByKey[TEXT_KEY].label}
+          </label>
+          <ChequeFieldInput
+            field={fieldByKey[TEXT_KEY]}
+            value={values[TEXT_KEY]}
+            onChange={(val) => set(TEXT_KEY, val)}
+            variant="sidebar"
+            isActive={activeField === TEXT_KEY}
+            onFocus={() => onFieldFocus?.(TEXT_KEY)}
+            onBlur={onFieldBlur}
+          />
+          <p className="text-[10px] text-slate-500 font-semibold mt-2">
+            يظهر على يسار الصك — اسحب من أي حافة حول الحقل لتحريك موضعه
+          </p>
         </Section>
       ) : null}
 

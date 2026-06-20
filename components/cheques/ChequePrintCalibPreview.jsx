@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { isCanvasField } from "@/lib/cheques/templates";
+import { isPrintField } from "@/lib/cheques/templates";
 import { slashPositionBetween } from "@/lib/cheques/dateUtils";
 import { printFontSizeToPreviewPx } from "@/lib/cheques/chequeDesignMetrics";
 import {
@@ -81,7 +81,7 @@ export default function ChequePrintCalibPreview({
   );
 
   const staticFields = useMemo(
-    () => list.filter((f) => !PER_CHEQUE_KEYS.has(f.key) && isCanvasField(f)),
+    () => list.filter((f) => !PER_CHEQUE_KEYS.has(f.key) && isPrintField(f)),
     [list]
   );
 

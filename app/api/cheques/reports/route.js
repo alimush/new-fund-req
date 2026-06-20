@@ -111,9 +111,15 @@ export async function GET(req) {
       .limit(pageSize)
       .lean();
 
+    const rows = data.map((doc) => ({
+      ...doc,
+      _id: doc._id?.toString?.() || doc._id,
+      attachments: Array.isArray(doc.attachments) ? doc.attachments : [],
+    }));
+
     return NextResponse.json({
       success: true,
-      data,
+      data: rows,
       meta: {
         total,
         page,

@@ -89,6 +89,7 @@ export default function ChequeFieldFontBar({
 }) {
   const field = fields.find((f) => f.key === activeField);
   const onCanvas = field && isCanvasField(field);
+  const screenOnly = Boolean(field?.printExclude);
 
   const layouts = { textFieldLayout, amountWordsLayout, amountWordsLine2Layout };
 
@@ -151,6 +152,11 @@ export default function ChequeFieldFontBar({
         </p>
       ) : (
         <div className="space-y-4">
+          {screenOnly ? (
+            <p className="text-[11px] font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 text-center">
+              «{field.label}» يظهر في المعاينة فقط — لا يُطبع
+            </p>
+          ) : null}
           <p className="text-[11px] font-bold text-slate-500">
             الحقل النشط:{" "}
             <span className="text-emerald-950 text-sm">{field.label}</span>

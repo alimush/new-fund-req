@@ -32,6 +32,14 @@ const PrintCalibSchema = new mongoose.Schema(
     fieldFontStyles: { type: mongoose.Schema.Types.Mixed, default: {} },
     /** مواضع النسخ الثلاث لمعايرة Wizard — مفاتيح "1" | "2" | "3" */
     wizardCopyLayouts: { type: mongoose.Schema.Types.Mixed, default: null },
+    /** دليل معايرة Wizard: coordinates | frame */
+    wizardGuideStyle: {
+      type: String,
+      enum: ["coordinates", "frame"],
+      default: "coordinates",
+    },
+    /** موضع صورة الصك على A4 — مستقل عن منطقة البيانات */
+    imageSheet: { type: mongoose.Schema.Types.Mixed, default: null },
   },
   { _id: false }
 );
@@ -58,6 +66,9 @@ const ChequeLayoutSchema = new mongoose.Schema(
     wizardPrintCalib: { type: PrintCalibSchema, default: null },
     /** عدد نسخ صفحة اختبار Wizard على ورقة واحدة (1–3) */
     wizardTestCopyCount: { type: Number, default: 3, min: 1, max: 3 },
+    /** مرجع ثابت لموضع البيانات على الورقة — يُستعاد بزر */
+    printCalibBaselineLabel: { type: String, default: "" },
+    printCalibBaseline: { type: PrintCalibSchema, default: null },
     updatedBy: { type: String, default: "" },
   },
   { timestamps: true }

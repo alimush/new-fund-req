@@ -21,6 +21,18 @@ const FieldLayoutSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const AttachmentSchema = new mongoose.Schema(
+  {
+    key: { type: String, default: "" },
+    name: { type: String, default: "Attachment" },
+    url: { type: String, required: true },
+    contentType: { type: String, default: "application/octet-stream" },
+    size: { type: Number, default: 0 },
+    uploadedAt: { type: Date, default: Date.now },
+  },
+  { _id: false }
+);
+
 const ChequeSchema = new mongoose.Schema(
   {
     templateKey: {
@@ -29,6 +41,10 @@ const ChequeSchema = new mongoose.Schema(
       enum: ["real_estate_baghdad", "mustashar_ghadeer"],
       index: true,
     },
+
+    /** فرع MIB — mib_main | mib_karbala … */
+    branchKey: { type: String, default: "", index: true },
+    branchName: { type: String, default: "" },
 
     templateName: { type: String, default: "" },
 
@@ -75,6 +91,11 @@ const ChequeSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       index: true,
+    },
+
+    attachments: {
+      type: [AttachmentSchema],
+      default: () => [],
     },
   },
   { timestamps: true }

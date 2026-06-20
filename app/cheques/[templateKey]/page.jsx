@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 import {
   FiArrowRight,
@@ -46,6 +46,11 @@ import ChequeFieldFontBar from "@/components/cheques/ChequeFieldFontBar";
 import ChequeLayoutPanel from "@/components/cheques/ChequeLayoutPanel";
 import { useToast } from "@/components/ui/ToastProvider";
 import { useChequeAccess } from "@/components/cheques/useChequeAccess";
+import {
+  applyBranchToTemplate,
+  isMustasharTemplateKey,
+  MUSTASHAR_TEMPLATE_KEY,
+} from "@/lib/cheques/chequeBranches";
 
 function fontPartial(partial) {
   const out = {};
@@ -56,14 +61,20 @@ function fontPartial(partial) {
 
 export default function ChequeEditorPage() {
   const params = useParams();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const { showToast } = useToast();
   const { canUseCheques, canLayoutEditor, canManagePrintSettings, ready } = useChequeAccess();
   const templateKey = String(params?.templateKey || "").trim();
+  const branchKey = String(searchParams.get("branch") || "").trim().toLowerCase();
 
   const baseTemplate = useMemo(
     () => (isValidChequeTemplateKey(templateKey) ? getChequeTemplate(templateKey) : null),
     [templateKey]
   );
+
+  const [branch, setBranch] = useState(null);
+  const [branchLoading, setBranchLoading] = useState(false);
 
   const [mergedFields, setMergedFields] = useState([]);
   const [values, setValues] = useState({});
@@ -85,7 +96,66 @@ export default function ChequeEditorPage() {
   const [printModal, setPrintModal] = useState({ open: false, mode: "data" });
   const [printing, setPrinting] = useState(false);
 
-  const template = baseTemplate;
+  const template = useMemo(() => {
+    if (!baseTemplate) return null;
+    if (isMustasharTemplateKey(templateKey)) {
+      if (!branchKey) return null;
+      if (!branch) return null;
+      return applyBranchToTemplate(baseTemplate, branch);
+    }
+    return baseTemplate;
+  }, [baseTemplate, templateKey, branchKey, branch]);
+
+  useEffect(() => {
+    if (!ready || !canUseCheques) return;
+    if (isMustasharTemplateKey(templateKey) && !branchKey) {
+      router.replace("/cheques/mustashar_ghadeer/branches");
+    }
+  }, [ready, canUseCheques, templateKey, branchKey, router]);
+
+  useEffect(() => {
+    if (!isMustasharTemplateKey(templateKey) || !branchKey) {
+      setBranch(null);
+      setBranchLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setBranchLoading(true);
+    fetch(
+      `/api/cheques/branches?templateKey=${encodeURIComponent(MUSTASHAR_TEMPLATE_KEY)}&branchKey=${encodeURIComponent(branchKey)}`,
+      { cache: "no-store" }
+    )
+      .then((r) => r.json())
+      .then((json) => {
+        if (cancelled) return;
+        if (!json?.success || !json.branch) {
+          showToast(json?.error || "الفرع غير موجود", "error");
+          router.replace("/cheques/mustashar_ghadeer/branches");
+          return;
+        }
+        setBranch(json.branch);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          showToast("تعذّر تحميل الفرع", "error");
+          router.replace("/cheques/mustashar_ghadeer/branches");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setBranchLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [templateKey, branchKey, router, showToast]);
+
+  useEffect(() => {
+    if (!branch?.accountNumber) return;
+    setValues((prev) => {
+      if (prev.accountNumber) return prev;
+      return { ...prev, accountNumber: branch.accountNumber };
+    });
+  }, [branch?.accountNumber, branch?.branchKey]);
 
   const loadLayout = useCallback(async () => {
     if (!baseTemplate) {
@@ -581,6 +651,14 @@ export default function ChequeEditorPage() {
     );
   }
 
+  if (isMustasharTemplateKey(templateKey) && (branchLoading || (branchKey && !template))) {
+    return (
+      <div className="py-20 text-center text-slate-600 font-bold" dir="rtl">
+        جاري تحميل الفرع…
+      </div>
+    );
+  }
+
   if (!template) {
     return (
       <div className="max-w-lg mx-auto text-center py-20" dir="rtl">
@@ -600,18 +678,28 @@ export default function ChequeEditorPage() {
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
           <Link
-            href="/cheques"
+            href={
+              isMustasharTemplateKey(templateKey)
+                ? "/cheques/mustashar_ghadeer/branches"
+                : "/cheques"
+            }
             className="inline-flex items-center gap-2 text-sm font-bold text-slate-600 hover:text-slate-900 mb-2"
           >
             <FiArrowRight />
-            نظام الصكوك
+            {isMustasharTemplateKey(templateKey) ? "أفرع المستشار" : "نظام الصكوك"}
           </Link>
           <h1 className="text-xl md:text-2xl font-extrabold text-slate-900">
             {template.name}
           </h1>
           <p className="text-slate-600 font-semibold text-sm mt-1">
-            {template.bankName} — {template.drawerName}
+            {template.bankName}
+            {template.drawerName ? ` — ${template.drawerName}` : ""}
           </p>
+          {branch?.accountNumber ? (
+            <p className="text-slate-500 text-xs font-semibold mt-1">
+              رقم الحساب: {branch.accountNumber}
+            </p>
+          ) : null}
         </div>
 
         <div className="flex flex-wrap gap-2">
@@ -760,8 +848,8 @@ export default function ChequeEditorPage() {
         >
           <p className="hidden md:block text-xs font-bold text-slate-500 mb-3 text-center">
             {layoutMode
-              ? "لتعديل افتراضي text (المستشار): اختر text واسحبه أو عدّل X/Y — ثم احفظ التخطيط"
-              : "معاينة بالحجم الفعلي للصك (17.80 × 8.20 سم) — حقل text: اسحب الزاوية العليا للتحريك"}
+              ? "ترتيب الحقول: اختر «المدير المفوض» واسحبه يساراً/يميناً — ثم احفظ التخطيط"
+              : "معاينة الصك — «المدير المفوض»: اسحب من أي حافة حول الحقل لتحريك موضعه"}
           </p>
           <div className="flex justify-center overflow-x-auto pb-1">
             <ChequeCanvas
