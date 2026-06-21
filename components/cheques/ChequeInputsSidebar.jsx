@@ -5,10 +5,16 @@ import ChequeFieldInput from "@/components/cheques/ChequeFieldInput";
 import { amountNumericToWordsLines } from "@/lib/cheques/amountWords";
 import { datePartsFromIso, isoFromDateParts } from "@/lib/cheques/dateUtils";
 import { singleLineText } from "@/lib/cheques/singleLineText";
-import { TEXT_KEY } from "@/lib/cheques/textFieldLayout";
+import { TEXT_KEY, fieldWithChequePosition, AMOUNT_WORDS_KEY } from "@/lib/cheques/textFieldLayout";
 
-function withAmountWords(values, amountVal, template, fields, globalFontScale = 100) {
-  const line1Field = (fields || []).find((f) => f.key === "amountWords");
+function resolveAmountWordsLine1Field(fields, amountWordsLayout) {
+  const base = (fields || []).find((f) => f.key === AMOUNT_WORDS_KEY);
+  if (!base) return null;
+  return amountWordsLayout ? fieldWithChequePosition(base, amountWordsLayout) : base;
+}
+
+function withAmountWords(values, amountVal, template, fields, globalFontScale = 100, amountWordsLayout = null) {
+  const line1Field = resolveAmountWordsLine1Field(fields, amountWordsLayout);
   const { line1, line2 } = amountNumericToWordsLines(
     amountVal,
     line1Field,
@@ -48,6 +54,7 @@ export default function ChequeInputsSidebar({
   onFieldBlur,
   autoAmountWords = true,
   globalFontScale = 100,
+  amountWordsLayout = null,
 }) {
   if (!template) return null;
 
@@ -68,7 +75,7 @@ export default function ChequeInputsSidebar({
   const isoDate = isoFromDateParts(values);
 
   return (
-    <aside className="flex flex-col gap-4 w-full lg:w-[300px] xl:w-[320px] shrink-0">
+    <aside className="flex flex-col gap-4 w-full lg:w-[260px] xl:w-[280px] shrink-0">
       <div className="rounded-2xl border border-emerald-200/80 bg-emerald-50/60 px-4 py-3">
         <p className="text-xs font-bold text-emerald-800/80">البنك</p>
         <p className="text-sm font-extrabold text-emerald-950 mt-0.5">
@@ -211,7 +218,14 @@ export default function ChequeInputsSidebar({
                   onChange={(val) => {
                     if (key === "amountNumeric" && autoAmountWords) {
                       onChange?.(
-                        withAmountWords(values, val, template, fields, globalFontScale)
+                        withAmountWords(
+                          values,
+                          val,
+                          template,
+                          fields,
+                          globalFontScale,
+                          amountWordsLayout
+                        )
                       );
                       return;
                     }
@@ -228,7 +242,7 @@ export default function ChequeInputsSidebar({
         </div>
         {autoAmountWords ? (
           <p className="text-[10px] text-emerald-700 font-semibold">
-            المبلغ بالأرقام يُحوَّل تلقائياً إلى كتابة (حتى المليارات)
+            المبلغ بالأرقام يُحوَّل تلقائياً إلى كتابة على سطرين عند الحاجة
           </p>
         ) : null}
       </Section>

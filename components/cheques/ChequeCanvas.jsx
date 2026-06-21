@@ -5,7 +5,8 @@ import Image from "next/image";
 import { Cairo } from "next/font/google";
 import ChequeFieldInput from "@/components/cheques/ChequeFieldInput";
 import { cleanAmount } from "@/lib/voucher/utils";
-import { getTodayDateParts, slashPositionBetween } from "@/lib/cheques/dateUtils";
+import { getTodayDateParts } from "@/lib/cheques/dateUtils";
+import { isSlashLayoutKey, resolveSlashPositions } from "@/lib/cheques/dateSlashLayout";
 import { isCanvasField } from "@/lib/cheques/templates";
 import {
   fieldDesignFontPx,
@@ -89,21 +90,17 @@ export default function ChequeCanvas({
     textFieldLayout || layoutFromField(textBaseField);
 
   const canvasFields = useMemo(
-    () => list.filter((f) => isCanvasField(f) && f.key !== TEXT_KEY),
+    () =>
+      list.filter(
+        (f) => isCanvasField(f) && f.key !== TEXT_KEY && !isSlashLayoutKey(f.key)
+      ),
     [list]
   );
 
-  const dateSlashes = useMemo(() => {
-    if (!dateShowSlashes) return [];
-    const slashes = [];
-    for (let i = 0; i < DATE_ORDER.length - 1; i++) {
-      const a = fieldByKey[DATE_ORDER[i]];
-      const b = fieldByKey[DATE_ORDER[i + 1]];
-      const pos = slashPositionBetween(a, b);
-      if (pos) slashes.push({ id: `slash-${i}`, ...pos });
-    }
-    return slashes;
-  }, [dateShowSlashes, fieldByKey]);
+  const dateSlashes = useMemo(
+    () => resolveSlashPositions(list, dateShowSlashes),
+    [list, dateShowSlashes]
+  );
 
   const set = (key, val) => {
     if (viewMode) return;
@@ -483,16 +480,14 @@ export default function ChequeCanvas({
   return (
     <div
       ref={containerRef}
-      className={`relative mx-auto ${
-        physicalSize ? "shrink-0 shadow-lg ring-1 ring-slate-300/80" : "w-full"
+      className={`relative mx-auto w-full max-w-full ${
+        physicalSize ? "shrink-0" : ""
       } ${
         printMode
           ? "ring-2 ring-dashed ring-slate-400/80 rounded-lg bg-transparent"
           : layoutMode
           ? "ring-2 ring-amber-400 ring-offset-2 rounded-lg"
-          : physicalSize
-          ? "rounded-sm bg-white"
-          : ""
+          : "rounded-sm bg-white shadow-lg ring-1 ring-slate-300/80"
       }`}
       style={
         physicalStyle
@@ -506,10 +501,8 @@ export default function ChequeCanvas({
           alt={template.name}
           fill
           priority
-          className={`pointer-events-none ${
-            physicalSize ? "object-fill" : "object-contain"
-          }`}
-          sizes={physicalSize ? "178mm" : "(max-width: 1200px) 100vw, 900px"}
+          className={`pointer-events-none object-fill`}
+          sizes="(max-width: 1200px) 100vw, 900px"
         />
       ) : (
         <div
@@ -519,10 +512,16 @@ export default function ChequeCanvas({
       )}
 
       <div className="absolute inset-0">
-        {dateSlashes.map((s) => (
+        {dateSlashes.map((s) => {
+          const isLayoutSelected = layoutMode && layoutSelectedKey === s.key;
+          return (
           <div
             key={s.id}
-            className="pointer-events-none flex items-center justify-center z-[5]"
+            className={`flex items-center justify-center z-[5] ${
+              layoutMode
+                ? `cursor-move ${isLayoutSelected ? "ring-2 ring-amber-500 rounded-sm bg-amber-100/25" : ""}`
+                : "pointer-events-none"
+            }`}
             style={{
               position: "absolute",
               top: `${s.top}%`,
@@ -530,6 +529,15 @@ export default function ChequeCanvas({
               width: `${s.width}%`,
               height: `${s.height}%`,
               transform: "translate(-50%, 0)",
+            }}
+            onMouseDown={(e) => {
+              if (layoutMode && !viewMode) startLayoutDrag(e, s.key);
+            }}
+            onClick={(e) => {
+              if (layoutMode && !viewMode) {
+                e.stopPropagation();
+                onLayoutSelectField?.(s.key);
+              }
             }}
           >
             <span
@@ -542,7 +550,8 @@ export default function ChequeCanvas({
               /
             </span>
           </div>
-        ))}
+          );
+        })}
 
         {canvasFields.map((f) => {
           if (viewMode) {

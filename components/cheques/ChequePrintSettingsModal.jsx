@@ -28,16 +28,20 @@ import {
   formatCmFromMm,
   getFieldFontStyle,
   getFieldOffset,
+  getStoredFieldOffset,
   mmToCm,
   normalizePrintCalib,
   parseCmInput,
   resolveWizardPrintCalib,
+  transferPrintCalibAcrossTemplates,
   WIZARD_CALIB_SOURCE_SHARED,
   wizardPrintCalibPayload,
   DATE_GROUP_KEY,
+  SLASH_GROUP_KEY,
   DEFAULT_PRINT_FIELD_COLOR,
   PRINT_FIELD_LABELS,
-  printFieldOffsetKeys,
+  printFieldFontCalibKeys,
+  printDateSpacingKeys,
 } from "@/lib/cheques/printCalib";
 import { AMOUNT_WORDS_KEY, AMOUNT_WORDS_LINE2_KEY } from "@/lib/cheques/textFieldLayout";
 import { normalizeWizardPrintCalib } from "@/lib/cheques/wizardCopyLayouts";
@@ -47,6 +51,7 @@ import {
   WIZARD_TEST_COPY_MAX,
   WIZARD_TEST_COPY_MIN,
 } from "@/lib/cheques/chequePrintPageStyles";
+import { getChequeTemplate } from "@/lib/cheques/templates";
 
 const MODE_LABELS = {
   data: "طباعة على صك فارغ",
@@ -376,6 +381,36 @@ function FieldCalibPanel({
   );
 }
 
+function DateSpacingPanel({ calib, dateShowSlashes, onPatch }) {
+  const keys = printDateSpacingKeys(dateShowSlashes);
+  return (
+    <div className="rounded-xl border border-violet-200 bg-violet-50/80 p-3 space-y-2">
+      <p className="text-[11px] font-extrabold text-violet-950">
+        مسافة كل رقم وكل / — على حدة
+      </p>
+      <p className="text-[10px] font-semibold text-violet-800/90 leading-relaxed">
+        حرّك كل جزء أفقياً لضبط التباعد بين اليوم والشرطة والشهر والسنة — فوق إزاحة المجموعة
+      </p>
+      {keys.map((key) => {
+        const o = getStoredFieldOffset(calib, key);
+        return (
+          <CmInputRow
+            key={key}
+            label={PRINT_FIELD_LABELS[key] || key}
+            hint="يمين + / يسار −"
+            valueMm={o.offsetXmm}
+            minCm={-0.6}
+            maxCm={0.6}
+            showSlider
+            sliderStep={0.005}
+            onChangeMm={(v) => onPatch(key, { offsetXmm: v })}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
 export default function ChequePrintSettingsModal({
   open,
   onClose,
@@ -413,6 +448,8 @@ export default function ChequePrintSettingsModal({
   const [savedBaselineLabel, setSavedBaselineLabel] = useState("");
   const [savedBaselineCalib, setSavedBaselineCalib] = useState(null);
   const [savingBaseline, setSavingBaseline] = useState(false);
+  const [allBaselines, setAllBaselines] = useState([]);
+  const [restoreBaselineKey, setRestoreBaselineKey] = useState("");
 
   const defaults = useMemo(
     () => defaultPrintCalib(template, previewFields),
@@ -420,21 +457,25 @@ export default function ChequePrintSettingsModal({
   );
 
   const offsetFieldList = useMemo(() => {
-    const keys = printFieldOffsetKeys(previewFields, template);
+    const keys = printFieldFontCalibKeys(previewFields, template);
     const list = previewFields?.length ? previewFields : template?.fields || [];
     const labelByKey = Object.fromEntries(
       list.map((f) => [f.key, f.label || f.key])
     );
     const fieldByKey = Object.fromEntries(list.map((f) => [f.key, f]));
-    return keys.map((key) => ({
-      key,
-      label: PRINT_FIELD_LABELS[key] || labelByKey[key] || key,
-      field:
-        key === DATE_GROUP_KEY
-          ? fieldByKey.dateDay || fieldByKey.dateMonth
-          : fieldByKey[key],
-    }));
-  }, [previewFields, template]);
+    return keys
+      .filter((key) => key !== SLASH_GROUP_KEY || dateShowSlashes)
+      .map((key) => ({
+        key,
+        label: PRINT_FIELD_LABELS[key] || labelByKey[key] || key,
+        field:
+          key === DATE_GROUP_KEY || key === SLASH_GROUP_KEY
+            ? fieldByKey.dateDay || fieldByKey.dateMonth
+            : fieldByKey[key],
+      }));
+  }, [previewFields, template, dateShowSlashes]);
+
+  const hasDateSpacing = offsetFieldList.some((f) => f.key === DATE_GROUP_KEY);
 
   useEffect(() => setPortalReady(true), []);
 
@@ -482,6 +523,20 @@ export default function ChequePrintSettingsModal({
           } else {
             setSavedBaselineCalib(null);
           }
+        })
+        .catch(() => {});
+
+      fetch("/api/cheques/layout?listBaselines=1", { cache: "no-store" })
+        .then((r) => r.json())
+        .then((json) => {
+          if (!json?.success) return;
+          const withBaseline = (json.baselines || []).filter((b) => b.printCalibBaseline);
+          setAllBaselines(withBaseline);
+          setRestoreBaselineKey((prev) => {
+            if (prev && withBaseline.some((b) => b.templateKey === prev)) return prev;
+            const current = withBaseline.find((b) => b.templateKey === templateKey);
+            return current?.templateKey || withBaseline[0]?.templateKey || "";
+          });
         })
         .catch(() => {});
     }
@@ -555,7 +610,7 @@ export default function ChequePrintSettingsModal({
           ...prev,
           fieldOffsets: {
             ...(prev.fieldOffsets || {}),
-            [fieldKey]: { ...getFieldOffset(prev, fieldKey), ...partial },
+            [fieldKey]: { ...getStoredFieldOffset(prev, fieldKey), ...partial },
           },
         },
         template,
@@ -636,6 +691,18 @@ export default function ChequePrintSettingsModal({
       setSavedBaselineLabel(savedLabel);
       setBaselineLabelDraft(savedLabel);
       setSavedBaselineCalib(saved);
+      setRestoreBaselineKey(templateKey);
+      setAllBaselines((prev) => {
+        const next = prev.filter((b) => b.templateKey !== templateKey);
+        next.unshift({
+          templateKey,
+          templateName: template?.name || templateKey,
+          label: savedLabel,
+          wizardTestCopyCount,
+          printCalibBaseline: saved,
+        });
+        return next;
+      });
       setSaveMessage(`تم حفظ المرجع «${savedLabel}» — استخدم زر العودة للاستعادة`);
     } catch {
       setError("خطأ في الاتصال");
@@ -645,22 +712,54 @@ export default function ChequePrintSettingsModal({
   };
 
   const handleRestoreBaseline = async () => {
-    if (!savedBaselineCalib) {
-      setError("لا يوجد مرجع محفوظ — احفظ المرجع أولاً");
+    const sourceEntry = allBaselines.find((b) => b.templateKey === restoreBaselineKey);
+    const localSource =
+      restoreBaselineKey === templateKey ? savedBaselineCalib : sourceEntry?.printCalibBaseline;
+
+    if (!localSource) {
+      setError("لا يوجد مرجع محفوظ — احفظ المرجع أولاً أو اختر صكاً آخر");
       return;
     }
-    const restored = normalizeWizardPrintCalib(
-      savedBaselineCalib,
-      template,
-      previewFields,
-      wizardTestCopyCount
-    );
+
+    const sourceLabel =
+      restoreBaselineKey === templateKey
+        ? savedBaselineLabel
+        : String(sourceEntry?.label || "المرجع المحفوظ").trim();
+
+    let restored = localSource;
+    if (restoreBaselineKey !== templateKey) {
+      const srcTpl = getChequeTemplate(restoreBaselineKey);
+      if (!srcTpl) {
+        setError("قالب المصدر غير صالح");
+        return;
+      }
+      restored = transferPrintCalibAcrossTemplates(
+        localSource,
+        srcTpl,
+        srcTpl.fields || [],
+        template,
+        previewFields,
+        wizardTestCopyCount
+      );
+    } else {
+      restored = normalizeWizardPrintCalib(
+        localSource,
+        template,
+        previewFields,
+        wizardTestCopyCount
+      );
+    }
+
     setCalib(restored);
     setError("");
+    const fromOther = restoreBaselineKey !== templateKey;
+    const sourceName = sourceEntry?.templateName || getChequeTemplate(restoreBaselineKey)?.name;
     setSaveMessage(
-      savedBaselineLabel
-        ? `تمت العودة للمرجع «${savedBaselineLabel}»`
-        : "تمت العودة للمرجع المحفوظ"
+      fromOther && sourceName
+        ? `تم استيراد مرجع «${sourceLabel}» من «${sourceName}»`
+        : sourceLabel
+          ? `تمت العودة للمرجع «${sourceLabel}»`
+          : "تمت العودة للمرجع المحفوظ"
     );
 
     if (!canSave || !templateKey) return;
@@ -692,9 +791,11 @@ export default function ChequePrintSettingsModal({
       setCalib(saved);
       onSaved?.(saved);
       setSaveMessage(
-        savedBaselineLabel
-          ? `تمت العودة للمرجع «${savedBaselineLabel}» وتثبيتها للطباعة`
-          : "تمت العودة للمرجع المحفوظ وتثبيتها للطباعة"
+        fromOther && sourceName
+          ? `تم استيراد مرجع «${sourceLabel}» من «${sourceName}» وتثبيته للطباعة`
+          : savedBaselineLabel
+            ? `تمت العودة للمرجع «${sourceLabel}» وتثبيتها للطباعة`
+            : "تمت العودة للمرجع المحفوظ وتثبيتها للطباعة"
       );
     } catch {
       //
@@ -890,8 +991,8 @@ export default function ChequePrintSettingsModal({
                     مرجع ثابت لموضع البيانات
                   </p>
                   <p className="mb-3 text-[10px] font-semibold text-emerald-900/80 leading-relaxed">
-                    احفظ الإعدادات الحالية باسم — ثم ارجع إليها دائماً بزر واحد حتى بعد
-                    التجربة أو التعديل.
+                    احفظ الإعدادات الحالية باسم — ثم ارجع إليها بزر واحد. يمكنك أيضاً
+                    استيراد مرجع محفوظ من أي صك آخر (مثل المستشار) وتطبيقه على هذا الصك.
                   </p>
                   <label className="mb-2 block rounded-xl border border-emerald-200 bg-white px-3 py-2.5">
                     <span className="mb-1 block text-xs font-extrabold text-slate-700">
@@ -905,13 +1006,32 @@ export default function ChequePrintSettingsModal({
                       className="w-full rounded-lg border border-slate-200 px-2.5 py-2 text-sm font-bold text-slate-900"
                     />
                   </label>
-                  {savedBaselineLabel ? (
+                  {allBaselines.length > 0 ? (
+                    <label className="mb-2 block rounded-xl border border-emerald-200 bg-white px-3 py-2.5">
+                      <span className="mb-1 block text-xs font-extrabold text-slate-700">
+                        استيراد مرجع من
+                      </span>
+                      <select
+                        value={restoreBaselineKey}
+                        onChange={(e) => setRestoreBaselineKey(e.target.value)}
+                        className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-sm font-bold text-slate-900"
+                      >
+                        {allBaselines.map((b) => (
+                          <option key={b.templateKey} value={b.templateKey}>
+                            {b.templateName}
+                            {b.templateKey === templateKey ? " (هذا الصك)" : ""}
+                            {b.label ? ` — ${b.label}` : ""}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : savedBaselineLabel ? (
                     <p className="mb-2 text-[10px] font-bold text-emerald-800">
                       المرجع المحفوظ: «{savedBaselineLabel}»
                     </p>
                   ) : (
                     <p className="mb-2 text-[10px] font-semibold text-slate-500">
-                      لم يُحفظ مرجع بعد
+                      لم يُحفظ مرجع بعد على أي صك
                     </p>
                   )}
                   <div className="flex flex-wrap gap-2">
@@ -927,11 +1047,19 @@ export default function ChequePrintSettingsModal({
                     <button
                       type="button"
                       onClick={handleRestoreBaseline}
-                      disabled={!savedBaselineCalib || savingBaseline || printing}
+                      disabled={
+                        !restoreBaselineKey ||
+                        savingBaseline ||
+                        printing ||
+                        (!allBaselines.some((b) => b.templateKey === restoreBaselineKey) &&
+                          !(restoreBaselineKey === templateKey && savedBaselineCalib))
+                      }
                       className="inline-flex flex-1 min-w-[140px] items-center justify-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-xs font-extrabold text-slate-800 hover:bg-slate-50 disabled:opacity-50"
                     >
                       <FiRotateCcw size={14} />
-                      العودة للمرجع المحفوظ
+                      {restoreBaselineKey && restoreBaselineKey !== templateKey
+                        ? "استيراد المرجع"
+                        : "العودة للمرجع المحفوظ"}
                     </button>
                   </div>
                 </div>
@@ -1198,6 +1326,13 @@ export default function ChequePrintSettingsModal({
                           />
                         );
                       })}
+                      {hasDateSpacing ? (
+                        <DateSpacingPanel
+                          calib={calib}
+                          dateShowSlashes={dateShowSlashes}
+                          onPatch={patchField}
+                        />
+                      ) : null}
                     </div>
                   </div>
 

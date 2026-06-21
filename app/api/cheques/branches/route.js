@@ -6,12 +6,12 @@ import { isValidChequeTemplateKey } from "@/lib/cheques/templates";
 import {
   branchPublicDto,
   dedupeBranchesList,
-  isMustasharTemplateKey,
+  isBranchedTemplateKey,
   normalizeBranchKey,
 } from "@/lib/cheques/chequeBranches";
 import {
   dedupeChequeBranchesInDb,
-  ensureMustasharBranchesSeeded,
+  ensureBranchesSeeded,
 } from "@/lib/cheques/seedChequeBranches";
 import { requireChequeAccess, requireManagePermissions } from "@/lib/cheques/chequeAuth";
 
@@ -44,8 +44,8 @@ export async function GET(req) {
       );
     }
 
-    if (isMustasharTemplateKey(templateKey)) {
-      await ensureMustasharBranchesSeeded();
+    if (isBranchedTemplateKey(templateKey)) {
+      await ensureBranchesSeeded(templateKey);
     }
 
     if (branchKey) {
@@ -110,7 +110,7 @@ export async function POST(req) {
     const templateKey = String(body?.templateKey || "").trim();
     const branchKey = normalizeBranchKey(body?.branchKey);
 
-    if (!isMustasharTemplateKey(templateKey) || !branchKey) {
+    if (!isBranchedTemplateKey(templateKey) || !branchKey) {
       return NextResponse.json(
         { success: false, error: "بيانات فرع غير صالحة" },
         { status: 400 }

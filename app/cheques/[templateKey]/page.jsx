@@ -30,6 +30,7 @@ import { mergeAmountWordsLines } from "@/lib/cheques/amountWords";
 import {
   clampTextLayout,
   layoutFromField,
+  fieldWithChequePosition,
   AMOUNT_WORDS_KEY,
   AMOUNT_WORDS_LINE2_KEY,
   TEXT_KEY,
@@ -48,8 +49,12 @@ import { useToast } from "@/components/ui/ToastProvider";
 import { useChequeAccess } from "@/components/cheques/useChequeAccess";
 import {
   applyBranchToTemplate,
-  isMustasharTemplateKey,
-  MUSTASHAR_TEMPLATE_KEY,
+  isBranchedTemplateKey,
+  branchesPagePath,
+  isRealEstateTemplateKey,
+  isRealEstateMainBranch,
+  realEstateUsesMainBranchSettings,
+  realEstateMainBranchPath,
 } from "@/lib/cheques/chequeBranches";
 
 function fontPartial(partial) {
@@ -98,7 +103,7 @@ export default function ChequeEditorPage() {
 
   const template = useMemo(() => {
     if (!baseTemplate) return null;
-    if (isMustasharTemplateKey(templateKey)) {
+    if (isBranchedTemplateKey(templateKey)) {
       if (!branchKey) return null;
       if (!branch) return null;
       return applyBranchToTemplate(baseTemplate, branch);
@@ -108,13 +113,13 @@ export default function ChequeEditorPage() {
 
   useEffect(() => {
     if (!ready || !canUseCheques) return;
-    if (isMustasharTemplateKey(templateKey) && !branchKey) {
-      router.replace("/cheques/mustashar_ghadeer/branches");
+    if (isBranchedTemplateKey(templateKey) && !branchKey) {
+      router.replace(branchesPagePath(templateKey));
     }
   }, [ready, canUseCheques, templateKey, branchKey, router]);
 
   useEffect(() => {
-    if (!isMustasharTemplateKey(templateKey) || !branchKey) {
+    if (!isBranchedTemplateKey(templateKey) || !branchKey) {
       setBranch(null);
       setBranchLoading(false);
       return;
@@ -122,7 +127,7 @@ export default function ChequeEditorPage() {
     let cancelled = false;
     setBranchLoading(true);
     fetch(
-      `/api/cheques/branches?templateKey=${encodeURIComponent(MUSTASHAR_TEMPLATE_KEY)}&branchKey=${encodeURIComponent(branchKey)}`,
+      `/api/cheques/branches?templateKey=${encodeURIComponent(templateKey)}&branchKey=${encodeURIComponent(branchKey)}`,
       { cache: "no-store" }
     )
       .then((r) => r.json())
@@ -130,7 +135,7 @@ export default function ChequeEditorPage() {
         if (cancelled) return;
         if (!json?.success || !json.branch) {
           showToast(json?.error || "الفرع غير موجود", "error");
-          router.replace("/cheques/mustashar_ghadeer/branches");
+          router.replace(branchesPagePath(templateKey));
           return;
         }
         setBranch(json.branch);
@@ -138,7 +143,7 @@ export default function ChequeEditorPage() {
       .catch(() => {
         if (!cancelled) {
           showToast("تعذّر تحميل الفرع", "error");
-          router.replace("/cheques/mustashar_ghadeer/branches");
+          router.replace(branchesPagePath(templateKey));
         }
       })
       .finally(() => {
@@ -236,6 +241,91 @@ export default function ChequeEditorPage() {
     };
   }, [templateKey, baseTemplate, loadLayout]);
 
+  const usesSharedMainLayout = useMemo(
+    () => realEstateUsesMainBranchSettings(templateKey, branchKey),
+    [templateKey, branchKey]
+  );
+
+  const isRealEstateLayoutProfile = useMemo(
+    () => isRealEstateTemplateKey(templateKey) && isRealEstateMainBranch(branchKey),
+    [templateKey, branchKey]
+  );
+
+  const bootstrapLayoutMode = useCallback(() => {
+    const textF = mergedFields.find((f) => f.key === "text");
+    setLayoutSelectedKey(textF?.key || mergedFields[0]?.key || null);
+    setTextFieldLayout((prev) => prev || getDefaultTextFieldLayout(mergedFields));
+    const amountLayouts = getDefaultAmountWordsLayouts(mergedFields);
+    setAmountWordsLayout((prev) => prev || amountLayouts.amountWordsLayout);
+    setAmountWordsLine2Layout((prev) => prev || amountLayouts.amountWordsLine2Layout);
+    setLayoutMode(true);
+  }, [mergedFields]);
+
+  useEffect(() => {
+    if (searchParams.get("layout") !== "1") return;
+    if (!isRealEstateTemplateKey(templateKey) || !isRealEstateMainBranch(branchKey)) return;
+    if (!mergedFields.length || layoutMode) return;
+    bootstrapLayoutMode();
+    router.replace(realEstateMainBranchPath(templateKey), { scroll: false });
+  }, [
+    searchParams,
+    templateKey,
+    branchKey,
+    mergedFields.length,
+    layoutMode,
+    bootstrapLayoutMode,
+    router,
+  ]);
+
+  const toggleLayoutMode = useCallback(() => {
+    if (layoutMode) {
+      setLayoutMode(false);
+      return;
+    }
+    if (usesSharedMainLayout) {
+      showToast(
+        "ترتيب الحقول والطباعة موحّدة — يُفتح الفرع الرئيسي (شركة الغدير)",
+        "info"
+      );
+      router.push(`${realEstateMainBranchPath(templateKey)}&layout=1`);
+      return;
+    }
+    bootstrapLayoutMode();
+  }, [
+    layoutMode,
+    usesSharedMainLayout,
+    templateKey,
+    router,
+    showToast,
+    bootstrapLayoutMode,
+  ]);
+
+  const openPrintSettings = useCallback(() => {
+    if (usesSharedMainLayout) {
+      showToast(
+        "إعدادات الطباعة موحّدة — يُفتح الفرع الرئيسي (شركة الغدير)",
+        "info"
+      );
+      router.push(`${realEstateMainBranchPath(templateKey)}&printSettings=1`);
+      return;
+    }
+    setPrintModal({ open: true, mode: "data" });
+  }, [usesSharedMainLayout, templateKey, router, showToast]);
+
+  useEffect(() => {
+    if (searchParams.get("printSettings") !== "1") return;
+    if (!isRealEstateTemplateKey(templateKey) || !isRealEstateMainBranch(branchKey)) return;
+    if (!canManagePrintSettings) return;
+    setPrintModal({ open: true, mode: "data" });
+    router.replace(realEstateMainBranchPath(templateKey), { scroll: false });
+  }, [
+    searchParams,
+    templateKey,
+    branchKey,
+    canManagePrintSettings,
+    router,
+  ]);
+
   const layoutFontLayouts = useMemo(
     () => ({
       textFieldLayout,
@@ -260,16 +350,19 @@ export default function ChequeEditorPage() {
       const merged = typeof next === "function" ? next(prev) : next;
       if (merged.amountNumeric !== prev.amountNumeric && !layoutMode) {
         const amountField = mergedFields.find((f) => f.key === AMOUNT_WORDS_KEY);
+        const effectiveAmountField = amountField
+          ? fieldWithChequePosition(amountField, amountWordsLayout)
+          : null;
         return mergeAmountWordsLines(
           merged,
-          amountField,
+          effectiveAmountField,
           baseTemplate,
           globalFontScale
         );
       }
       return merged;
     });
-  }, [layoutMode, mergedFields, baseTemplate, globalFontScale]);
+  }, [layoutMode, mergedFields, baseTemplate, globalFontScale, amountWordsLayout]);
 
   const wasLayoutModeRef = useRef(layoutMode);
 
@@ -281,9 +374,12 @@ export default function ChequeEditorPage() {
     setValues((prev) => {
       if (!prev.amountNumeric) return prev;
       const amountField = mergedFields.find((f) => f.key === AMOUNT_WORDS_KEY);
+      const effectiveAmountField = amountField
+        ? fieldWithChequePosition(amountField, amountWordsLayout)
+        : null;
       return mergeAmountWordsLines(
         prev,
-        amountField,
+        effectiveAmountField,
         baseTemplate,
         globalFontScale
       );
@@ -292,7 +388,7 @@ export default function ChequeEditorPage() {
     const amountLayouts = getDefaultAmountWordsLayouts(mergedFields);
     setAmountWordsLayout(amountLayouts.amountWordsLayout);
     setAmountWordsLine2Layout(amountLayouts.amountWordsLine2Layout);
-  }, [layoutMode, baseTemplate, mergedFields, globalFontScale]);
+  }, [layoutMode, baseTemplate, mergedFields, globalFontScale, amountWordsLayout]);
 
   const resetForm = useCallback(() => {
     if (!baseTemplate) return;
@@ -651,7 +747,7 @@ export default function ChequeEditorPage() {
     );
   }
 
-  if (isMustasharTemplateKey(templateKey) && (branchLoading || (branchKey && !template))) {
+  if (isBranchedTemplateKey(templateKey) && (branchLoading || (branchKey && !template))) {
     return (
       <div className="py-20 text-center text-slate-600 font-bold" dir="rtl">
         جاري تحميل الفرع…
@@ -679,14 +775,14 @@ export default function ChequeEditorPage() {
         <div>
           <Link
             href={
-              isMustasharTemplateKey(templateKey)
-                ? "/cheques/mustashar_ghadeer/branches"
+              isBranchedTemplateKey(templateKey)
+                ? branchesPagePath(templateKey)
                 : "/cheques"
             }
             className="inline-flex items-center gap-2 text-sm font-bold text-slate-600 hover:text-slate-900 mb-2"
           >
             <FiArrowRight />
-            {isMustasharTemplateKey(templateKey) ? "أفرع المستشار" : "نظام الصكوك"}
+            {isBranchedTemplateKey(templateKey) ? "اختر الفرع" : "نظام الصكوك"}
           </Link>
           <h1 className="text-xl md:text-2xl font-extrabold text-slate-900">
             {template.name}
@@ -706,22 +802,7 @@ export default function ChequeEditorPage() {
           {canLayoutEditor ? (
             <button
               type="button"
-              onClick={() => {
-                const enteringLayout = !layoutMode;
-                setLayoutMode(enteringLayout);
-                if (enteringLayout) {
-                  const textF = mergedFields.find((f) => f.key === "text");
-                  setLayoutSelectedKey(textF?.key || mergedFields[0]?.key || null);
-                  setTextFieldLayout(
-                    (prev) => prev || getDefaultTextFieldLayout(mergedFields)
-                  );
-                  const amountLayouts = getDefaultAmountWordsLayouts(mergedFields);
-                  setAmountWordsLayout((prev) => prev || amountLayouts.amountWordsLayout);
-                  setAmountWordsLine2Layout(
-                    (prev) => prev || amountLayouts.amountWordsLine2Layout
-                  );
-                }
-              }}
+              onClick={toggleLayoutMode}
               className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-extrabold ${
                 layoutMode
                   ? "bg-amber-500 text-white"
@@ -784,7 +865,7 @@ export default function ChequeEditorPage() {
           {canManagePrintSettings ? (
             <button
               type="button"
-              onClick={() => openPrintModal("data")}
+              onClick={openPrintSettings}
               disabled={layoutMode}
               title="ضبط إعدادات الطباعة المحفوظة لهذا القالب"
               className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-extrabold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
@@ -796,6 +877,23 @@ export default function ChequeEditorPage() {
         </div>
       </div>
 
+      {usesSharedMainLayout ? (
+        <div className="mb-4 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm font-semibold text-sky-950 leading-relaxed">
+          <strong className="font-extrabold">إعدادات موحّدة مع الفرع الرئيسي</strong> — العقاري شركة
+          الغدير: ترتيب الحقول، التاريخ، وضبط الطباعة نفسها لكل الأفرع. هنا تُدخل
+          بيانات الصك وتطبع على صورة فرع{" "}
+          <span className="font-extrabold">{template?.branch || branch?.name}</span> فقط.
+        </div>
+      ) : null}
+
+      {isRealEstateLayoutProfile && layoutMode ? (
+        <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-950 leading-relaxed">
+          التعديلات التي تحفظها هنا تُطبَّق على{" "}
+          <strong className="font-extrabold">جميع فروع المصرف العقاري</strong> (كربلاء
+          وغيرها) — يختلف شكل الصك المطبوع مسبقاً فقط.
+        </div>
+      ) : null}
+
       {lastSavedId ? (
         <motion.div
           initial={{ opacity: 0, y: -6 }}
@@ -806,7 +904,7 @@ export default function ChequeEditorPage() {
         </motion.div>
       ) : null}
 
-      <div className="flex flex-col lg:flex-row gap-5 lg:gap-6 items-start">
+      <div className="flex flex-col lg:flex-row gap-4 lg:gap-5 items-start">
         {layoutMode ? (
           <ChequeLayoutPanel
             templateKey={templateKey}
@@ -828,30 +926,34 @@ export default function ChequeEditorPage() {
             textFieldLayout={textFieldLayout}
             amountWordsLayout={amountWordsLayout}
             amountWordsLine2Layout={amountWordsLine2Layout}
+            layoutAppliesToAllBranches={isRealEstateLayoutProfile}
           />
         ) : (
-          <ChequeInputsSidebar
-            template={template}
-            fields={mergedFields}
-            values={values}
-            onChange={handleValuesChange}
-            activeField={activeField}
-            onFieldFocus={setActiveField}
-            globalFontScale={globalFontScale}
-          />
+          <div className="order-2 lg:order-1">
+            <ChequeInputsSidebar
+              template={template}
+              fields={mergedFields}
+              values={values}
+              onChange={handleValuesChange}
+              activeField={activeField}
+              onFieldFocus={setActiveField}
+              globalFontScale={globalFontScale}
+              amountWordsLayout={amountWordsLayout}
+            />
+          </div>
         )}
 
         <motion.div
           initial={{ opacity: 0, scale: 0.98 }}
           animate={{ opacity: 1, scale: 1 }}
-          className="flex-1 min-w-0 w-full rounded-3xl border border-slate-200/80 bg-white p-3 md:p-5 shadow-[0_24px_70px_-32px_rgba(0,0,0,0.25)] sticky top-20"
+          className="flex-[1.85] min-w-0 w-full order-1 lg:order-2 rounded-3xl border border-slate-200/80 bg-white p-2 md:p-4 shadow-[0_24px_70px_-32px_rgba(0,0,0,0.25)] lg:sticky lg:top-20 overflow-hidden"
         >
-          <p className="hidden md:block text-xs font-bold text-slate-500 mb-3 text-center">
+          <p className="hidden md:block text-xs font-bold text-slate-500 mb-2 text-center">
             {layoutMode
               ? "ترتيب الحقول: اختر «المدير المفوض» واسحبه يساراً/يميناً — ثم احفظ التخطيط"
               : "معاينة الصك — «المدير المفوض»: اسحب من أي حافة حول الحقل لتحريك موضعه"}
           </p>
-          <div className="flex justify-center overflow-x-auto pb-1">
+          <div className="w-full min-w-0">
             <ChequeCanvas
               template={template}
               fields={mergedFields}
@@ -870,7 +972,6 @@ export default function ChequeEditorPage() {
               amountWordsLine2Layout={amountWordsLine2Layout}
               textFieldAdjustable={!layoutMode}
               globalFontScale={globalFontScale}
-              physicalSize
             />
           </div>
           {!layoutMode ? (

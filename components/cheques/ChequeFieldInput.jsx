@@ -3,7 +3,7 @@
 import { useLayoutEffect, useRef } from "react";
 import { Cairo } from "next/font/google";
 import { only2Digits, formatAmount } from "@/lib/voucher/utils";
-import { onlyDatePart } from "@/lib/cheques/dateUtils";
+import { onlyDatePart, datePartTextAlign } from "@/lib/cheques/dateUtils";
 import { singleLineText } from "@/lib/cheques/singleLineText";
 import { fieldDesignFontPx } from "@/lib/cheques/chequeDesignMetrics";
 
@@ -93,6 +93,9 @@ export default function ChequeFieldInput({
 
   if (field.type === "datePart") {
     const maxLen = field.maxLength || 2;
+    const align = datePartTextAlign(field.key);
+    const alignClass =
+      align === "right" ? "text-right" : align === "left" ? "text-left" : "text-center";
     return (
       <input
         type="text"
@@ -102,7 +105,7 @@ export default function ChequeFieldInput({
         value={v}
         onChange={(e) => onChange(onlyDatePart(e.target.value, maxLen))}
         placeholder={canvasPlaceholder ?? field.label}
-        className={`${className} text-center`}
+        className={`${className} ${alignClass}`}
         style={textStyle}
         {...common}
       />

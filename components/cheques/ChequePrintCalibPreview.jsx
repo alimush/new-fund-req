@@ -2,7 +2,8 @@
 
 import { useMemo } from "react";
 import { isPrintField } from "@/lib/cheques/templates";
-import { slashPositionBetween } from "@/lib/cheques/dateUtils";
+import { datePartTextAlign, datePartJustifyContent } from "@/lib/cheques/dateUtils";
+import { resolveSlashPositions } from "@/lib/cheques/dateSlashLayout";
 import { printFontSizeToPreviewPx } from "@/lib/cheques/chequeDesignMetrics";
 import {
   AMOUNT_WORDS_KEY,
@@ -15,9 +16,11 @@ import {
 } from "@/lib/cheques/textFieldLayout";
 import {
   formatCmFromMm,
+  getEffectiveFieldOffset,
   getFieldFontStyle,
   getFieldOffset,
   chequeSheetTransformStyle,
+  SLASH_GROUP_KEY,
 } from "@/lib/cheques/printCalib";
 import { getA4PaperSize } from "@/lib/cheques/chequePageSize";
 
@@ -29,7 +32,7 @@ const PER_CHEQUE_KEYS = new Set([TEXT_KEY, AMOUNT_WORDS_KEY, AMOUNT_WORDS_LINE2_
 const PREVIEW_PAGE_WIDTH_PX = 560;
 
 function fieldShiftPx(calib, key, pxPerMm) {
-  const { offsetXmm, offsetYmm } = getFieldOffset(calib, key);
+  const { offsetXmm, offsetYmm } = getEffectiveFieldOffset(calib, key);
   if (!offsetXmm && !offsetYmm) return undefined;
   return `translate(${offsetXmm * pxPerMm}px, ${offsetYmm * pxPerMm}px)`;
 }
@@ -44,7 +47,7 @@ const fieldBox = (f) => ({
   alignItems: f.type === "datePart" || f.type === "amount" ? "center" : "flex-start",
   justifyContent:
     f.type === "datePart"
-      ? "center"
+      ? datePartJustifyContent(f.key)
       : f.type === "amount" || f.key === "amountNumeric"
       ? "flex-start"
       : "flex-start",
@@ -117,7 +120,7 @@ export default function ChequePrintCalibPreview({
   );
 
   const dateField = fieldByKey.dateDay;
-  const dateFontStyle = getFieldFontStyle(calib, "date", dateField);
+  const slashFontStyle = getFieldFontStyle(calib, SLASH_GROUP_KEY, dateField);
 
   const hasPageOffset = calib.pageTopMm > 0 || calib.pageLeftMm > 0;
 
@@ -191,37 +194,33 @@ export default function ChequePrintCalibPreview({
               }}
             >
               {dateShowSlashes
-                ? DATE_ORDER.slice(0, -1).map((key, i) => {
-                    const a = fieldByKey[DATE_ORDER[i]];
-                    const b = fieldByKey[DATE_ORDER[i + 1]];
-                    const pos = slashPositionBetween(a, b);
-                    if (!pos) return null;
-                    const slashKey = `slash_${i}`;
-                    const shift = fieldShiftPx(calib, slashKey, pxPerMm);
+                ? resolveSlashPositions(list, true).map((slash) => {
+                    const a = fieldByKey.dateDay;
+                    const shift = fieldShiftPx(calib, slash.key, pxPerMm);
                     const slashFs = printFontSizeToPreviewPx(
                       a || dateField,
                       template,
                       calib,
-                      dateFontStyle,
+                      slashFontStyle,
                       pxPerMm,
                       3.2,
                       layoutFontScale
                     );
                     return (
                       <div
-                        key={`slash-${i}`}
+                        key={slash.id}
                         style={{
                           position: "absolute",
-                          top: `${pos.top}%`,
-                          left: `${pos.left}%`,
-                          width: `${pos.width}%`,
-                          height: `${pos.height}%`,
+                          top: `${slash.top}%`,
+                          left: `${slash.left}%`,
+                          width: `${slash.width}%`,
+                          height: `${slash.height}%`,
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "center",
-                          fontWeight: dateFontStyle.fontWeight,
+                          fontWeight: slashFontStyle.fontWeight,
                           fontSize: slashFs,
-                          color: dateFontStyle.color,
+                          color: slashFontStyle.color,
                           transform: shift
                             ? `translate(-50%, 0) ${shift}`
                             : "translate(-50%, 0)",
@@ -236,7 +235,13 @@ export default function ChequePrintCalibPreview({
               {staticFields.map((f) => {
                 const val = values?.[f.key];
                 if (val == null || val === "") return null;
-                const fontStyle = getFieldFontStyle(calib, f.key, f);
+                const isDate = f.type === "datePart";
+                const isAmount = f.type === "amount" || f.key === "amountNumeric";
+                const fontStyle = getFieldFontStyle(
+                  calib,
+                  isDate ? "date" : f.key,
+                  f
+                );
                 const fs = printFontSizeToPreviewPx(
                   f,
                   template,
@@ -246,8 +251,6 @@ export default function ChequePrintCalibPreview({
                   3.2,
                   layoutFontScale
                 );
-                const isDate = f.type === "datePart";
-                const isAmount = f.type === "amount" || f.key === "amountNumeric";
                 const shift = fieldShiftPx(calib, f.key, pxPerMm);
                 return (
                   <div key={f.key} style={{ ...fieldBox(f), transform: shift }}>
@@ -256,7 +259,7 @@ export default function ChequePrintCalibPreview({
                         fontSize: fs,
                         fontWeight: fontStyle.fontWeight,
                         width: "100%",
-                        textAlign: isDate ? "center" : isAmount ? "left" : "right",
+                        textAlign: isDate ? datePartTextAlign(f.key) : isAmount ? "left" : "right",
                         direction: isDate || isAmount ? "ltr" : "rtl",
                         whiteSpace: f.key === "amountWords" ? "nowrap" : "normal",
                         overflow: "hidden",

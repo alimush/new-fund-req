@@ -10,6 +10,12 @@ import {
 } from "react-icons/fi";
 import { exportLayoutForTemplatesFile } from "@/lib/cheques/mergeFields";
 import { isCanvasField } from "@/lib/cheques/templates";
+import {
+  dateSpacingLayoutKeys,
+  isSlashLayoutKey,
+  layoutEditableFields,
+  spacingLayoutLabel,
+} from "@/lib/cheques/dateSlashLayout";
 import { fieldPositionMm, formatMm } from "@/lib/cheques/coordinates";
 import {
   LAYOUT_FONT_SCALE_DEFAULT,
@@ -72,6 +78,7 @@ export default function ChequeLayoutPanel({
   textFieldLayout = null,
   amountWordsLayout = null,
   amountWordsLine2Layout = null,
+  layoutAppliesToAllBranches = false,
 }) {
   const selected = useMemo(
     () =>
@@ -116,6 +123,14 @@ export default function ChequeLayoutPanel({
         <p className="text-[11px] text-amber-800/90 font-semibold mt-2 leading-relaxed">
           لتعديل <strong>افتراضي text</strong>: اختر «text» من القائمة أو اسحبه على الصورة ثم احفظ.
           موضع text في وضع الإدخال (الشريط الأزرق) يخص كل صك على حدة.
+          <span className="block mt-1">
+            التاريخ: حرّك كل رقم وكل <strong>/</strong> من القائمة أو من قسم «مسافة التاريخ».
+          </span>
+          {layoutAppliesToAllBranches ? (
+            <span className="block mt-2 rounded-lg bg-amber-100/90 px-2 py-1.5 font-extrabold text-amber-950">
+              يُحفظ لكل فروع المصرف العقاري — الرئيسي وكربلاء وغيرها
+            </span>
+          ) : null}
         </p>
       </div>
 
@@ -158,6 +173,32 @@ export default function ChequeLayoutPanel({
         </p>
       </div>
 
+      {fields.some((f) => f.type === "datePart") ? (
+        <div className="rounded-2xl border border-violet-200 bg-violet-50/80 p-4 space-y-2">
+          <p className="text-xs font-extrabold text-violet-900">
+            مسافة التاريخ — كل رقم وكل /
+          </p>
+          <p className="text-[10px] font-semibold text-violet-800/90 leading-relaxed">
+            X (يسار %) يحدّد موضع كل جزء — اسحب على الصورة أو عدّل هنا
+          </p>
+          {dateSpacingLayoutKeys(dateShowSlashes).map((key) => {
+            const f = fields.find((x) => x.key === key);
+            if (!f) return null;
+            return (
+              <NumControl
+                key={key}
+                label={`X — ${spacingLayoutLabel(key, fields)}`}
+                value={f.left}
+                min={0}
+                max={100}
+                step={0.1}
+                onChange={(v) => onUpdateField(key, { left: v })}
+              />
+            );
+          })}
+        </div>
+      ) : null}
+
       <div className="rounded-2xl border border-emerald-200 bg-emerald-50/80 p-4">
         <p className="mb-2 flex items-center gap-2 text-xs font-extrabold text-emerald-950">
           <FiType size={14} />
@@ -188,7 +229,7 @@ export default function ChequeLayoutPanel({
       <div className="rounded-2xl border border-slate-200 bg-white p-3 max-h-[220px] overflow-y-auto">
         <p className="text-xs font-extrabold text-slate-700 mb-2">الحقول</p>
         <div className="flex flex-col gap-1">
-          {fields.filter(isCanvasField).map((f) => (
+          {layoutEditableFields(fields, dateShowSlashes).map((f) => (
             <button
               key={f.key}
               type="button"
@@ -196,12 +237,17 @@ export default function ChequeLayoutPanel({
               className={`text-right rounded-lg px-3 py-2 text-sm font-bold transition ${
                 selectedKey === f.key
                   ? "bg-emerald-600 text-white"
+                  : isSlashLayoutKey(f.key)
+                  ? "bg-violet-50 text-violet-900 border border-violet-200 hover:bg-violet-100"
                   : f.key === "text"
                   ? "bg-sky-50 text-sky-900 border border-sky-200 hover:bg-sky-100"
                   : "bg-slate-50 text-slate-700 hover:bg-slate-100"
               }`}
             >
               {f.label}
+              {isSlashLayoutKey(f.key) ? (
+                <span className="block text-[10px] font-semibold opacity-80">فاصل /</span>
+              ) : null}
               {f.key === "text" ? (
                 <span className="block text-[10px] font-semibold opacity-80">
                   موضع افتراضي — يسار الصك
@@ -215,6 +261,11 @@ export default function ChequeLayoutPanel({
       {selected ? (
         <div className="rounded-2xl border border-slate-200 bg-slate-50/90 p-4 space-y-3">
           <p className="text-sm font-extrabold text-slate-800">{selected.label}</p>
+          {selected.type === "dateSlash" ? (
+            <p className="text-[10px] font-semibold text-violet-800 bg-violet-50 border border-violet-200 rounded-lg px-2 py-1.5">
+              فاصل التاريخ — حرّكه أفقياً لمحاذاته مع الخط المطبوع على الصك
+            </p>
+          ) : null}
           {template ? (
             <p className="rounded-lg bg-slate-100 px-2 py-1.5 text-[10px] font-bold text-slate-600 leading-relaxed">
               {(() => {

@@ -10,6 +10,10 @@ import {
   FiChevronLeft,
 } from "react-icons/fi";
 import { CHEQUE_TEMPLATES } from "@/lib/cheques/templates";
+import {
+  isBranchedTemplateKey,
+  branchesPagePath,
+} from "@/lib/cheques/chequeBranches";
 import { useChequeAccess } from "@/components/cheques/useChequeAccess";
 
 const container = {
@@ -115,14 +119,16 @@ export default function ChequesHomePage() {
           const cardImage =
             tpl.key === "mustashar_ghadeer"
               ? "/assets/cheques/branches/mib_main.png"
+              : tpl.key === "real_estate_baghdad"
+              ? "/assets/cheques/branches/real_estate_main.png"
               : tpl.image;
 
           return (
           <motion.div key={tpl.key} variants={item}>
             <Link
               href={
-                tpl.key === "mustashar_ghadeer"
-                  ? "/cheques/mustashar_ghadeer/branches"
+                isBranchedTemplateKey(tpl.key)
+                  ? branchesPagePath(tpl.key)
                   : `/cheques/${tpl.key}`
               }
               className="group block overflow-hidden rounded-3xl border border-white/60 bg-white/70 backdrop-blur-xl shadow-[0_18px_50px_-28px_rgba(0,0,0,0.35)] transition hover:shadow-[0_22px_60px_-24px_rgba(16,185,129,0.35)] hover:-translate-y-1"
@@ -147,13 +153,13 @@ export default function ChequesHomePage() {
               </div>
               <div className="p-5">
                 <p className="text-slate-700 font-bold text-sm">{tpl.bankName}</p>
-                {tpl.key !== "mustashar_ghadeer" && tpl.drawerName ? (
+                {!isBranchedTemplateKey(tpl.key) && tpl.drawerName ? (
                   <p className="text-slate-500 text-xs font-semibold mt-1 truncate">
                     {tpl.drawerName}
                   </p>
                 ) : null}
                 <span className="mt-4 inline-flex items-center rounded-xl bg-emerald-50 px-3 py-1.5 text-emerald-800 text-sm font-extrabold group-hover:bg-emerald-100">
-                  {tpl.key === "mustashar_ghadeer"
+                  {isBranchedTemplateKey(tpl.key)
                     ? "اختر الفرع ←"
                     : "فتح وإدخال البيانات ←"}
                 </span>

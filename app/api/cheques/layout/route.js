@@ -48,6 +48,44 @@ export async function GET(req) {
     if (!access.ok) return access.res;
 
     const { searchParams } = new URL(req.url);
+    const listBaselines = searchParams.get("listBaselines") === "1";
+
+    if (listBaselines) {
+      const docs = await ChequeLayout.find({
+        printCalibBaseline: { $exists: true, $ne: null },
+      })
+        .select(
+          "templateKey printCalibBaselineLabel printCalibBaseline wizardTestCopyCount fields"
+        )
+        .lean();
+
+      const baselines = [];
+      for (const doc of docs) {
+        if (!doc?.printCalibBaseline) continue;
+        const key = String(doc.templateKey || "").trim();
+        const tpl = getChequeTemplate(key);
+        if (!tpl) continue;
+        const data = filterLayoutForTemplate(tpl, doc?.fields || []);
+        const mergedFields =
+          data.length > 0 ? mergeTemplateFields(tpl, data) : fieldsFromTemplate(tpl);
+        const wizardTestCopyCount = normalizeWizardTestCopyCount(doc.wizardTestCopyCount);
+        baselines.push({
+          templateKey: key,
+          templateName: tpl.name || key,
+          label: String(doc.printCalibBaselineLabel || "المرجع المحفوظ").trim(),
+          wizardTestCopyCount,
+          printCalibBaseline: normalizeWizardPrintCalib(
+            doc.printCalibBaseline,
+            tpl,
+            mergedFields,
+            wizardTestCopyCount
+          ),
+        });
+      }
+
+      return NextResponse.json({ success: true, baselines });
+    }
+
     const templateKey = String(searchParams.get("templateKey") || "").trim();
 
     if (!isValidChequeTemplateKey(templateKey)) {
