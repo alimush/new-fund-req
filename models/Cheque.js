@@ -38,7 +38,7 @@ const ChequeSchema = new mongoose.Schema(
     templateKey: {
       type: String,
       required: true,
-      enum: ["real_estate_baghdad", "mustashar_ghadeer"],
+      enum: ["real_estate_baghdad", "mustashar_ghadeer", "rafidain_ghadeer"],
       index: true,
     },
 

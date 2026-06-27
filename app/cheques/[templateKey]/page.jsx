@@ -51,11 +51,16 @@ import {
   applyBranchToTemplate,
   isBranchedTemplateKey,
   branchesPagePath,
-  isRealEstateTemplateKey,
-  isRealEstateMainBranch,
-  realEstateUsesMainBranchSettings,
-  realEstateMainBranchPath,
+  getSharedLayoutProfile,
+  isSharedLayoutMainBranch,
+  usesSharedMainBranchSettings,
+  sharedLayoutMainBranchPath,
 } from "@/lib/cheques/chequeBranches";
+import {
+  applyDateGroupPositionChange,
+  ensureSlashLayoutFields,
+  isDateLayoutKey,
+} from "@/lib/cheques/dateSlashLayout";
 
 function fontPartial(partial) {
   const out = {};
@@ -242,12 +247,17 @@ export default function ChequeEditorPage() {
   }, [templateKey, baseTemplate, loadLayout]);
 
   const usesSharedMainLayout = useMemo(
-    () => realEstateUsesMainBranchSettings(templateKey, branchKey),
+    () => usesSharedMainBranchSettings(templateKey, branchKey),
     [templateKey, branchKey]
   );
 
-  const isRealEstateLayoutProfile = useMemo(
-    () => isRealEstateTemplateKey(templateKey) && isRealEstateMainBranch(branchKey),
+  const sharedLayoutProfile = useMemo(
+    () => getSharedLayoutProfile(templateKey),
+    [templateKey]
+  );
+
+  const isSharedLayoutProfileEditor = useMemo(
+    () => isSharedLayoutMainBranch(templateKey, branchKey),
     [templateKey, branchKey]
   );
 
@@ -263,10 +273,10 @@ export default function ChequeEditorPage() {
 
   useEffect(() => {
     if (searchParams.get("layout") !== "1") return;
-    if (!isRealEstateTemplateKey(templateKey) || !isRealEstateMainBranch(branchKey)) return;
+    if (!isSharedLayoutMainBranch(templateKey, branchKey)) return;
     if (!mergedFields.length || layoutMode) return;
     bootstrapLayoutMode();
-    router.replace(realEstateMainBranchPath(templateKey), { scroll: false });
+    router.replace(sharedLayoutMainBranchPath(templateKey), { scroll: false });
   }, [
     searchParams,
     templateKey,
@@ -283,11 +293,12 @@ export default function ChequeEditorPage() {
       return;
     }
     if (usesSharedMainLayout) {
+      const profile = getSharedLayoutProfile(templateKey);
       showToast(
-        "ترتيب الحقول والطباعة موحّدة — يُفتح الفرع الرئيسي (شركة الغدير)",
+        `ترتيب الحقول والطباعة موحّدة — يُفتح الفرع الرئيسي (${profile?.mainBranchLabel || "الرئيسي"})`,
         "info"
       );
-      router.push(`${realEstateMainBranchPath(templateKey)}&layout=1`);
+      router.push(`${sharedLayoutMainBranchPath(templateKey)}&layout=1`);
       return;
     }
     bootstrapLayoutMode();
@@ -302,11 +313,12 @@ export default function ChequeEditorPage() {
 
   const openPrintSettings = useCallback(() => {
     if (usesSharedMainLayout) {
+      const profile = getSharedLayoutProfile(templateKey);
       showToast(
-        "إعدادات الطباعة موحّدة — يُفتح الفرع الرئيسي (شركة الغدير)",
+        `إعدادات الطباعة موحّدة — يُفتح الفرع الرئيسي (${profile?.mainBranchLabel || "الرئيسي"})`,
         "info"
       );
-      router.push(`${realEstateMainBranchPath(templateKey)}&printSettings=1`);
+      router.push(`${sharedLayoutMainBranchPath(templateKey)}&printSettings=1`);
       return;
     }
     setPrintModal({ open: true, mode: "data" });
@@ -314,10 +326,10 @@ export default function ChequeEditorPage() {
 
   useEffect(() => {
     if (searchParams.get("printSettings") !== "1") return;
-    if (!isRealEstateTemplateKey(templateKey) || !isRealEstateMainBranch(branchKey)) return;
+    if (!isSharedLayoutMainBranch(templateKey, branchKey)) return;
     if (!canManagePrintSettings) return;
     setPrintModal({ open: true, mode: "data" });
-    router.replace(realEstateMainBranchPath(templateKey), { scroll: false });
+    router.replace(sharedLayoutMainBranchPath(templateKey), { scroll: false });
   }, [
     searchParams,
     templateKey,
@@ -460,10 +472,17 @@ export default function ChequeEditorPage() {
       return;
     }
 
-    setMergedFields((prev) =>
-      prev.map((f) => (f.key === key ? { ...f, ...partial } : f))
-    );
-  }, [mergedFields]);
+    setMergedFields((prev) => {
+      if (isDateLayoutKey(key)) {
+        return ensureSlashLayoutFields(
+          applyDateGroupPositionChange(prev, key, partial, dateShowSlashes)
+        );
+      }
+      return ensureSlashLayoutFields(
+        prev.map((f) => (f.key === key ? { ...f, ...partial } : f))
+      );
+    });
+  }, [dateShowSlashes]);
 
   const handleAmountWordsLayoutChange = useCallback(
     (partial) => {
@@ -877,20 +896,20 @@ export default function ChequeEditorPage() {
         </div>
       </div>
 
-      {usesSharedMainLayout ? (
+      {usesSharedMainLayout && sharedLayoutProfile ? (
         <div className="mb-4 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm font-semibold text-sky-950 leading-relaxed">
-          <strong className="font-extrabold">إعدادات موحّدة مع الفرع الرئيسي</strong> — العقاري شركة
-          الغدير: ترتيب الحقول، التاريخ، وضبط الطباعة نفسها لكل الأفرع. هنا تُدخل
-          بيانات الصك وتطبع على صورة فرع{" "}
+          <strong className="font-extrabold">إعدادات موحّدة مع الفرع الرئيسي</strong> —{" "}
+          {sharedLayoutProfile.bankLabel} ({sharedLayoutProfile.mainBranchLabel}): ترتيب الحقول،
+          التاريخ، وضبط الطباعة نفسها لكل الأفرع. هنا تُدخل بيانات الصك وتطبع على صورة فرع{" "}
           <span className="font-extrabold">{template?.branch || branch?.name}</span> فقط.
         </div>
       ) : null}
 
-      {isRealEstateLayoutProfile && layoutMode ? (
+      {isSharedLayoutProfileEditor && layoutMode && sharedLayoutProfile ? (
         <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-950 leading-relaxed">
           التعديلات التي تحفظها هنا تُطبَّق على{" "}
-          <strong className="font-extrabold">جميع فروع المصرف العقاري</strong> (كربلاء
-          وغيرها) — يختلف شكل الصك المطبوع مسبقاً فقط.
+          <strong className="font-extrabold">{sharedLayoutProfile.allBranchesNote}</strong> — يختلف
+          شكل الصك المطبوع مسبقاً فقط.
         </div>
       ) : null}
 
@@ -926,7 +945,7 @@ export default function ChequeEditorPage() {
             textFieldLayout={textFieldLayout}
             amountWordsLayout={amountWordsLayout}
             amountWordsLine2Layout={amountWordsLine2Layout}
-            layoutAppliesToAllBranches={isRealEstateLayoutProfile}
+            layoutAppliesToAllBranches={isSharedLayoutProfileEditor}
           />
         ) : (
           <div className="order-2 lg:order-1">

@@ -7,7 +7,7 @@ const ChequePrintJobSchema = new mongoose.Schema(
     templateKey: {
       type: String,
       required: true,
-      enum: ["real_estate_baghdad", "mustashar_ghadeer"],
+      enum: ["real_estate_baghdad", "mustashar_ghadeer", "rafidain_ghadeer"],
       index: true,
     },
     templateName: { type: String, default: "" },

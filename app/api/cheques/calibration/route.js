@@ -12,13 +12,23 @@ import {
   printCalibPayload,
 } from "@/lib/cheques/printerCalibration";
 import { requireChequeAccess, requireManagePermissions } from "@/lib/cheques/chequeAuth";
+import {
+  RAFIDAIN_TEMPLATE_KEY,
+  REAL_ESTATE_TEMPLATE_KEY,
+} from "@/lib/cheques/chequeBranches";
+import { resolveChequeLayoutDocument } from "@/lib/cheques/chequeLayoutSource";
 
 export const runtime = "nodejs";
 
 async function mergedFieldsForTemplate(tpl, templateKey) {
-  const doc = await ChequeLayout.findOne({ templateKey }).lean();
+  const { doc } = await resolveChequeLayoutDocument(templateKey);
   const data = filterLayoutForTemplate(tpl, doc?.fields || []);
   return data.length > 0 ? mergeTemplateFields(tpl, data) : fieldsFromTemplate(tpl);
+}
+
+async function layoutDocForTemplate(templateKey) {
+  const { doc } = await resolveChequeLayoutDocument(templateKey);
+  return doc;
 }
 
 export async function GET(req) {
@@ -61,14 +71,28 @@ export async function GET(req) {
 
     const tpl = getChequeTemplate(templateKey);
     const fields = await mergedFieldsForTemplate(tpl, templateKey);
-    const layoutDoc = await ChequeLayout.findOne({ templateKey }).lean();
+    const layoutDoc = await layoutDocForTemplate(templateKey);
     const layoutCalib = normalizePrintCalib(layoutDoc?.printCalib, tpl, fields);
 
     let printerDoc = null;
     if (printerName) {
       printerDoc = await PrinterCalibration.findOne({ userId, templateKey, printerName }).lean();
+      if (!printerDoc && templateKey === RAFIDAIN_TEMPLATE_KEY) {
+        printerDoc = await PrinterCalibration.findOne({
+          userId,
+          templateKey: REAL_ESTATE_TEMPLATE_KEY,
+          printerName,
+        }).lean();
+      }
     } else {
       printerDoc = await PrinterCalibration.findOne({ userId, templateKey, isDefault: true }).lean();
+      if (!printerDoc && templateKey === RAFIDAIN_TEMPLATE_KEY) {
+        printerDoc = await PrinterCalibration.findOne({
+          userId,
+          templateKey: REAL_ESTATE_TEMPLATE_KEY,
+          isDefault: true,
+        }).lean();
+      }
     }
 
     const printCalib = mergePrintCalibs(

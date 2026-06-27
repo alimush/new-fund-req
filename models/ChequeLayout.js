@@ -50,7 +50,7 @@ const ChequeLayoutSchema = new mongoose.Schema(
       type: String,
       required: true,
       unique: true,
-      enum: ["real_estate_baghdad", "mustashar_ghadeer"],
+      enum: ["real_estate_baghdad", "mustashar_ghadeer", "rafidain_ghadeer"],
     },
     fields: { type: [FieldLayoutSchema], default: [] },
     dateShowSlashes: { type: Boolean, default: true },

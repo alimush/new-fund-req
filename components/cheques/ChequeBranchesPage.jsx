@@ -8,8 +8,9 @@ import { FiArrowRight, FiChevronLeft, FiLayers } from "react-icons/fi";
 import { useChequeAccess } from "@/components/cheques/useChequeAccess";
 import {
   dedupeBranchesList,
-  isRealEstateMainBranch,
-  isRealEstateTemplateKey,
+  getSharedLayoutProfile,
+  hasSharedMainLayoutProfile,
+  isSharedLayoutMainBranch,
 } from "@/lib/cheques/chequeBranches";
 import { getChequeTemplate } from "@/lib/cheques/templates";
 
@@ -21,6 +22,8 @@ export default function ChequeBranchesPage({ templateKey, pageTitle }) {
 
   const parentTemplate = getChequeTemplate(templateKey);
   const aspectRatio = parentTemplate?.aspectRatio || "1024 / 470";
+
+  const sharedLayoutProfile = getSharedLayoutProfile(templateKey);
 
   useEffect(() => {
     if (!ready || !canUseCheques || !templateKey) return;
@@ -79,8 +82,8 @@ export default function ChequeBranchesPage({ templateKey, pageTitle }) {
             {pageTitle}
           </h1>
           <p className="mt-2 max-w-2xl text-slate-600 font-semibold text-[15px] leading-relaxed">
-            {isRealEstateTemplateKey(templateKey)
-              ? "نفس ترتيب الحقول وضبط الطباعة والتاريخ لكل الأفرع — تُعدّل من الفرع الرئيسي (شركة الغدير). يختلف شكل الصك المطبوع مسبقاً فقط."
+            {hasSharedMainLayoutProfile(templateKey) && sharedLayoutProfile
+              ? `نفس ترتيب الحقول وضبط الطباعة والتاريخ لكل الأفرع — تُعدّل من الفرع الرئيسي (${sharedLayoutProfile.mainBranchLabel}). يختلف شكل الصك المطبوع مسبقاً فقط.`
               : `${parentTemplate?.bankName} — نفس مقاس الصك ومواضع البيانات وحجم الخط لكل الأفرع. يختلف شكل الصك المطبوع مسبقاً فقط.`}
           </p>
         </div>
@@ -155,8 +158,8 @@ export default function ChequeBranchesPage({ templateKey, pageTitle }) {
                         حساب {branch.accountNumber}
                       </span>
                     ) : null}
-                    {isRealEstateTemplateKey(templateKey) &&
-                    !isRealEstateMainBranch(branch.branchKey) ? (
+                    {hasSharedMainLayoutProfile(templateKey) &&
+                    !isSharedLayoutMainBranch(templateKey, branch.branchKey) ? (
                       <span className="rounded-lg bg-violet-50 px-2.5 py-1 text-violet-900">
                         نفس إعدادات الرئيسي
                       </span>

@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { FiMove, FiSave, FiX, FiRotateCcw, FiRotateCw } from "react-icons/fi";
 import SheetOrientationControls from "@/components/cheques/SheetOrientationControls";
+import DateMoveModeToggle from "@/components/cheques/DateMoveModeToggle";
 import { isPrintField } from "@/lib/cheques/templates";
 import { slashPositionBetween, datePartTextAlign, datePartJustifyContent } from "@/lib/cheques/dateUtils";
 import { printFontSizeToPreviewPx } from "@/lib/cheques/chequeDesignMetrics";
@@ -20,6 +21,7 @@ import {
 } from "@/lib/cheques/textFieldLayout";
 import { getA4PaperSize } from "@/lib/cheques/chequePageSize";
 import {
+  DATE_ALL_GROUP_KEY,
   DATE_GROUP_KEY,
   SLASH_GROUP_KEY,
   formatCmFromMm,
@@ -28,6 +30,7 @@ import {
   getFieldOffset,
   getStoredFieldOffset,
   getImageSheetCalib,
+  isDatePrintGroupKey,
   isDateSpacingKey,
   normalizePrintCalib,
   PRINT_FIELD_LABELS,
@@ -36,6 +39,7 @@ import {
   chequeSheetTransformStyle,
   normalizeSheetRotationDeg,
   wizardPrintCalibPayload,
+  DATE_PART_KEYS,
 } from "@/lib/cheques/printCalib";
 import {
   ensureWizardCopyLayouts,
@@ -118,6 +122,8 @@ export default function ChequePrintPositionEditor({
   wizardCalibSource = "shared",
   wizardCopyCount = 3,
   imageUrl = null,
+  dateMoveMode: dateMoveModeProp,
+  onDateMoveModeChange,
 }) {
   const isWizardPurpose = purpose === "wizard";
   const wizardCopyTotal = Math.max(1, Math.min(3, Math.round(Number(wizardCopyCount) || 3)));
@@ -125,6 +131,9 @@ export default function ChequePrintPositionEditor({
   const [mode, setMode] = useState(isWizardPurpose ? "sheet" : "field");
   const [selectedCopy, setSelectedCopy] = useState(1);
   const [selectedKey, setSelectedKey] = useState(DATE_GROUP_KEY);
+  const [dateMoveModeInternal, setDateMoveModeInternal] = useState("split");
+  const dateMoveMode = dateMoveModeProp ?? dateMoveModeInternal;
+  const setDateMoveMode = onDateMoveModeChange ?? setDateMoveModeInternal;
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [saveMessage, setSaveMessage] = useState("");
@@ -184,22 +193,63 @@ export default function ChequePrintPositionEditor({
     [dateShowSlashes]
   );
 
+  const resolveDragFieldKey = useCallback(
+    (fieldKey) => {
+      if (dateMoveMode === "unified" && isDatePrintGroupKey(fieldKey)) {
+        return DATE_ALL_GROUP_KEY;
+      }
+      return fieldKey;
+    },
+    [dateMoveMode]
+  );
+
+  const isPrintDateSelected = useCallback(
+    (fieldKey) => {
+      if (mode !== "field") return false;
+      if (dateMoveMode === "unified" && selectedKey === DATE_ALL_GROUP_KEY) {
+        return isDatePrintGroupKey(fieldKey);
+      }
+      if (selectedKey === DATE_GROUP_KEY && DATE_PART_KEYS.includes(fieldKey)) return true;
+      if (selectedKey === SLASH_GROUP_KEY && (fieldKey === "slash_0" || fieldKey === "slash_1")) {
+        return true;
+      }
+      return selectedKey === fieldKey;
+    },
+    [mode, dateMoveMode, selectedKey]
+  );
+
   const fieldItems = useMemo(() => {
     const labelByKey = Object.fromEntries(list.map((f) => [f.key, f.label || f.key]));
+
     const fontItems = offsetKeys
-      .filter((key) => key !== SLASH_GROUP_KEY || dateShowSlashes)
+      .filter((key) => {
+        if (key === SLASH_GROUP_KEY && !dateShowSlashes) return false;
+        if (dateMoveMode === "unified") {
+          if (key === DATE_GROUP_KEY || key === SLASH_GROUP_KEY) return false;
+        } else if (key === DATE_ALL_GROUP_KEY) {
+          return false;
+        }
+        return true;
+      })
       .map((key) => ({
         key,
         label: PRINT_FIELD_LABELS[key] || labelByKey[key] || key,
         kind: "font",
       }));
+
     const spacingItems = spacingKeys.map((key) => ({
       key,
       label: PRINT_FIELD_LABELS[key] || labelByKey[key] || key,
       kind: "spacing",
     }));
-    return [...fontItems, ...spacingItems];
-  }, [offsetKeys, spacingKeys, list, dateShowSlashes]);
+
+    const seen = new Set();
+    return [...fontItems, ...spacingItems].filter((item) => {
+      if (seen.has(item.key)) return false;
+      seen.add(item.key);
+      return true;
+    });
+  }, [offsetKeys, spacingKeys, list, dateShowSlashes, dateMoveMode]);
 
   const textBase = fieldByKey[TEXT_KEY];
   const textField = textBase
@@ -261,8 +311,9 @@ export default function ChequePrintPositionEditor({
     setError("");
     setSaveMessage("");
     setMode("field");
+    if (!dateMoveModeProp) setDateMoveModeInternal("split");
     if (fieldItems.length) setSelectedKey(fieldItems[0].key);
-  }, [open, isWizardPurpose, fieldItems]);
+  }, [open, isWizardPurpose, fieldItems, dateMoveModeProp]);
 
   useEffect(() => {
     if (!open) return;
@@ -644,7 +695,7 @@ export default function ChequePrintPositionEditor({
       if (mode !== "field") return;
       e.preventDefault();
       e.stopPropagation();
-      const resolved = isDateSpacingKey(fieldKey) ? fieldKey : fieldKey;
+      const resolved = resolveDragFieldKey(fieldKey);
       setSelectedKey(resolved);
       const { offsetXmm, offsetYmm } = getStoredFieldOffset(calib, resolved);
       dragRef.current = {
@@ -677,7 +728,7 @@ export default function ChequePrintPositionEditor({
       window.addEventListener("mousemove", onMove);
       window.addEventListener("mouseup", onUp);
     },
-    [mode, calib, pxPerMmSheet, patchField, endDrag]
+    [mode, calib, pxPerMmSheet, patchField, endDrag, resolveDragFieldKey]
   );
 
   const handleSave = async () => {
@@ -1006,9 +1057,7 @@ export default function ChequePrintPositionEditor({
                           if (!pos) return null;
                           const slashKey = `slash_${i}`;
                           const shift = fieldShiftPx(calib, slashKey, pxPerMmSheet);
-                          const slashSelected =
-                            mode === "field" &&
-                            (selectedKey === slashKey || selectedKey === SLASH_GROUP_KEY);
+                          const slashSelected = mode === "field" && isPrintDateSelected(slashKey);
                           return (
                             <div
                               key={`slash-${i}`}
@@ -1036,7 +1085,9 @@ export default function ChequePrintPositionEditor({
                                 pointerEvents: mode === "field" ? "auto" : "none",
                               }}
                               onMouseDown={(e) => startFieldDrag(e, slashKey)}
-                              onDoubleClick={() => setSelectedKey(slashKey)}
+                              onDoubleClick={() => {
+                                if (dateMoveMode === "split") setSelectedKey(slashKey);
+                              }}
                             >
                               /
                             </div>
@@ -1056,10 +1107,7 @@ export default function ChequePrintPositionEditor({
                       );
                       const fs = previewFontPx(f, fontStyle);
                       const shift = fieldShiftPx(calib, f.key, pxPerMmSheet);
-                      const selected =
-                        mode === "field" &&
-                        (selectedKey === f.key ||
-                          (selectedKey === DATE_GROUP_KEY && isDate));
+                      const selected = mode === "field" && isPrintDateSelected(f.key);
                       return (
                         <div
                           key={f.key}
@@ -1260,6 +1308,17 @@ export default function ChequePrintPositionEditor({
                     </div>
                   </div>
                 ) : (
+                <>
+                <DateMoveModeToggle
+                  value={dateMoveMode}
+                  onChange={(mode) => {
+                    setDateMoveMode(mode);
+                    setSelectedKey(
+                      mode === "unified" ? DATE_ALL_GROUP_KEY : DATE_GROUP_KEY
+                    );
+                  }}
+                  variant="dark"
+                />
                 <div className="rounded-xl border border-white/10 bg-white/5 p-3">
                   <p className="mb-2 text-xs font-extrabold text-white">الحقول</p>
                   <div className="space-y-1">
@@ -1289,6 +1348,7 @@ export default function ChequePrintPositionEditor({
                     ))}
                   </div>
                 </div>
+                </>
                 )}
 
                 {mode === "field" && selectedKey && !isWizardPurpose ? (
@@ -1304,6 +1364,11 @@ export default function ChequePrintPositionEditor({
                     <p className="font-semibold text-slate-400">
                       عمودي: {formatCmFromMm(selectedOffset.offsetYmm)} سم
                     </p>
+                    {selectedKey === DATE_ALL_GROUP_KEY ? (
+                      <p className="mt-1 text-[10px] font-semibold text-violet-300">
+                        يحرّك أرقام التاريخ والفواصل / معاً — للتباعد الدقيق استخدم ↔ بالقائمة
+                      </p>
+                    ) : null}
                     {isDateSpacingKey(selectedKey) ? (
                       <p className="mt-1 text-[10px] font-semibold text-violet-300">
                         مسافة هذا الجزء — يُضاف فوق إزاحة مجموعة{" "}

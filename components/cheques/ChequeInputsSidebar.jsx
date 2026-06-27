@@ -4,6 +4,7 @@ import { FiCalendar, FiHash, FiDollarSign, FiDatabase, FiUser } from "react-icon
 import ChequeFieldInput from "@/components/cheques/ChequeFieldInput";
 import { amountNumericToWordsLines } from "@/lib/cheques/amountWords";
 import { datePartsFromIso, isoFromDateParts } from "@/lib/cheques/dateUtils";
+import { isSlashLayoutKey } from "@/lib/cheques/dateSlashLayout";
 import { singleLineText } from "@/lib/cheques/singleLineText";
 import { TEXT_KEY, fieldWithChequePosition, AMOUNT_WORDS_KEY } from "@/lib/cheques/textFieldLayout";
 
@@ -69,6 +70,7 @@ export default function ChequeInputsSidebar({
       !DATE_KEYS.includes(f.key) &&
       !AMOUNT_KEYS.includes(f.key) &&
       !f.sidebarOnly &&
+      !isSlashLayoutKey(f.key) &&
       f.key !== TEXT_KEY
   );
 

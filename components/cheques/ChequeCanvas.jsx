@@ -6,7 +6,7 @@ import { Cairo } from "next/font/google";
 import ChequeFieldInput from "@/components/cheques/ChequeFieldInput";
 import { cleanAmount } from "@/lib/voucher/utils";
 import { getTodayDateParts } from "@/lib/cheques/dateUtils";
-import { isSlashLayoutKey, resolveSlashPositions } from "@/lib/cheques/dateSlashLayout";
+import { isSlashLayoutKey, resolveSlashPositions, DATE_GROUP_KEY, isDateLayoutKey, isDateGroupSelectionKey } from "@/lib/cheques/dateSlashLayout";
 import { isCanvasField } from "@/lib/cheques/templates";
 import {
   fieldDesignFontPx,
@@ -224,11 +224,32 @@ export default function ChequeCanvas({
 
   const getRect = () => containerRef.current?.getBoundingClientRect();
 
+  const isDateBlockSelected = useCallback(
+    (fieldKey) => {
+      if (!layoutMode || viewMode) return false;
+      if (isDateGroupSelectionKey(layoutSelectedKey)) return isDateLayoutKey(fieldKey);
+      if (isDateLayoutKey(layoutSelectedKey)) return isDateLayoutKey(fieldKey);
+      return layoutSelectedKey === fieldKey;
+    },
+    [layoutMode, viewMode, layoutSelectedKey]
+  );
+
+  const selectLayoutField = useCallback(
+    (fieldKey) => {
+      if (isDateLayoutKey(fieldKey)) {
+        onLayoutSelectField?.(DATE_GROUP_KEY);
+        return;
+      }
+      onLayoutSelectField?.(fieldKey);
+    },
+    [onLayoutSelectField]
+  );
+
   const startLayoutDrag = useCallback(
     (e, fieldKey) => {
       if (!layoutMode || !containerRef.current) return;
       e.preventDefault();
-      onLayoutSelectField?.(fieldKey);
+      selectLayoutField(fieldKey);
 
       const rect = getRect();
       const field = list.find((f) => f.key === fieldKey);
@@ -265,7 +286,7 @@ export default function ChequeCanvas({
       window.addEventListener("mousemove", onMove);
       window.addEventListener("mouseup", onUp);
     },
-    [layoutMode, list, onFieldLayoutChange, onLayoutSelectField]
+    [layoutMode, list, onFieldLayoutChange, selectLayoutField]
   );
 
   const startPerChequeMove = (e, currentLayout, onLayoutChange) => {
@@ -431,7 +452,7 @@ export default function ChequeCanvas({
         onClick={(e) => {
           if (layoutMode && !viewMode) {
             e.stopPropagation();
-            onLayoutSelectField?.(f.key);
+            selectLayoutField(f.key);
           }
         }}
       >
@@ -446,7 +467,7 @@ export default function ChequeCanvas({
             readOnly={isReadOnly}
             onFocus={() => {
               if (viewMode) return;
-              if (layoutMode) onLayoutSelectField?.(f.key);
+              if (layoutMode) selectLayoutField(f.key);
               else onFieldFocus?.(f.key);
             }}
             onBlur={onFieldBlur}
@@ -463,7 +484,7 @@ export default function ChequeCanvas({
               readOnly={isReadOnly}
               onFocus={() => {
                 if (viewMode) return;
-                if (layoutMode) onLayoutSelectField?.(f.key);
+                if (layoutMode) selectLayoutField(f.key);
                 else onFieldFocus?.(f.key);
               }}
               onBlur={onFieldBlur}
@@ -513,7 +534,7 @@ export default function ChequeCanvas({
 
       <div className="absolute inset-0">
         {dateSlashes.map((s) => {
-          const isLayoutSelected = layoutMode && layoutSelectedKey === s.key;
+          const isLayoutSelected = isDateBlockSelected(s.key);
           return (
           <div
             key={s.id}
@@ -536,7 +557,7 @@ export default function ChequeCanvas({
             onClick={(e) => {
               if (layoutMode && !viewMode) {
                 e.stopPropagation();
-                onLayoutSelectField?.(s.key);
+                selectLayoutField(s.key);
               }
             }}
           >
@@ -559,7 +580,7 @@ export default function ChequeCanvas({
             if (val == null || String(val).trim() === "") return null;
           }
           return renderFieldBox(f, {
-            isLayoutSelected: layoutMode && layoutSelectedKey === f.key,
+            isLayoutSelected: isDateBlockSelected(f.key),
           });
         })}
 

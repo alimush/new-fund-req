@@ -7,6 +7,7 @@ import { FiPrinter, FiSave, FiX, FiRotateCcw, FiTarget, FiMove, FiBookmark } fro
 import ChequePrintCalibPreview from "@/components/cheques/ChequePrintCalibPreview";
 import ChequeCalibWizard from "@/components/cheques/ChequeCalibWizard";
 import ChequePrintPositionEditor from "@/components/cheques/ChequePrintPositionEditor";
+import DateMoveModeToggle from "@/components/cheques/DateMoveModeToggle";
 import SheetOrientationControls from "@/components/cheques/SheetOrientationControls";
 import {
   fetchPrinterCalibrationList,
@@ -36,6 +37,7 @@ import {
   transferPrintCalibAcrossTemplates,
   WIZARD_CALIB_SOURCE_SHARED,
   wizardPrintCalibPayload,
+  DATE_ALL_GROUP_KEY,
   DATE_GROUP_KEY,
   SLASH_GROUP_KEY,
   DEFAULT_PRINT_FIELD_COLOR,
@@ -450,6 +452,7 @@ export default function ChequePrintSettingsModal({
   const [savingBaseline, setSavingBaseline] = useState(false);
   const [allBaselines, setAllBaselines] = useState([]);
   const [restoreBaselineKey, setRestoreBaselineKey] = useState("");
+  const [dateMoveMode, setDateMoveMode] = useState("split");
 
   const defaults = useMemo(
     () => defaultPrintCalib(template, previewFields),
@@ -465,17 +468,27 @@ export default function ChequePrintSettingsModal({
     const fieldByKey = Object.fromEntries(list.map((f) => [f.key, f]));
     return keys
       .filter((key) => key !== SLASH_GROUP_KEY || dateShowSlashes)
+      .filter((key) => {
+        if (dateMoveMode === "unified") {
+          return key !== DATE_GROUP_KEY && key !== SLASH_GROUP_KEY;
+        }
+        return key !== DATE_ALL_GROUP_KEY;
+      })
       .map((key) => ({
         key,
         label: PRINT_FIELD_LABELS[key] || labelByKey[key] || key,
         field:
-          key === DATE_GROUP_KEY || key === SLASH_GROUP_KEY
+          key === DATE_ALL_GROUP_KEY ||
+          key === DATE_GROUP_KEY ||
+          key === SLASH_GROUP_KEY
             ? fieldByKey.dateDay || fieldByKey.dateMonth
             : fieldByKey[key],
       }));
-  }, [previewFields, template, dateShowSlashes]);
+  }, [previewFields, template, dateShowSlashes, dateMoveMode]);
 
-  const hasDateSpacing = offsetFieldList.some((f) => f.key === DATE_GROUP_KEY);
+  const hasDateSpacing = offsetFieldList.some(
+    (f) => f.key === DATE_GROUP_KEY || f.key === DATE_ALL_GROUP_KEY
+  );
 
   useEffect(() => setPortalReady(true), []);
 
@@ -1300,6 +1313,11 @@ export default function ChequePrintSettingsModal({
                     <p className="mb-3 text-[10px] font-semibold text-slate-500">
                       حجم الخط، السُمك، اللون، والإزاحة — التعديل يظهر مباشرة بالمعاينة
                     </p>
+                    {hasDateSpacing ? (
+                      <div className="mb-3">
+                        <DateMoveModeToggle value={dateMoveMode} onChange={setDateMoveMode} />
+                      </div>
+                    ) : null}
                     <div className="space-y-2 max-h-[48vh] overflow-y-auto pr-1">
                       {offsetFieldList.map(({ key, label, field }) => {
                         const o = getFieldOffset(calib, key);
@@ -1477,6 +1495,8 @@ export default function ChequePrintSettingsModal({
         canSave={canSave}
         purpose="data"
         imageUrl={wizardImageUrl}
+        dateMoveMode={dateMoveMode}
+        onDateMoveModeChange={setDateMoveMode}
         onSaved={(saved) => {
           setCalib(saved);
           onSaved?.(saved);

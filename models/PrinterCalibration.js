@@ -32,7 +32,7 @@ const PrinterCalibrationSchema = new mongoose.Schema(
     templateKey: {
       type: String,
       required: true,
-      enum: ["real_estate_baghdad", "mustashar_ghadeer"],
+      enum: ["real_estate_baghdad", "mustashar_ghadeer", "rafidain_ghadeer"],
       index: true,
     },
     printerName: { type: String, required: true, trim: true },

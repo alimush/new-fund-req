@@ -28,6 +28,7 @@ import {
   requireChequeFieldLayoutEditor,
   requireManagePermissions,
 } from "@/lib/cheques/chequeAuth";
+import { resolveChequeLayoutDocument } from "@/lib/cheques/chequeLayoutSource";
 
 export const runtime = "nodejs";
 
@@ -96,7 +97,8 @@ export async function GET(req) {
     }
 
     const tpl = getChequeTemplate(templateKey);
-    const doc = await ChequeLayout.findOne({ templateKey }).lean();
+    const { doc } = await resolveChequeLayoutDocument(templateKey);
+
     const data = filterLayoutForTemplate(tpl, doc?.fields || []);
 
     const dateShowSlashes =

@@ -121,6 +121,8 @@ export default function ChequesHomePage() {
               ? "/assets/cheques/branches/mib_main.png"
               : tpl.key === "real_estate_baghdad"
               ? "/assets/cheques/branches/real_estate_main.png"
+              : tpl.key === "rafidain_ghadeer"
+              ? "/assets/cheques/branches/raf_zahra_baghdad.png"
               : tpl.image;
 
           return (

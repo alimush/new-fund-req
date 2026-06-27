@@ -11,10 +11,12 @@ import {
 import { exportLayoutForTemplatesFile } from "@/lib/cheques/mergeFields";
 import { isCanvasField } from "@/lib/cheques/templates";
 import {
-  dateSpacingLayoutKeys,
+  DATE_GROUP_KEY,
+  DATE_PART_KEYS,
+  isDateGroupSelectionKey,
+  isDateLayoutKey,
   isSlashLayoutKey,
   layoutEditableFields,
-  spacingLayoutLabel,
 } from "@/lib/cheques/dateSlashLayout";
 import { fieldPositionMm, formatMm } from "@/lib/cheques/coordinates";
 import {
@@ -80,18 +82,47 @@ export default function ChequeLayoutPanel({
   amountWordsLine2Layout = null,
   layoutAppliesToAllBranches = false,
 }) {
-  const selected = useMemo(
-    () =>
-      resolvePanelField(selectedKey, fields, {
-        textFieldLayout,
-        amountWordsLayout,
-        amountWordsLine2Layout,
-      }),
-    [fields, selectedKey, textFieldLayout, amountWordsLayout, amountWordsLine2Layout]
+  const dateAnchorField = useMemo(
+    () => fields.find((f) => f.key === DATE_PART_KEYS[0]),
+    [fields]
   );
+
+  const panelFields = useMemo(() => {
+    const list = layoutEditableFields(fields, dateShowSlashes).filter(
+      (f) => !isDateLayoutKey(f.key)
+    );
+    if (dateAnchorField) {
+      return [{ key: DATE_GROUP_KEY, label: "التاريخ (كامل)", type: "dateGroup" }, ...list];
+    }
+    return list;
+  }, [fields, dateShowSlashes, dateAnchorField]);
+
+  const selected = useMemo(() => {
+    if (isDateGroupSelectionKey(selectedKey)) {
+      return dateAnchorField
+        ? { ...dateAnchorField, key: DATE_GROUP_KEY, label: "التاريخ (كامل)", type: "dateGroup" }
+        : null;
+    }
+    return resolvePanelField(selectedKey, fields, {
+      textFieldLayout,
+      amountWordsLayout,
+      amountWordsLine2Layout,
+    });
+  }, [
+    fields,
+    selectedKey,
+    dateAnchorField,
+    textFieldLayout,
+    amountWordsLayout,
+    amountWordsLine2Layout,
+  ]);
 
   const patch = (partial) => {
     if (!selectedKey) return;
+    if (isDateGroupSelectionKey(selectedKey)) {
+      onUpdateField(DATE_PART_KEYS[0], partial);
+      return;
+    }
     onUpdateField(selectedKey, partial);
   };
 
@@ -124,7 +155,7 @@ export default function ChequeLayoutPanel({
           لتعديل <strong>افتراضي text</strong>: اختر «text» من القائمة أو اسحبه على الصورة ثم احفظ.
           موضع text في وضع الإدخال (الشريط الأزرق) يخص كل صك على حدة.
           <span className="block mt-1">
-            التاريخ: حرّك كل رقم وكل <strong>/</strong> من القائمة أو من قسم «مسافة التاريخ».
+            التاريخ: اختر «التاريخ (كامل)» واسحبه مرة واحدة — يتحرك اليوم والشهر والسنة والفواصل معاً.
           </span>
           {layoutAppliesToAllBranches ? (
             <span className="block mt-2 rounded-lg bg-amber-100/90 px-2 py-1.5 font-extrabold text-amber-950">
@@ -173,29 +204,30 @@ export default function ChequeLayoutPanel({
         </p>
       </div>
 
-      {fields.some((f) => f.type === "datePart") ? (
+      {dateAnchorField ? (
         <div className="rounded-2xl border border-violet-200 bg-violet-50/80 p-4 space-y-2">
-          <p className="text-xs font-extrabold text-violet-900">
-            مسافة التاريخ — كل رقم وكل /
-          </p>
+          <p className="text-xs font-extrabold text-violet-900">موضع التاريخ — كتلة واحدة</p>
           <p className="text-[10px] font-semibold text-violet-800/90 leading-relaxed">
-            X (يسار %) يحدّد موضع كل جزء — اسحب على الصورة أو عدّل هنا
+            يتحرك اليوم والشهر والسنة والفواصل / معاً
           </p>
-          {dateSpacingLayoutKeys(dateShowSlashes).map((key) => {
-            const f = fields.find((x) => x.key === key);
-            if (!f) return null;
-            return (
-              <NumControl
-                key={key}
-                label={`X — ${spacingLayoutLabel(key, fields)}`}
-                value={f.left}
-                min={0}
-                max={100}
-                step={0.1}
-                onChange={(v) => onUpdateField(key, { left: v })}
-              />
-            );
-          })}
+          <div className="grid grid-cols-2 gap-2">
+            <NumControl
+              label="X (يسار %)"
+              value={dateAnchorField.left}
+              min={0}
+              max={100}
+              step={0.1}
+              onChange={(v) => onUpdateField(DATE_PART_KEYS[0], { left: v })}
+            />
+            <NumControl
+              label="Y (أعلى %)"
+              value={dateAnchorField.top}
+              min={0}
+              max={100}
+              step={0.1}
+              onChange={(v) => onUpdateField(DATE_PART_KEYS[0], { top: v })}
+            />
+          </div>
         </div>
       ) : null}
 
@@ -229,14 +261,17 @@ export default function ChequeLayoutPanel({
       <div className="rounded-2xl border border-slate-200 bg-white p-3 max-h-[220px] overflow-y-auto">
         <p className="text-xs font-extrabold text-slate-700 mb-2">الحقول</p>
         <div className="flex flex-col gap-1">
-          {layoutEditableFields(fields, dateShowSlashes).map((f) => (
+          {panelFields.map((f) => (
             <button
               key={f.key}
               type="button"
               onClick={() => onSelectField(f.key)}
               className={`text-right rounded-lg px-3 py-2 text-sm font-bold transition ${
-                selectedKey === f.key
+                selectedKey === f.key ||
+                (isDateGroupSelectionKey(selectedKey) && isDateGroupSelectionKey(f.key))
                   ? "bg-emerald-600 text-white"
+                  : isDateGroupSelectionKey(f.key)
+                  ? "bg-violet-100 text-violet-900 border border-violet-200 hover:bg-violet-200"
                   : isSlashLayoutKey(f.key)
                   ? "bg-violet-50 text-violet-900 border border-violet-200 hover:bg-violet-100"
                   : f.key === "text"
@@ -245,8 +280,10 @@ export default function ChequeLayoutPanel({
               }`}
             >
               {f.label}
-              {isSlashLayoutKey(f.key) ? (
-                <span className="block text-[10px] font-semibold opacity-80">فاصل /</span>
+              {isDateGroupSelectionKey(f.key) ? (
+                <span className="block text-[10px] font-semibold opacity-80">
+                  يوم + شهر + سنة + /
+                </span>
               ) : null}
               {f.key === "text" ? (
                 <span className="block text-[10px] font-semibold opacity-80">
@@ -261,6 +298,11 @@ export default function ChequeLayoutPanel({
       {selected ? (
         <div className="rounded-2xl border border-slate-200 bg-slate-50/90 p-4 space-y-3">
           <p className="text-sm font-extrabold text-slate-800">{selected.label}</p>
+          {selected.type === "dateGroup" ? (
+            <p className="text-[10px] font-semibold text-violet-800 bg-violet-50 border border-violet-200 rounded-lg px-2 py-1.5">
+              التاريخ كاملاً — أي تعديل على الموضع يحرّك اليوم والشهر والسنة والفواصل معاً
+            </p>
+          ) : null}
           {selected.type === "dateSlash" ? (
             <p className="text-[10px] font-semibold text-violet-800 bg-violet-50 border border-violet-200 rounded-lg px-2 py-1.5">
               فاصل التاريخ — حرّكه أفقياً لمحاذاته مع الخط المطبوع على الصك

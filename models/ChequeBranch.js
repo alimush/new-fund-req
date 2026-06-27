@@ -11,7 +11,7 @@ const ChequeBranchSchema = new mongoose.Schema(
     templateKey: {
       type: String,
       required: true,
-      enum: ["mustashar_ghadeer", "real_estate_baghdad"],
+      enum: ["mustashar_ghadeer", "real_estate_baghdad", "rafidain_ghadeer"],
       index: true,
     },
     name: { type: String, required: true, trim: true },
