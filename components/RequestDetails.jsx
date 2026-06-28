@@ -21,7 +21,9 @@ import {
   FiUserCheck,
   FiHash,
   FiFile,
+  FiFileText,
   FiBriefcase,
+  FiX,
 } from "react-icons/fi";
 import { GrCurrency } from "react-icons/gr";
 
@@ -38,11 +40,11 @@ import {
 } from "@/lib/voucher/resolveVoucherCompanyKey";
 import VoucherModal from "@/components/VoucherModal";
 import html2canvas from "html2canvas";
+import { captureRequestPrintCanvas } from "@/lib/pdf/sanitizeHtml2CanvasClone";
 import { PDFDocument } from "pdf-lib";
 import PrintableRequestPDF from "@/components/PrintableRequestPDF";
 import {
   appendAttachmentsToPdf,
-  buildSkippedAttachmentsMessage,
   collectRequestPdfAttachments,
 } from "@/lib/requests/mergeRequestPdfAttachments";
 import CreateRequestModal from "@/components/CreateRequestModal";
@@ -174,6 +176,9 @@ export default function RequestDetails({ id, companyKey }) {
 
   const printRef = useRef(null);
 
+  const [pdfGenerating, setPdfGenerating] = useState(false);
+  const [showPdfMenu, setShowPdfMenu] = useState(false);
+
   const canViewAll =
     Array.isArray(permissions) && permissions.includes(PERMISSIONS.VIEW_REPORTS);
 
@@ -279,14 +284,29 @@ export default function RequestDetails({ id, companyKey }) {
     };
   }, []);
 
-  const handleDownloadPDF = async () => {
+  const waitForPrintImages = async (root) => {
+    const imgs = root.querySelectorAll("img");
+    await Promise.all(
+      [...imgs].map(
+        (img) =>
+          new Promise((resolve) => {
+            if (img.complete) resolve();
+            else {
+              img.onload = resolve;
+              img.onerror = resolve;
+            }
+          })
+      )
+    );
+  };
+
+  const handleDownloadPDF = async ({ includeAttachments = false } = {}) => {
     if (!printRef.current || !request) return;
-  
+
     const root = printRef.current;
-  
     const hiddenEls = root.querySelectorAll("[data-no-pdf='1']");
     hiddenEls.forEach((el) => (el.style.display = "none"));
-  
+
     const style = document.createElement("style");
     style.innerHTML = `
       .no-pdf-effects, .no-pdf-effects * {
@@ -297,74 +317,52 @@ export default function RequestDetails({ id, companyKey }) {
         background-image: none !important;
       }
       .no-pdf-effects { background-color: #ffffff !important; }
-  
       .no-pdf-effects .bg-white { background-color: #ffffff !important; }
       .no-pdf-effects .bg-gray-50 { background-color: #f9fafb !important; }
       .no-pdf-effects .bg-gray-100 { background-color: #f3f4f6 !important; }
       .no-pdf-effects .bg-slate-50 { background-color: #f8fafc !important; }
       .no-pdf-effects .bg-slate-200 { background-color: #e2e8f0 !important; }
-  
       .no-pdf-effects .bg-green-50 { background-color: #f0fdf4 !important; }
       .no-pdf-effects .bg-yellow-50 { background-color: #fefce8 !important; }
       .no-pdf-effects .bg-red-50 { background-color: #fef2f2 !important; }
-  
       .no-pdf-effects .text-black { color: #000000 !important; }
       .no-pdf-effects .text-gray-600 { color: #4b5563 !important; }
       .no-pdf-effects .text-gray-700 { color: #374151 !important; }
-  
       .no-pdf-effects .text-green-600 { color: #16a34a !important; }
       .no-pdf-effects .text-yellow-600 { color: #ca8a04 !important; }
       .no-pdf-effects .text-red-600 { color: #dc2626 !important; }
-  
       .no-pdf-effects .border-gray-600 { border-color: #4b5563 !important; }
       .no-pdf-effects .border-gray-300 { border-color: #d1d5db !important; }
       .no-pdf-effects .border-green-300 { border-color: #86efac !important; }
       .no-pdf-effects .border-yellow-300 { border-color: #fde047 !important; }
       .no-pdf-effects .border-red-300 { border-color: #fca5a5 !important; }
-  
-      .no-pdf-effects, .no-pdf-effects * {
-        outline-color: #d1d5db !important;
-        caret-color: #111827 !important;
-      }
     `;
     document.head.appendChild(style);
-  
+
     try {
       root.classList.add("no-pdf-effects");
-      await new Promise((r) => setTimeout(r, 250));
-  
-      const canvas = await html2canvas(root, {
-        scale: 2,
-        useCORS: true,
-        backgroundColor: "#ffffff",
-        scrollX: 0,
-        scrollY: 0,
-        windowWidth: root.scrollWidth,
-        windowHeight: root.scrollHeight,
-      });
-  
+      await waitForPrintImages(root);
+
+      const canvas = await captureRequestPrintCanvas(root, html2canvas);
+
       const pdf = await PDFDocument.create();
-  
-      // A4 landscape للصفحة الأولى
+
       const pageW = 841.89;
       const pageH = 595.28;
-  
-      // ===============================
-      // 1) الصفحة الأولى: request PDF
-      // ===============================
+
       const pngBlob = await new Promise((resolve) =>
         canvas.toBlob((b) => resolve(b), "image/png", 1)
       );
-  
+
       if (!pngBlob) throw new Error("Failed to create canvas blob");
-  
+
       const pngBytes = await pngBlob.arrayBuffer();
       const pngImage = await pdf.embedPng(pngBytes);
-  
+
       const scale = pageW / pngImage.width;
       const scaledHeight = pngImage.height * scale;
       const pagesCount = Math.ceil(scaledHeight / pageH);
-  
+
       for (let i = 0; i < pagesCount; i++) {
         const page = pdf.addPage([pageW, pageH]);
         page.drawImage(pngImage, {
@@ -374,31 +372,26 @@ export default function RequestDetails({ id, companyKey }) {
           height: scaledHeight,
         });
       }
-  
-      // ==========================================
-      // 2) مرفقات الطلب + اتاج خطوات الورك فلو
-      // ==========================================
-      const attachments = collectRequestPdfAttachments(request);
-      const { skippedLarge, failed: failedAttachments } = await appendAttachmentsToPdf(
-        pdf,
-        attachments
-      );
 
-      const pdfBytes = await pdf.save();
+      let failedAttachments = [];
+      if (includeAttachments) {
+        const attachments = collectRequestPdfAttachments(request);
+        const result = await appendAttachmentsToPdf(pdf, attachments);
+        failedAttachments = result.failed || [];
+      }
+
+      const pdfBytes = await pdf.save({ useObjectStreams: false });
       const blob = new Blob([pdfBytes], { type: "application/pdf" });
 
+      const suffix = includeAttachments ? "-with-attachments" : "";
       const link = document.createElement("a");
       const objectUrl = URL.createObjectURL(blob);
       link.href = objectUrl;
-      link.download = `Request-${request?.requestCode || request?._id}.pdf`;
+      link.download = `Request-${request?.requestCode || request?._id}${suffix}.pdf`;
       link.click();
-
       URL.revokeObjectURL(objectUrl);
 
-      const skippedMsg = buildSkippedAttachmentsMessage(skippedLarge);
-      if (skippedMsg) {
-        alert(skippedMsg);
-      } else if (failedAttachments?.length) {
+      if (failedAttachments.length) {
         const names = failedAttachments.map((f) => f.name).filter(Boolean).join("، ");
         alert(
           names
@@ -408,13 +401,24 @@ export default function RequestDetails({ id, companyKey }) {
       }
     } catch (err) {
       console.error("❌ PDF generation failed:", err);
-      alert("تعذر إنشاء PDF. جرّب مرة أخرى أو قلّل حجم المرفقات.");
+      alert("تعذر إنشاء PDF. جرّب مرة أخرى.");
     } finally {
       root.classList.remove("no-pdf-effects");
       if (document.head.contains(style)) {
         document.head.removeChild(style);
       }
       hiddenEls.forEach((el) => (el.style.display = ""));
+    }
+  };
+
+  const runPdfDownload = async (includeAttachments) => {
+    if (pdfGenerating) return;
+    setPdfGenerating(true);
+    try {
+      await handleDownloadPDF({ includeAttachments });
+      setShowPdfMenu(false);
+    } finally {
+      setPdfGenerating(false);
     }
   };
 
@@ -666,19 +670,15 @@ export default function RequestDetails({ id, companyKey }) {
                 <button
                   type="button"
                   data-no-pdf="1"
-                  onClick={async () => {
-                    if (loading) return;
-                    setLoading(true);
-                    try {
-                      await handleDownloadPDF();
-                    } finally {
-                      setLoading(false);
-                    }
-                  }}
-                  disabled={loading}
+                  onClick={() => setShowPdfMenu(true)}
+                  disabled={pdfGenerating}
                   className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-3.5 py-2 text-sm font-extrabold text-white shadow-sm transition duration-200 hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-400"
                 >
-                  <FiDownload className="text-base" />
+                  {pdfGenerating ? (
+                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                  ) : (
+                    <FiDownload className="text-base" />
+                  )}
                   PDF
                 </button>
               )}
@@ -1599,6 +1599,103 @@ export default function RequestDetails({ id, companyKey }) {
       )}
 
       {/* ================= MODALS ================= */}
+      <AnimatePresence>
+        {showPdfMenu && (
+          <motion.div
+            className="fixed inset-0 z-[99990] flex items-center justify-center bg-black/45 p-4"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => !pdfGenerating && setShowPdfMenu(false)}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 12 }}
+              transition={{ duration: 0.2, ease: "easeOut" }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-md overflow-hidden rounded-3xl border border-slate-200/90 bg-white shadow-2xl ring-1 ring-slate-200/60"
+              dir="rtl"
+            >
+              <div className="flex items-start justify-between gap-3 border-b border-slate-200/80 bg-slate-50/80 px-5 py-4">
+                <button
+                  type="button"
+                  onClick={() => setShowPdfMenu(false)}
+                  disabled={pdfGenerating}
+                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-slate-500 ring-1 ring-slate-200/90 transition hover:bg-slate-100 hover:text-slate-800 disabled:opacity-50"
+                  aria-label="إغلاق"
+                >
+                  <FiX className="text-lg" />
+                </button>
+                <div className="text-right">
+                  <h3 className="text-lg font-extrabold text-slate-900">تحميل PDF</h3>
+                  <p className="mt-0.5 text-sm font-semibold text-slate-500">
+                    اختر نوع الملف الذي تريد تحميله
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-3 p-5">
+                <button
+                  type="button"
+                  disabled={pdfGenerating}
+                  onClick={() => runPdfDownload(false)}
+                  className="group flex w-full items-center gap-4 rounded-2xl border border-slate-200/90 bg-white p-4 text-right shadow-sm transition hover:-translate-y-0.5 hover:border-blue-200 hover:bg-blue-50/40 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600 ring-1 ring-blue-200/70 transition group-hover:scale-105">
+                    <FiFileText className="text-xl" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-extrabold text-slate-900">
+                      تحميل PDF الطلب فقط
+                    </span>
+                    <span className="mt-1 block text-xs font-semibold leading-relaxed text-slate-500">
+                      بيانات الطلب وسير الموافقات بدون مرفقات
+                    </span>
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  disabled={pdfGenerating}
+                  onClick={() => runPdfDownload(true)}
+                  className="group flex w-full items-center gap-4 rounded-2xl border border-slate-200/90 bg-white p-4 text-right shadow-sm transition hover:-translate-y-0.5 hover:border-amber-200 hover:bg-amber-50/40 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-600 ring-1 ring-amber-200/70 transition group-hover:scale-105">
+                    <FiPaperclip className="text-xl" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-extrabold text-slate-900">
+                      تحميل PDF الطلب والمرفقات
+                    </span>
+                    <span className="mt-1 block text-xs font-semibold leading-relaxed text-slate-500">
+                      الطلب مع مرفقات الطلب واتاجات خطوات الورك فلو
+                    </span>
+                  </span>
+                </button>
+              </div>
+
+              <div className="border-t border-slate-200/80 px-5 py-4">
+                {pdfGenerating ? (
+                  <div className="flex items-center justify-center gap-2 py-1 text-sm font-extrabold text-blue-600">
+                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
+                    جاري إنشاء PDF...
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setShowPdfMenu(false)}
+                    className="w-full rounded-xl bg-slate-100 py-2.5 text-sm font-extrabold text-slate-700 transition hover:bg-slate-200"
+                  >
+                    إلغاء
+                  </button>
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <CommentModal
   open={showCommentModal}
   action={commentAction}
@@ -1707,6 +1804,7 @@ export default function RequestDetails({ id, companyKey }) {
       {/* ================= PRINTABLE (Hidden) ================= */}
       <div
         ref={printRef}
+        aria-hidden="true"
         style={{
           position: "absolute",
           top: "-10000px",
