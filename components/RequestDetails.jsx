@@ -28,6 +28,7 @@ import { GrCurrency } from "react-icons/gr";
 
 import CommentModal from "@/components/CommentModal";
 import StatusBadge from "@/components/StatusBadge";
+import PageLoader from "@/components/PageLoader";
 import { usePermissions } from "@/context/PermissionContext";
 import { PERMISSIONS } from "@/lib/permission";
 import { COMPANIES } from "@/lib/voucher/companies";
@@ -62,8 +63,6 @@ export default function RequestDetails({ id, companyKey }) {
   const workflow = request?.workflow;
   const workflowSteps = workflow?.steps || [];
 
-  const [currentUser, setCurrentUser] = useState(null);
-  const [pdfLoading, setPdfLoading] = useState(false);
   const [showCommentModal, setShowCommentModal] = useState(false);
   const [commentAction, setCommentAction] = useState(null); // approve | reject | view | edit_comment
   const [commentText, setCommentText] = useState("");
@@ -73,7 +72,6 @@ export default function RequestDetails({ id, companyKey }) {
   const [delegateUserId, setDelegateUserId] = useState("");
   const [delegateVoucherCompanyKey, setDelegateVoucherCompanyKey] = useState("");
   const [delegating, setDelegating] = useState(false);
-  const [approvingDisburse, setApprovingDisburse] = useState(false);
   const [submittingAction, setSubmittingAction] = useState(false);
   const [codeCopied, setCodeCopied] = useState(false);
 
@@ -110,7 +108,7 @@ export default function RequestDetails({ id, companyKey }) {
 
   const [stepAttachment, setStepAttachment] = useState(null); // {url,name,type,size} | null
 
-  const { permissions } = usePermissions();
+  const { permissions, user: currentUser, permissionsLoaded } = usePermissions();
   const canPrint =
   Array.isArray(permissions) && permissions.includes(PERMISSIONS.PRINT_REQUEST);
   const canDelegateVoucher =
@@ -179,8 +177,6 @@ export default function RequestDetails({ id, companyKey }) {
   const canViewAll =
     Array.isArray(permissions) && permissions.includes(PERMISSIONS.VIEW_REPORTS);
 
-  const [accessChecked, setAccessChecked] = useState(false);
-  const [accessDenied, setAccessDenied] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
 
   // 🟢 ---------------- FETCH DATA FUNCTION (خارج useEffect) ----------------
@@ -209,30 +205,38 @@ export default function RequestDetails({ id, companyKey }) {
 
   useEffect(() => {
     if (!id || !companyKey) return;
-    fetchData();
+
+    let cancelled = false;
+    setLoading(true);
+
+    (async () => {
+      try {
+        const res = await fetch(
+          `/api/requests/${id}?company=${companyKey}&source=${encodeURIComponent(source)}`,
+          { cache: "no-store", credentials: "include" }
+        );
+
+        if (cancelled) return;
+
+        if (res.status === 401 || res.status === 403) {
+          router.replace("/home");
+          return;
+        }
+
+        const data = await res.json();
+        if (data.success) setRequest(data.data);
+      } catch (err) {
+        if (!cancelled) console.error("❌ Error loading request:", err);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, companyKey]);
-
-  // جلب المستخدم
-  useEffect(() => {
-    const fetchUser = async () => {
-      try {
-        const res = await fetch("/api/userid", { credentials: "include" });
-        const data = await res.json();
-        setCurrentUser(data.user);
-      } catch (err) {
-        console.error("❌ Error loading user", err);
-      }
-    };
-    fetchUser();
-  }, []);
-
-  // Access check
-  useEffect(() => {
-    if (!request || !currentUser) return;
-    setAccessDenied(false);
-    setAccessChecked(true);
-  }, [request, currentUser]);
 
   useEffect(() => {
     const steps = request?.workflow?.steps || [];
@@ -415,11 +419,15 @@ export default function RequestDetails({ id, companyKey }) {
   };
 
   // Guards
-  if (loading) {
-    return <RequestDetailsLoading />;
+  if (loading || !permissionsLoaded) {
+    return (
+      <PageLoader
+        title="جاري التحميل"
+        subtitle="يرجى الانتظار..."
+        icon={<FiLayers />}
+      />
+    );
   }
-  if (accessDenied) return null;
-  if (!accessChecked) return null;
 
   if (!request) {
     return (
@@ -659,32 +667,19 @@ export default function RequestDetails({ id, companyKey }) {
                   type="button"
                   data-no-pdf="1"
                   onClick={async () => {
-                    if (pdfLoading) return;
-                    setPdfLoading(true);
+                    if (loading) return;
+                    setLoading(true);
                     try {
                       await handleDownloadPDF();
                     } finally {
-                      setPdfLoading(false);
+                      setLoading(false);
                     }
                   }}
-                  disabled={pdfLoading}
-                  className={`inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-sm font-extrabold text-white shadow-sm transition duration-200 ${
-                    pdfLoading
-                      ? "cursor-not-allowed bg-slate-400"
-                      : "bg-blue-600 hover:bg-blue-700"
-                  }`}
+                  disabled={loading}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-3.5 py-2 text-sm font-extrabold text-white shadow-sm transition duration-200 hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-400"
                 >
-                  {pdfLoading ? (
-                    <>
-                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                      جاري التحميل...
-                    </>
-                  ) : (
-                    <>
-                      <FiDownload className="text-base" />
-                      PDF
-                    </>
-                  )}
+                  <FiDownload className="text-base" />
+                  PDF
                 </button>
               )}
             </div>
@@ -1383,7 +1378,7 @@ export default function RequestDetails({ id, companyKey }) {
                               type="button"
                               onClick={async (e) => {
                                 e.stopPropagation();
-                                setApprovingDisburse(true);
+                                setLoading(true);
                                 try {
                                   const res = await fetch(
                                     `/api/requests/${id}?company=${companyKey}`,
@@ -1406,22 +1401,13 @@ export default function RequestDetails({ id, companyKey }) {
                                 } catch {
                                   alert("خطأ في الاتصال");
                                 } finally {
-                                  setApprovingDisburse(false);
+                                  setLoading(false);
                                 }
                               }}
-                              disabled={approvingDisburse}
+                              disabled={loading}
                               className="flex w-full items-center justify-center gap-2 rounded-2xl bg-emerald-600 py-2.5 text-sm font-extrabold text-white shadow-sm transition hover:bg-emerald-700 disabled:opacity-60"
                             >
-                              {approvingDisburse ? (
-                                <>
-                                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                                  جاري الاعتماد...
-                                </>
-                              ) : (
-                                <>
-                                  <FiCheckCircle />  موافقة
-                                </>
-                              )}
+                              <FiCheckCircle /> موافقة
                             </button>
                             <p className="mt-2 text-center text-[11px] font-semibold text-emerald-800">
                                الصرف أولاً — ثم إنشاء أو رفع الوصل
@@ -1731,77 +1717,6 @@ export default function RequestDetails({ id, companyKey }) {
       >
         <PrintableRequestPDF companyKey={companyKey} request={request} />
       </div>
-      </div>
-    </motion.div>
-  );
-}
-
-function RequestDetailsLoading() {
-  return (
-    <motion.div
-      className="min-h-screen bg-gradient-to-br from-slate-100 via-slate-50 to-indigo-50/30 px-4 py-6 sm:px-6 sm:py-8 md:px-10 md:py-10"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: 0.35 }}
-    >
-      <div className="relative mx-auto w-full max-w-7xl min-h-[70vh]">
-        <div className="pointer-events-none select-none space-y-6 opacity-[0.45]">
-          <div className="h-44 animate-pulse rounded-3xl bg-white/70 ring-1 ring-slate-200/70" />
-          <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
-            {[1, 2, 3, 4].map((i) => (
-              <div
-                key={i}
-                className="h-24 animate-pulse rounded-2xl bg-white/70 ring-1 ring-slate-200/60"
-              />
-            ))}
-          </div>
-          <div className="grid gap-6 lg:grid-cols-2">
-            <div className="h-72 animate-pulse rounded-3xl bg-white/70 ring-1 ring-slate-200/60" />
-            <div className="h-72 animate-pulse rounded-3xl bg-white/70 ring-1 ring-slate-200/60" />
-          </div>
-          <div className="h-56 animate-pulse rounded-3xl bg-white/70 ring-1 ring-slate-200/60" />
-        </div>
-
-        <div className="fixed inset-0 z-20 flex items-center justify-center px-4">
-          <motion.div
-            initial={{ opacity: 0, scale: 0.96, y: 8 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            transition={{ duration: 0.4, ease: "easeOut" }}
-            className="w-full max-w-sm rounded-3xl border border-slate-200/80 bg-white/90 px-8 py-10 text-center shadow-[0_24px_60px_-24px_rgba(79,70,229,0.18)] ring-1 ring-slate-200/60 backdrop-blur-md"
-          >
-            <div className="relative mx-auto h-16 w-16">
-              <span className="absolute inset-0 animate-spin rounded-full border-[3px] border-slate-200/90 border-t-indigo-600" />
-              <span
-                className="absolute inset-2.5 animate-spin rounded-full border-[3px] border-slate-100 border-b-blue-500"
-                style={{ animationDirection: "reverse", animationDuration: "0.85s" }}
-              />
-              <span className="absolute inset-0 flex items-center justify-center">
-                <ColoredIcon color="text-indigo-600" size="sm">
-                  <FiLayers />
-                </ColoredIcon>
-              </span>
-            </div>
-
-            <p className="mt-6 text-base font-extrabold text-slate-900">جاري تحميل الطلب</p>
-            <p className="mt-1.5 text-sm font-semibold text-slate-500">يرجى الانتظار...</p>
-
-            <div className="mt-5 flex items-center justify-center gap-1.5">
-              {[0, 1, 2].map((i) => (
-                <motion.span
-                  key={i}
-                  className="h-2 w-2 rounded-full bg-indigo-500/80"
-                  animate={{ opacity: [0.35, 1, 0.35], scale: [0.85, 1, 0.85] }}
-                  transition={{
-                    duration: 1.1,
-                    repeat: Infinity,
-                    delay: i * 0.18,
-                    ease: "easeInOut",
-                  }}
-                />
-              ))}
-            </div>
-          </motion.div>
-        </div>
       </div>
     </motion.div>
   );

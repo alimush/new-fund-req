@@ -21,12 +21,16 @@ import {
 } from "@/lib/notifications/notificationCounts";
 import StatusBadge from "@/components/StatusBadge";
 import CreateRequestModal from "@/components/CreateRequestModal";
+import PageLoader from "@/components/PageLoader";
 import {
   supportsExpenseType,
   isApprovalOnlyCompany,
 } from "@/lib/companies/expenseTypeCompanies";
 
 const norm = (v) => String(v ?? "").trim().toLowerCase();
+
+const glassCard =
+  "rounded-3xl bg-white/45 backdrop-blur-2xl ring-1 ring-white/30 shadow-[0_18px_45px_-25px_rgba(0,0,0,0.32)]";
 
 function paginate(items, page, pageSize) {
   const list = Array.isArray(items) ? items : [];
@@ -39,23 +43,23 @@ function paginate(items, page, pageSize) {
 
 function Pager({ page, totalPages, onPage }) {
   return (
-    <div className="mt-4 flex items-center justify-between gap-2">
+    <div className="mt-4 flex items-center justify-between gap-2 border-t border-white/40 pt-4">
       <button
         type="button"
         onClick={() => onPage(page - 1)}
         disabled={page <= 1}
         className={[
-          "px-3 py-2 rounded-2xl text-[13px] font-extrabold ring-1",
+          "rounded-xl px-3 py-2 text-[13px] font-extrabold ring-1 transition",
           page <= 1
-            ? "bg-gray-200/60 ring-gray-200 text-gray-500 cursor-not-allowed"
-            : "bg-white/55 ring-white/30 hover:bg-white/70",
+            ? "cursor-not-allowed bg-gray-200/60 text-gray-500 ring-gray-200"
+            : "bg-white/70 text-gray-900 ring-white/50 hover:bg-white",
         ].join(" ")}
       >
-        Prev
+        السابق
       </button>
 
-      <div className="text-[13px] font-extrabold text-gray-800/80">
-        Page <span className="text-gray-900">{page}</span> /{" "}
+      <div className="text-[13px] font-extrabold text-gray-700">
+        صفحة <span className="text-gray-900">{page}</span> /{" "}
         <span className="text-gray-900">{totalPages}</span>
       </div>
 
@@ -64,13 +68,13 @@ function Pager({ page, totalPages, onPage }) {
         onClick={() => onPage(page + 1)}
         disabled={page >= totalPages}
         className={[
-          "px-3 py-2 rounded-2xl text-[13px] font-extrabold ring-1",
+          "rounded-xl px-3 py-2 text-[13px] font-extrabold ring-1 transition",
           page >= totalPages
-            ? "bg-gray-200/60 ring-gray-200 text-gray-500 cursor-not-allowed"
-            : "bg-white/55 ring-white/30 hover:bg-white/70",
+            ? "cursor-not-allowed bg-gray-200/60 text-gray-500 ring-gray-200"
+            : "bg-white/70 text-gray-900 ring-white/50 hover:bg-white",
         ].join(" ")}
       >
-        Next
+        التالي
       </button>
     </div>
   );
@@ -103,6 +107,54 @@ function ScrollBox({ children }) {
   );
 }
 
+function ListState({ loading, empty, emptyText, children }) {
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-3 py-12">
+        <span className="relative inline-flex h-10 w-10 items-center justify-center">
+          <span className="absolute inset-0 animate-spin rounded-full border-[3px] border-slate-200/90 border-t-indigo-600" />
+        </span>
+        <p className="text-sm font-extrabold text-gray-600">جاري التحميل...</p>
+      </div>
+    );
+  }
+
+  if (empty) {
+    return (
+      <div className="rounded-2xl border border-dashed border-gray-300/70 bg-white/40 py-10 text-center">
+        <p className="text-sm font-extrabold text-gray-600">{emptyText}</p>
+      </div>
+    );
+  }
+
+  return children;
+}
+
+function StatBox({ icon: Icon, label, value, tone = "slate" }) {
+  const tones = {
+    slate: "bg-slate-50 text-slate-600 ring-slate-200",
+    green: "bg-emerald-50 text-emerald-600 ring-emerald-200",
+    amber: "bg-amber-50 text-amber-600 ring-amber-200",
+    blue: "bg-blue-50 text-blue-600 ring-blue-200",
+  };
+
+  return (
+    <div className="rounded-2xl bg-white/65 p-4 ring-1 ring-white/50">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-[11px] font-bold text-gray-500">{label}</p>
+          <p className="mt-1 text-2xl font-black text-gray-900 tabular-nums">{value}</p>
+        </div>
+        <span
+          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ring-1 ${tones[tone] || tones.slate}`}
+        >
+          <Icon className="text-xl" />
+        </span>
+      </div>
+    </div>
+  );
+}
+
 function SectionShell({
   title,
   subtitle,
@@ -115,61 +167,53 @@ function SectionShell({
 }) {
   const headerClass =
     accent === "emerald"
-      ? "bg-gradient-to-r from-emerald-500/20 via-green-500/10 to-white/20"
+      ? "border-b border-emerald-200/50 bg-emerald-50/35"
       : accent === "red"
-        ? "bg-gradient-to-r from-red-500/15 via-rose-500/10 to-white/20"
-        : "bg-white/25";
+        ? "border-b border-rose-200/50 bg-rose-50/30"
+        : "border-b border-white/40 bg-white/25";
   const iconWrapClass =
     accent === "emerald"
-      ? "bg-emerald-500/15 text-emerald-800 ring-emerald-300/45"
+      ? "bg-emerald-500/15 text-emerald-700 ring-emerald-200"
       : accent === "red"
-        ? "bg-red-500/15 text-red-800 ring-red-300/40"
-        : "bg-white/45 text-gray-800 ring-white/30";
+        ? "bg-rose-500/15 text-rose-700 ring-rose-200"
+        : "bg-white/60 text-gray-800 ring-white/50";
   const badgeToneClass =
     badgeTone === "disbursement"
       ? "bg-gradient-to-r from-emerald-600 to-green-600 text-white"
       : "bg-gradient-to-r from-rose-600 to-red-600 text-white";
-  const shellClass =
-    accent === "emerald"
-      ? "bg-emerald-50/30 ring-emerald-200/45"
-      : accent === "red"
-        ? "bg-red-50/20 ring-red-200/35"
-        : "bg-white/40 ring-white/30";
 
   return (
-    <div
-      className={`rounded-3xl backdrop-blur-2xl ring-1 shadow-[0_18px_45px_-25px_rgba(0,0,0,0.35)] overflow-hidden ${shellClass}`}
-    >
+    <div className={`overflow-hidden ${glassCard}`}>
       <div className={`px-5 py-4 ${headerClass}`}>
         <div className="flex items-start justify-between gap-3">
-          <div className="flex items-start gap-3 min-w-0">
-            {Icon && (
+          <div className="flex min-w-0 items-start gap-3">
+            {Icon ? (
               <div
-                className={`mt-0.5 h-10 w-10 rounded-2xl ring-1 backdrop-blur flex items-center justify-center shrink-0 ${iconWrapClass}`}
+                className={`mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ring-1 ${iconWrapClass}`}
               >
                 <Icon className="text-xl" />
               </div>
-            )}
+            ) : null}
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <div className="text-[16px] font-black text-gray-900">{title}</div>
-                {Number(badgeCount) > 0 && (
+                <div className="text-base font-black text-gray-900">{title}</div>
+                {Number(badgeCount) > 0 ? (
                   <span
                     className={`inline-flex min-h-[24px] items-center rounded-full px-2 text-[11px] font-black tabular-nums ${badgeToneClass}`}
                   >
                     {Number(badgeCount) > 99 ? "99+" : badgeCount}
                   </span>
-                )}
+                ) : null}
               </div>
-              {subtitle && (
-                <div className="text-[13px] font-bold text-gray-700/80">{subtitle}</div>
-              )}
+              {subtitle ? (
+                <div className="text-xs font-semibold text-gray-600">{subtitle}</div>
+              ) : null}
             </div>
           </div>
           {right}
         </div>
       </div>
-      <div className="p-5">{children}</div>
+      <div className="p-4 sm:p-5">{children}</div>
     </div>
   );
 }
@@ -684,65 +728,90 @@ export default function RequestsPage({ companyKey }) {
 
   if (!accessChecked) {
     return (
-      <div className="flex min-h-[40vh] items-center justify-center text-slate-600 font-bold">
-        جاري التحقق من الصلاحيات…
-      </div>
+      <PageLoader
+        title="جاري تحميل الطلبات"
+        subtitle="يرجى الانتظار..."
+        icon={<FiFileText />}
+      />
     );
   }
   if (accessDenied) return null;
 
+  const statusFilter = (
+    <div className="flex items-center gap-2 rounded-xl bg-white/60 px-3 py-2 ring-1 ring-white/50">
+      <FiFilter className="text-gray-700" />
+      <select
+        value={myStatus}
+        onChange={(e) => setMyStatus(e.target.value)}
+        className="bg-transparent text-[13px] font-extrabold text-gray-900 outline-none"
+      >
+        <option value="all">الكل</option>
+        <option value="approved">موافق</option>
+        <option value="pending">قيد الانتظار</option>
+        <option value="rejected">مرفوض</option>
+      </select>
+    </div>
+  );
+
   return (
     <div className="min-h-screen w-full text-[15px] font-bold text-slate-900">
-      <div className="mx-auto max-w-7xl px-4 py-6 space-y-6 sm:px-6">
-        {/* Header */}
-        <div className="rounded-3xl bg-white/45 p-4 shadow-[0_18px_45px_-25px_rgba(0,0,0,0.35)] ring-1 ring-white/35 backdrop-blur-2xl sm:p-5">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3 min-w-0">
-            <button
-              type="button"
-              onClick={() => router.push("/home")}
-              className="inline-flex items-center gap-2 px-3 py-2 rounded-2xl bg-white/45 backdrop-blur-xl ring-1 ring-white/35 text-gray-900 shadow-sm hover:bg-white/60"
-            >
-              <FiArrowLeft /> Back
-            </button>
+      <div className="mx-auto max-w-7xl space-y-6 px-4 py-5 sm:px-6 sm:py-6">
+        {/* الهيدر */}
+        <section className={`overflow-hidden ${glassCard}`}>
+          <div className="border-b border-white/40 bg-white/25 px-4 py-4 sm:px-5">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex min-w-0 items-start gap-3">
+                <button
+                  type="button"
+                  onClick={() => router.push("/home")}
+                  className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-white/60 px-3 py-2 text-gray-900 shadow-sm ring-1 ring-white/50 transition hover:bg-white/80"
+                >
+                  <FiArrowLeft /> رجوع
+                </button>
 
-            <div className="flex min-w-0 flex-col gap-1">
-              <h1 className="text-2xl sm:text-3xl font-black text-gray-900 tracking-tight">
-                Fund Requests
-              </h1>
-              <div className="flex items-center gap-2 text-sm text-gray-800/80">
-                <span className="font-semibold">الشركة:</span>
-                <span className="max-w-[180px] truncate px-2.5 py-1 rounded-xl bg-white/55 backdrop-blur ring-1 ring-white/30 text-gray-900 font-extrabold sm:max-w-none">
-                  {companyKey}
-                </span>
+                <div className="min-w-0">
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-indigo-600/90">
+                    Fund Requests
+                  </p>
+                  <h1 className="mt-0.5 text-xl font-black text-gray-900 sm:text-2xl">
+                    طلبات {companyKey}
+                  </h1>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <CountPill count={notifyApproval} tone="approval" label="قيد الموافقة" />
+                    {canViewReceipts && !canDelegateVoucher && !approvalOnlyCompany ? (
+                      <CountPill
+                        count={notifyDisbursement}
+                        tone="disbursement"
+                        label="قيد الصرف"
+                      />
+                    ) : null}
+                  </div>
+                </div>
               </div>
-              <div className="flex flex-wrap items-center gap-2 pt-0.5">
-                <CountPill count={notifyApproval} tone="approval" label="قيد الموافقة" />
-                {canViewReceipts && !canDelegateVoucher && !approvalOnlyCompany && (
-                  <CountPill
-                    count={notifyDisbursement}
-                    tone="disbursement"
-                    label="قيد الصرف"
-                  />
-                )}
-              </div>
+
+              {canCreate ? (
+                <button
+                  type="button"
+                  onClick={() => setIsCreateOpen(true)}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-gray-900 px-4 py-2.5 text-white shadow-sm transition hover:bg-black"
+                >
+                  <FiPlus /> إنشاء طلب
+                </button>
+              ) : null}
             </div>
           </div>
 
-          {canCreate && (
-            <button
-              onClick={() => setIsCreateOpen(true)}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-gray-900/90 backdrop-blur text-white shadow hover:bg-gray-900"
-            >
-              <FiPlus /> Create Request
-            </button>
-          )}
-        </div>
-        </div>
+          <div className="grid grid-cols-1 gap-2.5 p-4 sm:grid-cols-3 sm:p-5">
+            <StatBox icon={FiCheckCircle} label="طلباتي الموافق عليها" value={stats.approved} tone="green" />
+            <StatBox icon={FiClock} label="طلباتي قيد الانتظار" value={stats.pending} tone="amber" />
+            <StatBox icon={FiFileText} label="مجموع طلباتي" value={stats.total} tone="blue" />
+          </div>
+        </section>
 
-        {/* Search */}
-        <div className="rounded-3xl bg-white/50 backdrop-blur-2xl ring-1 ring-white/35 shadow-sm p-4 sm:p-5">
-          <div className="flex flex-col sm:flex-row gap-3 sm:items-center">
+        {/* البحث */}
+        <section className={`${glassCard} p-4 sm:p-5`}>
+          <p className="mb-3 text-xs font-extrabold text-gray-600">بحث في الطلبات</p>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
             <div className="relative w-full sm:flex-1" ref={searchBoxRef}>
               <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-600/70" />
               <input
@@ -793,18 +862,19 @@ export default function RequestsPage({ companyKey }) {
                   }
                 }}
                 placeholder="اكتب كود / وصف / نوع الطلب..."
-                className="w-full pl-10 pr-3 py-2.5 rounded-2xl bg-white/55 backdrop-blur ring-1 ring-white/30 text-[15px] text-gray-900 placeholder:text-gray-600/70 outline-none focus:ring-2 focus:ring-white/45"
+                className="w-full rounded-xl bg-white/65 py-2.5 pl-10 pr-3 text-[15px] text-gray-900 outline-none ring-1 ring-white/40 placeholder:text-gray-600/70 focus:ring-2 focus:ring-indigo-200/80"
               />
             </div>
 
             <div className="flex gap-2">
               <button
+                type="button"
                 onClick={() => setAppliedSearch(searchText.trim())}
                 disabled={loading}
                 className={[
-                  "inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl font-extrabold shadow-sm ring-1",
+                  "inline-flex items-center gap-2 rounded-xl px-4 py-2.5 font-extrabold shadow-sm ring-1 transition",
                   loading
-                    ? "bg-gray-200 text-gray-500 ring-gray-200 cursor-not-allowed"
+                    ? "cursor-not-allowed bg-gray-200 text-gray-500 ring-gray-200"
                     : "bg-gray-900 text-white ring-gray-900 hover:bg-black",
                 ].join(" ")}
               >
@@ -812,6 +882,7 @@ export default function RequestsPage({ companyKey }) {
               </button>
 
               <button
+                type="button"
                 onClick={() => {
                   setSearchText("");
                   setAppliedSearch("");
@@ -825,17 +896,13 @@ export default function RequestsPage({ companyKey }) {
                   setSuggestPos((p) => ({ ...p, open: false }));
                 }}
                 disabled={loading}
-                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-white/55 ring-1 ring-white/30 text-gray-900 font-extrabold shadow-sm hover:bg-white/70"
+                className="inline-flex items-center gap-2 rounded-xl bg-white/70 px-4 py-2.5 font-extrabold text-gray-900 shadow-sm ring-1 ring-white/50 transition hover:bg-white"
               >
                 <FiXCircle /> مسح
               </button>
             </div>
           </div>
-
-          <div className="mt-3 text-[12px] font-bold text-gray-700/70">
-            
-          </div>
-        </div>
+        </section>
 
         {mounted && showSuggest && suggestPos.open && suggestions.length > 0
           ? createPortal(
@@ -874,192 +941,133 @@ export default function RequestsPage({ companyKey }) {
             )
           : null}
 
-        {/* Stats */}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <div className="rounded-3xl bg-white/50 backdrop-blur-2xl ring-1 ring-white/35 p-4 shadow-[0_16px_45px_-30px_rgba(0,0,0,0.45)]">
-            <div className="text-[13px] font-bold text-gray-700/80">طلباتي الموافق عليها</div>
-            <div className="mt-2 flex items-center justify-between">
-              <div className="text-3xl font-black text-gray-900">{stats.approved}</div>
-              <div className="h-11 w-11 rounded-2xl bg-white/55 ring-1 ring-white/30 flex items-center justify-center">
-                <FiCheckCircle className="text-green-700 text-xl" />
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-3xl bg-white/50 backdrop-blur-2xl ring-1 ring-white/35 p-4 shadow-[0_16px_45px_-30px_rgba(0,0,0,0.45)]">
-            <div className="text-[13px] font-bold text-gray-700/80">طلباتي قيد الانتظار</div>
-            <div className="mt-2 flex items-center justify-between">
-              <div className="text-3xl font-black text-gray-900">{stats.pending}</div>
-              <div className="h-11 w-11 rounded-2xl bg-white/55 ring-1 ring-white/30 flex items-center justify-center">
-                <FiClock className="text-amber-700 text-xl" />
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-3xl bg-white/50 backdrop-blur-2xl ring-1 ring-white/35 p-4 shadow-[0_16px_45px_-30px_rgba(0,0,0,0.45)]">
-            <div className="text-[13px] font-bold text-gray-700/80">مجموع طلباتي</div>
-            <div className="mt-2 flex items-center justify-between">
-              <div className="text-3xl font-black text-gray-900">{stats.total}</div>
-              <div className="h-11 w-11 rounded-2xl bg-white/55 ring-1 ring-white/30 flex items-center justify-center">
-                <FiFileText className="text-blue-700 text-xl" />
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Two columns */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Pending */}
+        {/* القوائم */}
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
           <SectionShell
             title="قيد الانتظار للموافقة"
-            subtitle="Requests that are pending with you"
+            subtitle="طلبات تحتاج موافقتك"
             icon={FiClock}
             accent="red"
             badgeCount={notifyApproval}
             badgeTone="approval"
-            right={<span className="text-[13px] font-extrabold text-gray-800/70">{pendingPaged.total} items</span>}
+            right={
+              <span className="rounded-full bg-white/70 px-2.5 py-1 text-[11px] font-extrabold text-gray-700 ring-1 ring-white/50">
+                {pendingPaged.total} طلب
+              </span>
+            }
           >
-            {loading ? (
-              <div className="py-10 text-center font-extrabold text-gray-800/70">Loading...</div>
-            ) : pendingApprovals.length === 0 ? (
-              <div className="py-10 text-center font-extrabold text-gray-800/70">لايوجد قيد الانتظار للموافقة</div>
-            ) : (
-              <>
-                <ScrollBox>
-                  <div className="space-y-3">
-                    {pendingPaged.items.map((r) => (
-                      <RequestCard key={r._id} r={r} companyKey={companyKey} />
-                    ))}
-                  </div>
-                </ScrollBox>
-
-                <Pager page={pendingPaged.page} totalPages={pendingPaged.totalPages} onPage={setPagePending} />
-              </>
-            )}
+            <ListState
+              loading={loading}
+              empty={pendingApprovals.length === 0}
+              emptyText="لا يوجد طلبات قيد الانتظار للموافقة"
+            >
+              <ScrollBox>
+                <div className="space-y-3">
+                  {pendingPaged.items.map((r) => (
+                    <RequestCard key={r._id} r={r} companyKey={companyKey} />
+                  ))}
+                </div>
+              </ScrollBox>
+              <Pager
+                page={pendingPaged.page}
+                totalPages={pendingPaged.totalPages}
+                onPage={setPagePending}
+              />
+            </ListState>
           </SectionShell>
 
-          {/* My Requests + Status Filter هنا فقط */}
           <SectionShell
             title="طلباتي"
-            subtitle={currentUsername ? `Requests created by: ${currentUsername}` : "Requests created by:"}
+            subtitle={currentUsername ? `أنشأها: ${currentUsername}` : "طلباتك"}
             icon={FiFileText}
             right={
-              <div className="flex items-center gap-2">
-                <div className="hidden sm:flex items-center gap-2 px-3 py-2 rounded-2xl bg-white/45 ring-1 ring-white/30">
-                  <FiFilter className="text-gray-700" />
-                  <select
-                    value={myStatus}
-                    onChange={(e) => setMyStatus(e.target.value)}
-                    className="bg-transparent outline-none text-[13px] font-extrabold text-gray-900"
-                  >
-                    <option value="all">All</option>
-<option value="approved">Approved</option>
-<option value="pending">Pending</option>
-<option value="rejected">Rejected</option>
-                  </select>
-                </div>
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <div className="hidden sm:block">{statusFilter}</div>
+                <span className="rounded-full bg-white/70 px-2.5 py-1 text-[11px] font-extrabold text-gray-700 ring-1 ring-white/50">
+                  {myPaged.total} طلب
+                </span>
               </div>
             }
           >
-            <div className="sm:hidden mb-3 flex items-center gap-2 px-3 py-2 rounded-2xl bg-white/45 ring-1 ring-white/30">
-              <FiFilter className="text-gray-700" />
-              <select
-                value={myStatus}
-                onChange={(e) => setMyStatus(e.target.value)}
-                className="bg-transparent outline-none w-full text-[13px] font-extrabold text-gray-900"
-              >
-               <option value="all">All</option>
-<option value="approved">Approved</option>
-<option value="pending">Pending</option>
-<option value="rejected">Rejected</option>
-              </select>
-            </div>
-
-            {loading ? (
-              <div className="py-10 text-center font-extrabold text-gray-800/70">Loading...</div>
-            ) : myRequests.length === 0 ? (
-              <div className="py-10 text-center font-extrabold text-gray-800/70">لا يوجد طلبات حسب الفلتر</div>
-            ) : (
-              <>
-                <ScrollBox>
-                  <div className="space-y-3">
-                    {myPaged.items.map((r) => (
-                      <RequestCard key={r._id} r={r} companyKey={companyKey} />
-                    ))}
-                  </div>
-                </ScrollBox>
-
-                <Pager page={myPaged.page} totalPages={myPaged.totalPages} onPage={setPageMy} />
-              </>
-            )}
+            <div className="mb-3 sm:hidden">{statusFilter}</div>
+            <ListState
+              loading={loading}
+              empty={myRequests.length === 0}
+              emptyText="لا يوجد طلبات حسب الفلتر"
+            >
+              <ScrollBox>
+                <div className="space-y-3">
+                  {myPaged.items.map((r) => (
+                    <RequestCard key={r._id} r={r} companyKey={companyKey} />
+                  ))}
+                </div>
+              </ScrollBox>
+              <Pager page={myPaged.page} totalPages={myPaged.totalPages} onPage={setPageMy} />
+            </ListState>
           </SectionShell>
         </div>
 
-        {canViewReceipts && !approvalOnlyCompany && (
+        {canViewReceipts && !approvalOnlyCompany ? (
           <div
             className={
-              canDelegateVoucher
-                ? "grid grid-cols-1 gap-6"
-                : "grid grid-cols-1 lg:grid-cols-2 gap-6"
+              canDelegateVoucher ? "grid grid-cols-1 gap-6" : "grid grid-cols-1 gap-6 lg:grid-cols-2"
             }
           >
-          {!canDelegateVoucher && (
-          <SectionShell
-            title="قيد الانتظار للصرف"
-            subtitle="نفس تقرير تتبع الصرف — قيد انتظار الصرف"
-            icon={FiCheckCircle}
-            accent="emerald"
-            badgeCount={notifyDisbursement}
-            badgeTone="disbursement"
-            right={
-              <span className="text-[13px] font-extrabold text-gray-800/70">
-                {delegatedPaged.total} items
-              </span>
-            }
-          >
-            {loading ? (
-              <div className="py-10 text-center font-extrabold text-gray-800/70">Loading...</div>
-            ) : delegatedRequests.length === 0 ? (
-              <div className="py-10 text-center font-extrabold text-gray-800/70">
-                لا يوجد طلبات قيد الانتظار للصرف
-              </div>
-            ) : (
-              <>
-                <ScrollBox>
-                  <div className="space-y-3">
-                    {delegatedPaged.items.map((r) => (
-                      <RequestCard key={r._id} r={r} variant="disbursementPending" companyKey={companyKey} />
-                    ))}
-                  </div>
-                </ScrollBox>
-                <Pager
-                  page={delegatedPaged.page}
-                  totalPages={delegatedPaged.totalPages}
-                  onPage={setPageDelegated}
-                />
-              </>
-            )}
-          </SectionShell>
-          )}
+            {!canDelegateVoucher ? (
+              <SectionShell
+                title="قيد الانتظار للصرف"
+                subtitle="طلبات جاهزة للصرف"
+                icon={FiCheckCircle}
+                accent="emerald"
+                badgeCount={notifyDisbursement}
+                badgeTone="disbursement"
+                right={
+                  <span className="rounded-full bg-white/70 px-2.5 py-1 text-[11px] font-extrabold text-gray-700 ring-1 ring-white/50">
+                    {delegatedPaged.total} طلب
+                  </span>
+                }
+              >
+                <ListState
+                  loading={loading}
+                  empty={delegatedRequests.length === 0}
+                  emptyText="لا يوجد طلبات قيد الانتظار للصرف"
+                >
+                  <ScrollBox>
+                    <div className="space-y-3">
+                      {delegatedPaged.items.map((r) => (
+                        <RequestCard
+                          key={r._id}
+                          r={r}
+                          variant="disbursementPending"
+                          companyKey={companyKey}
+                        />
+                      ))}
+                    </div>
+                  </ScrollBox>
+                  <Pager
+                    page={delegatedPaged.page}
+                    totalPages={delegatedPaged.totalPages}
+                    onPage={setPageDelegated}
+                  />
+                </ListState>
+              </SectionShell>
+            ) : null}
 
-          <SectionShell
-            title="صرفتها أنا"
-              subtitle="طلبات صرفتها أنت على آخر خطوة (مسجّل باسمك على الخطوة) وما زال وصلها موجود"
-            icon={FiCheckCircle}
-            right={
-              <span className="text-[13px] font-extrabold text-gray-800/70">
-                {disbursedPaged.total} items
-              </span>
-            }
-          >
-            {loading ? (
-              <div className="py-10 text-center font-extrabold text-gray-800/70">Loading...</div>
-            ) : disbursedByMe.length === 0 ? (
-              <div className="py-10 text-center font-extrabold text-gray-800/70">
-                لا يوجد طلبات صرفتها بعد
-              </div>
-            ) : (
-              <>
+            <SectionShell
+              title="صرفتها أنا"
+              subtitle="طلبات صرفتها على آخر خطوة"
+              icon={FiCheckCircle}
+              right={
+                <span className="rounded-full bg-white/70 px-2.5 py-1 text-[11px] font-extrabold text-gray-700 ring-1 ring-white/50">
+                  {disbursedPaged.total} طلب
+                </span>
+              }
+            >
+              <ListState
+                loading={loading}
+                empty={disbursedByMe.length === 0}
+                emptyText="لا يوجد طلبات صرفتها بعد"
+              >
                 <ScrollBox>
                   <div className="space-y-3">
                     {disbursedPaged.items.map((r) => (
@@ -1072,11 +1080,10 @@ export default function RequestsPage({ companyKey }) {
                   totalPages={disbursedPaged.totalPages}
                   onPage={setPageDisbursed}
                 />
-              </>
-            )}
-          </SectionShell>
+              </ListState>
+            </SectionShell>
           </div>
-        )}
+        ) : null}
       </div>
 
       {canCreate && (

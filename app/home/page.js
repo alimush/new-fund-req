@@ -1,4 +1,5 @@
 "use client";
+
 import { motion } from "framer-motion";
 import Image from "next/image";
 import Link from "next/link";
@@ -14,6 +15,8 @@ import {
   FiCheckCircle,
   FiCreditCard,
   FiLayers,
+  FiUser,
+  FiBriefcase,
 } from "react-icons/fi";
 import { hasPermission, PERMISSIONS } from "@/lib/permission";
 import { COMPANIES } from "@/lib/voucher/companies";
@@ -25,6 +28,7 @@ import {
   sumApprovalCounts,
   sumDisbursementCounts,
 } from "@/lib/notifications/notificationCounts";
+import PageLoader from "@/components/PageLoader";
 
 const cards = [
   { key: "Al-Ghadeer", name: "طلبات الغدير", logo: "/الغدير.png" },
@@ -41,26 +45,29 @@ const cards = [
     Icon: FiLayers,
     iconClass: "w-10 h-10 text-indigo-600",
   },
-
   { key: "alleanza", name: "طلبات اليانزا", logo: "/اليانزا.png" },
-  
   { key: "Al-Rida", name: "طلبات الرضا", logo: "/الرضا.png" },
-  
 ];
 
 const container = {
   hidden: { opacity: 0 },
-  show: { opacity: 1, transition: { staggerChildren: 0.08 } },
+  show: { opacity: 1, transition: { staggerChildren: 0.06 } },
 };
 
 const item = {
-  hidden: { y: 20, scale: 0.95 },
-  show: { y: 0, scale: 1, transition: { duration: 0.5, ease: "easeOut" } },
+  hidden: { y: 16, opacity: 0 },
+  show: { y: 0, opacity: 1, transition: { duration: 0.4, ease: "easeOut" } },
 };
+
+const glassCard =
+  "rounded-3xl bg-white/45 backdrop-blur-2xl ring-1 ring-white/30 shadow-[0_18px_45px_-25px_rgba(0,0,0,0.32)]";
+
+const cardHoverAction =
+  "group transition-all duration-300 ease-out hover:-translate-y-1 hover:border-indigo-200/80 hover:bg-white hover:shadow-[0_14px_32px_-18px_rgba(79,70,241,0.18)] hover:ring-indigo-100/90";
 
 export default function HomePage() {
   const router = useRouter();
-  const { companies, permissions, user } = usePermissions();
+  const { companies, permissions, user, permissionsLoaded } = usePermissions();
 
   const allowedCards = useMemo(() => {
     if (!Array.isArray(companies) || !Array.isArray(permissions)) return [];
@@ -68,14 +75,18 @@ export default function HomePage() {
     const isSuperAdmin = permissions.includes(PERMISSIONS.VIEW_ALL_REPORTS);
     const hasEXPerm = permissions.includes(PERMISSIONS.EX);
 
-    const result = [...cards.filter((c) => {
-      if (c.key === "EX") return companies.includes("EX") || hasEXPerm;
-      return companies.includes(c.key);
-    })];
+    const result = [
+      ...cards.filter((c) => {
+        if (c.key === "EX") return companies.includes("EX") || hasEXPerm;
+        return companies.includes(c.key);
+      }),
+    ];
 
-    // ✅ إضافة كارت "إدارة الوصولات"
-    const hasAnyVoucherPerm = COMPANIES.some(c => c.permission && permissions.includes(c.permission));
-    const canSeeVouchers = hasAnyVoucherPerm || permissions.includes(PERMISSIONS.RECEIPTS);
+    const hasAnyVoucherPerm = COMPANIES.some(
+      (c) => c.permission && permissions.includes(c.permission)
+    );
+    const canSeeVouchers =
+      hasAnyVoucherPerm || permissions.includes(PERMISSIONS.RECEIPTS);
 
     if (canSeeVouchers) {
       result.push({
@@ -84,21 +95,18 @@ export default function HomePage() {
         href: "/vouchers",
         isIcon: true,
         Icon: FiFileText,
-        color: "text-blue-600"
+        color: "text-blue-600",
       });
     }
 
-    // ✅ إضافة كارت "تقارير الوصولات"
-    const canSeeVoucherReports = permissions.includes(PERMISSIONS.VOUCHERS_REPORTS_VIEW);
-
-    if (canSeeVoucherReports) {
+    if (permissions.includes(PERMISSIONS.VOUCHERS_REPORTS_VIEW)) {
       result.push({
         key: "vouchers-reports",
         name: "تقارير الوصولات",
         href: "/vouchers/reports",
         isIcon: true,
         Icon: FiBarChart2,
-        color: "text-emerald-600"
+        color: "text-emerald-600",
       });
     }
 
@@ -109,12 +117,12 @@ export default function HomePage() {
         href: "/receipts/disbursement",
         isIcon: true,
         Icon: FiClock,
-        color: "text-amber-600"
+        color: "text-amber-600",
       });
     }
 
-    // ✅ إضافة كارت "تقارير الطلبات" (العامة)
-    const canSeeGeneralReports = isSuperAdmin || permissions.includes(PERMISSIONS.VIEW_REPORTS);
+    const canSeeGeneralReports =
+      isSuperAdmin || permissions.includes(PERMISSIONS.VIEW_REPORTS);
 
     if (canSeeGeneralReports) {
       result.push({
@@ -123,7 +131,7 @@ export default function HomePage() {
         href: "/reports",
         isIcon: true,
         Icon: FiPieChart,
-        color: "text-purple-600"
+        color: "text-purple-600",
       });
     }
 
@@ -142,7 +150,6 @@ export default function HomePage() {
   }, [companies, permissions]);
 
   const [counts, setCounts] = useState({});
-  const [loadingCounts, setLoadingCounts] = useState(false);
   const [countsLoaded, setCountsLoaded] = useState(false);
 
   const companyCards = useMemo(
@@ -154,7 +161,7 @@ export default function HomePage() {
     [allowedCards]
   );
 
-  const permissionsReady = Boolean(user?.id);
+  const permissionsReady = permissionsLoaded && Boolean(user?.id);
 
   const shouldRedirectToExHome = useMemo(() => {
     if (!permissionsReady || !Array.isArray(companies) || !Array.isArray(permissions)) {
@@ -173,9 +180,7 @@ export default function HomePage() {
   );
 
   const canViewReceipts = useMemo(
-    () =>
-      Array.isArray(permissions) &&
-      permissions.includes(PERMISSIONS.RECEIPTS),
+    () => Array.isArray(permissions) && permissions.includes(PERMISSIONS.RECEIPTS),
     [permissions]
   );
 
@@ -199,11 +204,14 @@ export default function HomePage() {
     [counts, companyKeys, canViewReceipts, canDelegateVoucher]
   );
 
+  const statCols =
+    canViewReceipts && !canDelegateVoucher
+      ? "sm:grid-cols-2 lg:grid-cols-4"
+      : "sm:grid-cols-2 lg:grid-cols-3";
+
   useEffect(() => {
     if (!shouldRedirectToExHome) return;
-    const t = setTimeout(() => {
-      router.replace("/ex/ex-home");
-    }, 400);
+    const t = setTimeout(() => router.replace("/ex/ex-home"), 400);
     return () => clearTimeout(t);
   }, [shouldRedirectToExHome, router]);
 
@@ -215,18 +223,21 @@ export default function HomePage() {
 
     const fetchCounts = async () => {
       try {
-        setLoadingCounts(true);
-        // Only fetch counts for non-icon cards (company cards)
-        const companyList = allowedCards.filter(c => !c.isIcon).map((x) => x.key).join(",");
+        const companyList = allowedCards
+          .filter((c) => !c.isIcon)
+          .map((x) => x.key)
+          .join(",");
+
         if (!companyList) {
           setCounts({});
           setCountsLoaded(true);
           return;
         }
 
-        const res = await fetch(`/api/notifications/counts?companies=${encodeURIComponent(companyList)}`, {
-          cache: "no-store",
-        });
+        const res = await fetch(
+          `/api/notifications/counts?companies=${encodeURIComponent(companyList)}`,
+          { cache: "no-store" }
+        );
         const data = await res.json();
         if (!alive) return;
 
@@ -235,17 +246,12 @@ export default function HomePage() {
       } catch {
         if (alive) setCounts({});
       } finally {
-        if (alive) {
-          setLoadingCounts(false);
-          setCountsLoaded(true);
-        }
+        if (alive) setCountsLoaded(true);
       }
     };
 
     fetchCounts();
-
     const t = setInterval(fetchCounts, 30000);
-
     return () => {
       alive = false;
       clearInterval(t);
@@ -254,293 +260,321 @@ export default function HomePage() {
 
   if (!permissionsReady) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-4 px-6">
-        <div
-          className="h-12 w-12 animate-spin rounded-full border-4 border-slate-200 border-t-slate-600"
-          aria-hidden
-        />
-        <p className="text-sm font-semibold text-slate-600">جاري التحميل...</p>
-      </div>
+      <PageLoader
+        variant="home"
+        title="جاري تحميل لوحة التحكم"
+        subtitle="يرجى الانتظار..."
+        icon={<FiGrid />}
+      />
     );
   }
 
   if (shouldRedirectToExHome) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-4 px-6">
-        <div
-          className="h-12 w-12 animate-spin rounded-full border-4 border-slate-200 border-t-indigo-600"
-          aria-hidden
-        />
-        <p className="text-sm font-semibold text-slate-600">جاري فتح صفحة طلبات الحجز...</p>
-      </div>
+      <PageLoader
+        variant="home"
+        title="جاري فتح صفحة طلبات الحجز"
+        subtitle="يرجى الانتظار..."
+        icon={<FiLayers />}
+      />
     );
   }
 
   return (
-    <div className="min-h-screen px-6 pb-10 pt-8">
-      {/* الهيدر */}
-      <div className="mx-auto mb-5 max-w-6xl rounded-3xl border border-slate-200/70 bg-slate-100/70 px-4 py-4 shadow-xl backdrop-blur">
-        <motion.h1
-          initial={{ opacity: 0, y: -20 }}
+    <div className="min-h-screen px-4 pb-10 pt-4 sm:px-6 sm:pt-6">
+      <div className="mx-auto max-w-6xl space-y-7">
+        {/* الهيدر */}
+        <motion.section
+          initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, ease: "easeOut" }}
-          className="text-center text-xl font-extrabold md:text-2xl
-                     bg-gradient-to-r from-gray-400 via-gray-600 to-slate-800
-                     text-transparent bg-clip-text"
+          transition={{ duration: 0.45 }}
+          className={`${glassCard} overflow-hidden border border-slate-200/50`}
         >
-          Companies Dashboard
-        </motion.h1>
+          <div className="relative overflow-hidden border-b border-slate-200/50 bg-gradient-to-b from-white/70 via-white/40 to-transparent px-5 py-8 sm:px-8 sm:py-9">
+            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(99,102,241,0.07),transparent_60%)]" />
 
-        <motion.p
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3, duration: 0.6, ease: "easeOut" }}
-          className="mt-1 text-center text-xs md:text-sm bg-gradient-to-r from-gray-500 via-gray-600 to-gray-800 
-                     text-transparent bg-clip-text"
-        >
-          اختر الشركة لعرض تفاصيل الطلبات
-        </motion.p>
+            <div className="relative mx-auto max-w-xl text-center">
+              <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-indigo-600">
+                Companies Dashboard
+              </p>
+              <h1 className="mt-2 text-base font-extrabold leading-relaxed text-slate-800 sm:text-lg">
+                اختر الشركة لعرض تفاصيل الطلبات
+              </h1>
 
-        <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
-          <div className="rounded-2xl bg-slate-50/90 p-2.5 text-center ring-1 ring-slate-200 shadow-sm">
-            <p className="text-[11px] font-bold text-gray-500">المستخدم</p>
-            <p className="mt-1 truncate text-sm font-extrabold text-gray-900">
-              {user?.username || "User"}
-            </p>
-          </div>
-          <div className="rounded-2xl bg-slate-50/90 p-2.5 text-center ring-1 ring-slate-200 shadow-sm">
-            <p className="text-[11px] font-bold text-gray-500">الشركات</p>
-            <p className="mt-1 text-sm font-extrabold text-gray-900">{companyCards.length}</p>
-          </div>
-          <div className="rounded-2xl bg-slate-50/90 p-2.5 ring-1 ring-slate-200 shadow-sm">
-            <p className="text-center text-[11px] font-bold text-gray-500">إشعارات بانتظارك</p>
-            <div className="mt-2 space-y-1.5">
-              <div
-                className="flex items-center justify-between gap-2 rounded-xl bg-white/90 px-2.5 py-2 ring-1 ring-slate-200/80"
-                title="طلبات تحتاج موافقتك في سير العمل"
-              >
-                <span className="min-w-0 text-right text-[10px] font-extrabold leading-tight text-gray-800 sm:text-[11px]">
-                  قيد الانتظار للموافقة
+              <div className={`mx-auto mt-5 inline-flex items-center gap-2.5 rounded-2xl border border-slate-200/80 bg-white/90 px-4 py-2.5 shadow-sm ring-1 ring-slate-200/50 ${cardHoverAction}`}>
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 ring-1 ring-indigo-100 transition-transform duration-300 group-hover:scale-110">
+                  <FiUser className="text-base" />
                 </span>
-                <span className="inline-flex shrink-0 min-h-[26px] min-w-[30px] items-center justify-center gap-1 rounded-full bg-gradient-to-r from-rose-600 to-red-600 px-2 text-[11px] font-black text-white tabular-nums shadow-[0_6px_14px_-6px_rgba(220,38,38,0.85)] ring-2 ring-white/70">
-                  <FiClock className="text-[10px]" />
-                  {!countsLoaded ? (
-                    <ExBadgeInlineSpinner />
-                  ) : (
-                    totalApproval > 99 ? "99+" : totalApproval
-                  )}
+                <span dir="rtl" className="inline-flex items-center gap-2 text-sm font-extrabold">
+                  <span className="text-slate-500">مرحباً</span>
+                  <span dir="ltr" className="text-slate-900">{user?.username || "User"}</span>
                 </span>
               </div>
-              {canViewReceipts && !canDelegateVoucher && (
-                <div
-                  className="flex items-center justify-between gap-2 rounded-xl bg-white/90 px-2.5 py-2 ring-1 ring-slate-200/80"
-                  title="طلبات جاهزة للصرف — نفس تقرير تتبع الصرف"
-                >
-                  <span className="min-w-0 text-right text-[10px] font-extrabold leading-tight text-gray-800 sm:text-[11px]">
-                    قيد الانتظار للصرف
-                  </span>
-                  <span className="inline-flex shrink-0 min-h-[26px] min-w-[30px] items-center justify-center gap-1 rounded-full bg-gradient-to-r from-emerald-600 to-green-600 px-2 text-[11px] font-black text-white tabular-nums shadow-[0_6px_14px_-6px_rgba(5,150,105,0.8)] ring-2 ring-white/70">
-                    <FiCheckCircle className="text-[10px]" />
-                    {!countsLoaded ? (
-                      <ExBadgeInlineSpinner />
-                    ) : (
-                      totalDisbursement > 99 ? "99+" : totalDisbursement
-                    )}
-                  </span>
-                </div>
-              )}
             </div>
           </div>
-        </div>
 
-        {companyCards.length > 0 && toolCards.length > 0 && (
-          <div className="mt-4 rounded-2xl bg-slate-50/80 p-3 ring-1 ring-slate-200 shadow-sm">
-            <div className="flex flex-wrap items-center justify-center gap-2">
-              {toolCards.map((card) => (
-                <Link
-                  key={`chip-${card.key}`}
-                  href={card.href || "/home"}
-                  className="inline-flex items-center gap-1.5 rounded-xl bg-white/95 px-3 py-1.5 text-xs font-extrabold text-gray-800 ring-1 ring-slate-200 shadow-sm transition hover:-translate-y-0.5 hover:bg-white"
-                >
-                  {card.Icon ? (
-                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-white ring-1 ring-slate-200/90 shadow-sm">
-                      <card.Icon className={`text-[15px] ${card.color || "text-gray-700"}`} />
-                    </span>
+          <div className={`grid grid-cols-1 gap-3 bg-slate-50/40 p-4 sm:p-5 ${statCols}`}>
+            <StatBox
+              icon={FiUser}
+              label="المستخدم"
+              value={user?.username || "—"}
+              tone="slate"
+            />
+            <StatBox
+              icon={FiBriefcase}
+              label="الشركات المتاحة"
+              value={String(companyCards.length)}
+              tone="indigo"
+            />
+            <StatBox
+              icon={FiClock}
+              label="بانتظار الموافقة"
+              value={
+                !countsLoaded ? (
+                  <ExBadgeInlineSpinner className="size-4 border-slate-300 border-t-indigo-600" />
+                ) : (
+                  totalApproval > 99 ? "99+" : String(totalApproval)
+                )
+              }
+              tone="rose"
+            />
+            {canViewReceipts && !canDelegateVoucher ? (
+              <StatBox
+                icon={FiCheckCircle}
+                label="بانتظار الصرف"
+                value={
+                  !countsLoaded ? (
+                    <ExBadgeInlineSpinner className="size-4 border-slate-300 border-t-indigo-600" />
                   ) : (
-                    <FiZap className="text-gray-700" />
-                  )}
-                  {card.name}
-                </Link>
-              ))}
+                    totalDisbursement > 99 ? "99+" : String(totalDisbursement)
+                  )
+                }
+                tone="emerald"
+              />
+            ) : null}
+          </div>
+        </motion.section>
+
+        {/* الأدوات */}
+        {toolCards.length > 0 && companyCards.length > 0 ? (
+          <section>
+            <SectionHeader icon={FiZap} title="الأدوات والتقارير" count={toolCards.length} />
+            <div className={`${glassCard} p-4 sm:p-5`}>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {toolCards.map((card) => (
+                  <ToolLink key={card.key} card={card} />
+                ))}
+              </div>
             </div>
+          </section>
+        ) : null}
+
+        {/* الشركات */}
+        {companyCards.length > 0 ? (
+          <section>
+            <SectionHeader icon={FiGrid} title="الشركات" count={companyCards.length} />
+            <motion.div
+              className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3"
+              variants={container}
+              initial="hidden"
+              animate="show"
+            >
+              {companyCards.map((c) => {
+                const approvalN = getApprovalCount(counts, c.key);
+                const disbursementN =
+                  canViewReceipts && !canDelegateVoucher
+                    ? getDisbursementCount(counts, c.key)
+                    : 0;
+
+                return (
+                  <CompanyCard
+                    key={c.key}
+                    card={c}
+                    approvalN={approvalN}
+                    disbursementN={disbursementN}
+                  />
+                );
+              })}
+            </motion.div>
+          </section>
+        ) : (
+          <div
+            className={`${glassCard} border border-dashed border-gray-300/80 p-10 text-center text-gray-600`}
+          >
+            لا توجد شركات مرتبطة بهذا المستخدم حالياً.
           </div>
         )}
+
+        {/* أدوات فقط */}
+        {companyCards.length === 0 && toolCards.length > 0 ? (
+          <section>
+            <SectionHeader icon={FiZap} title="الأدوات المتاحة" count={toolCards.length} />
+            <motion.div
+              className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3"
+              variants={container}
+              initial="hidden"
+              animate="show"
+            >
+              {toolCards.map((c) => (
+                <ToolCard key={c.key} card={c} />
+              ))}
+            </motion.div>
+          </section>
+        ) : null}
       </div>
-
-      {companyCards.length > 0 && (
-        <>
-          {/* كروت الشركات */}
-          <div className="mx-auto mb-4 flex max-w-6xl items-center gap-2 text-sm font-extrabold text-gray-700">
-            <FiGrid className="text-gray-600" />
-            الشركات
-          </div>
-          <motion.div
-            className="mx-auto grid max-w-6xl grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3"
-            variants={container}
-            initial="hidden"
-            animate="show"
-          >
-            {companyCards.map((c, idx) => {
-              const approvalN = getApprovalCount(counts, c.key);
-              const disbursementN =
-                canViewReceipts && !canDelegateVoucher
-                  ? getDisbursementCount(counts, c.key)
-                  : 0;
-
-              return (
-                <Link key={idx} href={c.href || `/requests/${c.key}`} passHref>
-                  <motion.div
-                    variants={item}
-                    whileHover={{ y: -4, scale: 1.015 }}
-                    whileTap={{ scale: 0.995 }}
-                    transition={{ duration: 0.2, ease: "easeOut" }}
-                    className="
-                  group relative cursor-pointer rounded-3xl p-6
-                  bg-white/40 backdrop-blur-2xl
-                  ring-1 ring-white/25
-                  shadow-[0_18px_45px_-25px_rgba(0,0,0,0.35)]
-                  hover:bg-white/55 hover:ring-white/35
-                  transition-all duration-300
-                  text-center flex flex-col items-center
-                "
-                  >
-                    {(approvalN > 0 || disbursementN > 0) && !c.isIcon && (
-                      <motion.div
-                        className="absolute left-3 top-3 z-20 flex items-center gap-1.5"
-                        initial={{ opacity: 0, scale: 0.9 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        transition={{ duration: 0.25 }}
-                      >
-                        {approvalN > 0 && (
-                          <span
-                            className="inline-flex h-9 min-w-[2.25rem] items-center justify-center gap-1 rounded-full bg-gradient-to-br from-rose-600 to-red-600 px-2.5 text-white shadow-[0_8px_22px_-8px_rgba(220,38,38,0.9)] ring-2 ring-white/85 backdrop-blur-sm transition-transform duration-300 group-hover:scale-110"
-                            title="قيد الانتظار للموافقة"
-                          >
-                            <FiClock className="text-[13px] shrink-0 opacity-95" aria-hidden />
-                            <span className="text-xs font-black tabular-nums leading-none">
-                              {approvalN > 99 ? "99+" : approvalN}
-                            </span>
-                          </span>
-                        )}
-                        {disbursementN > 0 && (
-                          <span
-                            className="inline-flex h-9 min-w-[2.25rem] items-center justify-center gap-1 rounded-full bg-gradient-to-br from-emerald-600 to-green-600 px-2.5 text-white shadow-[0_8px_22px_-8px_rgba(5,150,105,0.85)] ring-2 ring-white/85 backdrop-blur-sm transition-transform duration-300 group-hover:scale-110"
-                            title="قيد الانتظار للصرف"
-                          >
-                            <FiCheckCircle className="text-[13px] shrink-0 opacity-95" aria-hidden />
-                            <span className="text-xs font-black tabular-nums leading-none">
-                              {disbursementN > 99 ? "99+" : disbursementN}
-                            </span>
-                          </span>
-                        )}
-                      </motion.div>
-                    )}
-
-                    {/* زخارف ناعمة */}
-                    <div className="pointer-events-none absolute inset-0 rounded-3xl bg-gradient-to-br from-white/35 via-white/10 to-transparent opacity-90" />
-
-                    {/* اللوغو أو الأيقونة */}
-                    <div
-                      className="
-                    relative w-20 h-20 rounded-2xl
-                    bg-white/50 backdrop-blur
-                    ring-1 ring-white/30
-                    shadow-md overflow-hidden
-                    flex items-center justify-center
-                    transition-all duration-300 group-hover:scale-[1.03]
-                  "
-                    >
-                      {c.Icon ? (
-                        <c.Icon
-                          className={`${c.iconClass || "w-10 h-10 text-gray-700"} transition-transform duration-500 group-hover:scale-110`}
-                        />
-                      ) : (
-                        <Image
-                          src={c.logo || "/12.png"}
-                          alt={`${c.name} logo`}
-                          fill
-                          className="object-contain p-2 transition-transform duration-500 group-hover:scale-105"
-                        />
-                      )}
-                    </div>
-
-                    {/* النص */}
-                    <h2 className="mt-4 text-lg font-extrabold tracking-tight text-gray-900">
-                      {c.name}
-                    </h2>
-                    <p className="mt-1 text-xs font-semibold text-gray-600/90">
-                      اضغط لفتح التفاصيل
-                    </p>
-                  </motion.div>
-                </Link>
-              );
-            })}
-          </motion.div>
-        </>
-      )}
-
-      {companyCards.length === 0 && (
-        <div className="mx-auto max-w-6xl rounded-2xl border border-dashed border-gray-300 bg-white/70 p-10 text-center text-gray-600">
-          لا توجد شركات مرتبطة بهذا المستخدم حالياً.
-        </div>
-      )}
-
-      {companyCards.length === 0 && toolCards.length > 0 && (
-        <>
-          <motion.div
-            className="mx-auto mt-6 grid max-w-6xl grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3"
-            variants={container}
-            initial="hidden"
-            animate="show"
-          >
-            {toolCards.map((c, idx) => (
-              <Link key={`${c.key}-${idx}`} href={c.href || "/home"} passHref>
-                <motion.div
-                  variants={item}
-                  whileHover={{ y: -4, scale: 1.015 }}
-                  whileTap={{ scale: 0.995 }}
-                  transition={{ duration: 0.2, ease: "easeOut" }}
-                  className="group relative flex cursor-pointer flex-col items-center rounded-3xl bg-white/45 p-6 text-center shadow-[0_18px_45px_-25px_rgba(0,0,0,0.35)] ring-1 ring-white/35 transition-all duration-300 hover:bg-white/60 hover:ring-white/45"
-                >
-                  <div className="pointer-events-none absolute inset-0 rounded-3xl bg-gradient-to-br from-white/35 via-white/10 to-transparent opacity-90" />
-                  <div className="relative flex h-20 w-20 items-center justify-center rounded-2xl bg-white/70 shadow-md ring-1 ring-white/40 backdrop-blur transition-all duration-300 group-hover:scale-[1.03]">
-                    {c.Icon ? (
-                      <span
-                        className={`flex h-14 w-14 items-center justify-center rounded-xl ring-1 ring-slate-200/80 shadow-sm ${c.color ? "" : "bg-slate-50"}`}
-                      >
-                        <c.Icon
-                          className={`h-7 w-7 ${
-                            c.color || "text-gray-700"
-                          } transition-transform duration-500 group-hover:scale-110`}
-                        />
-                      </span>
-                    ) : (
-                      <FiZap className="h-10 w-10 text-gray-700" />
-                    )}
-                  </div>
-                  <h2 className="mt-4 text-lg font-extrabold tracking-tight text-gray-900">
-                    {c.name}
-                  </h2>
-                  <p className="mt-1 text-xs font-semibold text-gray-600/90">
-                    اضغط لفتح الأداة
-                  </p>
-                </motion.div>
-              </Link>
-            ))}
-          </motion.div>
-        </>
-      )}
-
     </div>
+  );
+}
+
+function SectionHeader({ icon: Icon, title, count }) {
+  return (
+    <div className="mb-3 flex items-center justify-between gap-3">
+      <div className="flex items-center gap-2 text-sm font-extrabold text-gray-800">
+        <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/70 text-gray-700 ring-1 ring-white/50 shadow-sm">
+          <Icon />
+        </span>
+        {title}
+      </div>
+      {count != null ? (
+        <span className="rounded-full bg-white/70 px-2.5 py-1 text-[11px] font-extrabold text-gray-600 ring-1 ring-white/50">
+          {count}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+function StatBox({ icon: Icon, label, value, tone = "slate" }) {
+  const tones = {
+    slate: "bg-slate-50 text-slate-600 ring-slate-200",
+    indigo: "bg-indigo-50 text-indigo-600 ring-indigo-200",
+    rose: "bg-rose-50 text-rose-600 ring-rose-200",
+    emerald: "bg-emerald-50 text-emerald-600 ring-emerald-200",
+  };
+
+  return (
+    <div className={`flex cursor-default flex-col items-center rounded-2xl border border-slate-200/70 bg-white px-4 py-4 text-center shadow-sm ring-1 ring-white/80 ${cardHoverAction}`}>
+      <span
+        className={`mb-3 flex h-10 w-10 items-center justify-center rounded-xl ring-1 transition-transform duration-300 group-hover:scale-110 ${tones[tone] || tones.slate}`}
+      >
+        <Icon className="text-lg" />
+      </span>
+      <div className="min-w-0 w-full">
+        <div className="truncate text-lg font-black tabular-nums text-slate-900 transition-colors duration-300 group-hover:text-indigo-700">
+          {value}
+        </div>
+        <p className="mt-1 text-[11px] font-bold text-slate-500 transition-colors duration-300 group-hover:text-slate-700">
+          {label}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function ToolLink({ card }) {
+  const Icon = card.Icon || FiZap;
+
+  return (
+    <Link
+      href={card.href || "/home"}
+      className={`group flex items-center gap-3 rounded-2xl border border-slate-200/70 bg-white/75 px-3 py-2.5 ring-1 ring-white/50 ${cardHoverAction}`}
+    >
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white ring-1 ring-slate-200/80 transition-transform duration-300 group-hover:scale-110 group-hover:ring-indigo-200">
+        <Icon className={`text-base transition-colors duration-300 group-hover:text-indigo-600 ${card.color || "text-gray-700"}`} />
+      </span>
+      <span className="min-w-0 flex-1 truncate text-xs font-extrabold text-gray-800 transition-colors duration-300 group-hover:text-indigo-800">
+        {card.name}
+      </span>
+    </Link>
+  );
+}
+
+function CompanyCard({ card, approvalN, disbursementN }) {
+  const hasBadges = approvalN > 0 || disbursementN > 0;
+
+  return (
+    <Link href={card.href || `/requests/${card.key}`}>
+      <motion.div
+        variants={item}
+        whileHover={{ y: -4, scale: 1.012 }}
+        whileTap={{ scale: 0.995 }}
+        className={`group relative flex h-full min-h-[220px] cursor-pointer flex-col items-center justify-center p-6 text-center transition-all duration-300 hover:bg-white/70 hover:ring-indigo-200/50 hover:shadow-[0_20px_50px_-22px_rgba(79,70,241,0.22)] ${glassCard}`}
+      >
+        {hasBadges ? (
+          <div className="absolute left-3 top-3 z-20 flex items-center gap-1.5">
+            {approvalN > 0 ? (
+              <CountBadge count={approvalN} tone="rose" icon={FiClock} />
+            ) : null}
+            {disbursementN > 0 ? (
+              <CountBadge count={disbursementN} tone="emerald" icon={FiCheckCircle} />
+            ) : null}
+          </div>
+        ) : null}
+
+        <div className="pointer-events-none absolute inset-0 rounded-3xl bg-gradient-to-br from-white/35 via-white/10 to-transparent opacity-90" />
+
+        <div className="relative flex h-20 w-20 items-center justify-center overflow-hidden rounded-2xl bg-white/55 ring-1 ring-white/35 shadow-md transition-all duration-300 group-hover:scale-105 group-hover:ring-indigo-200/60">
+          {card.Icon ? (
+            <card.Icon
+              className={`${card.iconClass || "w-10 h-10 text-gray-700"} transition-transform duration-500 group-hover:scale-110`}
+            />
+          ) : (
+            <Image
+              src={card.logo || "/12.png"}
+              alt={`${card.name} logo`}
+              fill
+              className="object-contain p-2 transition-transform duration-500 group-hover:scale-105"
+            />
+          )}
+        </div>
+
+        <h2 className="relative mt-4 text-lg font-extrabold text-gray-900 transition-colors duration-300 group-hover:text-indigo-800">
+          {card.name}
+        </h2>
+        <p className="relative mt-1 text-xs font-semibold text-gray-600/90 transition-colors duration-300 group-hover:text-indigo-600/90">
+          اضغط لفتح التفاصيل
+        </p>
+      </motion.div>
+    </Link>
+  );
+}
+
+function ToolCard({ card }) {
+  const Icon = card.Icon || FiZap;
+
+  return (
+    <Link href={card.href || "/home"}>
+      <motion.div
+        variants={item}
+        whileHover={{ y: -4, scale: 1.012 }}
+        whileTap={{ scale: 0.995 }}
+        className={`group relative flex flex-col items-center p-6 text-center transition-all duration-300 hover:bg-white/70 hover:ring-indigo-200/50 hover:shadow-[0_20px_50px_-22px_rgba(79,70,241,0.22)] ${glassCard}`}
+      >
+        <div className="pointer-events-none absolute inset-0 rounded-3xl bg-gradient-to-br from-white/35 via-white/10 to-transparent opacity-90 transition-opacity duration-300 group-hover:opacity-100" />
+        <div className="relative flex h-20 w-20 items-center justify-center rounded-2xl bg-white/70 shadow-md ring-1 ring-white/40 transition-all duration-300 group-hover:scale-105 group-hover:ring-indigo-200/60">
+          <Icon className={`h-10 w-10 transition-transform duration-300 group-hover:scale-110 ${card.color || "text-gray-700 group-hover:text-indigo-600"}`} />
+        </div>
+        <h2 className="relative mt-4 text-lg font-extrabold text-gray-900 transition-colors duration-300 group-hover:text-indigo-800">
+          {card.name}
+        </h2>
+        <p className="relative mt-1 text-xs font-semibold text-gray-600/90 transition-colors duration-300 group-hover:text-indigo-600/90">
+          اضغط لفتح الأداة
+        </p>
+      </motion.div>
+    </Link>
+  );
+}
+
+function CountBadge({ count, tone, icon: Icon }) {
+  const toneClass =
+    tone === "rose" ? "from-rose-600 to-red-600" : "from-emerald-600 to-green-600";
+
+  return (
+    <span
+      className={`inline-flex h-9 min-w-[2.25rem] items-center justify-center gap-1 rounded-full bg-gradient-to-br ${toneClass} px-2.5 text-xs font-black text-white shadow-sm ring-2 ring-white/85`}
+    >
+      <Icon className="text-[13px] shrink-0" />
+      {count > 99 ? "99+" : count}
+    </span>
   );
 }

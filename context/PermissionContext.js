@@ -21,7 +21,10 @@ export function PermissionProvider({ children }) {
     }
   };
 
-  const load = async () => {
+  const load = async (options = {}) => {
+    const { silent = false } = options;
+    if (!silent) setPermissionsLoaded(false);
+
     try {
       const res = await fetch("/api/user-permissions", {
         cache: "no-store",
@@ -53,13 +56,13 @@ export function PermissionProvider({ children }) {
   useEffect(() => {
     load();
 
-    window.addEventListener("userChanged", load);
+    const onUserChanged = () => load();
+    window.addEventListener("userChanged", onUserChanged);
 
-    // يفحص كل 5 ثواني إذا اليوزر بعده موجود
-    const interval = setInterval(load, 5000);
+    const interval = setInterval(() => load({ silent: true }), 5000);
 
     return () => {
-      window.removeEventListener("userChanged", load);
+      window.removeEventListener("userChanged", onUserChanged);
       clearInterval(interval);
     };
   }, []);

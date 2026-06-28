@@ -20,12 +20,14 @@ import {
   FiUser,
   FiCreditCard,
   FiTrash2,
+  FiCheckCircle,
 } from "react-icons/fi";
 
 import { FaMoneyBillWave } from "react-icons/fa6";
 import { usePermissions } from "@/context/PermissionContext";
 import { PERMISSIONS } from "@/lib/permission";
 import TablePagination from "@/components/TablePagination";
+import VoucherModeBadge from "@/components/VoucherModeBadge";
 
 const Select = dynamic(() => import("react-select").then((m) => m.default), {
   ssr: false,
@@ -915,25 +917,6 @@ export default function VoucherReportsPage() {
     return new Intl.NumberFormat("en-US").format(n);
   };
 
-  const modeBadge = (mode) => {
-    const base =
-      "inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-[13px] font-extrabold border";
-
-    if (mode === "payment") {
-      return (
-        <span className={`${base} bg-red-50 text-red-700 border-red-200`}>
-          <FiFileText /> وصل صرف
-        </span>
-      );
-    }
-
-    return (
-      <span className={`${base} bg-green-50 text-green-700 border-green-200`}>
-        <FiFileText /> وصل قبض
-      </span>
-    );
-  };
-
   const fetchAllForExport = useCallback(async () => {
     const firstParams = buildParams(1, true);
     const firstRes = await fetch(`/api/vouchers/reports?${firstParams.toString()}`, {
@@ -999,124 +982,125 @@ export default function VoucherReportsPage() {
     }
   }, [fetchAllForExport]);
 
-  const Card = ({ icon: Icon, title, value }) => (
-    <motion.div
-      whileHover={{ y: -3, scale: 1.01 }}
-      whileTap={{ scale: 0.99 }}
-      transition={{ duration: 0.18, ease: "easeOut" }}
-      className="group relative overflow-hidden rounded-2xl border border-gray-200/80 bg-white/85 backdrop-blur shadow-sm"
-    >
-      <div className="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-        <div className="absolute -top-16 -right-16 h-40 w-40 rounded-full bg-blue-500/10 blur-2xl" />
-        <div className="absolute -bottom-16 -left-16 h-40 w-40 rounded-full bg-indigo-500/10 blur-2xl" />
-      </div>
-
-      <div className="relative px-5 py-4 flex items-center gap-4">
-        <div className="w-12 h-12 rounded-2xl bg-gray-900 text-white flex items-center justify-center shadow-sm">
-          <Icon className="text-xl" />
-        </div>
-
-        <div>
-          <div className="text-[14px] font-extrabold text-gray-500">{title}</div>
-          <div className="text-2xl font-extrabold text-gray-900">{value}</div>
-        </div>
-      </div>
-    </motion.div>
+  const Card = ({ icon, title, value, iconColor = "text-blue-600" }) => (
+    <KpiCard label={title} value={value} icon={icon} iconColor={iconColor} />
   );
 
   if (!Array.isArray(permissions)) return null;
   if (!canViewReports) return null;
 
+  const filterInputClass =
+    "w-full rounded-xl bg-white/94 px-3 py-2.5 text-[14px] font-extrabold text-slate-900 outline-none ring-1 ring-slate-200/90 transition focus:ring-slate-300/90";
+
   return (
     <motion.div
-      className="min-h-screen p-5 md:p-7 text-[14px] md:text-[15px] font-bold"
+      className="min-h-screen bg-gradient-to-br from-slate-100 via-slate-50 to-indigo-50/30 px-2 py-4 sm:px-4 sm:py-6 lg:px-5 lg:py-8 text-[14px] md:text-[15px] font-bold"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.35 }}
       dir="ltr"
     >
-      <motion.div
-        initial={{ y: -10, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-5"
-      >
-        <div className="text-right">
-          <h1 className="text-2xl md:text-3xl font-extrabold text-gray-900 flex items-center justify-end gap-3">
-            <FiFilter className="text-blue-600" /> تقارير الوصولات
-          </h1>
-          <p className="text-sm text-gray-600 mt-1 font-bold">
-            متابعة وصولات الصرف والقبض مع فتح الوصل بصفحة مستقلة.
-          </p>
-        </div>
+      <div className="mx-auto w-full max-w-none">
+        <motion.div
+          initial={{ y: -10, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          className="mb-6 rounded-3xl border border-slate-200/80 bg-white/85 p-5 shadow-sm sm:p-6"
+        >
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="text-right">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-blue-600/90">
+                التقارير
+              </p>
+              <h1 className="mt-1 flex items-center justify-end gap-2 text-2xl font-extrabold text-slate-900 sm:text-3xl">
+                تقارير الوصولات
+                <ColoredIcon color="text-blue-600">
+                  <FiFilter />
+                </ColoredIcon>
+              </h1>
+              <p className="mt-1 text-sm font-semibold text-slate-500">
+                متابعة وصولات الصرف والقبض مع فتح الوصل بصفحة مستقلة
+              </p>
+            </div>
 
-        <div className="flex items-center gap-2">
-          <motion.button
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.99 }}
-            onClick={handleSearch}
-            disabled={loading}
-            className={`px-4 py-2.5 rounded-xl flex items-center gap-2 shadow-sm border font-extrabold text-[14px] ${
-              loading
-                ? "bg-gray-200 text-gray-500 border-gray-200 cursor-not-allowed"
-                : "bg-gray-900 text-white border-gray-900 hover:bg-black"
-            }`}
-          >
-            {loading ? (
-              <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-            ) : (
-              <>
-                <FiSearch /> بحث
-              </>
-            )}
-          </motion.button>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <motion.button
+                type="button"
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.99 }}
+                onClick={handleSearch}
+                disabled={loading}
+                className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-extrabold shadow-sm transition ${
+                  loading
+                    ? "cursor-not-allowed bg-slate-300 text-slate-500"
+                    : "bg-blue-600 text-white hover:bg-blue-700"
+                }`}
+              >
+                {loading ? (
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                ) : (
+                  <FiSearch className="text-base" />
+                )}
+                بحث
+              </motion.button>
 
-          <motion.button
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.99 }}
-            onClick={handleReset}
-            disabled={loading}
-            className="px-4 py-2.5 rounded-xl bg-white/80 backdrop-blur border border-gray-200 text-gray-900 flex items-center gap-2 shadow-sm hover:bg-white font-extrabold text-[14px]"
-          >
-            <FiRotateCcw /> مسح
-          </motion.button>
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.99 }}
+                onClick={handleReset}
+                disabled={loading}
+                className="inline-flex items-center gap-2 rounded-xl bg-slate-50 px-4 py-2.5 text-sm font-extrabold text-slate-700 ring-1 ring-slate-200/90 transition hover:bg-white hover:shadow-sm disabled:opacity-60"
+              >
+                <FiRotateCcw className="text-base" />
+                مسح الفلاتر
+              </motion.button>
 
-          <motion.button
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.99 }}
-            onClick={handleExportExcel}
-            disabled={loading || rows.length === 0}
-            className={`px-4 py-2.5 rounded-xl flex items-center gap-2 shadow-sm border font-extrabold text-[14px] ${
-              loading || rows.length === 0
-                ? "bg-gray-200 text-gray-500 border-gray-200 cursor-not-allowed"
-                : "bg-white/80 backdrop-blur border-gray-200 text-gray-900 hover:bg-white"
-            }`}
-          >
-            <FiDownload /> Excel
-          </motion.button>
-        </div>
-      </motion.div>
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.99 }}
+                onClick={handleExportExcel}
+                disabled={loading || rows.length === 0}
+                className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-extrabold shadow-sm transition ${
+                  loading || rows.length === 0
+                    ? "cursor-not-allowed bg-slate-100 text-slate-400 ring-1 ring-slate-200/80"
+                    : "bg-emerald-50 text-emerald-800 ring-1 ring-emerald-200/80 hover:bg-emerald-100"
+                }`}
+              >
+                <FiDownload className="text-base" />
+                Excel
+              </motion.button>
+            </div>
+          </div>
+        </motion.div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">
-        <Card icon={FiLayers} title="المجموع" value={stats.total} />
-        <Card icon={FiFileText} title="وصولات الصرف" value={stats.payment} />
-        <Card icon={FiFileText} title="وصولات القبض" value={stats.receipt} />
-      </div>
+        <motion.div
+          className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4"
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.06 }}
+        >
+          <Card icon={<FiLayers />} title="المجموع" value={stats.total} iconColor="text-indigo-600" />
+          <Card icon={<FiFileText />} title="وصولات الصرف" value={stats.payment} iconColor="text-red-600" />
+          <Card icon={<FiCheckCircle />} title="وصولات القبض" value={stats.receipt} iconColor="text-emerald-600" />
+        </motion.div>
 
-      <motion.div
-        className="relative z-20 rounded-2xl border border-gray-200/80 bg-white/85 backdrop-blur shadow-sm p-5 md:p-6 mb-6"
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ y: 0, opacity: 1 }}
-      >
-        <div className="flex items-center justify-end gap-2 text-gray-900 font-extrabold mb-4 text-base">
-          <FiShield className="text-gray-700" />
-          الفلاتر
-        </div>
+        <motion.div
+          className="relative z-20 mb-6 rounded-3xl border border-slate-200/70 bg-white/75 p-5 shadow-sm sm:p-6"
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+        >
+          <div className="mb-4 flex items-center justify-end gap-2">
+            <h2 className="text-lg font-extrabold text-slate-900">الفلاتر</h2>
+            <ColoredIcon color="text-blue-600">
+              <FiShield />
+            </ColoredIcon>
+          </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
           <div className="text-right">
-            <label className="text-[13px] text-gray-700 mb-1 flex items-center justify-end gap-2 font-extrabold">
-              <FiHome /> الشركة
-            </label>
+            <FilterLabel icon={<FiHome className="text-sm" />} iconColor="text-blue-600">
+              الشركة
+            </FilterLabel>
             <Select
               {...selectMenuProps}
               options={companiesOptions}
@@ -1132,9 +1116,9 @@ export default function VoucherReportsPage() {
           </div>
 
           <div className="text-right">
-            <label className="text-[13px] text-gray-700 mb-1 flex items-center justify-end gap-2 font-extrabold">
-              <FiFileText /> نوع الوصل
-            </label>
+            <FilterLabel icon={<FiFileText className="text-sm" />} iconColor="text-red-600">
+              نوع الوصل
+            </FilterLabel>
             <Select
               {...selectMenuProps}
               options={modes}
@@ -1150,9 +1134,9 @@ export default function VoucherReportsPage() {
           </div>
 
           <div className="text-right">
-            <label className="text-[13px] text-gray-700 mb-1 flex items-center justify-end gap-2 font-extrabold">
-              <FaMoneyBillWave /> العملة
-            </label>
+            <FilterLabel icon={<FaMoneyBillWave className="text-sm" />} iconColor="text-emerald-600">
+              العملة
+            </FilterLabel>
             <Select
               {...selectMenuProps}
               options={currencies}
@@ -1168,15 +1152,15 @@ export default function VoucherReportsPage() {
           </div>
 
           <div className="text-right">
-            <label className="text-[13px] text-gray-700 mb-1 flex items-center justify-end gap-2 font-extrabold">
-              <FiHash /> رقم الوصل
-            </label>
+            <FilterLabel icon={<FiHash className="text-sm" />} iconColor="text-indigo-600">
+              رقم الوصل
+            </FilterLabel>
             <input
               type="text"
               value={seqInput}
               onChange={(e) => setSeqInput(e.target.value)}
               placeholder="رقم الوصل"
-              className="w-full rounded-xl px-3 py-2.5 border border-gray-200 bg-white text-gray-900 outline-none font-extrabold text-[14px]"
+              className={filterInputClass}
             />
           </div>
 
@@ -1194,59 +1178,59 @@ export default function VoucherReportsPage() {
           </div> */}
 
           <div className="text-right">
-            <label className="text-[13px] text-gray-700 mb-1 flex items-center justify-end gap-2 font-extrabold">
-              <FiUser /> استلمت من
-            </label>
+            <FilterLabel icon={<FiUser className="text-sm" />} iconColor="text-slate-600">
+              استلمت من
+            </FilterLabel>
             <input
               type="text"
               value={receivedByInput}
               onChange={(e) => setReceivedByInput(e.target.value)}
               placeholder="استلمت من"
-              className="w-full rounded-xl px-3 py-2.5 border border-gray-200 bg-white text-gray-900 outline-none font-extrabold text-[14px]"
+              className={filterInputClass}
             />
           </div>
 
           <div className="text-right">
-            <label className="text-[13px] text-gray-700 mb-1 flex items-center justify-end gap-2 font-extrabold">
-              <FiCreditCard /> البنك
-            </label>
+            <FilterLabel icon={<FiCreditCard className="text-sm" />} iconColor="text-blue-600">
+              البنك
+            </FilterLabel>
             <input
               type="text"
               value={bankInput}
               onChange={(e) => setBankInput(e.target.value)}
               placeholder="اسم البنك"
-              className="w-full rounded-xl px-3 py-2.5 border border-gray-200 bg-white text-gray-900 outline-none font-extrabold text-[14px]"
+              className={filterInputClass}
             />
           </div>
 
           <div className="text-right">
-            <label className="text-[13px] text-gray-700 mb-1 flex items-center justify-end gap-2 font-extrabold">
-              <FiCalendar /> From
-            </label>
+            <FilterLabel icon={<FiCalendar className="text-sm" />} iconColor="text-amber-600">
+              From
+            </FilterLabel>
             <input
               type="date"
               value={date.from}
               onChange={(e) => setDate({ ...date, from: e.target.value })}
-              className="w-full rounded-xl px-3 py-2.5 border border-gray-200 bg-white text-gray-900 outline-none font-extrabold text-[14px]"
+              className={filterInputClass}
             />
           </div>
 
           <div className="text-right">
-            <label className="text-[13px] text-gray-700 mb-1 flex items-center justify-end gap-2 font-extrabold">
-              <FiCalendar /> To
-            </label>
+            <FilterLabel icon={<FiCalendar className="text-sm" />} iconColor="text-amber-600">
+              To
+            </FilterLabel>
             <input
               type="date"
               value={date.to}
               onChange={(e) => setDate({ ...date, to: e.target.value })}
-              className="w-full rounded-xl px-3 py-2.5 border border-gray-200 bg-white text-gray-900 outline-none font-extrabold text-[14px]"
+              className={filterInputClass}
             />
           </div>
 
           <div className="text-right lg:col-span-2">
-            <label className="text-[13px] text-gray-700 mb-1 flex items-center justify-end gap-2 font-extrabold">
-              <FiSearch /> بحث موحّد
-            </label>
+            <FilterLabel icon={<FiSearch className="text-sm" />} iconColor="text-blue-600">
+              بحث موحّد
+            </FilterLabel>
 
             <div className="relative flex gap-2">
               <input
@@ -1265,7 +1249,7 @@ export default function VoucherReportsPage() {
                 }}
                 onKeyDown={onSmartKeyDown}
                 placeholder="رقم / وصف / مستفيد / استلمت من / بنك"
-                className="w-full rounded-xl px-4 py-2.5 border border-gray-200 bg-white text-gray-900 font-extrabold text-[16px] shadow-sm outline-none focus:border-gray-300"
+                className={`${filterInputClass} px-4 text-[16px] shadow-sm`}
               />
             </div>
           </div>
@@ -1283,16 +1267,16 @@ export default function VoucherReportsPage() {
               width: suggestPos.width,
               zIndex: 99999,
             }}
-            className="rounded-2xl border border-gray-200 bg-white shadow-2xl overflow-hidden"
+            className="rounded-2xl border border-slate-200/80 bg-white shadow-2xl overflow-hidden"
           >
             {smartOptions.slice(0, 12).map((opt, idx) => (
               <button
                 key={`${opt.type || "x"}-${opt.value}-${idx}`}
                 type="button"
                 onClick={() => pickSuggestion(opt)}
-                className={`w-full text-right px-4 py-3 text-[15px] font-extrabold ${
-                  idx === activeIdx ? "bg-gray-100" : "bg-white"
-                } hover:bg-gray-100`}
+                className={`w-full text-right px-4 py-3 text-[15px] font-extrabold transition ${
+                  idx === activeIdx ? "bg-slate-100" : "bg-white"
+                } hover:bg-slate-50`}
               >
                 {opt.label}
               </button>
@@ -1342,16 +1326,13 @@ export default function VoucherReportsPage() {
 
       <AnimatePresence mode="wait">
         {loading ? (
-          <motion.div className="flex flex-col items-center py-20">
-            <div className="w-12 h-12 border-4 border-gray-200 border-t-blue-600 rounded-full animate-spin" />
-            <p className="mt-4 text-gray-700 font-extrabold text-lg">جاري التحميل</p>
-          </motion.div>
+          <VoucherReportsSearchLoading />
         ) : rows.length > 0 ? (
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ y: 0, opacity: 1 }}
             transition={{ duration: 0.22, ease: "easeOut" }}
-            className="relative z-0 overflow-hidden rounded-3xl border border-white/30 bg-white/55 backdrop-blur-xl shadow-[0_18px_55px_-28px_rgba(0,0,0,0.35)]"
+            className="relative z-0 overflow-hidden rounded-3xl border border-slate-200/70 bg-white/75 shadow-sm ring-1 ring-slate-200/50"
           >
             <div
               id="voucher-reports-table"
@@ -1365,9 +1346,9 @@ export default function VoucherReportsPage() {
               }}
               className="relative overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
             >
-              <table className="min-w-[1600px] w-full text-[15px] md:text-[16px] text-slate-800 font-bold">
+              <table className="min-w-[1600px] w-full text-[14px] md:text-[15px] text-slate-800 font-bold">
                 <thead className="sticky top-0 z-10">
-                  <tr className="bg-white/80 backdrop-blur border-b border-white/40">
+                  <tr className="border-b border-slate-200/80 bg-white/90 backdrop-blur">
                     {[
                       "الشركة",
                       "نوع الوصل",
@@ -1384,7 +1365,7 @@ export default function VoucherReportsPage() {
                     ].map((h, i) => (
                       <th
                         key={`${h}-${i}`}
-                        className="px-6 py-4 text-right text-[13px] md:text-[14px] font-extrabold tracking-wide text-slate-900 whitespace-nowrap"
+                        className="px-6 py-4 text-right text-[12px] md:text-[13px] font-extrabold tracking-wide text-slate-900 whitespace-nowrap"
                       >
                         {h}
                       </th>
@@ -1392,11 +1373,11 @@ export default function VoucherReportsPage() {
                   </tr>
                 </thead>
 
-                <tbody className="divide-y divide-white/30">
+                <tbody className="divide-y divide-slate-200/60">
                   {rows.map((r, idx) => (
                     <motion.tr
                       key={r._id}
-                      whileHover={{ backgroundColor: "rgba(2,132,199,0.08)" }}
+                      whileHover={{ backgroundColor: "rgba(248,250,252,0.95)" }}
                       transition={{ duration: 0.12 }}
                       onClick={() =>
                         window.open(
@@ -1408,16 +1389,16 @@ export default function VoucherReportsPage() {
                           "_blank"
                         )
                       }
-                      className={`cursor-pointer ${
-                        idx % 2 === 0 ? "bg-white/30" : "bg-white/20"
-                      } hover:bg-white/45`}
+                      className={`cursor-pointer transition-colors hover:bg-slate-50 ${
+                        idx % 2 === 0 ? "bg-white/50" : "bg-white/30"
+                      }`}
                     >
                       <td className="px-6 py-4 text-right font-extrabold text-slate-900 whitespace-nowrap">
                         {getCompanyName(r.companyKey)}
                       </td>
 
                       <td className="px-6 py-4 text-right whitespace-nowrap">
-                        {modeBadge(r.mode)}
+                        <VoucherModeBadge mode={r.mode} />
                       </td>
 
                       <td className="px-6 py-4 text-right font-mono text-slate-900 whitespace-nowrap">
@@ -1528,8 +1509,8 @@ export default function VoucherReportsPage() {
               </table>
             </div>
 
-            <div className="relative px-5 py-4 bg-white/65 backdrop-blur border-t border-white/30 flex items-center justify-between gap-3">
-              <div className="text-sm text-slate-700 font-extrabold">
+            <div className="flex items-center justify-between gap-3 border-t border-slate-200/70 bg-white/80 px-5 py-4 backdrop-blur">
+              <div className="text-sm font-extrabold text-slate-700">
                 Total: <span className="text-slate-900">{meta.total}</span>
                 {"  "} | Page: <span className="text-slate-900">{meta.page}</span>
                 {" / "}
@@ -1548,9 +1529,9 @@ export default function VoucherReportsPage() {
             key="empty"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className="text-center text-slate-700 font-extrabold py-16 rounded-3xl border border-white/30 bg-white/55 backdrop-blur-xl shadow-[0_18px_55px_-28px_rgba(0,0,0,0.25)] text-lg"
+            className="rounded-3xl border border-slate-200/70 bg-white/75 py-16 text-center text-lg font-extrabold text-slate-600 shadow-sm ring-1 ring-slate-200/50"
           >
-            No data (press Search).
+            لا توجد نتائج — اضغط «بحث»
           </motion.div>
         )}
       </AnimatePresence>
@@ -1688,6 +1669,107 @@ export default function VoucherReportsPage() {
           </motion.div>
         )}
       </AnimatePresence>
+      </div>
     </motion.div>
+  );
+}
+
+function VoucherReportsSearchLoading() {
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="relative min-h-[360px] overflow-hidden rounded-3xl border border-slate-200/70 bg-white/75 ring-1 ring-slate-200/50"
+    >
+      <div className="pointer-events-none space-y-3 p-5 opacity-40">
+        <div className="h-12 animate-pulse rounded-xl bg-slate-100/90" />
+        {[1, 2, 3, 4, 5].map((i) => (
+          <div key={i} className="h-14 animate-pulse rounded-xl bg-slate-100/80" />
+        ))}
+      </div>
+
+      <div className="absolute inset-0 flex items-center justify-center bg-white/40 backdrop-blur-[2px]">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.96, y: 6 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          transition={{ duration: 0.3, ease: "easeOut" }}
+          className="mx-4 w-full max-w-sm rounded-3xl border border-slate-200/80 bg-white/95 px-8 py-9 text-center shadow-[0_24px_60px_-24px_rgba(59,130,246,0.2)] ring-1 ring-slate-200/60"
+        >
+          <div className="relative mx-auto h-14 w-14">
+            <span className="absolute inset-0 animate-spin rounded-full border-[3px] border-slate-200/90 border-t-blue-600" />
+            <span
+              className="absolute inset-2.5 animate-spin rounded-full border-[3px] border-slate-100 border-b-indigo-500"
+              style={{ animationDirection: "reverse", animationDuration: "0.85s" }}
+            />
+            <span className="absolute inset-0 flex items-center justify-center">
+              <ColoredIcon color="text-blue-600" size="sm">
+                <FiSearch />
+              </ColoredIcon>
+            </span>
+          </div>
+
+          <p className="mt-5 text-base font-extrabold text-slate-900">جاري البحث</p>
+          <p className="mt-1.5 text-sm font-semibold text-slate-500">يرجى الانتظار...</p>
+
+          <div className="mt-4 flex items-center justify-center gap-1.5">
+            {[0, 1, 2].map((i) => (
+              <motion.span
+                key={i}
+                className="h-2 w-2 rounded-full bg-blue-500/80"
+                animate={{ opacity: [0.35, 1, 0.35], scale: [0.85, 1, 0.85] }}
+                transition={{
+                  duration: 1.1,
+                  repeat: Infinity,
+                  delay: i * 0.18,
+                  ease: "easeInOut",
+                }}
+              />
+            ))}
+          </div>
+        </motion.div>
+      </div>
+    </motion.div>
+  );
+}
+
+function ColoredIcon({ color = "text-blue-600", children, size = "md" }) {
+  const box = size === "sm" ? "h-7 w-7" : "h-8 w-8";
+  const ic = size === "sm" ? "text-sm" : "text-base";
+  return (
+    <span
+      className={`inline-flex ${box} shrink-0 items-center justify-center rounded-lg bg-white ring-1 ring-slate-200/90 shadow-sm ${color} ${ic}`}
+    >
+      {children}
+    </span>
+  );
+}
+
+function KpiCard({ label, value, icon, iconColor = "text-blue-600" }) {
+  return (
+    <div className="group relative overflow-hidden rounded-2xl bg-white/75 p-4 ring-1 ring-slate-200/70 shadow-sm backdrop-blur-sm transition duration-300 hover:-translate-y-1 hover:bg-white hover:shadow-[0_16px_40px_-20px_rgba(0,0,0,0.15)] hover:ring-slate-300/80">
+      <div className="relative flex items-start gap-3">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white ring-1 ring-slate-200/90 shadow-sm transition duration-300 group-hover:scale-105">
+          <span className={`text-lg ${iconColor}`}>{icon}</span>
+        </div>
+        <div className="min-w-0 flex-1 text-right">
+          <p className="text-[11px] font-bold text-slate-500">{label}</p>
+          <p className="mt-0.5 truncate text-base font-extrabold text-slate-900 sm:text-lg">
+            {value}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FilterLabel({ icon, iconColor = "text-slate-600", children }) {
+  return (
+    <label className="mb-1.5 flex items-center justify-end gap-1.5 text-[13px] font-extrabold text-slate-700">
+      {children}
+      <span className={`inline-flex h-6 w-6 items-center justify-center rounded-md bg-white ring-1 ring-slate-200/90 ${iconColor}`}>
+        {icon}
+      </span>
+    </label>
   );
 }

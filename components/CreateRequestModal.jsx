@@ -22,6 +22,99 @@ import {
 // ✅ فورماتر الأرقام
 const fmt = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
 
+const modalShell =
+  "rounded-3xl border border-slate-200/60 bg-white/95 shadow-[0_25px_60px_-20px_rgba(0,0,0,0.35)] ring-1 ring-slate-200/50 backdrop-blur-xl";
+
+const sectionCard =
+  "overflow-hidden rounded-2xl border border-slate-200/50 bg-white/85 shadow-sm ring-1 ring-slate-200/40";
+
+const requestCard =
+  "rounded-2xl border border-slate-200/60 bg-white shadow-sm ring-1 ring-slate-200/50 transition-all duration-300 hover:border-slate-300 hover:shadow-md";
+
+const fieldClass =
+  "w-full rounded-xl border border-slate-200/80 bg-white px-3 py-2.5 text-[15px] font-semibold text-gray-900 shadow-sm outline-none placeholder:text-gray-500 focus:border-indigo-300 focus:ring-2 focus:ring-indigo-200/80";
+
+const btnSecondary =
+  "inline-flex items-center gap-2 rounded-xl border border-slate-200/80 bg-white px-4 py-2.5 font-extrabold text-gray-900 shadow-sm transition hover:bg-slate-50 disabled:opacity-60";
+
+const btnPager =
+  "rounded-xl border border-slate-200/80 bg-white px-3 py-2 text-[13px] font-extrabold text-gray-900 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-100 disabled:text-gray-500";
+
+const btnPrimary =
+  "inline-flex items-center justify-center gap-2 rounded-xl bg-gray-900 px-4 py-2.5 font-extrabold text-white shadow-sm transition hover:bg-black disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-500";
+
+function FieldLabel({ children, required = false }) {
+  return (
+    <label className="mb-1.5 block text-xs font-extrabold text-gray-600">
+      {children}
+      {required ? <span className="text-rose-500"> *</span> : null}
+    </label>
+  );
+}
+
+function SectionBlock({ title, subtitle, icon: Icon, right, children }) {
+  return (
+    <div className={sectionCard}>
+      <div className="border-b border-slate-200/60 bg-slate-50/80 px-5 py-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex min-w-0 items-start gap-3">
+            {Icon ? (
+              <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200/80 bg-white text-gray-800 shadow-sm">
+                <Icon className="text-xl" />
+              </div>
+            ) : null}
+            <div className="min-w-0">
+              <div className="text-base font-black text-gray-900">{title}</div>
+              {subtitle ? (
+                <div className="text-xs font-semibold text-gray-600">{subtitle}</div>
+              ) : null}
+            </div>
+          </div>
+          {right}
+        </div>
+      </div>
+      <div className="bg-white p-4 sm:p-5">{children}</div>
+    </div>
+  );
+}
+
+function StatBox({ icon: Icon, label, value, tone = "slate", className = "" }) {
+  const tones = {
+    slate: "bg-slate-50 text-slate-600 ring-slate-200",
+    indigo: "bg-indigo-50 text-indigo-600 ring-indigo-200",
+    rose: "bg-rose-50 text-rose-600 ring-rose-200",
+    emerald: "bg-emerald-50 text-emerald-600 ring-emerald-200",
+    green: "bg-emerald-50 text-emerald-600 ring-emerald-200",
+    amber: "bg-amber-50 text-amber-600 ring-amber-200",
+    blue: "bg-blue-50 text-blue-600 ring-blue-200",
+  };
+
+  return (
+    <div className={`rounded-2xl border border-slate-200/50 bg-white/90 p-4 shadow-sm ring-1 ring-slate-200/40 ${className}`}>
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[11px] font-bold text-gray-500">{label}</p>
+          <p className="mt-1 truncate text-base font-black text-gray-900 sm:text-lg">{value ?? "-"}</p>
+        </div>
+        <span
+          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ring-1 ${tones[tone] || tones.slate}`}
+        >
+          <Icon className="text-xl" />
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function EmptyBox({ text, hint }) {
+  return (
+    <div className="rounded-2xl border border-dashed border-slate-300/80 bg-slate-50/80 py-10 text-center">
+      <p className="text-sm font-extrabold text-gray-700">{text}</p>
+      {hint ? <p className="mt-1 text-xs font-semibold text-gray-500">{hint}</p> : null}
+    </div>
+  );
+}
+
 export default function CreateRequestModal({
   open,
   onClose,
@@ -34,13 +127,12 @@ export default function CreateRequestModal({
   requestId = null,      // id عند التعديل
 }) {
   const { showToast } = useToast();
-  // تبويبات نموذج الإنشاء + الأيقونات
   const steps = [
-    { key: "Basic Info", label: "Basic Info", icon: null },
-    { key: "Financial", label: "Financial", icon: null },
-    { key: "Items", label: "Items", icon: null },
-    { key: "Attachment", label: "Attachment", icon: null },
-    { key: "Review", label: "Review", icon: null },
+    { key: "Basic Info", label: "أساسي", icon: FiFileText },
+    { key: "Financial", label: "مالي", icon: FiDollarSign },
+    { key: "Items", label: "مواد", icon: FiShoppingCart },
+    { key: "Attachment", label: "مرفقات", icon: FiPaperclip },
+    { key: "Review", label: "مراجعة", icon: FiLayers },
   ];
 
   // ✅ حالات مودال الإنشاء
@@ -288,6 +380,16 @@ const formatInputMoney = (v) => {
 
   const currentStepIndex = steps.findIndex((s) => s.key === activeTab);
   const progressPercent = Math.round(((currentStepIndex + 1) / steps.length) * 100);
+  const isFirstStep = currentStepIndex <= 0;
+  const isLastStep = currentStepIndex >= steps.length - 1;
+
+  const goNext = () => {
+    setActiveTab(steps[Math.min(currentStepIndex + 1, steps.length - 1)].key);
+  };
+
+  const goPrev = () => {
+    setActiveTab(steps[Math.max(currentStepIndex - 1, 0)].key);
+  };
 
   if (!open) return null;
 
@@ -295,885 +397,635 @@ const formatInputMoney = (v) => {
     <AnimatePresence>
       {open && (
         <motion.div
-          className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
+          onClick={() => {
+            if (!isCreating) onClose?.();
+          }}
         >
-          <motion.div
-            className="w-full max-w-3xl rounded-2xl overflow-hidden shadow-2xl bg-gradient-to-br from-white via-gray-50 to-gray-100 backdrop-blur-xl"
-            initial={{ y: 36, opacity: 0, scale: 0.98 }}
+          <motion.section
+            className={`flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden text-[15px] font-bold text-slate-900 ${modalShell}`}
+            initial={{ y: 28, opacity: 0, scale: 0.98 }}
             animate={{ y: 0, opacity: 1, scale: 1 }}
-            exit={{ y: 24, opacity: 0, scale: 0.98 }}
-            transition={{ type: "spring", stiffness: 120, damping: 16 }}
+            exit={{ y: 20, opacity: 0, scale: 0.98 }}
+            transition={{ type: "spring", stiffness: 140, damping: 18 }}
+            onClick={(e) => e.stopPropagation()}
           >
-            {/* Header */}
-            <div className="flex items-center justify-between p-4 border-b bg-gradient-to-r from-gray-800 via-gray-700 to-gray-600 text-white">
-            <h2 className="text-base sm:text-lg font-semibold">
-  {mode === "edit" ? "Edit Request" : "Create Request"}
-</h2>
-              <button
-                onClick={() => {
-                  if (isCreating) return;
-                  onClose?.();
-                }}
-                className="px-2 py-1 rounded-md bg-white/10 hover:bg-white/20"
-              >
-                <FiX />
-              </button>
+            {/* Header — نفس هيكل RequestsPage */}
+            <div className="border-b border-slate-200/60 bg-slate-50/90 px-4 py-4 sm:px-5">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                <div className="flex min-w-0 items-start gap-3">
+                  <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200/80 bg-white text-gray-800 shadow-sm">
+                    <FiFileText className="text-xl" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-bold uppercase tracking-wider text-indigo-600">
+                      Fund Requests
+                    </p>
+                    <h2 className="mt-0.5 text-xl font-black text-gray-900 sm:text-2xl">
+                      {mode === "edit" ? "تعديل الطلب" : "إنشاء طلب جديد"}
+                    </h2>
+                    <p className="mt-1 text-xs font-semibold text-gray-600">طلبات {companyKey}</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (isCreating) return;
+                    onClose?.();
+                  }}
+                  className={btnSecondary}
+                >
+                  <FiX /> إغلاق
+                </button>
+              </div>
             </div>
 
-            {/* Stepper (نفس منطقك) */}
-            <div className="px-5 pt-4 pb-3 bg-gray-50/70 border-b">
-              <div className="flex items-center justify-between gap-2">
+            {/* Stepper */}
+            <div className="border-b border-slate-200/60 bg-white px-4 py-3 sm:px-5">
+              <div className="flex gap-1.5 overflow-x-auto pb-1">
                 {steps.map((s, idx) => {
                   const active = s.key === activeTab;
                   const done = idx < currentStepIndex;
+                  const Icon = s.icon;
 
                   return (
-                    <div key={s.key} className="flex-1 flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setActiveTab(s.key)}
-                        className={`flex items-center gap-2 px-3 py-2 w-full justify-center rounded-xl border text-sm transition
-                          ${
-                            active
-                              ? "bg-gray-800 text-white border-gray-800"
-                              : done
-                              ? "bg-gray-200 text-gray-700 border-gray-300 hover:bg-gray-300"
-                              : "bg-white text-gray-700 border-gray-300 hover:bg-gray-100"
-                          }`}
-                        aria-current={active ? "step" : undefined}
-                      >
-                        <span className="hidden sm:inline">{s.label}</span>
-                      </button>
-
-                      {idx < steps.length - 1 && (
-                        <button
-                          type="button"
-                          onClick={() => setActiveTab(steps[idx + 1].key)}
-                          className="flex-1 h-1 rounded bg-gray-200 overflow-hidden group/link"
-                          title="Go to next step"
-                        >
-                          <div
-                            className={`h-full transition-all duration-300
-                              ${idx < currentStepIndex ? "bg-gray-700 w-full" : "bg-transparent w-0"}`}
-                          />
-                        </button>
-                      )}
-                    </div>
+                    <button
+                      key={s.key}
+                      type="button"
+                      onClick={() => setActiveTab(s.key)}
+                      className={[
+                        "inline-flex shrink-0 items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-extrabold shadow-sm transition",
+                        active
+                          ? "border-gray-900 bg-gray-900 text-white"
+                          : done
+                            ? "border-slate-200/80 bg-white text-gray-900 hover:bg-slate-50"
+                            : "border-slate-200/70 bg-slate-50 text-gray-700 hover:bg-white",
+                      ].join(" ")}
+                      aria-current={active ? "step" : undefined}
+                    >
+                      <Icon className="text-sm" />
+                      <span className="hidden sm:inline">{s.label}</span>
+                      <span className="sm:hidden">{idx + 1}</span>
+                    </button>
                   );
                 })}
               </div>
 
-              <div className="mt-3 h-2 w-full bg-gray-200 rounded">
-                <div
-                  className="h-2 bg-gray-800 rounded transition-all duration-300"
-                  style={{ width: `${progressPercent}%` }}
-                />
-              </div>
-              <div className="mt-1 text-right text-xs text-gray-500">
-                {currentStepIndex + 1} / {steps.length} — {progressPercent}%
+              <div className="mt-3 flex items-center justify-between gap-3">
+                <div className="h-1.5 flex-1 overflow-hidden rounded-full border border-slate-200/60 bg-slate-100">
+                  <div
+                    className="h-full rounded-full bg-indigo-600 transition-all duration-300"
+                    style={{ width: `${progressPercent}%` }}
+                  />
+                </div>
+                <span className="shrink-0 text-[13px] font-extrabold text-gray-700">
+                  {currentStepIndex + 1}/{steps.length}
+                </span>
               </div>
             </div>
 
             {/* Body */}
-            <motion.div
-              key={activeTab}
-              className="p-6 space-y-5"
-              initial={{ opacity: 0, x: 40 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -40 }}
-              transition={{ duration: 0.35 }}
-            >
-              {/* Basic Info */}
+            <div className="flex-1 overflow-y-auto overscroll-y-contain bg-white">
+              <motion.div
+                key={activeTab}
+                className="space-y-4 p-4 sm:p-5"
+                initial={{ opacity: 0, x: 24 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -24 }}
+                transition={{ duration: 0.28 }}
+              >
               {activeTab === "Basic Info" && (
-  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <>
+                  <p className="mb-3 text-xs font-extrabold text-gray-600">المعلومات الأساسية</p>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div>
+                      <FieldLabel>الشركة</FieldLabel>
+                      <input
+                        type="text"
+                        value={companyKey}
+                        readOnly
+                        className={`${fieldClass} bg-slate-50 text-gray-700`}
+                      />
+                    </div>
 
-    {/* Company */}
-    <input
-      type="text"
-      value={companyKey}
-      readOnly
-      className="border border-gray-300 rounded-lg p-2 bg-gray-100 text-gray-800"
-    />
+                    <div>
+                      <FieldLabel required>نوع الطلب</FieldLabel>
+                      <select
+                        value={requestType}
+                        onChange={(e) => setRequestType(e.target.value)}
+                        className={fieldClass}
+                      >
+                        <option value="">حدد نوع الطلب</option>
+                        <option value="تسديد مستحقات">تسديد مستحقات</option>
+                        <option value="موجودات">موجودات</option>
+                        <option value="تمويل">تمويل</option>
+                        <option value="سلفة شخصية">سلفة شخصية</option>
+                        <option value="تبرعات">تبرعات</option>
+                        <option value="دفعة">دفعة</option>
+                        <option value="حقوق">حقوق</option>
+                        <option value="مصاريف">مصاريف</option>
+                        <option value="تعويض">تعويض</option>
+                        <option value="ارجاع قرضة">ارجاع قرضة</option>
+                        <option value="قرضة">قرضة</option>
+                        <option value="شخصي">شخصي</option>
+                        <option value="سلفة مستدامة">سلفة مستدامة</option>
+                        <option value="سلفة لأغراض النشاط">سلفة لأغراض النشاط</option>
+                        <option value="مصاريف مقر شركة">مصاريف مقر شركة</option>
+                        <option value="قرض شخصي">قرض شخصي</option>
+                        <option value="سلفة">سلفة</option>
+                      </select>
+                    </div>
 
-    {/* Request Type */}
-    <select
-      value={requestType}
-      onChange={(e) => setRequestType(e.target.value)}
-      className="border border-gray-300 rounded-lg p-2 bg-white text-gray-800"
-    >
-      <option value="">حدد نوع الطلب</option>
-      <option value="تسديد مستحقات">تسديد مستحقات</option>
-      <option value="موجودات">موجودات</option>
-      <option value="تمويل">تمويل</option>
-      <option value="سلفة شخصية">سلفة شخصية</option>
-      <option value="تبرعات">تبرعات</option>
-      <option value="دفعة">دفعة</option>
-      <option value="حقوق">حقوق</option>
-      <option value="مصاريف">مصاريف</option>
-      <option value="تعويض">تعويض</option>
-      <option value="ارجاع قرضة">ارجاع قرضة</option>
-      <option value="قرضة">قرضة</option>
-      <option value="شخصي">شخصي</option>
-      <option value="سلفة مستدامة">سلفة مستدامة</option>
-      <option value="سلفة لأغراض النشاط">سلفة لأغراض النشاط</option>
-      <option value="مصاريف مقر شركة">مصاريف مقر شركة</option>
-      <option value="قرض شخصي">قرض شخصي</option>
-      <option value="سلفة">سلفة</option>
-    </select>
+                    {supportsExpenseType(companyKey) ? (
+                      <div className="sm:col-span-2">
+                        <FieldLabel>نوع المصروف</FieldLabel>
+                        <select
+                          value={expenseType}
+                          onChange={(e) => setExpenseType(e.target.value)}
+                          className={fieldClass}
+                        >
+                          <option value="">حدد نوع المصروف</option>
+                          <option value="مصروف">مصروف</option>
+                          <option value="غير مصروف">غير مصروف</option>
+                        </select>
+                      </div>
+                    ) : null}
 
-    {/* Expense Type (الرضا + اليانزا) */}
-    {supportsExpenseType(companyKey) && (
-      <div className="sm:col-span-2">
-        <select
-          value={expenseType}
-          onChange={(e) => setExpenseType(e.target.value)}
-          className="w-full border border-gray-300 rounded-lg p-2 bg-white text-gray-800"
-        >
-          <option value="">حدد نوع المصروف</option>
-          <option value="مصروف">مصروف</option>
-          <option value="غير مصروف">غير مصروف</option>
-        </select>
-      </div>
-    )}
+                    <div className="sm:col-span-2">
+                      <FieldLabel>اسم المشروع</FieldLabel>
+                      <input
+                        type="text"
+                        placeholder="اسم المشروع"
+                        value={projectName}
+                        onChange={(e) => setProjectName(e.target.value)}
+                        className={fieldClass}
+                      />
+                    </div>
 
-    {/* Project Name */}
-    <input
-      type="text"
-      placeholder="Project Name"
-      value={projectName}
-      onChange={(e) => setProjectName(e.target.value)}
-      className="sm:col-span-2 border border-gray-300 rounded-lg p-2 bg-white text-gray-800"
-    />
-
-    {/* Description */}
-    <textarea
-      placeholder="الوصف"
-      value={description}
-      onChange={(e) => setDescription(e.target.value)}
-      className="sm:col-span-2 border border-gray-300 rounded-lg p-3 bg-white text-gray-800"
-      rows={3}
-    />
-
-  </div>
-)}
-
-              {/* Financial */}
-              {activeTab === "Financial" && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <select
-                    value={currency}
-                    onChange={(e) => setCurrency(e.target.value)}
-                    className="border border-gray-300 rounded-lg p-2 bg-white text-gray-800"
-                  >
-                    <option value="">حدد العملة</option>
-                    <option value="USD">USD</option>
-                    <option value="IQD">IQD</option>
-                  </select>
-                  <select
-  value={department}
-  onChange={(e) => setDepartment(e.target.value)}
-  className="border border-gray-300 rounded-lg p-2 bg-white text-gray-800"
->
-  <option value="">حدد القسم</option>
-
-  <option value="تكنولوجيا المعلومات">تكنولوجيا المعلومات</option>
-  <option value="الموارد البشرية">الموارد البشرية</option>
-  <option value="خدمة العملاء">خدمة العملاء</option>
-  <option value="التسويق">التسويق</option>
-  <option value="قسم العمليات التنفيذية">قسم العمليات التنفيذية</option>
-  <option value="قسم عمليات البيع">قسم عمليات البيع</option>
-  <option value="المبيعات">المبيعات</option>
-  <option value="العقود">العقود</option>
-  <option value="الحسابات">الحسابات</option>
-  <option value="الادارة">الادارة</option>
-  <option value="المشتريات">المشتريات</option>
-  <option value="القروض">القروض</option>
-</select>
-                </div>
+                    <div className="sm:col-span-2">
+                      <FieldLabel>الوصف</FieldLabel>
+                      <textarea
+                        placeholder="اكتب وصف الطلب..."
+                        value={description}
+                        onChange={(e) => setDescription(e.target.value)}
+                        className={`${fieldClass} min-h-[96px] resize-y`}
+                        rows={3}
+                      />
+                    </div>
+                  </div>
+                </>
               )}
 
-              {/* Items */}
+              {activeTab === "Financial" && (
+                <>
+                  <p className="mb-3 text-xs font-extrabold text-gray-600">المعلومات المالية</p>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div>
+                      <FieldLabel required>العملة</FieldLabel>
+                      <select
+                        value={currency}
+                        onChange={(e) => setCurrency(e.target.value)}
+                        className={fieldClass}
+                      >
+                        <option value="">حدد العملة</option>
+                        <option value="USD">USD</option>
+                        <option value="IQD">IQD</option>
+                      </select>
+                    </div>
+                    <div>
+                      <FieldLabel required>القسم</FieldLabel>
+                      <select
+                        value={department}
+                        onChange={(e) => setDepartment(e.target.value)}
+                        className={fieldClass}
+                      >
+                        <option value="">حدد القسم</option>
+                        <option value="تكنولوجيا المعلومات">تكنولوجيا المعلومات</option>
+                        <option value="الموارد البشرية">الموارد البشرية</option>
+                        <option value="خدمة العملاء">خدمة العملاء</option>
+                        <option value="التسويق">التسويق</option>
+                        <option value="قسم العمليات التنفيذية">قسم العمليات التنفيذية</option>
+                        <option value="قسم عمليات البيع">قسم عمليات البيع</option>
+                        <option value="المبيعات">المبيعات</option>
+                        <option value="العقود">العقود</option>
+                        <option value="الحسابات">الحسابات</option>
+                        <option value="الادارة">الادارة</option>
+                        <option value="المشتريات">المشتريات</option>
+                        <option value="القروض">القروض</option>
+                      </select>
+                    </div>
+                  </div>
+                </>
+              )}
+
               {activeTab === "Items" && (
                 <div className="space-y-4">
-                  <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
-                    <input
-                      type="text"
-                      placeholder="وصف المادة"
-                      value={newItem.desc}
-                      onChange={(e) => setNewItem({ ...newItem, desc: e.target.value })}
-                      className="sm:col-span-6 border border-gray-300 rounded-lg p-2 bg-white text-gray-800"
-                    />
-                    <input
-                      type="number"
-                      placeholder="العدد"
-                      value={newItem.qty}
-                      onChange={(e) => setNewItem({ ...newItem, qty: e.target.value })}
-                      className="sm:col-span-2 border border-gray-300 rounded-lg p-2 bg-white text-gray-800"
-                    />
-                   <input
-  type="text"
-  inputMode="decimal"
-  placeholder="المبلغ"
-  value={newItem.price}
-  onChange={(e) =>
-    setNewItem((prev) => ({
-      ...prev,
-      price: formatInputMoney(e.target.value),
-    }))
-  }
-  className="sm:col-span-2 border border-gray-300 rounded-lg p-2 bg-white text-gray-800"
-/>
-                    <button
-                      type="button"
-                      onClick={addItem}
-                      className="sm:col-span-2 rounded-lg bg-gray-800 text-white px-3 py-2 hover:bg-gray-900"
-                    >
-                      اضف
-                    </button>
+                  <div>
+                    <p className="mb-3 text-xs font-extrabold text-gray-600">إضافة مادة</p>
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-12">
+                      <input
+                        type="text"
+                        placeholder="وصف المادة"
+                        value={newItem.desc}
+                        onChange={(e) => setNewItem({ ...newItem, desc: e.target.value })}
+                        className={`sm:col-span-6 ${fieldClass}`}
+                      />
+                      <input
+                        type="number"
+                        placeholder="العدد"
+                        value={newItem.qty}
+                        onChange={(e) => setNewItem({ ...newItem, qty: e.target.value })}
+                        className={`sm:col-span-2 ${fieldClass}`}
+                      />
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        placeholder="المبلغ"
+                        value={newItem.price}
+                        onChange={(e) =>
+                          setNewItem((prev) => ({
+                            ...prev,
+                            price: formatInputMoney(e.target.value),
+                          }))
+                        }
+                        className={`sm:col-span-2 ${fieldClass}`}
+                      />
+                      <button type="button" onClick={addItem} className={`sm:col-span-2 ${btnPrimary}`}>
+                        <FiPlus /> إضافة
+                      </button>
+                    </div>
                   </div>
 
-                  <div className="overflow-hidden rounded-2xl border border-black/10 bg-white/55 backdrop-blur-xl shadow-sm">
-  <div className="overflow-x-auto">
-    <table className="min-w-full text-sm">
-      {/* Header */}
-      <thead className="sticky top-0 z-10 bg-white/70 backdrop-blur-xl text-gray-700 border-b border-black/10">
-        <tr>
-          <th className="text-left px-4 py-3 font-semibold">الوصف</th>
-          <th className="text-right px-4 py-3 font-semibold">العدد</th>
-          <th className="text-right px-4 py-3 font-semibold">السعر</th>
-          <th className="text-right px-4 py-3 font-semibold">المبلغ الكلي</th>
-          <th className="px-4 py-3"></th>
-        </tr>
-      </thead>
-
-      {/* Body */}
-      <tbody className="text-gray-800">
-        {items.length > 0 ? (
-          items.map((it, i) => {
-            const qty = Number(it.qty) || 0;
-            const price = Number(it.price) || 0;
-            const sub = qty * price;
-
-            return (
-              <tr
-                key={i}
-                className="border-b border-black/5 hover:bg-white/60 transition"
-              >
-                <td className="px-4 py-3">
-                  <div className="font-medium text-gray-800">{it.desc}</div>
-                </td>
-
-                <td className="px-4 py-3 text-right tabular-nums text-gray-700">
-                  {fmt.format(qty)}
-                </td>
-
-                <td className="px-4 py-3 text-right tabular-nums text-gray-700">
-                  {fmt.format(price)}
-                </td>
-
-                <td className="px-4 py-3 text-right tabular-nums font-semibold text-gray-900">
-                  {fmt.format(sub)}
-                </td>
-
-                <td className="px-4 py-3 text-right">
-                  <button
-                    type="button"
-                    onClick={() => removeItem(i)}
-                    className="inline-flex items-center justify-center rounded-xl border border-black/10 bg-gray-800 text-white px-3 py-1.5 text-xs shadow-sm hover:bg-gray-900 active:scale-[0.98] transition"
+                  <SectionBlock
+                    title="قائمة المواد"
+                    subtitle={items.length ? `${items.length} مادة` : "لا توجد مواد بعد"}
+                    icon={FiShoppingCart}
                   >
-                    حذف
-                  </button>
-                </td>
-              </tr>
-            );
-          })
-        ) : (
-          <tr>
-            <td className="px-4 py-10 text-center text-gray-500" colSpan={5}>
-              <div className="inline-flex flex-col items-center gap-2">
-                <div className="h-10 w-10 rounded-2xl border border-black/10 bg-white/70 backdrop-blur flex items-center justify-center text-gray-400">
-                  —
-                </div>
-                <div className="text-sm font-medium">No items added</div>
-                <div className="text-xs text-gray-400">Add items to see them here</div>
-              </div>
-            </td>
-          </tr>
-        )}
-      </tbody>
-
-      {/* Footer */}
-      {items.length > 0 && (
-        <tfoot>
-          <tr className="bg-white/70 backdrop-blur-xl border-t border-black/10">
-            <td className="px-4 py-3 font-semibold text-gray-700" colSpan={3}>
-              المجموع
-            </td>
-            <td className="px-4 py-3 text-right font-extrabold text-gray-900 tabular-nums">
-              {fmt.format(itemsTotal)}
-            </td>
-            <td />
-          </tr>
-        </tfoot>
-      )}
-    </table>
-  </div>
-</div>
+                    {items.length > 0 ? (
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full text-sm">
+                          <thead className="border-b border-slate-200/60 bg-slate-50 text-gray-700">
+                            <tr>
+                              <th className="px-4 py-3 text-left font-extrabold">الوصف</th>
+                              <th className="px-4 py-3 text-right font-extrabold">العدد</th>
+                              <th className="px-4 py-3 text-right font-extrabold">السعر</th>
+                              <th className="px-4 py-3 text-right font-extrabold">المبلغ الكلي</th>
+                              <th className="px-4 py-3" />
+                            </tr>
+                          </thead>
+                          <tbody className="text-gray-800">
+                            {items.map((it, i) => {
+                              const qty = Number(it.qty) || 0;
+                              const price = Number(it.price) || 0;
+                              const sub = qty * price;
+                              return (
+                                <tr key={i} className="border-b border-slate-200/50 transition hover:bg-slate-50/80">
+                                  <td className="px-4 py-3 font-semibold text-gray-900">{it.desc}</td>
+                                  <td className="px-4 py-3 text-right tabular-nums text-gray-700">{fmt.format(qty)}</td>
+                                  <td className="px-4 py-3 text-right tabular-nums text-gray-700">{fmt.format(price)}</td>
+                                  <td className="px-4 py-3 text-right font-extrabold tabular-nums text-gray-900">{fmt.format(sub)}</td>
+                                  <td className="px-4 py-3 text-right">
+                                    <button
+                                      type="button"
+                                      onClick={() => removeItem(i)}
+                                      className={`${btnSecondary} !px-3 !py-1.5 text-xs hover:bg-rose-50 hover:text-rose-600`}
+                                    >
+                                      حذف
+                                    </button>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                          <tfoot>
+                            <tr className="border-t border-slate-200/60 bg-slate-50">
+                              <td className="px-4 py-3 font-extrabold text-gray-700" colSpan={3}>
+                                المجموع
+                              </td>
+                              <td className="px-4 py-3 text-right font-black tabular-nums text-gray-900">
+                                {fmt.format(itemsTotal)}
+                              </td>
+                              <td />
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    ) : (
+                      <EmptyBox text="لا توجد مواد مضافة" hint="أضف مواداً لتظهر هنا" />
+                    )}
+                  </SectionBlock>
                 </div>
               )}
 
-            {/* Attachment */}
-            {activeTab === "Attachment" && (
-  <div className="space-y-4">
-    {/* Header */}
-    <div className="flex items-center justify-between">
-      <div>
-        <div className="text-sm font-semibold text-gray-800">المرفقات</div>
-        <div className="text-xs text-gray-500">
-          pdf يمكنك إرفاق ملفات مثل اكسل أو صور او
-        </div>
-      </div>
-
-      {attachment?.length > 0 && (
-        <span className="text-xs px-2.5 py-1 rounded-full border border-black/10 bg-white/60 backdrop-blur text-gray-700">
-          {attachment.length} file(s)
-        </span>
-      )}
-    </div>
-
-    {/* Upload Card */}
-   {/* Upload Card + Drop Zone */}
-<div
-  className={`rounded-2xl border border-black/10 bg-white/55 backdrop-blur-xl shadow-sm p-4
-              transition
-              ${dragOver ? "ring-2 ring-blue-300 bg-white/75" : ""}`}
-  onDragOver={(e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragOver(true);
-  }}
-  onDragLeave={(e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragOver(false);
-  }}
-  onDrop={(e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragOver(false);
-
-    const files = Array.from(e.dataTransfer.files || []);
-    addFiles(files);
-  }}
->
-  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-    <div className="flex items-center gap-3">
-      <div className="h-11 w-11 rounded-2xl border border-black/10 bg-white/70 backdrop-blur flex items-center justify-center text-gray-600">
-        <FiPaperclip className="text-lg" />
-      </div>
-
-      <div>
-        <div className="text-sm font-medium text-gray-800">رفع مرفق</div>
-        <div className="text-xs text-gray-500">
-          تقدر تختار ملفات أو تسحبها وتفلتها هنا
-        </div>
-      </div>
-    </div>
-
-    <label className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-gray-800 text-white text-sm shadow-sm cursor-pointer hover:bg-gray-900 active:scale-[0.99] transition">
-      <FiPlus className="text-base" />
-      Add Files
-      <input
-        type="file"
-        className="hidden"
-        multiple
-        onChange={(e) => {
-          const files = Array.from(e.target.files || []);
-          addFiles(files);
-          e.target.value = "";
-        }}
-      />
-    </label>
-  </div>
-
-  {/* Hint line */}
-  <div className="mt-3 rounded-xl border border-dashed border-black/15 bg-white/50 p-3 text-center text-xs text-gray-600">
-    اسحب الملفات من الديسكتوب وافلتها هنا (Drag & Drop)
-  </div>
-
-  {/* Files List */}
-  {attachment?.length > 0 ? (
-    <div className="mt-4 space-y-2">
-      {attachment.map((file, i) => (
-        <div
-          key={i}
-          onClick={() => openAttachment(file)}
-          title="Open attachment"
-          className="flex items-center justify-between gap-3 px-3 py-2 rounded-xl
-                     border border-black/10 bg-white/65 backdrop-blur shadow-sm
-                     hover:bg-white/80 transition cursor-pointer"
-        >
-          <div className="min-w-0 flex items-center gap-2">
-            <div className="h-9 w-9 rounded-xl border border-black/10 bg-white/70 flex items-center justify-center text-gray-600">
-              <FiFileText />
-            </div>
-
-            <div className="min-w-0">
-              <div className="text-sm font-medium text-gray-800 truncate">
-                {file.name}
-              </div>
-              <div className="text-xs text-gray-500">
-                {(file.size / 1024 / 1024).toFixed(2)} MB
-              </div>
-              <div className="text-[11px] font-bold text-blue-700 mt-0.5">
-                Open attachment
-              </div>
-            </div>
-          </div>
-
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              setAttachment((prev) => (prev || []).filter((_, idx) => idx !== i));
-            }}
-            className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-xl
-                       border border-black/10 bg-white/70 text-gray-700
-                       hover:bg-red-50 hover:text-red-600 transition"
-            title="Remove file"
-          >
-            <FiTrash2 className="text-[14px]" />
-            Remove
-          </button>
-        </div>
-      ))}
-    </div>
-  ) : (
-    <div className="mt-4 rounded-xl border border-black/10 bg-white/60 backdrop-blur p-5 text-center">
-      <div className="mx-auto mb-2 h-10 w-10 rounded-2xl border border-black/10 bg-white/70 flex items-center justify-center text-gray-400">
-        <FiPaperclip />
-      </div>
-      <div className="text-sm font-medium text-gray-700">No files added yet</div>
-      <div className="text-xs text-gray-500 mt-1">
-        Use “Add Files” أو اسحب الملف وافلته هنا
-      </div>
-    </div>
-  )}
-</div>
-  </div>
-)}
-            {/* Review */}
-{activeTab === "Review" && (
-  <div
-    className="space-y-5 overflow-y-auto pr-1"
-    style={{
-      maxHeight: "60vh",
-      WebkitOverflowScrolling: "touch",
-    }}
-  >
-
-    {/* ================= Summary Cards ================= */}
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-  {/* ====== Summary Cards ====== */}
-  {[
-  { icon: FiBriefcase, label: "الشركة", value: companyKey || "-" },
-  { icon: FiTag, label: "نوع الطلب", value: requestType || "-" },
-  { icon: FiDollarSign, label: "العملة", value: currency || "-" },
-  { icon: FiLayers, label: "القسم", value: department || "-" },
-  
-].map((c, i) => (
-    <div
-      key={i}
-      className="group relative flex items-center gap-3 p-3 rounded-xl
-                 border border-white/40
-                 bg-white/70 backdrop-blur-xl
-                 shadow-sm hover:shadow-md transition"
-    >
-      {/* Icon */}
-      <div
-        className="h-9 w-9 rounded-lg
-                   bg-white/90 border border-gray-200
-                   flex items-center justify-center
-                   text-gray-700 group-hover:text-gray-900 transition"
-      >
-        <c.icon size={16} />
-      </div>
-
-      {/* Text */}
-      <div className="flex flex-col min-w-0">
-        <span className="text-[10px] uppercase tracking-wide text-gray-500">
-          {c.label}
-        </span>
-        <span className="text-sm font-semibold text-gray-800 truncate">
-          {c.value}
-        </span>
-      </div>
-
-      {/* subtle glow */}
-      <div
-        className="pointer-events-none absolute inset-0 rounded-xl
-                   opacity-0 group-hover:opacity-100 transition
-                   bg-gradient-to-br from-white/40 to-transparent"
-      />
-    </div>
-  ))}
-
-  {/* ====== Project Name (Full width) ====== */}
-  <div
-    className="sm:col-span-2 group relative flex gap-3 p-3 rounded-xl
-               border border-white/40
-               bg-white/70 backdrop-blur-xl
-               shadow-sm
-               transition-all duration-200
-               hover:bg-white/80
-               hover:shadow-md
-               hover:-translate-y-[1px]"
-  >
-    {/* Icon */}
-    <div
-      className="h-9 w-9 rounded-lg
-                 bg-white/90 border border-gray-200
-                 flex items-center justify-center
-                 text-gray-700
-                 transition
-                 group-hover:bg-white
-                 group-hover:shadow"
-    >
-      <FiLayers size={16} />
-    </div>
-
-    {/* Content */}
-    <div className="flex-1 min-w-0">
-      <div className="text-[10px] uppercase tracking-wide text-gray-500 mb-0.5">
-        Project Name
-      </div>
-      <div className="text-sm font-semibold text-gray-800 truncate">
-        {projectName || "-"}
-      </div>
-    </div>
-
-    <div
-      className="pointer-events-none absolute inset-0 rounded-xl
-                 opacity-0 group-hover:opacity-100 transition
-                 bg-gradient-to-br from-white/40 to-transparent"
-    />
-  </div>
-
-  {/* ================= Description ================= */}
-  <div
-    className="sm:col-span-2 relative flex gap-3 p-3 rounded-xl
-               border border-white/40
-               bg-white/70 backdrop-blur-xl
-               shadow-sm
-               transition-all duration-200
-               hover:bg-white/80
-               hover:shadow-md
-               hover:-translate-y-[1px]
-               group"
-  >
-    {/* Icon */}
-    <div
-      className="h-9 w-9 rounded-lg
-                 bg-white/90 border border-gray-200
-                 flex items-center justify-center
-                 text-gray-700
-                 transition
-                 group-hover:bg-white
-                 group-hover:shadow"
-    >
-      <FiFileText size={16} />
-    </div>
-
-    {/* Content */}
-    <div className="flex-1 relative">
-      <div className="text-[10px] uppercase tracking-wide text-gray-500 mb-0.5">
-        الوصف
-      </div>
-
-      <div className="text-sm text-gray-700 leading-relaxed whitespace-pre-line">
-        {description || "-"}
-      </div>
-
-      <div
-        className="pointer-events-none absolute inset-0 rounded-lg
-                   opacity-0 group-hover:opacity-100 transition
-                   bg-gradient-to-br from-white/40 to-transparent"
-      />
-    </div>
-  </div>
-
-  {/* ================= Attachments ================= */}
-  <div
-  className="sm:col-span-2 rounded-2xl p-4
-             border border-white/40
-             bg-white/70 backdrop-blur-xl
-             shadow-sm space-y-3"
->
-  {/* Header */}
-  <div className="flex items-center gap-3">
-    <div
-      className="h-9 w-9 rounded-lg
-                 bg-white/90 border border-gray-200
-                 flex items-center justify-center
-                 text-gray-700 shadow-sm"
-    >
-      <FiPaperclip size={16} />
-    </div>
-
-    <div>
-      <div className="text-sm font-semibold text-gray-800">المرفقات</div>
-      <div className="text-xs text-gray-500">
-        {attachment?.length ? `${attachment.length} file(s) attached` : "No attachments added"}
-      </div>
-    </div>
-  </div>
-
-  {/* List */}
-  {attachment?.length > 0 ? (
-    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-      {attachment.map((file, i) => (
-        <div
-          key={i}
-          onClick={() => openAttachment(file)} // ✅ الكارد تنفتح
-          title="Open attachment"
-          className="cursor-pointer group flex items-center gap-2 p-2 rounded-xl
-                     border border-gray-200
-                     bg-white/85 backdrop-blur
-                     shadow-sm
-                     hover:shadow-md hover:border-blue-300 hover:bg-white/95
-                     transition-all duration-200"
-        >
-          <div
-            className="h-8 w-8 rounded-lg
-                       bg-gray-100 border
-                       flex items-center justify-center
-                       text-gray-600 shrink-0"
-          >
-            <FiFileText size={14} />
-          </div>
-
-          <div className="min-w-0 flex-1">
-            <div className="text-[11px] font-bold text-gray-900 truncate">
-              {file.name}
-            </div>
-            <div className="text-[10px] text-gray-500">
-              {(file.size / 1024).toFixed(1)} KB
-            </div>
-
-            <div className="text-[10px] font-bold text-blue-700 opacity-0 group-hover:opacity-100 transition">
-              Open
-            </div>
-          </div>
-        </div>
-      ))}
-    </div>
-  ) : (
-    <div className="text-xs text-gray-500 text-center py-3 border border-dashed rounded-xl">
-      لا توجد مرفقات
-    </div>
-  )}
-</div>
-</div>
-{supportsExpenseType(companyKey) && (
-  <div
-    className="sm:col-span-2 group relative flex gap-3 p-3 rounded-xl
-               border border-white/40
-               bg-white/70 backdrop-blur-xl
-               shadow-sm
-               transition-all duration-200
-               hover:bg-white/80
-               hover:shadow-md
-               hover:-translate-y-[1px]"
-  >
-    <div
-      className="h-9 w-9 rounded-lg
-                 bg-white/90 border border-gray-200
-                 flex items-center justify-center
-                 text-gray-700
-                 transition
-                 group-hover:bg-white
-                 group-hover:shadow"
-    >
-      <FiDollarSign size={16} />
-    </div>
-
-    <div className="flex-1 min-w-0">
-      <div className="text-[10px] uppercase tracking-wide text-gray-500 mb-0.5">
-        نوع المصروف
-      </div>
-      <div className="text-sm font-semibold text-gray-800 truncate">
-        {expenseType || "-"}
-      </div>
-    </div>
-
-    <div
-      className="pointer-events-none absolute inset-0 rounded-xl
-                 opacity-0 group-hover:opacity-100 transition
-                 bg-gradient-to-br from-white/40 to-transparent"
-    />
-  </div>
-)}
-    {/* ================= Items Summary ================= */}
-    <div
-      className="rounded-2xl
-                 border border-white/40
-                 bg-white/70 backdrop-blur-xl
-                 shadow-sm
-                 overflow-hidden
-                 transition-all duration-200
-                 hover:shadow-md"
-    >
-      {/* Header */}
-      <div className="flex items-center gap-3 px-4 py-3 border-b bg-white/60">
-        <div
-          className="h-9 w-9 rounded-lg
-                     bg-white/90 border border-gray-200
-                     flex items-center justify-center
-                     text-gray-700 shadow-sm"
-        >
-          <FiShoppingCart size={16} />
-        </div>
-
-        <div>
-          <div className="text-sm font-semibold text-gray-800">
-            Items Summary
-          </div>
-          <div className="text-xs text-gray-500">
-            List of requested items
-          </div>
-        </div>
-      </div>
-
-      {/* Table */}
-      <div className="overflow-x-auto">
-        <table className="min-w-full text-sm">
-          <thead className="bg-gray-100/70 text-gray-700">
-            <tr>
-              <th className="text-left px-4 py-2 font-semibold">الوصف</th>
-              <th className="text-right px-4 py-2 font-semibold">العدد</th>
-              <th className="text-right px-4 py-2 font-semibold">المبلغ</th>
-              <th className="text-right px-4 py-2 font-semibold">المبلغ الكلي</th>
-            </tr>
-          </thead>
-
-          <tbody className="bg-white/70">
-            {items.length > 0 ? (
-              items.map((it, i) => {
-                const qty = Number(it.qty) || 0;
-                const price = Number(it.price) || 0;
-                const sub = qty * price;
-
-                return (
-                  <tr
-                    key={i}
-                    className="border-t border-gray-200/60
-                               transition hover:bg-white/80"
+              {activeTab === "Attachment" && (
+                <SectionBlock
+                  title="المرفقات"
+                  subtitle="PDF، Excel، صور أو أي ملفات داعمة"
+                  icon={FiPaperclip}
+                  right={
+                    attachment?.length > 0 ? (
+                      <span className="rounded-full border border-slate-200/80 bg-slate-50 px-2.5 py-1 text-[11px] font-extrabold text-gray-700">
+                        {attachment.length} ملف
+                      </span>
+                    ) : null
+                  }
+                >
+                  <div
+                    className={`rounded-xl border p-4 transition ${
+                      dragOver
+                        ? "border-indigo-300 bg-indigo-50/50 ring-2 ring-indigo-200/80"
+                        : "border-slate-200/70 bg-slate-50/60"
+                    }`}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setDragOver(true);
+                    }}
+                    onDragLeave={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setDragOver(false);
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setDragOver(false);
+                      addFiles(Array.from(e.dataTransfer.files || []));
+                    }}
                   >
-                    <td className="px-4 py-2 text-gray-800">{it.desc}</td>
-                    <td className="px-4 py-2 text-right text-gray-700">
-                      {fmt.format(qty)}
-                    </td>
-                    <td className="px-4 py-2 text-right text-gray-700">
-                      {fmt.format(price)}
-                    </td>
-                    <td className="px-4 py-2 text-right font-semibold text-gray-900">
-                      {fmt.format(sub)}
-                    </td>
-                  </tr>
-                );
-              })
-            ) : (
-              <tr>
-                <td colSpan={4} className="px-4 py-6 text-center text-gray-500">
-                  No items added
-                </td>
-              </tr>
-            )}
-          </tbody>
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="mt-0.5 flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200/80 bg-white text-indigo-600 shadow-sm">
+                          <FiPaperclip className="text-lg" />
+                        </div>
+                        <div>
+                          <div className="text-sm font-extrabold text-gray-900">رفع مرفق</div>
+                          <div className="text-xs font-semibold text-gray-600">
+                            اختر ملفات أو اسحبها وأفلتها هنا
+                          </div>
+                        </div>
+                      </div>
+                      <label className={`cursor-pointer ${btnPrimary}`}>
+                        <FiPlus className="text-base" />
+                        إضافة ملفات
+                        <input
+                          type="file"
+                          className="hidden"
+                          multiple
+                          onChange={(e) => {
+                            addFiles(Array.from(e.target.files || []));
+                            e.target.value = "";
+                          }}
+                        />
+                      </label>
+                    </div>
 
-          {items.length > 0 && (
-            <tfoot>
-              <tr className="bg-gray-50/80 border-t">
-                <td colSpan={3} className="px-4 py-2 font-semibold text-gray-700">
-                  المجموع
-                </td>
-                <td className="px-4 py-2 text-right font-bold text-gray-900">
-                  {fmt.format(itemsTotal)}
-                </td>
-              </tr>
-            </tfoot>
-          )}
-        </table>
-      </div>
-    </div>
-  </div>
-)}
+                    <div className="mt-3 rounded-xl border border-dashed border-slate-300/80 bg-white p-3 text-center text-xs font-semibold text-gray-600">
+                      اسحب الملفات وأفلتها هنا
+                    </div>
+
+                    {attachment?.length > 0 ? (
+                      <div className="mt-4 space-y-2">
+                        {attachment.map((file, i) => (
+                          <div
+                            key={i}
+                            onClick={() => openAttachment(file)}
+                            title="فتح المرفق"
+                            className={`flex cursor-pointer items-center justify-between gap-3 p-3 ${requestCard}`}
+                          >
+                            <div className="flex min-w-0 items-center gap-2">
+                              <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200/80 bg-slate-50 text-gray-800">
+                                <FiFileText />
+                              </div>
+                              <div className="min-w-0">
+                                <div className="truncate text-sm font-extrabold text-gray-900">{file.name}</div>
+                                <div className="text-xs font-semibold text-gray-500">
+                                  {(file.size / 1024 / 1024).toFixed(2)} MB
+                                </div>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setAttachment((prev) => (prev || []).filter((_, idx) => idx !== i));
+                              }}
+                              className={`${btnSecondary} !px-3 !py-1.5 text-xs hover:bg-rose-50 hover:text-rose-600`}
+                              title="حذف الملف"
+                            >
+                              <FiTrash2 className="text-[14px]" />
+                              حذف
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="mt-4">
+                        <EmptyBox
+                          text="لا توجد مرفقات بعد"
+                          hint="اضغط «إضافة ملفات» أو اسحب الملف وأفلته هنا"
+                        />
+                      </div>
+                    )}
+                  </div>
+                </SectionBlock>
+              )}
+
+              {activeTab === "Review" && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                    <StatBox icon={FiBriefcase} label="الشركة" value={companyKey} tone="indigo" />
+                    <StatBox icon={FiTag} label="نوع الطلب" value={requestType} tone="amber" />
+                    <StatBox icon={FiDollarSign} label="العملة" value={currency} tone="emerald" />
+                    <StatBox icon={FiLayers} label="القسم" value={department} tone="slate" />
+                    <StatBox
+                      icon={FiLayers}
+                      label="اسم المشروع"
+                      value={projectName}
+                      tone="indigo"
+                      className="sm:col-span-2"
+                    />
+                    {supportsExpenseType(companyKey) ? (
+                      <StatBox
+                        icon={FiDollarSign}
+                        label="نوع المصروف"
+                        value={expenseType}
+                        tone="rose"
+                        className="sm:col-span-2"
+                      />
+                    ) : null}
+                    <div className="sm:col-span-2 rounded-2xl border border-slate-200/50 bg-white p-4 shadow-sm ring-1 ring-slate-200/40">
+                      <p className="text-[11px] font-bold text-gray-500">الوصف</p>
+                      <p className="mt-1 whitespace-pre-line text-base font-black leading-relaxed text-gray-900 sm:text-lg">
+                        {description || "-"}
+                      </p>
+                    </div>
+                  </div>
+
+                  <SectionBlock
+                    title="المرفقات"
+                    subtitle={attachment?.length ? `${attachment.length} مرفق` : "لا توجد مرفقات"}
+                    icon={FiPaperclip}
+                  >
+                    {attachment?.length > 0 ? (
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                        {attachment.map((file, i) => (
+                          <button
+                            key={i}
+                            type="button"
+                            onClick={() => openAttachment(file)}
+                            className={`flex w-full items-center gap-2 p-3 text-right ${requestCard}`}
+                          >
+                            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-slate-200/80 bg-slate-50 text-gray-800">
+                              <FiFileText size={14} />
+                            </span>
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-xs font-extrabold text-gray-900">{file.name}</span>
+                              <span className="text-[10px] font-semibold text-gray-500">
+                                {(file.size / 1024).toFixed(1)} KB
+                              </span>
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <EmptyBox text="لا توجد مرفقات" />
+                    )}
+                  </SectionBlock>
+
+                  <SectionBlock title="ملخص المواد" subtitle="قائمة المواد المطلوبة" icon={FiShoppingCart}>
+                    {items.length > 0 ? (
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full text-sm">
+                          <thead className="border-b border-slate-200/60 bg-slate-50 text-gray-700">
+                            <tr>
+                              <th className="px-4 py-2 text-left font-extrabold">الوصف</th>
+                              <th className="px-4 py-2 text-right font-extrabold">العدد</th>
+                              <th className="px-4 py-2 text-right font-extrabold">المبلغ</th>
+                              <th className="px-4 py-2 text-right font-extrabold">المبلغ الكلي</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {items.map((it, i) => {
+                              const qty = Number(it.qty) || 0;
+                              const price = Number(it.price) || 0;
+                              return (
+                                <tr key={i} className="border-t border-slate-200/50 transition hover:bg-slate-50/80">
+                                  <td className="px-4 py-2 font-semibold text-gray-900">{it.desc}</td>
+                                  <td className="px-4 py-2 text-right tabular-nums text-gray-700">{fmt.format(qty)}</td>
+                                  <td className="px-4 py-2 text-right tabular-nums text-gray-700">{fmt.format(price)}</td>
+                                  <td className="px-4 py-2 text-right font-extrabold tabular-nums text-gray-900">
+                                    {fmt.format(qty * price)}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                          <tfoot>
+                            <tr className="border-t border-slate-200/60 bg-slate-50">
+                              <td colSpan={3} className="px-4 py-2 font-extrabold text-gray-700">
+                                المجموع
+                              </td>
+                              <td className="px-4 py-2 text-right font-black tabular-nums text-gray-900">
+                                {fmt.format(itemsTotal)}
+                              </td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    ) : (
+                      <EmptyBox text="لا توجد مواد مضافة" />
+                    )}
+                  </SectionBlock>
+                </div>
+              )}
             </motion.div>
+            </div>
 
-            {/* Footer Buttons */}
-            <div className="flex justify-between items-center p-4 border-t bg-gray-50">
+            {/* Footer — نفس أسلوب Pager في RequestsPage */}
+            <div className="flex items-center justify-between gap-2 border-t border-slate-200/60 bg-slate-50/90 px-4 py-4 sm:px-5">
               <button
+                type="button"
                 onClick={() => {
                   if (isCreating) return;
                   onClose?.();
                 }}
-                className="px-4 py-2 rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-100"
+                className={btnSecondary}
               >
-                الغاء
+                إلغاء
               </button>
 
-              {activeTab === "Review" ? (
-                <motion.button
-                  onClick={async () => {
-                    if (!canCreate) return;
-                    setIsCreating(true);
-                    try {
-                      await handleCreate();
-                      onClose?.();
-                      onCreated?.(); // ✅ يرجّع يجلب البيانات بالصفحة
-                      showToast(mode === "edit" ? "تم حفظ التغييرات بنجاح" : "تم إنشاء الطلب بنجاح", "success");
-                    } catch (e) {
-                      console.error(e);
-                      showToast(mode === "edit" ? "فشل تعديل الطلب" : "فشل إنشاء الطلب", "error");
-                    } finally {
-                      setIsCreating(false);
-                    }
-                  }}
-                  whileHover={{ scale: 1.03 }}
-                  whileTap={{ scale: 0.97 }}
-                  disabled={isCreating || !canCreate}
-                  className={`px-5 py-2.5 rounded-lg flex items-center justify-center gap-2 transition ${
-                    isCreating || !canCreate
-                      ? "bg-gray-400 cursor-not-allowed text-white"
-                      : "bg-gray-800 hover:bg-gray-900 text-white"
-                  }`}
-                >
-                  {isCreating ? (
-                    <>
-                      <motion.div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      {mode === "edit" ? "Saving..." : "Creating..."}
-                    </>
-                  ) : (
-                   mode === "edit" ? "Save Changes" : "Create"
-                  )}
-                </motion.button>
-              ) : (
-                <motion.button
-                  onClick={() => {
-                    const idx = steps.findIndex((s) => s.key === activeTab);
-                    setActiveTab(steps[Math.min(idx + 1, steps.length - 1)].key);
-                  }}
-                  whileHover={{ scale: 1.03 }}
-                  className="px-5 py-2.5 rounded-lg bg-gray-700 text-white hover:bg-gray-800"
-                >
-                  التالي →
-                </motion.button>
-              )}
+              <div className="flex items-center gap-2">
+                {!isFirstStep ? (
+                  <button
+                    type="button"
+                    onClick={goPrev}
+                    disabled={isCreating}
+                    className={btnPager}
+                  >
+                    السابق
+                  </button>
+                ) : null}
+
+                {isLastStep ? (
+                  <motion.button
+                    type="button"
+                    onClick={async () => {
+                      if (!canCreate) return;
+                      setIsCreating(true);
+                      try {
+                        await handleCreate();
+                        onClose?.();
+                        onCreated?.();
+                        showToast(
+                          mode === "edit" ? "تم حفظ التغييرات بنجاح" : "تم إنشاء الطلب بنجاح",
+                          "success"
+                        );
+                      } catch (e) {
+                        console.error(e);
+                        showToast(
+                          mode === "edit" ? "فشل تعديل الطلب" : "فشل إنشاء الطلب",
+                          "error"
+                        );
+                      } finally {
+                        setIsCreating(false);
+                      }
+                    }}
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    disabled={isCreating || !canCreate}
+                    className={btnPrimary}
+                  >
+                    {isCreating ? (
+                      <>
+                        <span className="relative inline-flex h-4 w-4 items-center justify-center">
+                          <span className="absolute inset-0 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                        </span>
+                        {mode === "edit" ? "جاري الحفظ..." : "جاري الإنشاء..."}
+                      </>
+                    ) : mode === "edit" ? (
+                      "حفظ التعديل"
+                    ) : (
+                      "إنشاء الطلب"
+                    )}
+                  </motion.button>
+                ) : (
+                  <motion.button
+                    type="button"
+                    onClick={goNext}
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    className={btnPrimary}
+                  >
+                    التالي
+                  </motion.button>
+                )}
+              </div>
             </div>
-          </motion.div>
+          </motion.section>
         </motion.div>
       )}
     </AnimatePresence>
