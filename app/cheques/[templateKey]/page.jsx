@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, Suspense } from "react";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
@@ -69,7 +69,7 @@ function fontPartial(partial) {
   return out;
 }
 
-export default function ChequeEditorPage() {
+function ChequeEditorPageContent() {
   const params = useParams();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -1037,5 +1037,19 @@ export default function ChequeEditorPage() {
         }
       />
     </div>
+  );
+}
+
+export default function ChequeEditorPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="py-20 text-center font-bold text-slate-600" dir="rtl">
+          جاري التحميل…
+        </div>
+      }
+    >
+      <ChequeEditorPageContent />
+    </Suspense>
   );
 }

@@ -1,7 +1,7 @@
 // /app/(...)/ex/[pageKey]/[id]/page.jsx
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, Suspense } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { toPng } from "html-to-image";
 import {
@@ -339,7 +339,7 @@ function computeRequestAttachmentsCutoffStepIdx(steps, docAttachments, workflowM
   return Number.POSITIVE_INFINITY;
 }
 
-export default function ExDetailsPage() {
+function ExDetailsPageContent() {
   const router = useRouter();
   const params = useParams();
   const searchParams = useSearchParams();
@@ -1366,5 +1366,19 @@ const isOperationUser =
         />
       </div>
     </motion.div>
+  );
+}
+
+export default function ExDetailsPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="py-20 text-center font-bold text-slate-600" dir="rtl">
+          جاري التحميل…
+        </div>
+      }
+    >
+      <ExDetailsPageContent />
+    </Suspense>
   );
 }

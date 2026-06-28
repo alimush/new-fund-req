@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, Suspense } from "react";
 import { createPortal } from "react-dom";
 import {
   FiPlus,
@@ -87,7 +87,7 @@ function Pager({ page, totalPages, onPage }) {
 
 const PAYMENT_PLAN_PAGE_KEY = "exceptions";
 
-export default function PaymentPlansPage() {
+function PaymentPlansPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -869,5 +869,19 @@ export default function PaymentPlansPage() {
         />
       )}
     </div>
+  );
+}
+
+export default function PaymentPlansPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="py-20 text-center font-bold text-slate-600" dir="rtl">
+          جاري التحميل…
+        </div>
+      }
+    >
+      <PaymentPlansPageContent />
+    </Suspense>
   );
 }

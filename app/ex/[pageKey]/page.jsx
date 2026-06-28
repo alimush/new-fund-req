@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, Suspense } from "react";
 import { createPortal } from "react-dom";
 import {
   FiPlus,
@@ -215,7 +215,7 @@ function buildCardLines(r, cfg) {
   return lines;
 }
 
-export default function ExListPage() {
+function ExListPageContent() {
   const router = useRouter();
   const params = useParams();
   const searchParams = useSearchParams();
@@ -1132,5 +1132,19 @@ export default function ExListPage() {
         />
       )}
     </div>
+  );
+}
+
+export default function ExListPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="py-20 text-center font-bold text-slate-600" dir="rtl">
+          جاري التحميل…
+        </div>
+      }
+    >
+      <ExListPageContent />
+    </Suspense>
   );
 }

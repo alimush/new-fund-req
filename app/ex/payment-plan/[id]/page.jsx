@@ -1,7 +1,7 @@
 // app/(...)/ex/payment-plans/[id]/page.jsx
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, Suspense } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { toPng } from "html-to-image";
 import {
@@ -297,7 +297,7 @@ const downloadFile = async (file) => {
   a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 2500);
 };
-export default function PaymentPlanDetailsPage() {
+function PaymentPlanDetailsPageContent() {
   const router = useRouter();
   const params = useParams();
   const searchParams = useSearchParams();
@@ -1370,5 +1370,19 @@ function Section({ title, icon, children }) {
       </h2>
       {children}
     </motion.div>
+  );
+}
+
+export default function PaymentPlanDetailsPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="py-20 text-center font-bold text-slate-600" dir="rtl">
+          جاري التحميل…
+        </div>
+      }
+    >
+      <PaymentPlanDetailsPageContent />
+    </Suspense>
   );
 }

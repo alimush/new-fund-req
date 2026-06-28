@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useEffect, useRef, useCallback } from "react";
+import { useMemo, useState, useEffect, useRef, useCallback, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence, MotionConfig } from "framer-motion";
 import { usePermissions } from "@/context/PermissionContext";
@@ -100,7 +100,7 @@ function buildEffectiveDate(voucher, yy, mm, dd) {
   return Number.isNaN(dt.getTime()) ? null : dt;
 }
 
-export default function VoucherViewPage() {
+function VoucherViewPageContent() {
   const { permissions } = usePermissions();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -1632,5 +1632,19 @@ export default function VoucherViewPage() {
       )}
       </div>
     </MotionConfig>
+  );
+}
+
+export default function VoucherViewPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="py-20 text-center font-bold text-slate-600" dir="rtl">
+          جاري التحميل…
+        </div>
+      }
+    >
+      <VoucherViewPageContent />
+    </Suspense>
   );
 }

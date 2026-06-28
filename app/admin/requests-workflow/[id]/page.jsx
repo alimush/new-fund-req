@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, Suspense } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 import { FiArrowLeft, FiPlus, FiX, FiUsers } from "react-icons/fi";
@@ -8,7 +8,7 @@ import Select from "react-select";
 import { PERMISSIONS } from "@/lib/permission";
 import { useToast } from "@/components/ui/ToastProvider";
 
-export default function AdminRequestWorkflowEditPage() {
+function AdminRequestWorkflowEditPageContent() {
   const { id } = useParams();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -291,5 +291,19 @@ export default function AdminRequestWorkflowEditPage() {
         </button>
       </motion.div>
     </div>
+  );
+}
+
+export default function AdminRequestWorkflowEditPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="py-20 text-center font-bold text-slate-600" dir="rtl">
+          جاري التحميل…
+        </div>
+      }
+    >
+      <AdminRequestWorkflowEditPageContent />
+    </Suspense>
   );
 }
