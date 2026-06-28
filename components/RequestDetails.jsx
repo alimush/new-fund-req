@@ -391,11 +391,14 @@ export default function RequestDetails({ id, companyKey }) {
       link.click();
       URL.revokeObjectURL(objectUrl);
 
-      if (failedAttachments.length) {
-        const names = failedAttachments.map((f) => f.name).filter(Boolean).join("، ");
+    if (failedAttachments.length) {
+        const details = failedAttachments
+          .map((f) => `${f.name}${f.reason ? ` (${f.reason})` : ""}`)
+          .filter(Boolean)
+          .join("، ");
         alert(
-          names
-            ? `تم تحميل PDF الطلب، لكن بعض المرفقات لم تُدمج: ${names}`
+          details
+            ? `تم تحميل PDF الطلب، لكن بعض المرفقات لم تُدمج: ${details}`
             : "تم تحميل PDF الطلب، لكن بعض المرفقات لم تُدمج."
         );
       }
