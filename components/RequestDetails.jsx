@@ -1197,33 +1197,19 @@ export default function RequestDetails({ id, companyKey }) {
                             {canEditLastStepComment ? (
                               <button
                                 type="button"
-                                title="تعديل التعليق"
+                                title="تعديل التعليق والمرفقات"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   setActiveStep(idx);
                                   setCommentAction("edit_comment");
                                   setCommentText(step.comment || "");
-                                  const last =
-                                    Array.isArray(step.tagAttachments) &&
-                                    step.tagAttachments.length
-                                      ? step.tagAttachments[step.tagAttachments.length - 1]
-                                      : null;
-                                  setStepAttachment(
-                                    last?.url
-                                      ? {
-                                          url: last.url,
-                                          name: last.name,
-                                          type: last.type,
-                                          size: last.size,
-                                        }
-                                      : null
-                                  );
+                                  setStepAttachment(null);
                                   setShowCommentModal(true);
                                 }}
-                                className="pointer-events-auto inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-1 text-amber-900 ring-1 ring-amber-200/80 transition hover:bg-amber-100"
+                                className="pointer-events-auto inline-flex items-center gap-1.5 rounded-full border-2 border-indigo-500 bg-gradient-to-br from-indigo-50 via-white to-violet-100 px-4 py-1.5 text-indigo-800 shadow-[0_6px_16px_-8px_rgba(79,70,229,0.55)] ring-2 ring-indigo-200/70 transition hover:from-indigo-100 hover:to-violet-200"
                               >
-                                <FiEdit className="text-sm" />
-                                <span className="text-[10px] font-extrabold">تعديل</span>
+                                <FiEdit className="text-base" />
+                                <span className="text-xs font-extrabold">تعديل</span>
                               </button>
                             ) : null}
                           </div>

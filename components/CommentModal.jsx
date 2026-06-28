@@ -207,7 +207,7 @@ export default function CommentModal({
     if (isEditComment) {
       return {
         title: "تعديل التعليق",
-        subtitle: "عدّل تعليق الخطوة الأخيرة ثم احفظ",
+        subtitle: "عدّل التعليق والمرفقات ثم احفظ",
         icon: <FiMessageSquare className="text-indigo-600" />,
         bubble: "bg-indigo-500/10 border-indigo-500/15",
       };
@@ -268,6 +268,33 @@ export default function CommentModal({
     };
   };
 
+  const syncEditAttachments = async (keptAttachments) => {
+    const res = await fetch("/api/workflow/workflow_attach", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({
+        companyKey,
+        requestId,
+        stepIndex,
+        replaceAttachments: keptAttachments,
+        isEditCommentAttachment: true,
+      }),
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data?.success === false) {
+      throw new Error(data?.error || "Failed to update attachments");
+    }
+
+    if (Array.isArray(data.tagAttachments)) {
+      setUploadedFiles(data.tagAttachments);
+      return data.tagAttachments;
+    }
+
+    return keptAttachments;
+  };
+
   const clearStepAttachment = async () => {
     const res = await fetch("/api/workflow/workflow_attach", {
       method: "PUT",
@@ -303,9 +330,13 @@ export default function CommentModal({
     try {
       let uploadedAttachments = [];
 
+      if (isEditComment) {
+        await syncEditAttachments(uploadedFiles);
+      }
+
       if (files.length > 0) {
         uploadedAttachments = await Promise.all(files.map((f) => uploadOneToS3(f)));
-      
+
         const attachRes = await fetch("/api/workflow/workflow_attach", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -315,15 +346,16 @@ export default function CommentModal({
             requestId,
             stepIndex,
             attachments: uploadedAttachments,
+            ...(isEditComment ? { isEditCommentAttachment: true } : {}),
           }),
         });
-      
+
         const attachData = await attachRes.json().catch(() => ({}));
-      
+
         if (!attachRes.ok || !attachData?.success) {
           throw new Error(attachData?.error || "Failed to save attachments");
         }
-      
+
         if (Array.isArray(attachData.tagAttachments)) {
           setUploadedFiles(attachData.tagAttachments);
         }
@@ -490,7 +522,7 @@ export default function CommentModal({
       </ShellCard>
     );
   };
-  const UploadedAttachmentCard = () => {
+  const UploadedAttachmentCard = ({ allowRemove = false }) => {
     if (!uploadedFiles.length) return <EmptyAttachmentCard />;
 
     return (
@@ -533,20 +565,42 @@ export default function CommentModal({
                     </div>
                   </div>
 
-                  <a
-                    href={fileUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="
-                      shrink-0 inline-flex items-center gap-2 px-3 py-2 rounded-2xl
-                      bg-slate-900 text-white font-bold text-xs
-                      hover:bg-slate-800
-                    "
-                    onClick={(e) => e.stopPropagation()}
-                    title="Open attachment"
-                  >
-                    فتح <FiExternalLink />
-                  </a>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {fileUrl ? (
+                      <a
+                        href={fileUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="
+                          inline-flex items-center gap-2 px-3 py-2 rounded-2xl
+                          bg-slate-900 text-white font-bold text-xs
+                          hover:bg-slate-800
+                        "
+                        onClick={(e) => e.stopPropagation()}
+                        title="Open attachment"
+                      >
+                        فتح <FiExternalLink />
+                      </a>
+                    ) : null}
+
+                    {allowRemove ? (
+                      <button
+                        type="button"
+                        disabled={disableAll}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setUploadedFiles((prev) => prev.filter((_, i) => i !== index));
+                        }}
+                        className="
+                          inline-flex items-center gap-2 text-xs px-3 py-2 rounded-2xl
+                          border border-red-200 bg-red-50 hover:bg-red-100
+                          text-red-700 font-bold disabled:opacity-60
+                        "
+                      >
+                        <FiTrash2 /> حذف
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
               </div>
             );
@@ -659,7 +713,7 @@ export default function CommentModal({
                   <FiPaperclip /> Attachment
                 </p>
 
-                {isView || isEditComment ? (
+                {isView ? (
                   <UploadedAttachmentCard />
                 ) : (
                   <>
@@ -691,7 +745,9 @@ export default function CommentModal({
                       <div className="flex items-center justify-between gap-3">
                         <div className="min-w-0">
                           <p className="text-sm font-extrabold text-slate-900">
-                            {files.length > 0 ? "إضافة مرفقات أخرى" : "ارفع مرفقات"}
+                            {files.length > 0 || hasUploadedFiles
+                              ? "إضافة مرفقات أخرى"
+                              : "ارفع مرفقات"}
                           </p>
                           <p className="text-xs text-slate-600/80 mt-1">
                             اسحب الملفات هنا أو اضغط زر (صورة / PDF / Word / Excel)
@@ -721,9 +777,9 @@ export default function CommentModal({
                     {hasUploadedFiles && (
                       <div className="mt-3">
                         <p className="text-[11px] text-slate-600/70 font-bold mb-2">
-                          المرفقات الحالية (قبل التعديل)
+                          {isEditComment ? "المرفقات الحالية" : "المرفقات الحالية (قبل التعديل)"}
                         </p>
-                        <UploadedAttachmentCard />
+                        <UploadedAttachmentCard allowRemove={isEditComment} />
                       </div>
                     )}
                   </>
@@ -770,7 +826,7 @@ export default function CommentModal({
                         : "جاري الرفض..."}
                     </>
                   ) : isEditComment ? (
-                    "حفظ التعليق"
+                    "حفظ التعديل"
                   ) : isApprove ? (
                     "موافقة"
                   ) : (
