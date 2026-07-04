@@ -103,6 +103,7 @@ function ChequeEditorPageContent() {
   const [savingLayout, setSavingLayout] = useState(false);
   const [savingDateStyle, setSavingDateStyle] = useState(false);
   const [dateShowSlashes, setDateShowSlashes] = useState(true);
+  const [dateMoveMode, setDateMoveMode] = useState("unified");
   const [textFieldLayout, setTextFieldLayout] = useState(null);
   const [amountWordsLayout, setAmountWordsLayout] = useState(null);
   const [amountWordsLine2Layout, setAmountWordsLine2Layout] = useState(null);
@@ -480,15 +481,20 @@ function ChequeEditorPageContent() {
 
     setMergedFields((prev) => {
       if (isDateLayoutKey(key)) {
+        if (dateMoveMode === "unified") {
+          return ensureSlashLayoutFields(
+            applyDateGroupPositionChange(prev, key, partial, dateShowSlashes)
+          );
+        }
         return ensureSlashLayoutFields(
-          applyDateGroupPositionChange(prev, key, partial, dateShowSlashes)
+          prev.map((f) => (f.key === key ? { ...f, ...partial } : f))
         );
       }
       return ensureSlashLayoutFields(
         prev.map((f) => (f.key === key ? { ...f, ...partial } : f))
       );
     });
-  }, [dateShowSlashes]);
+  }, [dateShowSlashes, dateMoveMode]);
 
   const handleAmountWordsLayoutChange = useCallback(
     (partial) => {
@@ -948,6 +954,8 @@ function ChequeEditorPageContent() {
             savingLayout={savingLayout}
             dateShowSlashes={dateShowSlashes}
             onDateShowSlashesChange={setDateShowSlashes}
+            dateMoveMode={dateMoveMode}
+            onDateMoveModeChange={setDateMoveMode}
             onSaveDateStyle={handleSaveDateStyle}
             savingDateStyle={savingDateStyle}
             globalFontScale={globalFontScale}
@@ -995,6 +1003,7 @@ function ChequeEditorPageContent() {
               onLayoutSelectField={setLayoutSelectedKey}
               onFieldLayoutChange={handleFieldLayoutChange}
               dateShowSlashes={dateShowSlashes}
+              dateMoveMode={dateMoveMode}
               textFieldLayout={textFieldLayout}
               onTextFieldLayoutChange={handleTextFieldLayoutChange}
               amountWordsLayout={amountWordsLayout}

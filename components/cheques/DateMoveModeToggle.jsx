@@ -1,6 +1,12 @@
 "use client";
 
-export default function DateMoveModeToggle({ value, onChange, variant = "light" }) {
+export default function DateMoveModeToggle({
+  value,
+  onChange,
+  variant = "light",
+  title = "تحريك التاريخ في الطباعة",
+  name = "dateMoveMode",
+}) {
   const isDark = variant === "dark";
   return (
     <div
@@ -15,7 +21,7 @@ export default function DateMoveModeToggle({ value, onChange, variant = "light" 
           isDark ? "text-violet-100" : "text-violet-950"
         }`}
       >
-        تحريك التاريخ في الطباعة
+        {title}
       </p>
       <label
         className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 ${
@@ -26,7 +32,7 @@ export default function DateMoveModeToggle({ value, onChange, variant = "light" 
       >
         <input
           type="radio"
-          name="dateMoveMode"
+          name={name}
           checked={value === "unified"}
           onChange={() => onChange("unified")}
           className="accent-violet-500"
@@ -44,7 +50,7 @@ export default function DateMoveModeToggle({ value, onChange, variant = "light" 
       >
         <input
           type="radio"
-          name="dateMoveMode"
+          name={name}
           checked={value === "split"}
           onChange={() => onChange("split")}
           className="accent-violet-500"

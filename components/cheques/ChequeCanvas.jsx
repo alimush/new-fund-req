@@ -60,6 +60,7 @@ export default function ChequeCanvas({
   onLayoutSelectField,
   onFieldLayoutChange,
   dateShowSlashes = true,
+  dateMoveMode = "unified",
   textFieldLayout = null,
   onTextFieldLayoutChange,
   amountWordsLayout = null,
@@ -227,22 +228,24 @@ export default function ChequeCanvas({
   const isDateBlockSelected = useCallback(
     (fieldKey) => {
       if (!layoutMode || viewMode) return false;
-      if (isDateGroupSelectionKey(layoutSelectedKey)) return isDateLayoutKey(fieldKey);
-      if (isDateLayoutKey(layoutSelectedKey)) return isDateLayoutKey(fieldKey);
+      if (dateMoveMode === "unified") {
+        if (isDateGroupSelectionKey(layoutSelectedKey)) return isDateLayoutKey(fieldKey);
+        if (isDateLayoutKey(layoutSelectedKey)) return isDateLayoutKey(fieldKey);
+      }
       return layoutSelectedKey === fieldKey;
     },
-    [layoutMode, viewMode, layoutSelectedKey]
+    [layoutMode, viewMode, layoutSelectedKey, dateMoveMode]
   );
 
   const selectLayoutField = useCallback(
     (fieldKey) => {
-      if (isDateLayoutKey(fieldKey)) {
+      if (dateMoveMode === "unified" && isDateLayoutKey(fieldKey)) {
         onLayoutSelectField?.(DATE_GROUP_KEY);
         return;
       }
       onLayoutSelectField?.(fieldKey);
     },
-    [onLayoutSelectField]
+    [onLayoutSelectField, dateMoveMode]
   );
 
   const startLayoutDrag = useCallback(

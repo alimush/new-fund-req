@@ -15,6 +15,7 @@ import {
   DATE_PART_KEYS,
   isDateGroupSelectionKey,
   isDateLayoutKey,
+  isDatePartKey,
   isSlashLayoutKey,
   layoutEditableFields,
 } from "@/lib/cheques/dateSlashLayout";
@@ -27,6 +28,7 @@ import {
 } from "@/lib/cheques/chequeDesignMetrics";
 
 import { TEXT_KEY, AMOUNT_WORDS_KEY, AMOUNT_WORDS_LINE2_KEY } from "@/lib/cheques/textFieldLayout";
+import DateMoveModeToggle from "@/components/cheques/DateMoveModeToggle";
 
 function resolvePanelField(key, fields, layouts = {}) {
   const base = (fields || []).find((f) => f.key === key);
@@ -73,6 +75,8 @@ export default function ChequeLayoutPanel({
   savingLayout = false,
   dateShowSlashes = true,
   onDateShowSlashesChange,
+  dateMoveMode = "unified",
+  onDateMoveModeChange,
   onSaveDateStyle,
   savingDateStyle = false,
   globalFontScale = LAYOUT_FONT_SCALE_DEFAULT,
@@ -88,17 +92,34 @@ export default function ChequeLayoutPanel({
   );
 
   const panelFields = useMemo(() => {
-    const list = layoutEditableFields(fields, dateShowSlashes).filter(
-      (f) => !isDateLayoutKey(f.key)
-    );
-    if (dateAnchorField) {
-      return [{ key: DATE_GROUP_KEY, label: "التاريخ (كامل)", type: "dateGroup" }, ...list];
+    const editable = layoutEditableFields(fields, dateShowSlashes);
+    const nonDate = editable.filter((f) => !isDateLayoutKey(f.key));
+
+    if (dateMoveMode === "unified" && dateAnchorField) {
+      return [
+        { key: DATE_GROUP_KEY, label: "التاريخ (كامل)", type: "dateGroup" },
+        ...nonDate,
+      ];
     }
-    return list;
-  }, [fields, dateShowSlashes, dateAnchorField]);
+
+    return editable;
+  }, [fields, dateShowSlashes, dateAnchorField, dateMoveMode]);
+
+  const handleDateMoveModeChange = (mode) => {
+    onDateMoveModeChange?.(mode);
+    if (mode === "unified") {
+      if (isDateLayoutKey(selectedKey) || isDateGroupSelectionKey(selectedKey)) {
+        onSelectField(DATE_GROUP_KEY);
+      }
+      return;
+    }
+    if (isDateGroupSelectionKey(selectedKey)) {
+      onSelectField(DATE_PART_KEYS[0]);
+    }
+  };
 
   const selected = useMemo(() => {
-    if (isDateGroupSelectionKey(selectedKey)) {
+    if (dateMoveMode === "unified" && isDateGroupSelectionKey(selectedKey)) {
       return dateAnchorField
         ? { ...dateAnchorField, key: DATE_GROUP_KEY, label: "التاريخ (كامل)", type: "dateGroup" }
         : null;
@@ -112,6 +133,7 @@ export default function ChequeLayoutPanel({
     fields,
     selectedKey,
     dateAnchorField,
+    dateMoveMode,
     textFieldLayout,
     amountWordsLayout,
     amountWordsLine2Layout,
@@ -119,7 +141,7 @@ export default function ChequeLayoutPanel({
 
   const patch = (partial) => {
     if (!selectedKey) return;
-    if (isDateGroupSelectionKey(selectedKey)) {
+    if (dateMoveMode === "unified" && isDateGroupSelectionKey(selectedKey)) {
       onUpdateField(DATE_PART_KEYS[0], partial);
       return;
     }
@@ -155,7 +177,7 @@ export default function ChequeLayoutPanel({
           لتعديل <strong>افتراضي text</strong>: اختر «text» من القائمة أو اسحبه على الصورة ثم احفظ.
           موضع text في وضع الإدخال (الشريط الأزرق) يخص كل صك على حدة.
           <span className="block mt-1">
-            التاريخ: اختر «التاريخ (كامل)» واسحبه مرة واحدة — يتحرك اليوم والشهر والسنة والفواصل معاً.
+            التاريخ: اختر «التاريخ (كامل)» لتحريكه دفعة واحدة، أو «منفصل» لضبط اليوم والشهر والسنة والفواصل كلٌ على حدة.
           </span>
           {layoutAppliesToAllBranches ? (
             <span className="block mt-2 rounded-lg bg-amber-100/90 px-2 py-1.5 font-extrabold text-amber-950">
@@ -205,6 +227,15 @@ export default function ChequeLayoutPanel({
       </div>
 
       {dateAnchorField ? (
+        <DateMoveModeToggle
+          value={dateMoveMode}
+          onChange={handleDateMoveModeChange}
+          title="تحكم بالتاريخ في ترتيب الحقول"
+          name={`dateMoveMode-layout-${templateKey}`}
+        />
+      ) : null}
+
+      {dateAnchorField && dateMoveMode === "unified" ? (
         <div className="rounded-2xl border border-violet-200 bg-violet-50/80 p-4 space-y-2">
           <p className="text-xs font-extrabold text-violet-900">موضع التاريخ — كتلة واحدة</p>
           <p className="text-[10px] font-semibold text-violet-800/90 leading-relaxed">
@@ -270,7 +301,7 @@ export default function ChequeLayoutPanel({
                 selectedKey === f.key ||
                 (isDateGroupSelectionKey(selectedKey) && isDateGroupSelectionKey(f.key))
                   ? "bg-emerald-600 text-white"
-                  : isDateGroupSelectionKey(f.key)
+                  : isDateGroupSelectionKey(f.key) || isDatePartKey(f.key)
                   ? "bg-violet-100 text-violet-900 border border-violet-200 hover:bg-violet-200"
                   : isSlashLayoutKey(f.key)
                   ? "bg-violet-50 text-violet-900 border border-violet-200 hover:bg-violet-100"
@@ -283,6 +314,16 @@ export default function ChequeLayoutPanel({
               {isDateGroupSelectionKey(f.key) ? (
                 <span className="block text-[10px] font-semibold opacity-80">
                   يوم + شهر + سنة + /
+                </span>
+              ) : null}
+              {isDatePartKey(f.key) ? (
+                <span className="block text-[10px] font-semibold opacity-80">
+                  جزء من التاريخ
+                </span>
+              ) : null}
+              {isSlashLayoutKey(f.key) ? (
+                <span className="block text-[10px] font-semibold opacity-80">
+                  فاصل /
                 </span>
               ) : null}
               {f.key === "text" ? (
@@ -301,6 +342,11 @@ export default function ChequeLayoutPanel({
           {selected.type === "dateGroup" ? (
             <p className="text-[10px] font-semibold text-violet-800 bg-violet-50 border border-violet-200 rounded-lg px-2 py-1.5">
               التاريخ كاملاً — أي تعديل على الموضع يحرّك اليوم والشهر والسنة والفواصل معاً
+            </p>
+          ) : null}
+          {selected.type === "datePart" ? (
+            <p className="text-[10px] font-semibold text-violet-800 bg-violet-50 border border-violet-200 rounded-lg px-2 py-1.5">
+              جزء من التاريخ — حرّك هذا الجزء فقط (يوم / شهر / سنة)
             </p>
           ) : null}
           {selected.type === "dateSlash" ? (
