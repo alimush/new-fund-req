@@ -26,8 +26,13 @@ const COMPANY_OPTIONS = [
   "010",
   "EX",
   "old-data",
-  "alleanza"
-  
+  "alleanza",
+  "1",
+  "2",
+  "3",
+  "4",
+  "5",
+  "6",
 ];
 // 🧩 Icon لكل صلاحية (الخيار A)
 const PERMISSION_ICONS = {

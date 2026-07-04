@@ -1,6 +1,11 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: "standalone",
+  images: {
+    dangerouslyAllowSVG: true,
+    contentDispositionType: "attachment",
+    contentSecurityPolicy: "default-src 'self'; script-src 'none'; sandbox;",
+  },
   env: {
     S3_BUCKET_NAME: process.env.S3_BUCKET_NAME,
     S3_REGION: process.env.S3_REGION,

@@ -74,7 +74,13 @@ function ChequeEditorPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { showToast } = useToast();
-  const { canUseCheques, canLayoutEditor, canManagePrintSettings, ready } = useChequeAccess();
+  const {
+    canUseCheques,
+    canLayoutEditor,
+    canManagePrintSettings,
+    canPrintCheques,
+    ready,
+  } = useChequeAccess();
   const templateKey = String(params?.templateKey || "").trim();
   const branchKey = String(searchParams.get("branch") || "").trim().toLowerCase();
 
@@ -841,36 +847,40 @@ function ChequeEditorPageContent() {
             <FiRefreshCw />
             جديد
           </button>
-          <button
-            type="button"
-            onClick={() => quickPrint("data")}
-            disabled={printing || printingWithData || printingImage || saving || layoutMode}
-            title="طباعة البيانات على صك فارغ"
-            className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-slate-100 px-4 py-2.5 text-sm font-extrabold text-slate-900 hover:bg-slate-200 disabled:opacity-50"
-          >
-            <FiPrinter className={printing ? "animate-pulse" : ""} />
-            {printing ? "جاري الطباعة…" : "طباعة على صك فارغ"}
-          </button>
-          <button
-            type="button"
-            onClick={() => quickPrint("withImage")}
-            disabled={printingWithData || printingImage || printing || saving || layoutMode || !template?.image}
-            title="طباعة صورة الصك مع البيانات"
-            className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-extrabold text-white hover:bg-emerald-700 disabled:opacity-50"
-          >
-            <FiPrinter className={printingWithData ? "animate-pulse" : ""} />
-            {printingWithData ? "جاري الطباعة…" : "طباعة الصك والبيانات"}
-          </button>
-          <button
-            type="button"
-            onClick={() => quickPrint("imageOnly")}
-            disabled={printingImage || printingWithData || printing || saving || layoutMode || !template?.image}
-            title="طباعة صورة الصك فقط بدون بيانات"
-            className="inline-flex items-center gap-2 rounded-xl border border-violet-300 bg-violet-50 px-4 py-2.5 text-sm font-extrabold text-violet-900 hover:bg-violet-100 disabled:opacity-50"
-          >
-            <FiPrinter className={printingImage ? "animate-pulse" : ""} />
-            {printingImage ? "جاري الطباعة…" : "طباعة الصك"}
-          </button>
+          {canPrintCheques ? (
+            <>
+              <button
+                type="button"
+                onClick={() => quickPrint("data")}
+                disabled={printing || printingWithData || printingImage || saving || layoutMode}
+                title="طباعة البيانات على صك فارغ"
+                className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-slate-100 px-4 py-2.5 text-sm font-extrabold text-slate-900 hover:bg-slate-200 disabled:opacity-50"
+              >
+                <FiPrinter className={printing ? "animate-pulse" : ""} />
+                {printing ? "جاري الطباعة…" : "طباعة على صك فارغ"}
+              </button>
+              <button
+                type="button"
+                onClick={() => quickPrint("withImage")}
+                disabled={printingWithData || printingImage || printing || saving || layoutMode || !template?.image}
+                title="طباعة صورة الصك مع البيانات"
+                className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-extrabold text-white hover:bg-emerald-700 disabled:opacity-50"
+              >
+                <FiPrinter className={printingWithData ? "animate-pulse" : ""} />
+                {printingWithData ? "جاري الطباعة…" : "طباعة الصك والبيانات"}
+              </button>
+              <button
+                type="button"
+                onClick={() => quickPrint("imageOnly")}
+                disabled={printingImage || printingWithData || printing || saving || layoutMode || !template?.image}
+                title="طباعة صورة الصك فقط بدون بيانات"
+                className="inline-flex items-center gap-2 rounded-xl border border-violet-300 bg-violet-50 px-4 py-2.5 text-sm font-extrabold text-violet-900 hover:bg-violet-100 disabled:opacity-50"
+              >
+                <FiPrinter className={printingImage ? "animate-pulse" : ""} />
+                {printingImage ? "جاري الطباعة…" : "طباعة الصك"}
+              </button>
+            </>
+          ) : null}
           <button
             type="button"
             onClick={handleCreateAndPrint}
