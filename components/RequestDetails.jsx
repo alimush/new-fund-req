@@ -123,6 +123,7 @@ export default function RequestDetails({ id, companyKey }) {
   const voucherCompanyConfig = COMPANIES.find(
     (c) => String(c.key).trim().toLowerCase() === String(companyKey || "").trim().toLowerCase()
   );
+  const supportsVoucherWorkflow = Boolean(voucherCompanyConfig);
   const isTestVoucherCompany = String(voucherCompanyConfig?.key || "").trim() === "010";
   const canCreateVoucherForCompany = useMemo(
     () =>
@@ -1421,7 +1422,7 @@ export default function RequestDetails({ id, companyKey }) {
 {(showFullVoucherActions || showDelegatePrintOnly) &&
   isFinalApproved &&
   !approvalOnlyCompany &&
-  ["Badur-Baghdad", "Al-Ghadeer", "010", "Tiba-Al-najaf", "Ghadeer-Karbala"].includes(companyKey) && (
+  supportsVoucherWorkflow && (
     <div className="mt-4 flex flex-col gap-2">
       {voucherNoLabel ? (
         <p className="text-center text-sm font-extrabold text-emerald-800">
@@ -1462,7 +1463,7 @@ export default function RequestDetails({ id, companyKey }) {
   !approvalOnlyCompany &&
   !hasLinkedVoucher &&
   !delegateDisburseApproved &&
-  ["Badur-Baghdad", "Al-Ghadeer", "010", "Tiba-Al-najaf", "Ghadeer-Karbala"].includes(companyKey) && (
+  supportsVoucherWorkflow && (
     <div
       className="mt-3 rounded-2xl border border-indigo-200 bg-indigo-50/70 p-3 ring-1 ring-indigo-200/60"
       onClick={(e) => e.stopPropagation()}
