@@ -1130,7 +1130,11 @@ export default function RequestDetails({ id, companyKey }) {
                     !!step.tag;
 
                   const cardBase = `
-                    relative min-w-[320px] max-w-[360px] shrink-0 rounded-3xl p-5
+                    relative min-w-[320px] ${
+                      isLast && isFinalApproved && supportsVoucherWorkflow && !approvalOnlyCompany
+                        ? "max-w-[400px]"
+                        : "max-w-[360px]"
+                    } shrink-0 rounded-3xl p-5
                     bg-white/55 backdrop-blur-xl
                     ring-1 ring-slate-200/60
                     shadow-[0_16px_40px_-24px_rgba(0,0,0,0.28)]
@@ -1423,7 +1427,7 @@ export default function RequestDetails({ id, companyKey }) {
   isFinalApproved &&
   !approvalOnlyCompany &&
   supportsVoucherWorkflow && (
-    <div className="mt-4 flex flex-col gap-2">
+    <div className="mt-4 flex flex-col gap-2 border-t border-slate-200/70 pt-4">
       {voucherNoLabel ? (
         <p className="text-center text-sm font-extrabold text-emerald-800">
           وصل صرف رقم {voucherNoLabel}
@@ -1469,8 +1473,10 @@ export default function RequestDetails({ id, companyKey }) {
       onClick={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}
     >
-      <p className="text-xs font-extrabold text-indigo-800 mb-2">تخويل مستخدم للصرف/رفع الوصل</p>
-      <div className="flex flex-col sm:flex-row gap-2">
+      <p className="mb-2.5 text-xs font-extrabold text-indigo-800">
+        تخويل مستخدم للصرف/رفع الوصل
+      </p>
+      <div className="flex flex-col gap-2">
         <select
           value={delegateUserId}
           onClick={(e) => e.stopPropagation()}
@@ -1487,7 +1493,7 @@ export default function RequestDetails({ id, companyKey }) {
               hit?.key || options.find((o) => o.isDefault)?.key || options[0]?.key || ""
             );
           }}
-          className="flex-1 rounded-xl border border-indigo-200 bg-white px-3 py-2 text-sm font-bold text-gray-900 outline-none focus:ring-2 focus:ring-indigo-300"
+          className="w-full min-w-0 rounded-xl border border-indigo-200 bg-white px-3 py-2.5 text-sm font-bold text-gray-900 outline-none focus:ring-2 focus:ring-indigo-300"
         >
           <option value="">اختر مستخدم</option>
           {(step.users || []).map((u) => (
@@ -1505,7 +1511,7 @@ export default function RequestDetails({ id, companyKey }) {
             e.stopPropagation();
             setDelegateVoucherCompanyKey(e.target.value);
           }}
-          className="flex-1 rounded-xl border border-indigo-200 bg-white px-3 py-2 text-sm font-bold text-gray-900 outline-none focus:ring-2 focus:ring-indigo-300 disabled:opacity-60"
+          className="w-full min-w-0 rounded-xl border border-indigo-200 bg-white px-3 py-2.5 text-sm font-bold text-gray-900 outline-none focus:ring-2 focus:ring-indigo-300 disabled:opacity-60"
         >
           <option value="">اختر وصل الصرف</option>
           {(request?.delegationVoucherOptionsByUser?.[delegateUserId] || []).map((opt) => (
@@ -1554,7 +1560,7 @@ export default function RequestDetails({ id, companyKey }) {
             }
           }}
           disabled={!delegateUserId || !delegateVoucherCompanyKey || delegating}
-          className="rounded-xl bg-indigo-600 px-3 py-2 text-sm font-extrabold text-white transition hover:bg-indigo-700 disabled:opacity-60"
+          className="w-full rounded-xl bg-indigo-600 py-2.5 text-sm font-extrabold text-white shadow-sm transition hover:bg-indigo-700 disabled:opacity-60"
         >
           {delegating ? "جاري التخويل..." : "تخويل"}
         </button>
