@@ -4,6 +4,10 @@ import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import Workflow from "@/models/Workflow";
 import { getModelForCompany } from "@/models/Request";
+import {
+  buildCreatorMatchFilter,
+  isRequestCreator,
+} from "@/lib/requests/createdByIdentity";
 import User from "@/models/User";
 import Permissions from "@/models/Permissions";
 import mongoose from "mongoose";
@@ -114,14 +118,13 @@ async function requireCompanyAccess(req, company) {
   return { ok: true, userId, username, permissions, isAdmin };
 }
 
-async function canEditOrDeleteRequest({ Model, id, username, isAdmin }) {
+async function canEditOrDeleteRequest({ Model, id, userId, username, isAdmin }) {
   if (isAdmin) return { ok: true };
 
-  const doc = await Model.findById(id).select("createdBy").lean();
+  const doc = await Model.findById(id).select("createdBy createdById").lean();
   if (!doc) return { ok: false, status: 404, error: "Request not found" };
 
-  const owner = String(doc.createdBy || "");
-  if (owner && owner === username) return { ok: true };
+  if (isRequestCreator(doc, { userId, username })) return { ok: true };
 
   return { ok: false, status: 403, error: "Not allowed" };
 }
@@ -319,6 +322,7 @@ if (!workflow) {
       currency: body.currency,
       department: body.department,
       createdBy: username || "", // ✅ safe
+      createdById: userId && isValidObjectId(userId) ? new mongoose.Types.ObjectId(userId) : null,
       items: Array.isArray(body.items) ? body.items : [],
       attachments: Array.isArray(body.attachments) ? body.attachments : [],
       workflow: workflowSnapshot,
@@ -475,9 +479,7 @@ export async function GET(req) {
     // ✅ LIST: mine
     // =========================
     if (scope === "mine") {
-      const filter = {
-        createdBy: username || "__no_user__",
-      };
+      const filter = buildCreatorMatchFilter({ userId, username });
     
       // ✅ لا نظهر الملغي نهائياً
       if (statusParam === "cancelled") {
@@ -730,11 +732,11 @@ export async function PUT(req) {
       );
     }
 
-    const { username, isAdmin } = auth;
+    const { userId, username, isAdmin } = auth;
     const Model = getModelForCompany(company);
 
     // ✅ صلاحية تعديل
-    const allow = await canEditOrDeleteRequest({ Model, id, username, isAdmin });
+    const allow = await canEditOrDeleteRequest({ Model, id, userId, username, isAdmin });
     if (!allow.ok) {
       return NextResponse.json(
         { success: false, error: allow.error },
@@ -803,11 +805,11 @@ export async function DELETE(req) {
       );
     }
 
-    const { username, isAdmin } = auth;
+    const { userId, username, isAdmin } = auth;
     const Model = getModelForCompany(company);
 
     // ✅ صلاحية حذف
-    const allow = await canEditOrDeleteRequest({ Model, id, username, isAdmin });
+    const allow = await canEditOrDeleteRequest({ Model, id, userId, username, isAdmin });
     if (!allow.ok) {
       return NextResponse.json(
         { success: false, error: allow.error },

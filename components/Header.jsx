@@ -12,7 +12,7 @@ import { usePermissions } from "@/context/PermissionContext";
 import { hasPermission, PERMISSIONS } from "@/lib/permission";
 import { IoReceipt } from "react-icons/io5";
 import { FaFileInvoice } from "react-icons/fa";
-import { FiClock, FiLink, FiCreditCard } from "react-icons/fi";
+import { FiClock, FiLink, FiCreditCard, FiShuffle } from "react-icons/fi";
 import { resolveHeaderTitle } from "@/lib/headerTitle";
 
 const poppins = Poppins({
@@ -153,6 +153,16 @@ export default function Header({ onLogout }) {
             </MenuIcon>
           ),
           onClick: () => router.push("/admin/requests-workflow"),
+        },
+        {
+          key: "transfer-requests",
+          label: "نقل بين المستخدمين",
+          icon: (
+            <MenuIcon color="text-rose-500">
+              <FiShuffle />
+            </MenuIcon>
+          ),
+          onClick: () => router.push("/admin/transfer-requests"),
         },
         {
           key: "voucher-links",

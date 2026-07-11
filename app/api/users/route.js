@@ -5,6 +5,7 @@ import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import mongoose from "mongoose";
 import { getUserIdFromRequest } from "@/lib/auth/getUserIdFromRequest";
+import { syncRequestsAfterUsernameChange } from "@/lib/requests/createdByIdentity";
 
 export const runtime = "nodejs";
 
@@ -150,6 +151,14 @@ export async function PUT(req) {
   if (group !== undefined) updateData.group = group;
   if (companies !== undefined) updateData.companies = companies;
 
+  const existing = await User.findById(id).select("username").lean();
+  if (!existing) {
+    return NextResponse.json(
+      { success: false, error: "User not found" },
+      { status: 404 }
+    );
+  }
+
   const user = await User.findByIdAndUpdate(id, updateData, {
     new: true,
   }).select("-password");
@@ -161,7 +170,27 @@ export async function PUT(req) {
     );
   }
 
-  return NextResponse.json({ success: true, user }, { status: 200 });
+  let requestsSync = null;
+  if (username !== undefined) {
+    const oldName = String(existing.username || "").trim();
+    const newName = String(user.username || "").trim();
+    if (oldName && newName && oldName !== newName) {
+      try {
+        requestsSync = await syncRequestsAfterUsernameChange({
+          userId: id,
+          oldUsername: oldName,
+          newUsername: newName,
+        });
+      } catch (e) {
+        console.error("syncRequestsAfterUsernameChange:", e);
+      }
+    }
+  }
+
+  return NextResponse.json(
+    { success: true, user, requestsSync },
+    { status: 200 }
+  );
 }
 
 // 🔴 DELETE — remove

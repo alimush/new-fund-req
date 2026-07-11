@@ -10,6 +10,7 @@ import { getModelForCompany } from "@/models/Request";
 import RequestOldData from "@/models/RequestOldData";
 import { PERMISSIONS } from "@/lib/permission";
 import { COMPANIES } from "@/lib/voucher/companies";
+import { isRequestCreator } from "@/lib/requests/createdByIdentity";
 
 import {
   buildWorkflowActionEmailHtml,
@@ -291,7 +292,7 @@ export async function PUT(req, { params }) {
     const currentUsername = currentUser?.username || "";
     const currentUserPerms = await getUserPermissions(userId);
     
-    const isOwner = String(request.createdBy || "") === String(currentUsername);
+    const isOwner = isRequestCreator(request, { userId, username: currentUsername });
     
     const hasAnyApproval =
       Array.isArray(request?.approvalHistory) &&

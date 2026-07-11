@@ -459,7 +459,10 @@ export default function RequestDetails({ id, companyKey }) {
     request?.company || request?._oldProjectName || companyKey || "-";
 
     const isOwner =
-    currentUser && String(request.createdBy) === String(currentUser.username);
+    currentUser &&
+    (String(request?.createdById?._id || request?.createdById || "") ===
+      String(currentUser?._id || currentUser?.id || "") ||
+      String(request.createdBy) === String(currentUser.username));
   
   const hasAnyApproval =
     Array.isArray(request?.approvalHistory) &&

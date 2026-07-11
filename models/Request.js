@@ -87,6 +87,12 @@ const RequestSchema = new mongoose.Schema(
     items: [ItemSchema],
 
     createdBy: { type: String, required: true },
+    createdById: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+      index: true,
+    },
     createdAt: { type: Date, default: Date.now },
 
     attachments: {

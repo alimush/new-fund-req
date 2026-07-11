@@ -7,6 +7,10 @@ import { cookies } from "next/headers";
 import Permissions from "@/models/Permissions";
 import { PERMISSIONS } from "@/lib/permission";
 import RequestOldData from "@/models/RequestOldData";
+import {
+  buildCreatorMatchFilter,
+  buildCreatorsMatchFilter,
+} from "@/lib/requests/createdByIdentity";
 
 export const runtime = "nodejs";
 
@@ -118,7 +122,41 @@ function amountMatchesPart(total, part) {
   return s.includes(p);
 }
 
-const SUGGEST_AMOUNT_SCAN_PER_COMPANY = 100;
+function mergeQueryParts(base, parts = []) {
+  const filtered = parts.filter(Boolean);
+  if (!filtered.length) return base;
+  if (filtered.length === 1) return { ...base, ...filtered[0] };
+  return { ...base, $and: [...(base.$and || []), ...filtered] };
+}
+
+async function resolveReportsCreatorFilter({
+  canViewAllReports,
+  usersParam,
+  userId,
+  currentUsername,
+}) {
+  if (!canViewAllReports) {
+    return buildCreatorMatchFilter({ userId, username: currentUsername });
+  }
+  if (!usersParam || usersParam === "all") return null;
+
+  const usernames = safeSplit(usersParam);
+  if (!usernames.length) return null;
+
+  const userDocs = await User.find({ username: { $in: usernames } })
+    .select("_id username")
+    .lean();
+
+  const entries = usernames.map((name) => {
+    const doc = userDocs.find((u) => String(u.username) === name);
+    return doc
+      ? { userId: doc._id, username: doc.username }
+      : { username: name };
+  });
+
+  return buildCreatorsMatchFilter(entries);
+}
+
 
 const REPORT_LIST_SELECT =
   "requestCode requestType createdBy status department currency description createdAt items workflow currentStep";
@@ -401,18 +439,21 @@ export async function GET(req) {
       const rxText = escapeRegex(q);
       const rx = new RegExp(rxText, "i");
 
-      const cond = {
-        status: { $ne: "Cancelled" },
+      const creatorScope = canViewAllReports
+        ? null
+        : buildCreatorMatchFilter({ userId, username: currentUsername });
 
-        ...(canViewAllReports
-          ? {}
-          : { createdBy: currentUsername || "__never_match__" }),
-
+      const searchOr = {
         $or: [
           { requestCode: { $regex: rxText, $options: "i" } },
           { description: { $regex: rxText, $options: "i" } },
         ],
       };
+
+      const cond = mergeQueryParts(
+        { status: { $ne: "Cancelled" } },
+        [creatorScope, searchOr]
+      );
 
       const merged = await getDocsBySource({
         source,
@@ -424,12 +465,14 @@ export async function GET(req) {
       const digitPart = q.replace(/,/g, "").trim();
       const isNumericQuery = /^\d+(\.\d+)?$/.test(digitPart);
 
-      const baseCond = {
-        status: { $ne: "Cancelled" },
-        ...(canViewAllReports
-          ? {}
-          : { createdBy: currentUsername || "__never_match__" }),
-      };
+      const baseCond = mergeQueryParts(
+        { status: { $ne: "Cancelled" } },
+        [
+          canViewAllReports
+            ? null
+            : buildCreatorMatchFilter({ userId, username: currentUsername }),
+        ]
+      );
 
       let amountScanDocs = merged;
       if (isNumericQuery) {
@@ -583,20 +626,15 @@ export async function GET(req) {
       });
     }
 
-    const createdByList = canViewAllReports
-      ? usersParam === "all"
-        ? null
-        : safeSplit(usersParam)
-      : currentUsername
-      ? [currentUsername]
-      : ["__never_match__"];
+    const creatorFilter = await resolveReportsCreatorFilter({
+      canViewAllReports,
+      usersParam,
+      userId,
+      currentUsername,
+    });
 
     const buildQuery = () => {
       const query = {};
-
-      if (createdByList) {
-        query.createdBy = { $in: createdByList };
-      }
 
       if (statusParam === "Cancelled") {
         query.status = "__never_match__";
@@ -620,16 +658,27 @@ export async function GET(req) {
         }
       }
 
-      if (qParam && !qIsNumber) {
-        const rxText = escapeRegex(qParam);
-        // نفس منطق الاقتراحات: بحث جزئي في الكود والوصف (ليس تطابقاً كاملاً فقط)
-        query.$or = [
-          { requestCode: { $regex: rxText, $options: "i" } },
-          { description: { $regex: rxText, $options: "i" } },
-        ];
-      }
+      const searchOr =
+        qParam && !qIsNumber
+          ? {
+              $or: [
+                {
+                  requestCode: {
+                    $regex: escapeRegex(qParam),
+                    $options: "i",
+                  },
+                },
+                {
+                  description: {
+                    $regex: escapeRegex(qParam),
+                    $options: "i",
+                  },
+                },
+              ],
+            }
+          : null;
 
-      return query;
+      return mergeQueryParts(query, [creatorFilter, searchOr]);
     };
 
     const queryBase = buildQuery();
