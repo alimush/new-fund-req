@@ -7,6 +7,7 @@ import { cookies } from "next/headers";
 import Permissions from "@/models/Permissions";
 import { PERMISSIONS } from "@/lib/permission";
 import RequestOldData from "@/models/RequestOldData";
+import mongoose from "mongoose";
 import {
   buildCreatorMatchFilter,
   buildCreatorsMatchFilter,
@@ -157,9 +158,48 @@ async function resolveReportsCreatorFilter({
   return buildCreatorsMatchFilter(entries);
 }
 
+/** طلبات وافق عليها مستخدم — فلترة في الذاكرة (أي خطوة Approved) */
+function normalizeActorId(v) {
+  if (v == null) return "";
+  if (typeof v === "object" && v._id != null) return String(v._id);
+  return String(v).trim();
+}
+
+async function resolveApprovedByActor(approvedByParam, canManagePermissions) {
+  if (!canManagePermissions) return null;
+  const id = String(approvedByParam || "").trim();
+  if (!id || id === "all") return null;
+  if (!mongoose.Types.ObjectId.isValid(id)) return null;
+
+  const userDoc = await User.findById(id).select("username").lean();
+  return {
+    id,
+    username: String(userDoc?.username || "").trim(),
+  };
+}
+
+function docApprovedByUser(doc, actor) {
+  if (!actor?.id) return false;
+  const targets = new Set([String(actor.id)]);
+  if (actor.username) targets.add(actor.username);
+
+  for (const st of doc?.workflow?.steps || []) {
+    if (String(st?.status || "").toLowerCase() !== "approved") continue;
+    const ab = normalizeActorId(st?.actedBy);
+    if (ab && targets.has(ab)) return true;
+  }
+
+  for (const h of doc?.approvalHistory || []) {
+    if (String(h?.action || "").toLowerCase() !== "approve") continue;
+    const u = normalizeActorId(h?.user);
+    if (u && targets.has(u)) return true;
+  }
+
+  return false;
+}
 
 const REPORT_LIST_SELECT =
-  "requestCode requestType createdBy status department currency description createdAt items workflow currentStep";
+  "requestCode requestType createdBy status department currency description createdAt items workflow currentStep approvalHistory";
 
 async function countDocsBySource({ source, companyList, queryBase }) {
   if (source === "old") {
@@ -402,6 +442,9 @@ export async function GET(req) {
     const canViewAllReports = allowedPerms.includes(
       PERMISSIONS.VIEW_ALL_REPORTS
     );
+    const canManagePermissions = allowedPerms.includes(
+      PERMISSIONS.MANAGE_PERMISSIONS
+    );
 
     if (!canViewReports && !canViewAllReports) {
       return NextResponse.json(
@@ -419,6 +462,7 @@ export async function GET(req) {
           currencies: [],
           statuses: [],
           pendingUsers: [],
+          approvedByUsers: [],
         },
         data: [],
         meta: { total: 0, totalPages: 0, page: 1, pageSize: 0 },
@@ -537,6 +581,12 @@ export async function GET(req) {
     if (isFiltersOnlyRequest(searchParams)) {
       const wantFull = searchParams.get("filters") === "1";
       const pendingUsers = await User.find({}).select("_id username").lean();
+      const approvedByUsers = canManagePermissions
+        ? pendingUsers.map((u) => ({
+            value: String(u._id),
+            label: u.username,
+          }))
+        : [];
 
       if (!wantFull) {
         return NextResponse.json({
@@ -554,6 +604,7 @@ export async function GET(req) {
               value: String(u._id),
               label: u.username,
             })),
+            approvedByUsers,
           },
           data: [],
           meta: { total: 0, totalPages: 0, page: 1, pageSize: 0 },
@@ -582,6 +633,7 @@ export async function GET(req) {
             value: String(u._id),
             label: u.username,
           })),
+          approvedByUsers,
         },
         data: [],
         meta: { total: 0, totalPages: 0, page: 1, pageSize: 0 },
@@ -599,6 +651,7 @@ export async function GET(req) {
     const statusParam = searchParams.get("status") || "all";
     const currencyParam = searchParams.get("currency") || "all";
     const pendingParam = searchParams.get("pending") || "all";
+    const approvedByParam = searchParams.get("approvedBy") || "all";
     const fromDate = searchParams.get("from") || "";
     const toDate = searchParams.get("to") || "";
 
@@ -632,6 +685,11 @@ export async function GET(req) {
       userId,
       currentUsername,
     });
+
+    const approvedByActor = await resolveApprovedByActor(
+      approvedByParam,
+      canManagePermissions
+    );
 
     const buildQuery = () => {
       const query = {};
@@ -684,7 +742,9 @@ export async function GET(req) {
     const queryBase = buildQuery();
 
     const needHeavyFilter =
-      pendingParam !== "all" || (qIsNumber && Number.isFinite(qAmount));
+      pendingParam !== "all" ||
+      (qIsNumber && Number.isFinite(qAmount)) ||
+      Boolean(approvedByActor);
 
     // =========================
     // HEAVY FILTER MODE
@@ -698,6 +758,10 @@ export async function GET(req) {
       });
 
       enrichReportDocs(mergedAll);
+
+      if (approvedByActor) {
+        mergedAll = mergedAll.filter((d) => docApprovedByUser(d, approvedByActor));
+      }
 
       if (pendingParam !== "all") {
         const p = String(pendingParam);

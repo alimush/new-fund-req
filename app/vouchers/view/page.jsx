@@ -15,7 +15,8 @@ import { normalizeFieldColorRuns } from "@/lib/voucher/fieldColorRuns";
 import { 
   only2Digits, 
   cleanAmount, 
-  formatAmount, 
+  formatAmount,
+  displayAmount,
   numberToArabicWords, 
   waitForImages 
 } from "@/lib/voucher/utils";
@@ -182,7 +183,7 @@ function VoucherViewPageContent() {
     setVDateMM(doc?.vDateMM || doc?.dateParts?.mm || "");
     setVDateDD(doc?.vDateDD || doc?.dateParts?.dd || "");
 
-    setVAmount(String(doc?.vAmount ?? doc?.amountText ?? doc?.amount ?? ""));
+    setVAmount(displayAmount(doc));
     setVWords(doc?.vWords || doc?.amountWords || "");
     setVDesc(doc?.vDesc || doc?.description || "");
     setVCurrency(doc?.vCurrency || doc?.currency || "IQD");
@@ -860,9 +861,7 @@ function VoucherViewPageContent() {
                                   color: amountStyle.color,
                                 }}
                               >
-                                {vAmount && !isNaN(Number(String(vAmount).replace(/,/g, "")))
-                                  ? Number(String(vAmount).replace(/,/g, "")).toLocaleString("en-US")
-                                  : ""}
+                                {vAmount}
                               </div>
                             ) : null}
 

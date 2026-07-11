@@ -8,7 +8,8 @@ import VoucherCanvasDialog from "@/components/VoucherCanvasDialog";
 import { 
   only2Digits, 
   cleanAmount, 
-  formatAmount, 
+  formatAmount,
+  displayAmount, 
   numberToArabicWords, 
   waitForImages 
 } from "@/lib/voucher/utils";
@@ -210,11 +211,7 @@ export default function VoucherModal({
     setVDateMM(doc?.vDateMM || doc?.dateParts?.mm || "");
     setVDateDD(doc?.vDateDD || doc?.dateParts?.dd || "");
 
-    const amountRaw =
-      doc?.vAmount ??
-      doc?.amountText ??
-      (typeof doc?.amount === "number" ? String(doc.amount) : "");
-    setVAmount(amountRaw ? formatAmount(amountRaw) : "");
+    setVAmount(displayAmount(doc));
 
     setVWords(doc?.vWords || doc?.amountWords || "");
     setVDesc(doc?.vDesc || doc?.description || "");

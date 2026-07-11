@@ -48,6 +48,7 @@ export default function ReportsPage() {
   const [currencies, setCurrencies] = useState([]);
   const [statuses, setStatuses] = useState([]);
   const [pendingUsers, setPendingUsers] = useState([]);
+  const [approvedByUsers, setApprovedByUsers] = useState([]);
 
   const [companyFilter, setCompanyFilter] = useState([]);
   const [userFilter, setUserFilter] = useState([]);
@@ -60,6 +61,10 @@ export default function ReportsPage() {
     label: "كل الحالات",
   });
   const [pendingFilter, setPendingFilter] = useState({
+    value: "all",
+    label: "الكل",
+  });
+  const [approvedByFilter, setApprovedByFilter] = useState({
     value: "all",
     label: "الكل",
   });
@@ -99,6 +104,10 @@ export default function ReportsPage() {
   const canViewAllReports =
     Array.isArray(permissions) &&
     permissions.includes(PERMISSIONS.VIEW_ALL_REPORTS);
+
+  const canManagePermissions =
+    Array.isArray(permissions) &&
+    permissions.includes(PERMISSIONS.MANAGE_PERMISSIONS);
 
     const canViewNewOldData =
   Array.isArray(permissions) &&
@@ -190,6 +199,7 @@ export default function ReportsPage() {
     setCurrencyFilter({ value: "all", label: "كل العملات" });
     setStatusFilter({ value: "all", label: "كل الحالات" });
     setPendingFilter({ value: "all", label: "الكل" });
+    setApprovedByFilter({ value: "all", label: "الكل" });
     setDate({ from: "", to: "" });
 
     setSmartInput("");
@@ -280,13 +290,18 @@ export default function ReportsPage() {
           { value: "all", label: "الكل" },
           ...(f.pendingUsers || []),
         ]);
+
+        setApprovedByUsers([
+          { value: "all", label: "الكل" },
+          ...(f.approvedByUsers || []),
+        ]);
       } catch (err) {
         console.error("❌ Error loading reports filters:", err);
       }
     };
 
     loadFilters();
-  }, [canOpenReports, canViewAllReports, dataSource]);
+  }, [canOpenReports, canViewAllReports, canManagePermissions, dataSource]);
 
   useEffect(() => {
     resetUiState();
@@ -462,6 +477,9 @@ export default function ReportsPage() {
       params.set("status", statusFilter?.value || "all");
       params.set("currency", currencyFilter?.value || "all");
       params.set("pending", pendingFilter?.value || "all");
+      if (canManagePermissions) {
+        params.set("approvedBy", approvedByFilter?.value || "all");
+      }
 
       if (date.from) params.set("from", date.from);
       if (date.to) params.set("to", date.to);
@@ -477,6 +495,8 @@ export default function ReportsPage() {
       statusFilter,
       currencyFilter,
       pendingFilter,
+      approvedByFilter,
+      canManagePermissions,
       date,
       smartInput,
       smartPicked,
@@ -638,6 +658,9 @@ export default function ReportsPage() {
       params.set("status", statusFilter?.value || "all");
       params.set("currency", currencyFilter?.value || "all");
       params.set("pending", pendingFilter?.value || "all");
+      if (canManagePermissions) {
+        params.set("approvedBy", approvedByFilter?.value || "all");
+      }
 
       if (date.from) params.set("from", date.from);
       if (date.to) params.set("to", date.to);
@@ -655,6 +678,8 @@ export default function ReportsPage() {
       statusFilter,
       currencyFilter,
       pendingFilter,
+      approvedByFilter,
+      canManagePermissions,
       date,
       canViewAllReports,
       dataSource,
@@ -957,6 +982,29 @@ export default function ReportsPage() {
               components={noClearComponents}
             />
           </div>
+
+          {canManagePermissions ? (
+            <div className="text-right">
+              <FilterLabel icon={<FiShield className="text-sm" />} iconColor="text-violet-600">
+                وافق عليها (بواسطة)
+              </FilterLabel>
+              <p className="mb-1 text-[10px] font-semibold text-violet-700/80">
+                أي خطوة في الطلب — ليس شرطاً أن تكون خطوته الحالية
+              </p>
+              <Select
+                {...selectMenuProps}
+                options={approvedByUsers}
+                placeholder="الكل"
+                value={approvedByFilter}
+                onChange={(v) =>
+                  setApprovedByFilter(v || { value: "all", label: "الكل" })
+                }
+                styles={selectStyles}
+                isSearchable
+                components={noClearComponents}
+              />
+            </div>
+          ) : null}
 
           <div className="text-right">
             <FilterLabel icon={<FiCalendar className="text-sm" />} iconColor="text-purple-600">
