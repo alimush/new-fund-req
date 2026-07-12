@@ -202,18 +202,23 @@ function VoucherViewPageContent() {
     setVPhone(doc?.vPhone || doc?.phone || "");
     setVSanadNo(doc?.vSanadNo || doc?.sanadNo || "");
 
+    let normalizedGlobal = normalizeGlobalTextStyle(doc?.globalTextStyle || {});
+    let normalizedFields = normalizeFieldStyles(doc?.fieldStyles || {}, normalizedGlobal);
+
     if (doc?.globalTextStyle || doc?.fieldStyles) {
-      const normalizedGlobal = normalizeGlobalTextStyle(doc?.globalTextStyle || {});
-      const normalizedFields = normalizeFieldStyles(doc?.fieldStyles || {}, normalizedGlobal);
       setGlobalTextStyle(normalizedGlobal);
       setFieldStyles(normalizedFields);
     } else {
       const legacy = buildLegacyStyles(doc);
+      normalizedGlobal = legacy.global;
+      normalizedFields = legacy.fields;
       setGlobalTextStyle(legacy.global);
       setFieldStyles(legacy.fields);
     }
 
-    setFieldColorRuns(normalizeFieldColorRuns(doc?.fieldColorRuns || {}));
+    setFieldColorRuns(
+      normalizeFieldColorRuns(doc?.fieldColorRuns || {}, normalizedFields, normalizedGlobal)
+    );
 
     setVoucherNo(doc?.seq ?? doc?.voucherNo ?? doc?.number ?? null);
   }, []);
@@ -644,6 +649,9 @@ function VoucherViewPageContent() {
   const receivedByStyle = getStyle("receivedBy");
   const beneficiaryStyle = getStyle("beneficiary");
   const notesStyle = getStyle("notes");
+  const phoneStyle = getStyle("phone");
+  const nationalIdStyle = getStyle("nationalId");
+  const sanadNoStyle = getStyle("sanadNo");
   const voucherNoStyle = getStyle("voucherNo");
   const currencyMarkStyle = getStyle("currencyMark");
 
@@ -882,6 +890,8 @@ function VoucherViewPageContent() {
                                   text={vWords}
                                   colorRuns={fieldColorRuns?.words}
                                   defaultColor={wordsStyle.color}
+                                  defaultFontSize={wordsStyle.fontSize}
+                                  defaultFontWeight={wordsStyle.fontWeight}
                                 />
                               </div>
                             ) : null}
@@ -907,6 +917,8 @@ function VoucherViewPageContent() {
                                   text={vDesc}
                                   colorRuns={fieldColorRuns?.desc}
                                   defaultColor={descStyle.color}
+                                  defaultFontSize={descStyle.fontSize}
+                                  defaultFontWeight={descStyle.fontWeight}
                                 />
                               </div>
                             ) : null}
@@ -929,6 +941,8 @@ function VoucherViewPageContent() {
                                   text={vBank}
                                   colorRuns={fieldColorRuns?.bank}
                                   defaultColor={bankStyle.color}
+                                  defaultFontSize={bankStyle.fontSize}
+                                  defaultFontWeight={bankStyle.fontWeight}
                                 />
                               </div>
                             ) : null}
@@ -951,6 +965,8 @@ function VoucherViewPageContent() {
                                   text={vFxRate}
                                   colorRuns={fieldColorRuns?.fxRate}
                                   defaultColor={fxRateStyle.color}
+                                  defaultFontSize={fxRateStyle.fontSize}
+                                  defaultFontWeight={fxRateStyle.fontWeight}
                                 />
                               </div>
                             ) : null}
@@ -973,6 +989,8 @@ function VoucherViewPageContent() {
                                   text={vReceivedBy}
                                   colorRuns={fieldColorRuns?.receivedBy}
                                   defaultColor={receivedByStyle.color}
+                                  defaultFontSize={receivedByStyle.fontSize}
+                                  defaultFontWeight={receivedByStyle.fontWeight}
                                 />
                               </div>
                             ) : null}
@@ -995,6 +1013,8 @@ function VoucherViewPageContent() {
                                   text={vBeneficiary}
                                   colorRuns={fieldColorRuns?.beneficiary}
                                   defaultColor={beneficiaryStyle.color}
+                                  defaultFontSize={beneficiaryStyle.fontSize}
+                                  defaultFontWeight={beneficiaryStyle.fontWeight}
                                 />
                               </div>
                             ) : null}
@@ -1020,6 +1040,8 @@ function VoucherViewPageContent() {
                                   text={vNotes}
                                   colorRuns={fieldColorRuns?.notes}
                                   defaultColor={notesStyle.color}
+                                  defaultFontSize={notesStyle.fontSize}
+                                  defaultFontWeight={notesStyle.fontWeight}
                                 />
                               </div>
                             ) : null}
@@ -1037,7 +1059,13 @@ function VoucherViewPageContent() {
                                   textAlign: "left",
                                 }}
                               >
-                                {vPhone}
+                                <VoucherColoredText
+                                  text={vPhone}
+                                  colorRuns={fieldColorRuns?.phone}
+                                  defaultColor={phoneStyle.color}
+                                  defaultFontSize={phoneStyle.fontSize}
+                                  defaultFontWeight={phoneStyle.fontWeight}
+                                />
                               </div>
                             ) : null}
 
@@ -1054,7 +1082,13 @@ function VoucherViewPageContent() {
                                   textAlign: "left",
                                 }}
                               >
-                                {vNationalId}
+                                <VoucherColoredText
+                                  text={vNationalId}
+                                  colorRuns={fieldColorRuns?.nationalId}
+                                  defaultColor={nationalIdStyle.color}
+                                  defaultFontSize={nationalIdStyle.fontSize}
+                                  defaultFontWeight={nationalIdStyle.fontWeight}
+                                />
                               </div>
                             ) : null}
 
@@ -1071,7 +1105,13 @@ function VoucherViewPageContent() {
                                   textAlign: "left",
                                 }}
                               >
-                                {vSanadNo}
+                                <VoucherColoredText
+                                  text={vSanadNo}
+                                  colorRuns={fieldColorRuns?.sanadNo}
+                                  defaultColor={sanadNoStyle.color}
+                                  defaultFontSize={sanadNoStyle.fontSize}
+                                  defaultFontWeight={sanadNoStyle.fontWeight}
+                                />
                               </div>
                             ) : null}
 

@@ -3,7 +3,7 @@
 import { useMemo, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import VoucherRichTextInput from "@/components/VoucherRichTextInput";
-import { applyColorToRange } from "@/lib/voucher/fieldColorRuns";
+import { applyStyleToRange, getStyleAtRange, trimStyleRange } from "@/lib/voucher/fieldColorRuns";
 import {
   FiPrinter,
   FiX,
@@ -248,22 +248,71 @@ export default function VoucherCanvasDialog({
     };
   };
 
+  const hasActiveTextSelection =
+    Boolean(selectedField) &&
+    fieldSelection?.fieldKey === selectedField &&
+    fieldSelection.end > fieldSelection.start;
+
+  const getFieldStyleDefaults = (fieldKey) => {
+    const s = getStyle(fieldKey);
+    return {
+      color: s.color,
+      fontSize: s.fontSize,
+      fontWeight: s.fontWeight,
+    };
+  };
+
+  const applySelectionStyle = (fieldKey, patch) => {
+    if (
+      fieldSelection?.fieldKey === fieldKey &&
+      fieldSelection.end > fieldSelection.start
+    ) {
+      const text = String(fieldTextValues[fieldKey] ?? "");
+      const { start, end } = trimStyleRange(
+        text,
+        fieldSelection.start,
+        fieldSelection.end
+      );
+      if (end > start) {
+        updateFieldColorRuns(
+          fieldKey,
+          applyStyleToRange(
+            text,
+            fieldColorRuns?.[fieldKey] || [],
+            start,
+            end,
+            patch,
+            getFieldStyleDefaults(fieldKey)
+          )
+        );
+        return true;
+      }
+    }
+    return false;
+  };
+
   const setFieldFontSize = (fieldKey, size) => {
+    const numeric = clampFontSize(size, 16);
+    if (applySelectionStyle(fieldKey, { fontSize: numeric })) return;
+
     setFieldStyles((prev) => ({
       ...prev,
       [fieldKey]: {
         ...(prev?.[fieldKey] || {}),
-        fontSize: clampFontSize(size, 16),
+        fontSize: numeric,
       },
     }));
   };
 
   const setFieldFontWeight = (fieldKey, weight) => {
+    const numeric = clampFontWeight(weight, 700);
+    if (applySelectionStyle(fieldKey, { fontWeight: numeric })) return;
+
     setFieldStyles((prev) => ({
       ...prev,
       [fieldKey]: {
         ...(prev?.[fieldKey] || {}),
-        fontWeight: clampFontWeight(weight, 700),
+        fontWeight: numeric,
       },
     }));
   };
@@ -297,6 +346,42 @@ export default function VoucherCanvasDialog({
     ]
   );
 
+  const toolbarStyle = useMemo(() => {
+    if (!selectedField) {
+      return { fontSize: 16, fontWeight: 700, color: "#111827" };
+    }
+
+    const base = getStyle(selectedField);
+
+    if (fieldSelection?.fieldKey !== selectedField) return base;
+
+    const text = String(fieldTextValues[selectedField] ?? "");
+    if (!text.length) return base;
+
+    const start = Number(fieldSelection.start) || 0;
+    const end = Number(fieldSelection.end) || 0;
+    const at = getStyleAtRange(
+      text,
+      fieldColorRuns?.[selectedField] || [],
+      start,
+      end,
+      getFieldStyleDefaults(selectedField)
+    );
+
+    return {
+      fontSize: at.fontSize,
+      fontWeight: at.fontWeight,
+      color: at.color,
+    };
+  }, [
+    selectedField,
+    fieldSelection,
+    fieldColorRuns,
+    fieldTextValues,
+    fieldStyles,
+    globalTextStyle,
+  ]);
+
   const updateFieldColorRuns = useCallback(
     (fieldKey, runs) => {
       if (!setFieldColorRuns) return;
@@ -310,24 +395,7 @@ export default function VoucherCanvasDialog({
 
   const setFieldColor = (fieldKey, color) => {
     const normalized = normalizeColor(color, "#111827");
-
-    if (
-      fieldSelection?.fieldKey === fieldKey &&
-      fieldSelection.end > fieldSelection.start
-    ) {
-      const text = String(fieldTextValues[fieldKey] ?? "");
-      updateFieldColorRuns(
-        fieldKey,
-        applyColorToRange(
-          text,
-          fieldColorRuns?.[fieldKey] || [],
-          fieldSelection.start,
-          fieldSelection.end,
-          normalized
-        )
-      );
-      return;
-    }
+    if (applySelectionStyle(fieldKey, { color: normalized })) return;
 
     setFieldStyles((prev) => ({
       ...prev,
@@ -400,14 +468,14 @@ export default function VoucherCanvasDialog({
 
   const nudgeSelectedSize = (diff) => {
     if (!selectedField) return;
-    const current = getStyle(selectedField).fontSize;
+    const current = toolbarStyle.fontSize;
     const next = Math.max(8, Math.min(72, current + diff));
     setFieldFontSize(selectedField, next);
   };
 
   const nudgeSelectedWeight = (diff) => {
     if (!selectedField) return;
-    const current = getStyle(selectedField).fontWeight;
+    const current = toolbarStyle.fontWeight;
     const next = Math.max(100, Math.min(900, current + diff));
     setFieldFontWeight(selectedField, next);
   };
@@ -434,17 +502,22 @@ export default function VoucherCanvasDialog({
     onClick: () => setSelectedField(fieldKey),
   });
 
-  const richFieldProps = (fieldKey, value, onChange, options = {}) => ({
-    fieldKey,
-    value,
-    colorRuns: fieldColorRuns?.[fieldKey] || [],
-    defaultColor: getStyle(fieldKey).color,
-    onChange,
-    onColorRunsChange: (runs) => updateFieldColorRuns(fieldKey, runs),
-    onSelectionChange: setFieldSelection,
-    ...editableFieldProps(fieldKey),
-    ...options,
-  });
+  const richFieldProps = (fieldKey, value, onChange, options = {}) => {
+    const fieldStyle = getStyle(fieldKey);
+    return {
+      fieldKey,
+      value,
+      colorRuns: fieldColorRuns?.[fieldKey] || [],
+      defaultColor: fieldStyle.color,
+      defaultFontSize: fieldStyle.fontSize,
+      defaultFontWeight: fieldStyle.fontWeight,
+      onChange,
+      onColorRunsChange: (runs) => updateFieldColorRuns(fieldKey, runs),
+      onSelectionChange: setFieldSelection,
+      ...editableFieldProps(fieldKey),
+      ...options,
+    };
+  };
 
   if (!selectedCompany) return null;
 
@@ -1090,7 +1163,7 @@ export default function VoucherCanvasDialog({
                       <div className="mb-3">
                         <div className="flex items-center justify-between text-sm font-bold text-gray-700 mb-2">
                           <span>حجم الخط</span>
-                          <span>{selectedField ? getStyle(selectedField)?.fontSize : "-"} px</span>
+                          <span>{selectedField ? toolbarStyle.fontSize : "-"} px</span>
                         </div>
 
                         <div className="flex items-center gap-2 mb-2">
@@ -1117,17 +1190,22 @@ export default function VoucherCanvasDialog({
                           min="8"
                           max="72"
                           step="1"
-                          value={selectedField ? getStyle(selectedField)?.fontSize : 16}
+                          value={selectedField ? toolbarStyle.fontSize : 16}
                           disabled={!selectedField}
                           onChange={(e) => selectedField && setFieldFontSize(selectedField, e.target.value)}
                           className="w-full"
                         />
+                        {hasActiveTextSelection ? (
+                          <p className="mt-2 text-xs font-bold text-emerald-700">
+                            سيتطبق الحجم على النص المحدد فقط
+                          </p>
+                        ) : null}
                       </div>
 
                       <div className="mb-3">
                         <div className="flex items-center justify-between text-sm font-bold text-gray-700 mb-2">
                           <span>سماكة الخط</span>
-                          <span>{selectedField ? getStyle(selectedField)?.fontWeight : "-"}</span>
+                          <span>{selectedField ? toolbarStyle.fontWeight : "-"}</span>
                         </div>
 
                         <div className="flex items-center gap-2 mb-2">
@@ -1154,11 +1232,16 @@ export default function VoucherCanvasDialog({
                           min="100"
                           max="900"
                           step="100"
-                          value={selectedField ? getStyle(selectedField)?.fontWeight : 700}
+                          value={selectedField ? toolbarStyle.fontWeight : 700}
                           disabled={!selectedField}
                           onChange={(e) => selectedField && setFieldFontWeight(selectedField, e.target.value)}
                           className="w-full"
                         />
+                        {hasActiveTextSelection ? (
+                          <p className="mt-2 text-xs font-bold text-emerald-700">
+                            ستطبق السماكة على النص المحدد فقط
+                          </p>
+                        ) : null}
                       </div>
 
                       <div className="mb-3">
@@ -1168,7 +1251,7 @@ export default function VoucherCanvasDialog({
                             className="inline-block w-6 h-6 rounded border border-gray-300"
                             style={{
                               backgroundColor: selectedField
-                                ? getStyle(selectedField)?.color || "#111827"
+                                ? toolbarStyle.color || "#111827"
                                 : "#111827",
                             }}
                           />
@@ -1176,20 +1259,18 @@ export default function VoucherCanvasDialog({
 
                         <input
                           type="color"
-                          value={selectedField ? getStyle(selectedField)?.color || "#111827" : "#111827"}
+                          value={selectedField ? toolbarStyle.color || "#111827" : "#111827"}
                           disabled={!selectedField}
                           onChange={(e) => selectedField && setFieldColor(selectedField, e.target.value)}
                           className="w-full h-10 rounded-xl border border-black/10 bg-white cursor-pointer disabled:opacity-40"
                         />
-                        {selectedField &&
-                        fieldSelection?.fieldKey === selectedField &&
-                        fieldSelection.end > fieldSelection.start ? (
+                        {hasActiveTextSelection ? (
                           <p className="mt-2 text-xs font-bold text-emerald-700">
                             سيتطبق اللون على النص المحدد فقط
                           </p>
                         ) : (
                           <p className="mt-2 text-xs text-gray-600 leading-5">
-                            حدّد جزءًا من النص داخل الحقل ثم اختر اللون، أو اختر اللون لتغيير الحقل كاملًا.
+                            حدّد جزءًا من النص داخل الحقل ثم عدّل الحجم أو السماكة أو اللون، أو غيّر الإعدادات لتطبيقها على الحقل كاملًا.
                           </p>
                         )}
                       </div>

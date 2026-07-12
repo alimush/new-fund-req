@@ -231,18 +231,23 @@ export default function VoucherModal({
     setCbOne(Boolean(doc?.cbOne));
     setCbTwo(Boolean(doc?.cbTwo));
 
+    let normalizedGlobal = normalizeGlobalTextStyle(doc?.globalTextStyle || {});
+    let normalizedFields = normalizeFieldStyles(doc?.fieldStyles || {}, normalizedGlobal);
+
     if (doc?.globalTextStyle || doc?.fieldStyles) {
-      const normalizedGlobal = normalizeGlobalTextStyle(doc?.globalTextStyle || {});
-      const normalizedFields = normalizeFieldStyles(doc?.fieldStyles || {}, normalizedGlobal);
       setGlobalTextStyle(normalizedGlobal);
       setFieldStyles(normalizedFields);
     } else {
       const legacy = buildLegacyStyles(doc);
+      normalizedGlobal = legacy.global;
+      normalizedFields = legacy.fields;
       setGlobalTextStyle(legacy.global);
       setFieldStyles(legacy.fields);
     }
 
-    setFieldColorRuns(normalizeFieldColorRuns(doc?.fieldColorRuns || {}));
+    setFieldColorRuns(
+      normalizeFieldColorRuns(doc?.fieldColorRuns || {}, normalizedFields, normalizedGlobal)
+    );
   }, []);
 
   const loadExistingVoucher = useCallback(async () => {
