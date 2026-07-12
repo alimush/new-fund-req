@@ -63,15 +63,15 @@ async function getAuthContext() {
 
 function parseDateStart(v) {
   const s = String(v || "").trim();
-  if (!s) return null;
-  const d = new Date(`${s}T00:00:00.000Z`);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+  const d = new Date(`${s}T00:00:00.000+03:00`);
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
 function parseDateEnd(v) {
   const s = String(v || "").trim();
-  if (!s) return null;
-  const d = new Date(`${s}T23:59:59.999Z`);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+  const d = new Date(`${s}T23:59:59.999+03:00`);
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
