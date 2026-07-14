@@ -6,10 +6,18 @@ import bcrypt from "bcryptjs";
 import mongoose from "mongoose";
 import { getUserIdFromRequest } from "@/lib/auth/getUserIdFromRequest";
 import { syncRequestsAfterUsernameChange } from "@/lib/requests/createdByIdentity";
+import { PERMISSIONS } from "@/lib/permission";
 
 export const runtime = "nodejs";
 
 const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
+
+async function getUserPerms(userId) {
+  const groups = await Permissions.find({
+    users: new mongoose.Types.ObjectId(userId),
+  }).lean();
+  return [...new Set(groups.flatMap((g) => g.permissions || []))];
+}
 
 async function requireManagePermissions(req) {
   await dbConnect();
@@ -36,14 +44,53 @@ async function requireManagePermissions(req) {
     };
   }
 
-  // ✅ نجيب كروباته ونطلع صلاحياته
-  const groups = await Permissions.find({
-    users: new mongoose.Types.ObjectId(userId),
-  }).lean();
+  const perms = await getUserPerms(userId);
 
-  const perms = [...new Set(groups.flatMap((g) => g.permissions || []))];
+  if (!perms.includes(PERMISSIONS.MANAGE_PERMISSIONS)) {
+    return {
+      ok: false,
+      res: NextResponse.json(
+        { success: false, error: "Forbidden" },
+        { status: 403 }
+      ),
+    };
+  }
 
-  if (!perms.includes("MANAGE_PERMISSIONS")) {
+  return { ok: true, userId, perms };
+}
+
+/** قائمة المستخدمين — لإدارة الصلاحيات أو محرري EX Workflow */
+async function requireUsersListAccess(req) {
+  await dbConnect();
+
+  const { userId } = getUserIdFromRequest(req);
+
+  if (!userId) {
+    return {
+      ok: false,
+      res: NextResponse.json(
+        { success: false, error: "Missing userId" },
+        { status: 401 }
+      ),
+    };
+  }
+
+  if (!isValidObjectId(userId)) {
+    return {
+      ok: false,
+      res: NextResponse.json(
+        { success: false, error: "Invalid userId" },
+        { status: 401 }
+      ),
+    };
+  }
+
+  const perms = await getUserPerms(userId);
+
+  if (
+    !perms.includes(PERMISSIONS.MANAGE_PERMISSIONS) &&
+    !perms.includes(PERMISSIONS.EX_WORKFLOW)
+  ) {
     return {
       ok: false,
       res: NextResponse.json(
@@ -58,7 +105,7 @@ async function requireManagePermissions(req) {
 
 // 🟢 GET — fetch users (بدون password)
 export async function GET(req) {
-  const auth = await requireManagePermissions(req);
+  const auth = await requireUsersListAccess(req);
   if (!auth.ok) return auth.res;
 
   const { searchParams } = new URL(req.url);

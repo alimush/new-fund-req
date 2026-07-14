@@ -8,6 +8,7 @@ import { useRouter } from "next/navigation";
 
 // ✅ يجيب الفورمات من registry (Client-side)
 import { EX_FORMS } from "@/lib/exForms/registry";
+import { PERMISSIONS } from "@/lib/permission";
 
 /** ✅ Pages = forms from registry + exceptions manual */
 const buildExPages = () => {
@@ -68,7 +69,7 @@ export default function ExWorkflowPage() {
         const data = await res.json();
         const perms = Array.isArray(data?.permissions) ? data.permissions : [];
 
-        const ok = perms.includes("MANAGE_PERMISSIONS");
+        const ok = perms.includes(PERMISSIONS.EX_WORKFLOW);
         if (!ok) return router.replace("/home");
 
         setAuthorized(true);

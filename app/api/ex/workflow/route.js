@@ -4,6 +4,7 @@ import Permissions from "@/models/Permissions";
 import { NextResponse } from "next/server";
 import mongoose from "mongoose";
 import { getUserIdFromRequest } from "@/lib/auth/getUserIdFromRequest";
+import { PERMISSIONS } from "@/lib/permission";
 
 // ✅ يجيب الفورمات من registry (Server-side)
 import { EX_FORMS } from "@/lib/exForms/registry";
@@ -34,8 +35,8 @@ function isAllowedPageKey(k) {
   return false;
 }
 
-// ✅ تحقق MANAGE_PERMISSIONS
-async function requireManagePermissions(req) {
+/** صلاحية إدارة EX Workflow فقط */
+async function requireExWorkflowPermission(req) {
   await dbConnect();
 
   const { userId } = getUserIdFromRequest(req);
@@ -44,7 +45,7 @@ async function requireManagePermissions(req) {
   const groups = await Permissions.find({ users: userId }).lean();
   const perms = [...new Set(groups.flatMap((g) => g.permissions || []))];
 
-  if (!perms.includes("MANAGE_PERMISSIONS")) {
+  if (!perms.includes(PERMISSIONS.EX_WORKFLOW)) {
     return { ok: false, status: 403, message: "Forbidden" };
   }
 
@@ -59,7 +60,7 @@ const populateUser = {
 
 // ======================= GET =======================
 export async function GET(req) {
-  const auth = await requireManagePermissions(req);
+  const auth = await requireExWorkflowPermission(req);
   if (!auth.ok) {
     return NextResponse.json({ success: false, error: auth.message }, { status: auth.status });
   }
@@ -100,7 +101,7 @@ export async function GET(req) {
 
 // ======================= POST =======================
 export async function POST(req) {
-  const auth = await requireManagePermissions(req);
+  const auth = await requireExWorkflowPermission(req);
   if (!auth.ok) {
     return NextResponse.json({ success: false, error: auth.message }, { status: auth.status });
   }
@@ -150,7 +151,7 @@ export async function POST(req) {
 
 // ======================= PUT =======================
 export async function PUT(req) {
-  const auth = await requireManagePermissions(req);
+  const auth = await requireExWorkflowPermission(req);
   if (!auth.ok) {
     return NextResponse.json({ success: false, error: auth.message }, { status: auth.status });
   }
@@ -207,7 +208,7 @@ export async function PUT(req) {
 
 // ======================= DELETE =======================
 export async function DELETE(req) {
-  const auth = await requireManagePermissions(req);
+  const auth = await requireExWorkflowPermission(req);
   if (!auth.ok) {
     return NextResponse.json({ success: false, error: auth.message }, { status: auth.status });
   }

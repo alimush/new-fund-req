@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { FiUsers, FiPlus, FiX, FiArrowLeft } from "react-icons/fi";
 import Select from "react-select";
+import { PERMISSIONS } from "@/lib/permission";
 
 export default function ExWorkflowDetailsPage() {
   const { id } = useParams();
@@ -37,7 +38,7 @@ export default function ExWorkflowDetailsPage() {
         const data = await res.json();
         const perms = Array.isArray(data?.permissions) ? data.permissions : [];
 
-        if (!perms.includes("MANAGE_PERMISSIONS")) return router.replace("/home");
+        if (!perms.includes(PERMISSIONS.EX_WORKFLOW)) return router.replace("/home");
         setAuthorized(true);
       } catch {
         router.replace("/home");

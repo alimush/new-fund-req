@@ -97,6 +97,7 @@ export default function Header({ onLogout }) {
 
   const canAccessCheques = hasPermission(permissions, PERMISSIONS.CHEQUES);
   const canManage = permissions?.includes(PERMISSIONS.MANAGE_PERMISSIONS);
+  const canExWorkflow = permissions?.includes(PERMISSIONS.EX_WORKFLOW);
 
   const headerTitle = useMemo(() => resolveHeaderTitle(pathname), [pathname]);
   const isLoginPage = pathname === "/login";
@@ -175,16 +176,6 @@ export default function Header({ onLogout }) {
           onClick: () => router.push("/admin/voucher-links"),
         },
         {
-          key: "ex-workflow",
-          label: "ex workflow",
-          icon: (
-            <MenuIcon color="text-slate-400">
-              <GoWorkflow />
-            </MenuIcon>
-          ),
-          onClick: () => router.push("ex/workflow"),
-        },
-        {
           key: "permissions",
           label: "إدارة الصلاحيات",
           icon: (
@@ -195,6 +186,19 @@ export default function Header({ onLogout }) {
           onClick: () => router.push("/permissions"),
         }
       );
+    }
+
+    if (canExWorkflow) {
+      adminItems.push({
+        key: "ex-workflow",
+        label: "وورك فلو طلبات الحجز",
+        icon: (
+          <MenuIcon color="text-slate-400">
+            <GoWorkflow />
+          </MenuIcon>
+        ),
+        onClick: () => router.push("/ex/workflow"),
+      });
     }
 
     if (adminItems.length) {
@@ -293,6 +297,7 @@ export default function Header({ onLogout }) {
     return sections;
   }, [
     canAccessCheques,
+    canExWorkflow,
     canManage,
     canViewReports,
     isExOnlyUser,
