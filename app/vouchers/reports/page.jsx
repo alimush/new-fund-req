@@ -34,6 +34,7 @@ const Select = dynamic(() => import("react-select").then((m) => m.default), {
 });
 
 import { COMPANIES } from "@/lib/voucher/companies";
+import { formatAmount } from "@/lib/voucher/utils";
 import { formatVoucherDateDisplay } from "@/lib/voucher/voucherDate";
 
 const getCompanyName = (key) => {
@@ -505,7 +506,12 @@ export default function VoucherReportsPage() {
   const pickSuggestion = (opt) => {
     if (!opt) return;
     setSmartPicked(opt);
-    setSmartInput(String(opt.value || opt.label || ""));
+    const raw = String(opt.value || opt.label || "");
+    const next =
+      opt.type === "amount" || (/^[\d,\s.]+$/.test(raw) && /\d/.test(raw))
+        ? formatAmount(raw) || raw
+        : raw;
+    setSmartInput(next);
     setShowSuggest(false);
     setActiveIdx(-1);
   };
@@ -1237,7 +1243,12 @@ export default function VoucherReportsPage() {
                 ref={inputRef}
                 value={smartInput}
                 onChange={(e) => {
-                  setSmartInput(e.target.value);
+                  const raw = e.target.value;
+                  // إذا الإدخال يشبه مبلغ (أرقام/فواصل فقط) → فوارز آلاف تلقائياً
+                  const looksLikeAmount =
+                    raw.length > 0 && /^[\d,\s.]*$/.test(raw) && /\d/.test(raw);
+                  const next = looksLikeAmount ? formatAmount(raw) : raw;
+                  setSmartInput(next);
                   setSmartPicked(null);
                   setActiveIdx(-1);
                 }}
@@ -1248,7 +1259,7 @@ export default function VoucherReportsPage() {
                   }
                 }}
                 onKeyDown={onSmartKeyDown}
-                placeholder="رقم / وصف / مستفيد / استلمت من / بنك"
+                placeholder="رقم / وصف / مستفيد / استلمت من / بنك / مبلغ"
                 className={`${filterInputClass} px-4 text-[16px] shadow-sm`}
               />
             </div>

@@ -20,6 +20,78 @@ const VOUCHER_COMPANIES = COMPANIES.map((c) => c.key);
 const escapeRegex = (s) =>
   String(s || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+/** يبني شروط البحث عن المبلغ من نص البحث الموحّد (أرقام مع/بدون فواصل + amountText) */
+function buildAmountSmartClauses(qRaw) {
+  const q = String(qRaw || "").trim();
+  if (!q) return [];
+
+  const clauses = [
+    { amountText: { $regex: escapeRegex(q), $options: "i" } },
+  ];
+
+  const digitsOnly = q.replace(/[,\s]/g, "");
+  if (/^\d+(\.\d+)?$/.test(digitsOnly)) {
+    const n = Number(digitsOnly);
+    if (Number.isFinite(n)) {
+      clauses.push({ amount: n });
+    }
+  }
+
+  return clauses;
+}
+
+function buildSmartOr(qRaw) {
+  const q = String(qRaw || "").trim();
+  if (!q) return [];
+
+  const clauses = [
+    { voucherNo: { $regex: escapeRegex(q), $options: "i" } },
+    { requestId: { $regex: escapeRegex(q), $options: "i" } },
+    { description: { $regex: escapeRegex(q), $options: "i" } },
+    { beneficiary: { $regex: escapeRegex(q), $options: "i" } },
+    { receivedBy: { $regex: escapeRegex(q), $options: "i" } },
+    { bank: { $regex: escapeRegex(q), $options: "i" } },
+    ...buildAmountSmartClauses(q),
+  ];
+
+  // إذا فيه فوارز آلاف، ابحث أيضاً بدونها (رقم وصل / seq)
+  const digitsOnly = q.replace(/[,\s]/g, "");
+  if (q.includes(",") && /^\d+(\.\d+)?$/.test(digitsOnly)) {
+    clauses.push(
+      { voucherNo: { $regex: escapeRegex(digitsOnly), $options: "i" } },
+      { requestId: { $regex: escapeRegex(digitsOnly), $options: "i" } }
+    );
+    const n = Number(digitsOnly);
+    if (Number.isFinite(n) && Number.isInteger(n)) {
+      clauses.push({ seq: n });
+    }
+  }
+
+  return clauses;
+}
+
+function formatAmountLabel(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return String(v ?? "");
+  return new Intl.NumberFormat("en-US").format(n);
+}
+
+function amountMatchesQuery(doc, qRaw) {
+  const q = String(qRaw || "").trim().toLowerCase();
+  if (!q) return false;
+
+  const text = String(doc?.amountText || "").toLowerCase();
+  if (text.includes(q)) return true;
+
+  const digitsOnly = q.replace(/[,\s]/g, "");
+  if (/^\d+(\.\d+)?$/.test(digitsOnly)) {
+    const n = Number(digitsOnly);
+    if (Number.isFinite(n) && Number(doc?.amount) === n) return true;
+  }
+
+  return false;
+}
+
 async function getUserAccess(userId) {
   if (!userId) return { allowedCompanies: [], allowedPerms: [] };
 
@@ -118,14 +190,7 @@ export async function GET(req) {
       const q = (searchParams.get("q") || "").trim();
       if (!q) return NextResponse.json({ success: true, data: [] });
 
-      const smartOr = [
-        { voucherNo: { $regex: escapeRegex(q), $options: "i" } },
-        { requestId: { $regex: escapeRegex(q), $options: "i" } },
-        { description: { $regex: escapeRegex(q), $options: "i" } },
-        { beneficiary: { $regex: escapeRegex(q), $options: "i" } },
-        { receivedBy: { $regex: escapeRegex(q), $options: "i" } },
-        { bank: { $regex: escapeRegex(q), $options: "i" } },
-      ];
+      const smartOr = buildSmartOr(q);
 
       const results = await col
         .find({
@@ -145,6 +210,18 @@ export async function GET(req) {
           { type: "receivedBy", value: doc.receivedBy, label: `استلمت من: ${doc.receivedBy}` },
           { type: "bank", value: doc.bank, label: `البنك: ${doc.bank}` },
         ].filter(c => c.value && String(c.value).toLowerCase().includes(q.toLowerCase()));
+
+        if (amountMatchesQuery(doc, q)) {
+          const display = doc.amountText || formatAmountLabel(doc.amount);
+          const value = String(doc.amountText || doc.amount || "").trim();
+          if (value) {
+            candidates.push({
+              type: "amount",
+              value,
+              label: `المبلغ: ${display}`,
+            });
+          }
+        }
 
         for (const c of candidates) {
           const key = `${c.type}|${c.value}`;
@@ -236,14 +313,7 @@ export async function GET(req) {
     }
 
     if (q) {
-      const smartOr = [
-        { voucherNo: { $regex: escapeRegex(q), $options: "i" } },
-        { requestId: { $regex: escapeRegex(q), $options: "i" } },
-        { description: { $regex: escapeRegex(q), $options: "i" } },
-        { beneficiary: { $regex: escapeRegex(q), $options: "i" } },
-        { receivedBy: { $regex: escapeRegex(q), $options: "i" } },
-        { bank: { $regex: escapeRegex(q), $options: "i" } },
-      ];
+      const smartOr = buildSmartOr(q);
 
       if (query.$or) {
         query.$and = [{ $or: query.$or }, { $or: smartOr }];
