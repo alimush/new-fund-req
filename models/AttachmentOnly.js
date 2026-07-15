@@ -34,6 +34,7 @@ const Schema = new mongoose.Schema(
 
     customerName: { type: String, default: "" },
     unitNo: { type: String, default: "" },
+    transactionType: { type: String, default: "" },
 
     attachments: { type: [FileSchema], default: [] },
 

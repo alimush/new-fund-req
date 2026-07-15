@@ -108,7 +108,7 @@ function getModelByPageKey(pageKey) {
       case "attachment-only":
         return {
           model: AttachmentOnly,
-          searchFields: ["requestCode", "title", "createdBy"],
+          searchFields: ["requestCode", "title", "customerName", "unitNo", "transactionType", "createdBy"],
           sort: { createdAt: -1 },
         };
     default:
@@ -324,25 +324,24 @@ export async function POST(req, ctx) {
         oldUnitNo: freshDoc?.oldUnitNo || "",
     
         newUnitNo: freshDoc?.newUnitNo || "",
+
+        transactionType: freshDoc?.transactionType || "",
     
       };
-    
-      const allUserIds = [
+
+      // معاملة زبون: إيميلات finalApproveEmails تنرسل مباشرة عند إنشاء الطلب
+      const wfCfg = await ExWorkflow.findOne({ pageKey })
+        .select("finalApproveEmails")
+        .lean();
+      const createNotifyEmails = [
         ...new Set(
-          (freshDoc?.workflow?.steps || [])
-            .flatMap((s) => s?.users || [])
-            .map(getIdStr)
+          (Array.isArray(wfCfg?.finalApproveEmails) ? wfCfg.finalApproveEmails : [])
+            .map((x) => String(x || "").trim().toLowerCase())
             .filter(Boolean)
         ),
       ];
     
-      const users = allUserIds.length
-        ? await User.find({ _id: { $in: allUserIds } })
-        .select("_id username name email arabicName")
-            .lean()
-        : [];
-    
-      const toEmails = users.map((u) => u.email).filter(Boolean);
+      const toEmails = createNotifyEmails;
     
       const baseDomain = process.env.EX_BASE_DOMAIN || "https://funds-gdr.spc-it.com.iq";
     
@@ -358,7 +357,7 @@ export async function POST(req, ctx) {
         pageKey,
         stepFrom: 0,
         stepTo: 0,
-        note: "تم إرسال الاتاج إلى جميع المعنيين في الورك فلو.",
+        note: "",
         actorName:
         auth.user?.arabicName ||
         auth.user?.username ||
@@ -370,8 +369,8 @@ export async function POST(req, ctx) {
         planUrl: docUrl,
         showRoutingLine: false,
         showDetailsButton: false,
-        docTitle: cfg?.title || "اتاج",
-        docTypeAr: "الاتاج",
+        docTitle: cfg?.title || "معامله زبون",
+        docTypeAr: "معاملة زبون",
         ...emailDocFields,
       });
     
@@ -385,7 +384,7 @@ export async function POST(req, ctx) {
       if (toEmails.length > 0) {
         await sendWorkflowEmail({
           toEmails,
-          subject: `اتاج جديد | ${String(doc._id).slice(-6)}`,
+          subject: `معامله زبون | ${String(doc._id).slice(-6)}`,
           html,
           attachments: emailAttachments,
         });

@@ -271,9 +271,15 @@ export default function ExWorkflowDetailsPage() {
           <FiPlus /> Add Step
         </button>
         <div className="mt-6">
-  <h3 className="text-md font-semibold mb-2">Final Approve Emails</h3>
+  <h3 className="text-md font-semibold mb-2">
+    {workflow?.pageKey === "attachment-only"
+      ? "Create Notification Emails"
+      : "Final Approve Emails"}
+  </h3>
   <p className="text-sm text-gray-500 mb-2">
-    هاي الإيميلات يندزلها إشعار فقط عند الموافقة النهائية
+    {workflow?.pageKey === "attachment-only"
+      ? "هاي الإيميلات يندزلها إشعار مباشرة عند إنشاء الطلب (معاملة زبون)"
+      : "هاي الإيميلات يندزلها إشعار فقط عند الموافقة النهائية"}
   </p>
 
   <textarea

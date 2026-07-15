@@ -502,6 +502,7 @@ const emailDocFields = {
 
   oldUnitNo: doc?.oldUnitNo || "",
   newUnitNo: doc?.newUnitNo || "",
+  transactionType: doc?.transactionType || "",
 };
     const docUrl = `${String(baseDomain).replace(/\/+$/, "")}/ex/${encodeURIComponent(pageKey)}/${encodeURIComponent(
       String(doc._id)

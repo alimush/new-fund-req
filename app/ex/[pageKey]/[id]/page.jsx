@@ -807,6 +807,7 @@ const isOperationUser =
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
       <Info label="اسم الزبون" value={doc?.customerName} icon={<FiUser />} />
       <Info label="رقم الوحدة" value={doc?.unitNo} icon={<FiInfo />} />
+      <Info label="نوع المعاملة" value={doc?.transactionType} icon={<FiInfo />} />
     </div>
       {canViewRequestAttachments &&
       Array.isArray(doc?.attachments) &&
