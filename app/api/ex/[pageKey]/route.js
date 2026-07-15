@@ -382,9 +382,19 @@ export async function POST(req, ctx) {
         }));
     
       if (toEmails.length > 0) {
+        const customerName = String(emailDocFields.customerName || "").trim() || "—";
+        const unitNo =
+          String(
+            emailDocFields.unitNo ||
+              emailDocFields.newUnitNo ||
+              emailDocFields.oldUnitNo ||
+              ""
+          ).trim() || "—";
+
         await sendWorkflowEmail({
           toEmails,
-          subject: `معامله زبون | ${String(doc._id).slice(-6)}`,
+          // RLM يحافظ على ترتيب العنوان في علب البريد (عربي + أرقام/إنجليزي)
+          subject: `\u200Fمعامله زبون - ${customerName} - ${unitNo}`,
           html,
           attachments: emailAttachments,
         });
