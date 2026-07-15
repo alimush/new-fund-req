@@ -278,7 +278,7 @@ export default function ExWorkflowDetailsPage() {
   </h3>
   <p className="text-sm text-gray-500 mb-2">
     {workflow?.pageKey === "attachment-only"
-      ? "هاي الإيميلات يندزلها إشعار مباشرة عند إنشاء الطلب (معاملة زبون)"
+      ? "هاي الإيميلات يندزلها إشعار مباشرة عند إنشاء الطلب (معاملة الزبون)"
       : "هاي الإيميلات يندزلها إشعار فقط عند الموافقة النهائية"}
   </p>
 

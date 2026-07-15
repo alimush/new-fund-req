@@ -369,8 +369,8 @@ export async function POST(req, ctx) {
         planUrl: docUrl,
         showRoutingLine: false,
         showDetailsButton: false,
-        docTitle: cfg?.title || "معامله زبون",
-        docTypeAr: "معاملة زبون",
+        docTitle: cfg?.title || "معامله الزبون",
+        docTypeAr: "معاملة الزبون",
         ...emailDocFields,
       });
     
@@ -394,7 +394,7 @@ export async function POST(req, ctx) {
         await sendWorkflowEmail({
           toEmails,
           // RLM يحافظ على ترتيب العنوان في علب البريد (عربي + أرقام/إنجليزي)
-          subject: `\u200Fمعامله زبون - ${customerName} - ${unitNo}`,
+          subject: `\u200Fمعامله الزبون - ${customerName} - ${unitNo}`,
           html,
           attachments: emailAttachments,
         });
