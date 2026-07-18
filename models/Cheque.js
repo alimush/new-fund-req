@@ -81,10 +81,17 @@ const ChequeSchema = new mongoose.Schema(
 
     status: {
       type: String,
-      enum: ["draft", "issued"],
+      enum: ["draft", "issued", "void"],
       default: "draft",
       index: true,
     },
+
+    voidAttachment: {
+      type: AttachmentSchema,
+      default: undefined,
+    },
+    voidedAt: { type: Date, default: null },
+    voidedBy: { type: String, default: "" },
 
     createdBy: { type: String, default: "", index: true },
     createdByUserId: {

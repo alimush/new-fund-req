@@ -17,6 +17,8 @@ import {
   FiPieChart,
   FiEye,
   FiPrinter,
+  FiAlertTriangle,
+  FiSlash,
 } from "react-icons/fi";
 import { CHEQUE_TEMPLATES } from "@/lib/cheques/templates";
 import {
@@ -67,6 +69,12 @@ function truncate(str, max = 48) {
   return s.length > max ? `${s.slice(0, max)}…` : s;
 }
 
+function chequeStatusLabel(status) {
+  if (status === "void") return "باطل";
+  if (status === "draft") return "مسودة";
+  return "صادر";
+}
+
 export default function ChequeReportsPage() {
   const { showToast } = useToast();
   const { canUseCheques, ready } = useChequeAccess();
@@ -100,6 +108,12 @@ export default function ChequeReportsPage() {
     att: null,
   });
   const [deletingAttKey, setDeletingAttKey] = useState(null);
+  const [voidingId, setVoidingId] = useState(null);
+  const [voidModal, setVoidModal] = useState({
+    open: false,
+    row: null,
+    file: null,
+  });
   const fileInputRefs = useRef({});
   const openCheque = useCallback((row) => {
     if (!row?._id) return;
@@ -305,6 +319,93 @@ export default function ChequeReportsPage() {
     [showToast]
   );
 
+  const closeVoidModal = useCallback(() => {
+    if (voidingId) return;
+    setVoidModal({ open: false, row: null, file: null });
+  }, [voidingId]);
+
+  const handleVoidChequeConfirmed = useCallback(async () => {
+    const row = voidModal.row;
+    const file = voidModal.file;
+    if (!row?._id || voidingId) return;
+
+    try {
+      setVoidingId(row._id);
+      let attachment = null;
+
+      if (file) {
+        const branchPart = String(row.branchKey || "main").trim() || "main";
+        const templatePart = String(row.templateKey || "cheque").trim();
+
+        const presignRes = await fetch("/api/upload/presign", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            fileName: file.name,
+            fileType: file.type || "application/octet-stream",
+            prefix: `cheques/${templatePart}/${branchPart}/${row._id}/void`,
+          }),
+        });
+        const presignJson = await presignRes.json();
+        if (!presignJson?.success || !presignJson.url || !presignJson.key) {
+          throw new Error(presignJson?.error || "تعذر إنشاء رابط رفع مرفق التبطيل");
+        }
+
+        const uploadRes = await fetch(presignJson.url, {
+          method: "PUT",
+          headers: { "Content-Type": file.type || "application/octet-stream" },
+          body: file,
+        });
+        if (!uploadRes.ok) throw new Error(`فشل رفع ${file.name}`);
+
+        attachment = {
+          key: presignJson.key,
+          name: file.name,
+          url: presignJson.getUrl || "",
+          contentType: file.type || "application/octet-stream",
+          size: file.size || 0,
+          uploadedAt: new Date().toISOString(),
+        };
+      }
+
+      const saveRes = await fetch(`/api/cheques/${encodeURIComponent(String(row._id))}`, {
+        method: "PUT",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          voidCheque: true,
+          ...(attachment ? { attachment } : {}),
+        }),
+      });
+      const saveJson = await saveRes.json();
+      if (!saveJson?.success) {
+        throw new Error(saveJson?.error || "تعذر تبطيل الصك");
+      }
+
+      setRows((prev) =>
+        prev.map((item) =>
+          String(item._id) === String(row._id)
+            ? {
+                ...item,
+                status: "void",
+                voidAttachment:
+                  saveJson.data?.voidAttachment || attachment || item.voidAttachment,
+                voidedAt: saveJson.data?.voidedAt || new Date().toISOString(),
+              }
+            : item
+        )
+      );
+      setVoidModal({ open: false, row: null, file: null });
+      showToast("تم تبطيل الصك بنجاح", "success");
+    } catch (err) {
+      console.error("Void cheque error:", err);
+      showToast(err.message || "فشل تبطيل الصك", "error");
+    } finally {
+      setVoidingId(null);
+    }
+  }, [voidModal, voidingId, showToast]);
+
   const buildQuery = useCallback((p, overrides = null) => {
     const tpl = overrides?.templateFilter ?? templateFilter;
     const cn = overrides?.chequeNumber ?? chequeNumber;
@@ -397,6 +498,7 @@ export default function ChequeReportsPage() {
       "المبلغ": r.amountNumeric || 0,
       "المبلغ كتابة": r.amountWords || "",
       "العملة": r.currency || "IQD",
+      "الحالة": chequeStatusLabel(r.status),
       "أنشئ بواسطة": r.createdBy || "",
       "تاريخ الحفظ": formatSavedAt(r.createdAt),
     }));
@@ -577,27 +679,33 @@ export default function ChequeReportsPage() {
       </motion.form>
 
       <div className="rounded-3xl border border-white/70 bg-white/90 backdrop-blur-xl shadow-[0_18px_50px_-30px_rgba(0,0,0,0.2)] overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[1100px] text-sm">
+        <div>
+          <table className="w-full table-fixed text-[12px]">
             <thead>
               <tr className="bg-gradient-to-l from-slate-50 to-emerald-50/80 border-b border-slate-200">
                 {[
-                  "عرض",
-                  "#",
-                  "نوع الصك",
-                  "رقم الصك",
-                  "رقم الحساب",
-                  "تاريخ الصك",
-                  "بموجب الأمر",
-                  "المبلغ",
-                  "المبلغ كتابة",
-                  "أنشئ بواسطة",
-                  "تاريخ الحفظ",
-                  "الاتاجات",
-                ].map((h) => (
+                  ["عرض", "w-[44px]"],
+                  ["#", "w-[36px]"],
+                  ["نوع الصك", "w-[9%]"],
+                  ["رقم الصك", "w-[6%]"],
+                  ["رقم الحساب", "w-[8%]"],
+                  ["تاريخ الصك", "w-[7%]"],
+                  ["بموجب الأمر", "w-[10%]"],
+                  ["المبلغ", "w-[9%]"],
+                  ["المبلغ كتابة", "w-[13%]"],
+                  ["أنشئ بواسطة", "w-[7%]"],
+                  ["تاريخ الحفظ", "w-[8%]"],
+                  ["الحالة", "w-[5%]"],
+                  ["الاتاجات", "w-[9%]"],
+                  ["تبطيل الصك", "w-[9%]"],
+                ].map(([h, w]) => (
                   <th
                     key={h}
-                    className="px-3 py-3.5 text-right text-[11px] font-extrabold text-slate-600 whitespace-nowrap"
+                    className={`px-2 py-3.5 text-[11px] font-extrabold text-slate-600 ${w} ${
+                      ["الاتاجات", "تبطيل الصك", "الحالة", "عرض"].includes(h)
+                        ? "text-center"
+                        : "text-right"
+                    }`}
                   >
                     {h}
                   </th>
@@ -607,13 +715,13 @@ export default function ChequeReportsPage() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={12} className="px-4 py-16 text-center text-slate-500 font-bold">
+                  <td colSpan={14} className="px-4 py-16 text-center text-slate-500 font-bold">
                     جاري التحميل…
                   </td>
                 </tr>
               ) : rows.length === 0 ? (
                 <tr>
-                  <td colSpan={12} className="px-4 py-16 text-center text-slate-500 font-bold">
+                  <td colSpan={14} className="px-4 py-16 text-center text-slate-500 font-bold">
                     لا توجد صكوك مطابقة
                   </td>
                 </tr>
@@ -622,9 +730,13 @@ export default function ChequeReportsPage() {
                   <tr
                     key={r._id}
                     onClick={() => openCheque(r)}
-                    className={`border-b border-slate-100 cursor-pointer transition-colors duration-150 ${
-                      idx % 2 === 0 ? "bg-white/50" : "bg-slate-50/30"
-                    } hover:bg-emerald-50/50`}
+                    className={`border-b cursor-pointer transition-colors duration-150 ${
+                      r.status === "void"
+                        ? "border-rose-200 bg-rose-50/80 hover:bg-rose-100/80"
+                        : `border-slate-100 ${
+                            idx % 2 === 0 ? "bg-white/50" : "bg-slate-50/30"
+                          } hover:bg-emerald-50/50`
+                    }`}
                   >
                     <td className="px-2 py-3 text-center" onClick={(e) => e.stopPropagation()}>
                       <button
@@ -636,10 +748,10 @@ export default function ChequeReportsPage() {
                         <FiEye size={16} />
                       </button>
                     </td>
-                    <td className="px-3 py-3 font-bold text-slate-500 tabular-nums">
+                    <td className="px-2 py-3 font-bold text-slate-500 tabular-nums">
                       {(page - 1) * PAGE_SIZE + idx + 1}
                     </td>
-                    <td className="px-3 py-3 font-extrabold text-slate-800 max-w-[140px]">
+                    <td className="px-2 py-3 font-extrabold text-slate-800 break-words">
                       <span className="line-clamp-2">
                         {r.branchName || r.templateName || r.templateKey}
                       </span>
@@ -649,30 +761,45 @@ export default function ChequeReportsPage() {
                         </span>
                       ) : null}
                     </td>
-                    <td className="px-3 py-3 font-bold text-slate-800 tabular-nums">
+                    <td className="px-2 py-3 font-bold text-slate-800 tabular-nums break-words">
                       {r.chequeNumber || "—"}
                     </td>
-                    <td className="px-3 py-3 font-bold text-slate-700 tabular-nums">
+                    <td className="px-2 py-3 font-bold text-slate-700 tabular-nums break-words">
                       {r.accountNumber || "—"}
                     </td>
-                    <td className="px-3 py-3 font-semibold text-slate-700 whitespace-nowrap">
+                    <td className="px-2 py-3 font-semibold text-slate-700">
                       {formatChequeDateParts(r.dateParts)}
                     </td>
-                    <td className="px-3 py-3 font-semibold text-slate-800 max-w-[160px]">
+                    <td className="px-2 py-3 font-semibold text-slate-800 break-words">
                       {truncate(r.payee, 40)}
                     </td>
-                    <td className="px-3 py-3 font-extrabold text-emerald-800 whitespace-nowrap">
+                    <td className="px-2 py-3 font-extrabold text-emerald-800 break-words">
                       {formatChequeAmount(r.amountNumeric, r.currency)}
                     </td>
-                    <td className="px-3 py-3 font-semibold text-slate-600 max-w-[200px]">
+                    <td className="px-2 py-3 font-semibold text-slate-600 break-words">
                       {truncate(r.amountWords, 55)}
                     </td>
-                    <td className="px-3 py-3 font-bold text-slate-600">{r.createdBy || "—"}</td>
-                    <td className="px-3 py-3 font-semibold text-slate-500 whitespace-nowrap text-[12px]">
+                    <td className="px-2 py-3 font-bold text-slate-600 break-words">
+                      {r.createdBy || "—"}
+                    </td>
+                    <td className="px-2 py-3 font-semibold text-slate-500 text-[11px]">
                       {formatSavedAt(r.createdAt)}
                     </td>
+                    <td className="px-2 py-3 text-center">
+                      <span
+                        className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-extrabold ${
+                          r.status === "void"
+                            ? "bg-rose-600 text-white"
+                            : r.status === "draft"
+                              ? "bg-amber-100 text-amber-800"
+                              : "bg-emerald-100 text-emerald-800"
+                        }`}
+                      >
+                        {chequeStatusLabel(r.status)}
+                      </span>
+                    </td>
                     <td
-                      className="px-3 py-3 text-right whitespace-nowrap"
+                      className="px-2 py-3"
                       onClick={(e) => e.stopPropagation()}
                     >
                       <input
@@ -689,12 +816,12 @@ export default function ChequeReportsPage() {
                         }}
                       />
 
-                      <div className="flex flex-col items-end gap-1.5">
+                      <div className="flex w-full flex-col items-stretch gap-1.5">
                         <button
                           type="button"
                           onClick={() => triggerAttachmentPick(r._id)}
                           disabled={uploadingId === r._id}
-                          className={`rounded-xl border px-3 py-1.5 text-[12px] font-extrabold transition ${
+                          className={`w-full rounded-xl border px-2 py-1.5 text-center text-[11px] font-extrabold transition ${
                             uploadingId === r._id
                               ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
                               : "border-slate-200 bg-white text-slate-900 hover:bg-slate-50"
@@ -707,13 +834,51 @@ export default function ChequeReportsPage() {
                           <button
                             type="button"
                             onClick={() => openAttachmentsModal(r)}
-                            className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-1.5 text-[12px] font-extrabold text-blue-700 hover:bg-blue-100"
+                            className="w-full rounded-xl border border-blue-200 bg-blue-50 px-2 py-1.5 text-center text-[11px] font-extrabold text-blue-700 hover:bg-blue-100"
                           >
                             عرض الاتاجات ({r.attachments.length})
                           </button>
                         ) : (
-                          <span className="text-[11px] text-slate-400">لا يوجد</span>
+                          <span className="text-center text-[11px] text-slate-400">
+                            لا يوجد
+                          </span>
                         )}
+                      </div>
+                    </td>
+                    <td
+                      className="px-2 py-3"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div className="flex w-full flex-col items-stretch gap-1.5">
+                        {r.status === "void" ? (
+                          <span className="inline-flex w-full items-center justify-center gap-1 rounded-xl border border-rose-200 bg-rose-100 px-2 py-1.5 text-[11px] font-extrabold text-rose-500">
+                            <FiSlash size={12} />
+                            الصك باطل
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setVoidModal({ open: true, row: r, file: null })
+                            }
+                            disabled={voidingId === r._id}
+                            className="inline-flex w-full items-center justify-center gap-1 rounded-xl bg-rose-600 px-2 py-1.5 text-[11px] font-extrabold text-white shadow-sm transition hover:bg-rose-700 disabled:opacity-50"
+                          >
+                            <FiSlash size={12} />
+                            تبطيل الصك
+                          </button>
+                        )}
+
+                        {r.status === "void" && r.voidAttachment?.url ? (
+                          <a
+                            href={encodeURI(r.voidAttachment.url)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="w-full rounded-xl border border-rose-300 bg-rose-50 px-2 py-1.5 text-center text-[11px] font-extrabold text-rose-800 hover:bg-rose-100"
+                          >
+                            مرفق التبطيل
+                          </a>
+                        ) : null}
                       </div>
                     </td>
                   </tr>
@@ -731,6 +896,90 @@ export default function ChequeReportsPage() {
           />
         </div>
       </div>
+
+      <AnimatePresence>
+        {voidModal.open && voidModal.row && (
+          <motion.div
+            className="fixed inset-0 z-[100000] bg-black/50 flex items-center justify-center p-4"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={closeVoidModal}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-lg rounded-3xl border border-rose-200 bg-white p-6 text-right shadow-2xl"
+            >
+              <div className="flex items-start gap-3">
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-rose-100 text-rose-700">
+                  <FiAlertTriangle size={22} />
+                </span>
+                <div>
+                  <h3 className="text-xl font-extrabold text-slate-900">تبطيل الصك</h3>
+                  <p className="mt-1 text-sm font-semibold text-slate-500">
+                    رقم الصك: {voidModal.row.chequeNumber || "—"}
+                  </p>
+                </div>
+              </div>
+
+              <p className="mt-5 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold leading-7 text-rose-900">
+                بعد التأكيد ستصبح حالة الصك «باطل». يمكن إرفاق ملف للتبطيل
+                اختيارياً.
+              </p>
+
+              <label className="mt-5 block">
+                <span className="mb-2 block text-sm font-extrabold text-slate-800">
+                  مرفق التبطيل{" "}
+                  <span className="font-bold text-slate-400">(اختياري)</span>
+                </span>
+                <input
+                  type="file"
+                  disabled={Boolean(voidingId)}
+                  onChange={(e) =>
+                    setVoidModal((prev) => ({
+                      ...prev,
+                      file: e.target.files?.[0] || null,
+                    }))
+                  }
+                  className="block w-full cursor-pointer rounded-xl border border-rose-200 bg-rose-50/60 p-2 text-sm font-bold text-slate-700 file:ml-3 file:rounded-lg file:border-0 file:bg-rose-600 file:px-4 file:py-2 file:font-extrabold file:text-white"
+                />
+              </label>
+
+              {voidModal.file ? (
+                <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-bold text-slate-700">
+                  الملف المختار: {voidModal.file.name}
+                </div>
+              ) : null}
+
+              <div className="mt-6 flex flex-row-reverse gap-3">
+                <button
+                  type="button"
+                  disabled={Boolean(voidingId)}
+                  onClick={handleVoidChequeConfirmed}
+                  className="flex-1 rounded-xl bg-rose-600 py-3 text-sm font-extrabold text-white hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {voidingId
+                    ? voidModal.file
+                      ? "جاري رفع المرفق والتبطيل…"
+                      : "جاري التبطيل…"
+                    : "تأكيد تبطيل الصك"}
+                </button>
+                <button
+                  type="button"
+                  disabled={Boolean(voidingId)}
+                  onClick={closeVoidModal}
+                  className="flex-1 rounded-xl border border-slate-300 bg-white py-3 text-sm font-extrabold text-slate-800 hover:bg-slate-50 disabled:opacity-50"
+                >
+                  إلغاء
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {attachmentsModal.open && (

@@ -102,6 +102,38 @@ export async function PUT(req, { params }) {
 
     const body = await req.json();
 
+    if (body?.voidCheque === true) {
+      const cleanAttachment = sanitizeAttachment(body.attachment);
+      const setFields = {
+        status: "void",
+        voidedAt: new Date(),
+        voidedBy: String(userId),
+      };
+      if (cleanAttachment) {
+        setFields.voidAttachment = cleanAttachment;
+      }
+
+      // strict:false حتى ينحفظ voidAttachment حتى لو الموديل القديم مخزّن بالكاش (dev)
+      const updated = await Cheque.findOneAndUpdate(
+        { _id: id, status: { $ne: "void" } },
+        { $set: setFields },
+        { new: true, strict: false }
+      ).lean();
+
+      if (!updated) {
+        const existing = await Cheque.exists({ _id: id });
+        return NextResponse.json(
+          {
+            success: false,
+            error: existing ? "هذا الصك مبطّل مسبقاً" : "الصك غير موجود",
+          },
+          { status: existing ? 409 : 404 }
+        );
+      }
+
+      return NextResponse.json({ success: true, data: normalizeChequeDoc(updated) });
+    }
+
     if (body?.attachment) {
       const cleanAttachment = sanitizeAttachment(body.attachment);
       if (!cleanAttachment) {

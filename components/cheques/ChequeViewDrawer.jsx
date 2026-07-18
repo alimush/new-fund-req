@@ -13,6 +13,7 @@ import {
   FiCalendar,
   FiUser,
   FiDollarSign,
+  FiSlash,
 } from "react-icons/fi";
 import ChequeCanvas from "@/components/cheques/ChequeCanvas";
 import { getChequeTemplate } from "@/lib/cheques/templates";
@@ -196,6 +197,12 @@ export function ChequeViewContent({ chequeId, onReady, className = "" }) {
             ) : null}
             <p className="text-[11px] text-slate-600 font-semibold mt-1">{doc.bankName}</p>
           </div>
+          {doc.status === "void" ? (
+            <div className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-rose-300 bg-rose-600 px-4 py-3 text-sm font-extrabold text-white shadow-sm">
+              <FiSlash size={16} />
+              الصك باطل
+            </div>
+          ) : null}
           <MetaRow icon={FiHash} label="رقم الصك" value={doc.chequeNumber} />
           <MetaRow icon={FiHash} label="رقم الحساب" value={doc.accountNumber} />
           <MetaRow
@@ -338,6 +345,8 @@ export default function ChequeViewDrawer({ open, chequeId, onClose }) {
 
   if (!portalReady) return null;
 
+  const isVoid = printPayload?.doc?.status === "void";
+
   return createPortal(
     <AnimatePresence>
       {open && chequeId ? (
@@ -367,52 +376,61 @@ export default function ChequeViewDrawer({ open, chequeId, onClose }) {
                 </h2>
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => quickPrint("data")}
-                  disabled={printing || printingImage || printingWithData || !printPayload?.template}
-                  className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-extrabold text-white hover:bg-slate-800 disabled:opacity-60"
-                >
-                  <FiPrinter className={printing ? "animate-pulse" : ""} />
-                  {printing ? "جاري الطباعة…" : "طباعة على صك فارغ"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => quickPrint("withImage")}
-                  disabled={
-                    printing ||
-                    printingImage ||
-                    printingWithData ||
-                    !printPayload?.template?.image
-                  }
-                  title="طباعة صورة الصك مع البيانات"
-                  className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-extrabold text-white hover:bg-emerald-700 disabled:opacity-60"
-                >
-                  <FiPrinter className={printingWithData ? "animate-pulse" : ""} />
-                  {printingWithData ? "جاري الطباعة…" : "طباعة الصك والبيانات"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => quickPrint("imageOnly")}
-                  disabled={printing || printingImage || printingWithData || !printPayload?.template?.image}
-                  title="طباعة صورة الصك فقط بدون بيانات"
-                  className="inline-flex items-center gap-2 rounded-xl border border-violet-300 bg-violet-50 px-4 py-2 text-sm font-extrabold text-violet-900 hover:bg-violet-100 disabled:opacity-60"
-                >
-                  <FiPrinter className={printingImage ? "animate-pulse" : ""} />
-                  {printingImage ? "جاري الطباعة…" : "طباعة الصك"}
-                </button>
-                {canManagePrintSettings ? (
-                  <button
-                    type="button"
-                    onClick={() => openPrintModal("data")}
-                    disabled={!printPayload?.template}
-                    title="ضبط إعدادات الطباعة المحفوظة لهذا القالب"
-                    className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-extrabold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
-                  >
-                    <FiSliders />
-                    ضبط الطباعة
-                  </button>
-                ) : null}
+                {isVoid ? (
+                  <div className="inline-flex items-center gap-2 rounded-xl border border-rose-300 bg-rose-600 px-4 py-2 text-sm font-extrabold text-white">
+                    <FiSlash size={16} />
+                    الصك باطل
+                  </div>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => quickPrint("data")}
+                      disabled={printing || printingImage || printingWithData || !printPayload?.template}
+                      className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-extrabold text-white hover:bg-slate-800 disabled:opacity-60"
+                    >
+                      <FiPrinter className={printing ? "animate-pulse" : ""} />
+                      {printing ? "جاري الطباعة…" : "طباعة على صك فارغ"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => quickPrint("withImage")}
+                      disabled={
+                        printing ||
+                        printingImage ||
+                        printingWithData ||
+                        !printPayload?.template?.image
+                      }
+                      title="طباعة صورة الصك مع البيانات"
+                      className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-extrabold text-white hover:bg-emerald-700 disabled:opacity-60"
+                    >
+                      <FiPrinter className={printingWithData ? "animate-pulse" : ""} />
+                      {printingWithData ? "جاري الطباعة…" : "طباعة الصك والبيانات"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => quickPrint("imageOnly")}
+                      disabled={printing || printingImage || printingWithData || !printPayload?.template?.image}
+                      title="طباعة صورة الصك فقط بدون بيانات"
+                      className="inline-flex items-center gap-2 rounded-xl border border-violet-300 bg-violet-50 px-4 py-2 text-sm font-extrabold text-violet-900 hover:bg-violet-100 disabled:opacity-60"
+                    >
+                      <FiPrinter className={printingImage ? "animate-pulse" : ""} />
+                      {printingImage ? "جاري الطباعة…" : "طباعة الصك"}
+                    </button>
+                    {canManagePrintSettings ? (
+                      <button
+                        type="button"
+                        onClick={() => openPrintModal("data")}
+                        disabled={!printPayload?.template}
+                        title="ضبط إعدادات الطباعة المحفوظة لهذا القالب"
+                        className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-extrabold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                      >
+                        <FiSliders />
+                        ضبط الطباعة
+                      </button>
+                    ) : null}
+                  </>
+                )}
                 <Link
                   href={`/cheques/view?id=${encodeURIComponent(chequeId)}`}
                   target="_blank"
@@ -425,7 +443,7 @@ export default function ChequeViewDrawer({ open, chequeId, onClose }) {
                 <button
                   type="button"
                   onClick={onClose}
-                  className="inline-flex items-center justify-center h-10 w-10 rounded-xl bg-slate-900 text-white hover:bg-slate-800"
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900 text-white hover:bg-slate-800"
                   aria-label="إغلاق"
                 >
                   <FiX size={20} />
@@ -445,6 +463,7 @@ export default function ChequeViewDrawer({ open, chequeId, onClose }) {
           </motion.div>
         </motion.div>
       ) : null}
+      {!isVoid ? (
       <ChequePrintSettingsModal
         open={printModal.open}
         mode={printModal.mode}
@@ -474,6 +493,7 @@ export default function ChequeViewDrawer({ open, chequeId, onClose }) {
           )
         }
       />
+      ) : null}
     </AnimatePresence>,
     document.body
   );
