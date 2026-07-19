@@ -11,6 +11,7 @@ import {
   FiSearch,
   FiXCircle,
   FiFilter,
+  FiCopy,
 } from "react-icons/fi";
 import { useRouter } from "next/navigation";
 import { usePermissions } from "@/context/PermissionContext";
@@ -218,7 +219,7 @@ function SectionShell({
   );
 }
 
-function RequestCard({ r, variant = "default", companyKey }) {
+function RequestCard({ r, variant = "default", companyKey, canDuplicate = false }) {
   const router = useRouter();
   const isDisbursement = variant === "disbursementPending";
   const dateText = r.createdAt ? new Date(r.createdAt).toLocaleDateString() : "-";
@@ -313,6 +314,25 @@ function RequestCard({ r, variant = "default", companyKey }) {
           By: <span className="font-extrabold text-gray-900">{r.createdBy || "Unknown"}</span>
         </span>
       </div>
+      {canDuplicate ? (
+        <div className="relative mt-3 flex justify-end">
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              window.open(
+                `/requests/${encodeURIComponent(companyKey)}/new?cloneFrom=${encodeURIComponent(r._id)}`,
+                "_blank",
+                "noopener,noreferrer"
+              );
+            }}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-extrabold text-indigo-700 transition hover:bg-indigo-100"
+          >
+            <FiCopy />
+            تكرار الطلب
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -325,6 +345,9 @@ export default function RequestsPage({ companyKey }) {
   const canCreate =
     Array.isArray(permissions) &&
     permissions.includes(PERMISSIONS.CREATE_REQUEST);
+  const canDuplicate =
+    Array.isArray(permissions) &&
+    permissions.includes(PERMISSIONS.DUPLICATE_REQUEST);
 
   const canViewReceipts =
     Array.isArray(permissions) && permissions.includes(PERMISSIONS.RECEIPTS);
@@ -964,7 +987,12 @@ export default function RequestsPage({ companyKey }) {
               <ScrollBox>
                 <div className="space-y-3">
                   {pendingPaged.items.map((r) => (
-                    <RequestCard key={r._id} r={r} companyKey={companyKey} />
+                    <RequestCard
+                      key={r._id}
+                      r={r}
+                      companyKey={companyKey}
+                      canDuplicate={canDuplicate}
+                    />
                   ))}
                 </div>
               </ScrollBox>
@@ -998,7 +1026,12 @@ export default function RequestsPage({ companyKey }) {
               <ScrollBox>
                 <div className="space-y-3">
                   {myPaged.items.map((r) => (
-                    <RequestCard key={r._id} r={r} companyKey={companyKey} />
+                    <RequestCard
+                      key={r._id}
+                      r={r}
+                      companyKey={companyKey}
+                      canDuplicate={canDuplicate}
+                    />
                   ))}
                 </div>
               </ScrollBox>
@@ -1040,6 +1073,7 @@ export default function RequestsPage({ companyKey }) {
                           r={r}
                           variant="disbursementPending"
                           companyKey={companyKey}
+                          canDuplicate={canDuplicate}
                         />
                       ))}
                     </div>
@@ -1071,7 +1105,12 @@ export default function RequestsPage({ companyKey }) {
                 <ScrollBox>
                   <div className="space-y-3">
                     {disbursedPaged.items.map((r) => (
-                      <RequestCard key={`disbursed-${r._id}`} r={r} companyKey={companyKey} />
+                      <RequestCard
+                        key={`disbursed-${r._id}`}
+                        r={r}
+                        companyKey={companyKey}
+                        canDuplicate={canDuplicate}
+                      />
                     ))}
                   </div>
                 </ScrollBox>

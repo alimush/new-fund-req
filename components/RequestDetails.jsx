@@ -24,6 +24,7 @@ import {
   FiFileText,
   FiBriefcase,
   FiX,
+  FiCopy,
 } from "react-icons/fi";
 import { GrCurrency } from "react-icons/gr";
 
@@ -118,6 +119,10 @@ export default function RequestDetails({ id, companyKey }) {
     permissions.includes(PERMISSIONS.VOUCHER_DELEGATE);
   const canViewReceipts =
     Array.isArray(permissions) && permissions.includes(PERMISSIONS.RECEIPTS);
+  const canDuplicate =
+    source === "new" &&
+    Array.isArray(permissions) &&
+    permissions.includes(PERMISSIONS.DUPLICATE_REQUEST);
   const approvalOnlyCompany = isApprovalOnlyCompany(companyKey);
 
   const voucherCompanyConfig = COMPANIES.find(
@@ -636,8 +641,24 @@ export default function RequestDetails({ id, companyKey }) {
             ) : null}
           </div>
 
-          {(canCancel || canEdit || canPrint) && (
+          {(canCancel || canEdit || canPrint || canDuplicate) && (
             <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
+              {canDuplicate && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    window.open(
+                      `/requests/${encodeURIComponent(companyKey)}/new?cloneFrom=${encodeURIComponent(id)}`,
+                      "_blank",
+                      "noopener,noreferrer"
+                    )
+                  }
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-50 px-3.5 py-2 text-sm font-extrabold text-indigo-700 ring-1 ring-indigo-200/80 transition duration-200 hover:bg-indigo-100"
+                >
+                  <FiCopy className="text-base" />
+                  تكرار الطلب
+                </button>
+              )}
               {canCancel && (
                 <button
                   type="button"

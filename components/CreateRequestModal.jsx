@@ -122,7 +122,7 @@ export default function CreateRequestModal({
   canCreate = true,
   onCreated,
 
-  mode = "create",       // create | edit
+  mode = "create",       // create | edit | clone
   initialData = null,    // بيانات الريكويست
   requestId = null,      // id عند التعديل
 }) {
@@ -209,10 +209,11 @@ const formatInputMoney = (v) => {
   }, [items]);
 
   const resetForm = () => {
-    setRequestType("");
+    const isBadurBaghdad = companyKey === "Badur-Baghdad";
+    setRequestType(isBadurBaghdad ? "تسديد مستحقات" : "");
     setDescription("");
     setCurrency("");
-    setProjectName("");
+    setProjectName(isBadurBaghdad ? "بدور بغداد" : "");
     setDepartment("");
     setExpenseType("");
     setItems([]);
@@ -223,7 +224,7 @@ const formatInputMoney = (v) => {
   useEffect(() => {
     if (!open) return;
   
-    if (mode === "edit" && initialData) {
+    if ((mode === "edit" || mode === "clone") && initialData) {
       setRequestType(initialData.requestType || "");
       setDescription(initialData.description || "");
       setCurrency(initialData.currency || "");
@@ -338,18 +339,24 @@ const formatInputMoney = (v) => {
     };
   
     // CREATE
-    if (mode === "create") {
+    if (mode === "create" || mode === "clone") {
       const res = await fetch(`/api/requests?company=${companyKey}`, {
         method: "POST",
         cache: "no-store",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          ...payload,
+          ...(mode === "clone" && requestId ? { cloneSourceId: requestId } : {}),
+        }),
       });
   
-      if (!res.ok) throw new Error("Create failed");
-      return true;
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json?.success) {
+        throw new Error(json?.error || "Create failed");
+      }
+      return json.data || true;
     }
   
     // EDIT
@@ -425,7 +432,11 @@ const formatInputMoney = (v) => {
                       Fund Requests
                     </p>
                     <h2 className="mt-0.5 text-xl font-black text-gray-900 sm:text-2xl">
-                      {mode === "edit" ? "تعديل الطلب" : "إنشاء طلب جديد"}
+                      {mode === "edit"
+                        ? "تعديل الطلب"
+                        : mode === "clone"
+                          ? "إنشاء طلب مشابه"
+                          : "إنشاء طلب جديد"}
                     </h2>
                     <p className="mt-1 text-xs font-semibold text-gray-600">طلبات {companyKey}</p>
                   </div>
@@ -977,9 +988,9 @@ const formatInputMoney = (v) => {
                       if (!canCreate) return;
                       setIsCreating(true);
                       try {
-                        await handleCreate();
-                        onClose?.();
-                        onCreated?.();
+                        const result = await handleCreate();
+                        if (mode !== "clone") onClose?.();
+                        onCreated?.(result);
                         showToast(
                           mode === "edit" ? "تم حفظ التغييرات بنجاح" : "تم إنشاء الطلب بنجاح",
                           "success"

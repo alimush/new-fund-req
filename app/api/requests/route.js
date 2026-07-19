@@ -17,6 +17,7 @@ import {
   sendWorkflowEmail,
 } from "@/lib/email/workflowEmail";
 import { pendingApprovalMongoExtraMatch } from "@/lib/workflow/canApproveAtStep";
+import { PERMISSIONS } from "@/lib/permission";
 import {
   voucherLookupByRequestPipeline,
   voucherLookupLetFields,
@@ -210,6 +211,21 @@ export async function POST(req) {
 
     const { userId, username, permissions } = auth;
 
+    if (body.cloneSourceId) {
+      if (!permissions.includes(PERMISSIONS.DUPLICATE_REQUEST)) {
+        return NextResponse.json(
+          { success: false, error: "ليس لديك صلاحية تكرار الطلبات" },
+          { status: 403 }
+        );
+      }
+      if (!isValidObjectId(body.cloneSourceId)) {
+        return NextResponse.json(
+          { success: false, error: "معرّف الطلب الأصلي غير صالح" },
+          { status: 400 }
+        );
+      }
+    }
+
     // ✅ تحديد هل عنده MARKETING
   // ✅ helper: هل اليوزر يحقق شروط هذا الوركفلو؟
 function matchesWorkflowByPerms(workflow, userPerms) {
@@ -310,6 +326,16 @@ if (!workflow) {
     };
 
     const Model = getModelForCompany(company);
+
+    if (body.cloneSourceId) {
+      const sourceExists = await Model.exists({ _id: body.cloneSourceId });
+      if (!sourceExists) {
+        return NextResponse.json(
+          { success: false, error: "الطلب الأصلي غير موجود" },
+          { status: 404 }
+        );
+      }
+    }
 
     // ✅ createdBy من السيرفر فقط (مو من الفرونت)
     const baseData = {
