@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <linearGradient id="shield" x1="80" y1="40" x2="440" y2="470" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#4f46e5"/>
+      <stop offset="0.55" stop-color="#3730a3"/>
+      <stop offset="1" stop-color="#1e1b4b"/>
+    </linearGradient>
+    <linearGradient id="tick" x1="150" y1="230" x2="380" y2="360" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#6ee7b7"/>
+      <stop offset="1" stop-color="#10b981"/>
+    </linearGradient>
+  </defs>
+
+  <!-- درع الموافقات -->
+  <path
+    d="M256 22
+       L462 88
+       V266
+       C462 392 372 462 256 494
+       C140 462 50 392 50 266
+       V88
+       Z"
+    fill="url(#shield)"/>
+  <path
+    d="M256 22
+       L462 88
+       V266
+       C462 392 372 462 256 494
+       C140 462 50 392 50 266
+       V88
+       Z"
+    fill="none" stroke="#ffffff" stroke-opacity="0.18" stroke-width="10"/>
+
+  <!-- علامة الموافقة -->
+  <path d="M150 262 L228 340 L372 186"
+        stroke="#ffffff" stroke-width="58" stroke-linecap="round" stroke-linejoin="round" opacity="0.25"/>
+  <path d="M150 262 L228 340 L372 186"
+        stroke="url(#tick)" stroke-width="44" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
