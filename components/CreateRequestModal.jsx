@@ -141,7 +141,7 @@ export default function CreateRequestModal({
 
   const [requestType, setRequestType] = useState("");
   const [description, setDescription] = useState("");
-  const [currency, setCurrency] = useState("");
+  const [currency, setCurrency] = useState("IQD");
   const [department, setDepartment] = useState("");
 
   const [items, setItems] = useState([]);
@@ -212,7 +212,7 @@ const formatInputMoney = (v) => {
     const isBadurBaghdad = companyKey === "Badur-Baghdad";
     setRequestType(isBadurBaghdad ? "تسديد مستحقات" : "");
     setDescription("");
-    setCurrency("");
+    setCurrency("IQD");
     setProjectName(isBadurBaghdad ? "بدور بغداد" : "");
     setDepartment("");
     setExpenseType("");
