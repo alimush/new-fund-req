@@ -1,10 +1,16 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 160 160">
+<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 160 160" fill="none">
   <defs>
-    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#eef2ff"/>
-      <stop offset="100%" stop-color="#e0e7ff"/>
+    <linearGradient id="bg3" x1="15" y1="10" x2="148" y2="151" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#EEF2FF"/>
+      <stop offset="1" stop-color="#E0E7FF"/>
+    </linearGradient>
+    <linearGradient id="orbit3" x1="41" y1="42" x2="121" y2="124" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#818CF8"/>
+      <stop offset="1" stop-color="#4338CA"/>
     </linearGradient>
   </defs>
-  <rect width="160" height="160" rx="28" fill="url(#bg)" stroke="#c7d2fe" stroke-width="2"/>
-  <text x="80" y="98" text-anchor="middle" font-family="Cairo, Arial, sans-serif" font-size="72" font-weight="900" fill="#4f46e5">&#x663;</text>
+  <rect x="2" y="2" width="156" height="156" rx="30" fill="url(#bg3)" stroke="#C7D2FE" stroke-width="4"/>
+  <circle cx="80" cy="80" r="22" fill="#4F46E5"/>
+  <ellipse cx="80" cy="80" rx="52" ry="29" stroke="url(#orbit3)" stroke-width="9" transform="rotate(-26 80 80)"/>
+  <circle cx="119" cy="51" r="10" fill="#A5B4FC" stroke="#3730A3" stroke-width="4"/>
 </svg>

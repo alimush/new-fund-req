@@ -47,12 +47,12 @@ const cards = [
   },
   { key: "alleanza", name: "طلبات اليانزا", logo: "/اليانزا.png" },
   { key: "Al-Rida", name: "طلبات الرضا", logo: "/الرضا.png" },
-  { key: "1", name: "شركة ١", logo: "/assets/companies/company-1.svg" },
-  { key: "2", name: "شركة ٢", logo: "/assets/companies/company-2.svg" },
-  { key: "3", name: "شركة ٣", logo: "/assets/companies/company-3.svg" },
-  { key: "4", name: "شركة ٤", logo: "/assets/companies/company-4.svg" },
-  { key: "5", name: "شركة ٥", logo: "/assets/companies/company-5.svg" },
-  { key: "6", name: "شركة ٦", logo: "/assets/companies/company-6.svg" },
+  { key: "1", name: "شركة أفق للاستثمار", logo: "/assets/companies/company-1.png" },
+  { key: "2", name: "شركة رواسي للتطوير", logo: "/assets/companies/company-2.png" },
+  { key: "3", name: "شركة مدار للمقاولات", logo: "/assets/companies/company-3.png" },
+  { key: "4", name: "شركة نبراس للتجارة", logo: "/assets/companies/company-4.png" },
+  { key: "5", name: "شركة سدرة العقارية", logo: "/assets/companies/company-5.png" },
+  { key: "6", name: "شركة جسور للخدمات", logo: "/assets/companies/company-6.png" },
 ];
 
 const container = {
