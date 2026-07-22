@@ -1,17 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 160 160" fill="none">
+<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 160 160">
   <defs>
-    <linearGradient id="bg5" x1="13" y1="8" x2="148" y2="152" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#F0FDFA"/>
-      <stop offset="1" stop-color="#CCFBF1"/>
-    </linearGradient>
-    <linearGradient id="leaf5" x1="43" y1="38" x2="119" y2="127" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#2DD4BF"/>
-      <stop offset="1" stop-color="#0F766E"/>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#eef2ff"/>
+      <stop offset="100%" stop-color="#e0e7ff"/>
     </linearGradient>
   </defs>
-  <rect x="2" y="2" width="156" height="156" rx="30" fill="url(#bg5)" stroke="#99F6E4" stroke-width="4"/>
-  <path d="M80 132V73" stroke="#115E59" stroke-width="10" stroke-linecap="round"/>
-  <path d="M78 91C45 91 34 70 38 40C69 38 88 53 78 91Z" fill="url(#leaf5)" stroke="#0F766E" stroke-width="5" stroke-linejoin="round"/>
-  <path d="M82 78C113 78 126 59 123 34C94 32 76 48 82 78Z" fill="#5EEAD4" stroke="#0F766E" stroke-width="5" stroke-linejoin="round"/>
-  <path d="M52 126H108" stroke="#14B8A6" stroke-width="9" stroke-linecap="round"/>
+  <rect width="160" height="160" rx="28" fill="url(#bg)" stroke="#c7d2fe" stroke-width="2"/>
+  <text x="80" y="108" text-anchor="middle" font-family="Arial, Helvetica, DejaVu Sans, sans-serif" font-size="78" font-weight="900" fill="#4f46e5">٥</text>
 </svg>

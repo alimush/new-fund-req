@@ -1,16 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 160 160" fill="none">
+<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 160 160">
   <defs>
-    <linearGradient id="bg1" x1="18" y1="14" x2="145" y2="151" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#FFF7ED"/>
-      <stop offset="1" stop-color="#FFEDD5"/>
-    </linearGradient>
-    <linearGradient id="sun1" x1="54" y1="43" x2="106" y2="97" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#FBBF24"/>
-      <stop offset="1" stop-color="#F97316"/>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#eef2ff"/>
+      <stop offset="100%" stop-color="#e0e7ff"/>
     </linearGradient>
   </defs>
-  <rect x="2" y="2" width="156" height="156" rx="30" fill="url(#bg1)" stroke="#FED7AA" stroke-width="4"/>
-  <circle cx="80" cy="67" r="28" fill="url(#sun1)"/>
-  <path d="M31 105C50 83 65 84 80 105C95 84 111 83 130 105" stroke="#9A3412" stroke-width="10" stroke-linecap="round"/>
-  <path d="M42 122H118" stroke="#FDBA74" stroke-width="8" stroke-linecap="round"/>
+  <rect width="160" height="160" rx="28" fill="url(#bg)" stroke="#c7d2fe" stroke-width="2"/>
+  <text x="80" y="108" text-anchor="middle" font-family="Arial, Helvetica, DejaVu Sans, sans-serif" font-size="78" font-weight="900" fill="#4f46e5">١</text>
 </svg>
