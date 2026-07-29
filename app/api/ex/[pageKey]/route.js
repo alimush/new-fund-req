@@ -376,6 +376,12 @@ export async function POST(req, ctx) {
     
       const emailAttachments = (freshDoc?.attachments || [])
         .filter((f) => f?.url)
+        .filter((f) => {
+          const size = Number(f?.size || 0);
+          // SMTP لا يتحمل غيغات — نرفق فقط إن كان الحجم معروف وأقل من 20MB
+          if (!size) return true;
+          return size <= 20 * 1024 * 1024;
+        })
         .map((f, idx) => ({
           filename: f?.name || `attachment-${idx + 1}`,
           path: encodeURI(String(f.url)),
@@ -391,13 +397,33 @@ export async function POST(req, ctx) {
               ""
           ).trim() || "—";
 
-        await sendWorkflowEmail({
-          toEmails,
-          // RLM يحافظ على ترتيب العنوان في علب البريد (عربي + أرقام/إنجليزي)
-          subject: `\u200Fمعامله الزبون - ${customerName} - ${unitNo}`,
-          html,
-          attachments: emailAttachments,
-        });
+        try {
+          await sendWorkflowEmail({
+            toEmails,
+            // RLM يحافظ على ترتيب العنوان في علب البريد (عربي + أرقام/إنجليزي)
+            subject: `\u200Fمعامله الزبون - ${customerName} - ${unitNo}`,
+            html,
+            attachments: emailAttachments,
+          });
+        } catch (emailErr) {
+          console.error(
+            "❌ attachment-only email with files failed, retrying without attachments:",
+            emailErr?.message || emailErr
+          );
+          try {
+            await sendWorkflowEmail({
+              toEmails,
+              subject: `\u200Fمعامله الزبون - ${customerName} - ${unitNo}`,
+              html,
+              attachments: [],
+            });
+          } catch (emailErr2) {
+            console.error(
+              "❌ attachment-only email retry failed:",
+              emailErr2?.message || emailErr2
+            );
+          }
+        }
       }
     
       return NextResponse.json({ success: true, data: freshDoc });

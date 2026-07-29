@@ -14,6 +14,7 @@ import {
   formatPayPercent,
 } from "@/lib/ex/formatMoneyInput";
 import { usePermissions } from "@/context/PermissionContext";
+import { uploadFileToS3 } from "@/lib/s3/browserUpload";
 
 const cairo = Cairo({ subsets: ["arabic"], weight: ["400", "600", "700", "800"] });
 
@@ -321,28 +322,14 @@ const steps = useMemo(
 
       for (let i = 0; i < pngs.length; i++) {
         const file = dataUrlToFile(pngs[i], `payment-plan-page-${i + 1}.png`);
-        const presignRes = await fetch("/api/upload/presign", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            fileName: file.name,
-            fileType: file.type,
-            prefix: "payment-plans",
-          }),
+        const uploaded = await uploadFileToS3(file, { prefix: "payment-plans" });
+        uploadedAttachments.push({
+          key: uploaded.key,
+          name: uploaded.name || file.name,
+          url: uploaded.url || "",
+          type: uploaded.type || file.type || "",
+          size: uploaded.size || file.size || 0,
         });
-
-        if (!presignRes.ok) throw new Error("Failed to get upload URL");
-        const { url, key, getUrl } = await presignRes.json();
-
-        const uploadRes = await fetch(url, {
-          method: "PUT",
-          body: file,
-          headers: { "Content-Type": file.type || "application/octet-stream" },
-        });
-
-        if (!uploadRes.ok) throw new Error("Failed to upload file");
-
-        uploadedAttachments.push({ key, name: file.name, url: getUrl || "" });
       }
 
       const payload = {

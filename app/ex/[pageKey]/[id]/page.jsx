@@ -33,6 +33,7 @@ import {
   canUserViewExRequestAttachments,
   canUserViewExStepAttachments,
 } from "@/lib/ex/exAttachmentAccess";
+import { uploadFileToS3 } from "@/lib/s3/browserUpload";
 const pct = (p) => ({ top: `${p.top}%`, left: `${p.left}%` });
 
 function displayExRef(doc) {
@@ -556,40 +557,16 @@ const isOperationUser =
       if (actionModal.action === "operation_submit" && opAttachment) {
         setUploadingOpAttachment(true);
         try {
-          const presignRes = await fetch("/api/upload/presign", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              fileName: opAttachment.name,
-              fileType: opAttachment.type,
-              prefix: `ex-operation-${pageKey}`,
-            }),
+          const uploaded = await uploadFileToS3(opAttachment, {
+            prefix: `ex-operation-${pageKey}`,
           });
-
-          const presignJson = await presignRes.json();
-
-          if (!presignRes.ok || !presignJson?.url || !presignJson?.key) {
-            throw new Error(presignJson?.error || "Failed to get upload URL");
-          }
-
-          const uploadRes = await fetch(presignJson.url, {
-            method: "PUT",
-            body: opAttachment,
-            headers: {
-              "Content-Type": opAttachment.type || "application/octet-stream",
-            },
-          });
-
-          if (!uploadRes.ok) {
-            throw new Error("Failed to upload operation attachment");
-          }
 
           attachmentMeta = {
-            key: presignJson.key,
-            url: presignJson.getUrl || "",
-            name: opAttachment.name || "",
-            type: opAttachment.type || "",
-            size: opAttachment.size || 0,
+            key: uploaded.key,
+            url: uploaded.url || "",
+            name: uploaded.name || opAttachment.name || "",
+            type: uploaded.type || opAttachment.type || "",
+            size: uploaded.size || opAttachment.size || 0,
           };
         } finally {
           setUploadingOpAttachment(false);

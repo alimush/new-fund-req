@@ -8,6 +8,7 @@ import { Cairo } from "next/font/google";
 
 import { getExForm } from "@/lib/exForms/registry";
 import { formatMoneyInput, parseMoneyNumber } from "@/lib/ex/formatMoneyInput";
+import { uploadFileToS3 } from "@/lib/s3/browserUpload";
 
 const cairo = Cairo({ subsets: ["arabic"], weight: ["400", "600", "700", "800"] });
 
@@ -395,28 +396,16 @@ export default function ReplaceBookingTransferGenerator({
 
       if (attachment?.length > 0) {
         for (const file of attachment) {
-          const presignRes = await fetch("/api/upload/presign", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              fileName: file.name,
-              fileType: file.type,
-              prefix: cfg?.key || formKey, // ✅ داينمك
-            }),
+          const uploaded = await uploadFileToS3(file, {
+            prefix: cfg?.key || formKey,
           });
-
-          if (!presignRes.ok) throw new Error("Failed to get upload URL");
-          const { url, key, getUrl } = await presignRes.json();
-
-          const uploadRes = await fetch(url, {
-            method: "PUT",
-            body: file,
-            headers: { "Content-Type": file.type || "application/octet-stream" },
+          uploadedAttachments.push({
+            key: uploaded.key,
+            name: uploaded.name || file.name,
+            url: uploaded.url || "",
+            type: uploaded.type || file.type || "",
+            size: uploaded.size || file.size || 0,
           });
-
-          if (!uploadRes.ok) throw new Error("Failed to upload file");
-
-          uploadedAttachments.push({ key, name: file.name, url: getUrl || "" });
         }
       }
 

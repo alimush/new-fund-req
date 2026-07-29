@@ -5,6 +5,10 @@ import { getPresignedDownloadUrl } from "@/lib/s3/attachmentAccess";
 export const maxDuration = 300;
 export const runtime = "nodejs";
 
+/**
+ * يوجّه المتصفح مباشرة لرابط S3 موقّع — بدون تحميل الملف في الذاكرة
+ * (يدعم ملفات كبيرة حتى غيغات بدون حد استجابة Lambda)
+ */
 export async function GET(request) {
   try {
     const cookieStore = await cookies();
@@ -18,48 +22,29 @@ export async function GET(request) {
 
     if (key) {
       const signedUrl = await getPresignedDownloadUrl(key, 7200);
-      const res = await fetch(signedUrl);
-      if (!res.ok) {
-        return NextResponse.json(
-          { error: `Failed to fetch file: ${res.status}` },
-          { status: 400 }
-        );
-      }
-      const buffer = await res.arrayBuffer();
-      const filename = decodeURIComponent(key.split("/").pop() || "file");
-      return new NextResponse(buffer, {
-        status: 200,
-        headers: {
-          "Content-Type":
-            res.headers.get("content-type") || "application/octet-stream",
-          "Content-Disposition": `inline; filename="${filename}"`,
-        },
-      });
+      return NextResponse.redirect(signedUrl, 302);
     }
 
     if (!url) {
       return NextResponse.json({ error: "URL or key missing" }, { status: 400 });
     }
 
-    const res = await fetch(url);
-    if (!res.ok) {
-      return NextResponse.json(
-        { error: `Failed to fetch file: ${res.status}` },
-        { status: 400 }
-      );
+    // إن أمكن استخراج المفتاح من رابط S3 نوقّع تحميلاً آمناً
+    try {
+      const parsed = new URL(url);
+      const host = parsed.hostname || "";
+      if (host.includes(".amazonaws.com")) {
+        const pathKey = decodeURIComponent(parsed.pathname.replace(/^\/+/, ""));
+        if (pathKey) {
+          const signedUrl = await getPresignedDownloadUrl(pathKey, 7200);
+          return NextResponse.redirect(signedUrl, 302);
+        }
+      }
+    } catch {
+      /* fall through */
     }
 
-    const buffer = await res.arrayBuffer();
-    const filename = decodeURIComponent(url.split("/").pop() || "file");
-
-    return new NextResponse(buffer, {
-      status: 200,
-      headers: {
-        "Content-Type":
-          res.headers.get("content-type") || "application/octet-stream",
-        "Content-Disposition": `inline; filename="${filename}"`,
-      },
-    });
+    return NextResponse.redirect(url, 302);
   } catch (err) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }

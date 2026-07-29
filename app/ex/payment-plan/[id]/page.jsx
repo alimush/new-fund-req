@@ -34,6 +34,7 @@ import PaymentPlanA4Sheets from "@/components/ex/PaymentPlanA4Sheets";
 import { PAYMENT_PLAN_TEMPLATE } from "@/lib/ex/paymentPlanTemplate";
 import { fieldsFromPaymentPlanTemplate } from "@/lib/ex/paymentPlanLayoutMerge";
 import { parseMoneyNumber, formatPayPercent } from "@/lib/ex/formatMoneyInput";
+import { uploadFileToS3 } from "@/lib/s3/browserUpload";
 /* =================== HARD KEY (مؤقتاً) =================== */
 const PAGE_KEY = "exceptions";
 
@@ -545,42 +546,22 @@ const isOperationUser =
   
       if (actionModal.action === "operation_submit" && opAttachment) {
         setUploadingOpAttachment(true);
-  
-        const presignRes = await fetch("/api/upload/presign", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            fileName: opAttachment.name,
-            fileType: opAttachment.type,
+
+        try {
+          const uploaded = await uploadFileToS3(opAttachment, {
             prefix: "payment-plan-operation",
-          }),
-        });
-  
-        const presignJson = await presignRes.json();
-  
-        if (!presignRes.ok || !presignJson?.url || !presignJson?.key) {
-          throw new Error(presignJson?.error || "Failed to get upload URL");
+          });
+
+          attachmentMeta = {
+            key: uploaded.key,
+            url: uploaded.url || "",
+            name: uploaded.name || opAttachment.name || "",
+            type: uploaded.type || opAttachment.type || "",
+            size: uploaded.size || opAttachment.size || 0,
+          };
+        } finally {
+          setUploadingOpAttachment(false);
         }
-  
-        const uploadRes = await fetch(presignJson.url, {
-          method: "PUT",
-          body: opAttachment,
-          headers: {
-            "Content-Type": opAttachment.type || "application/octet-stream",
-          },
-        });
-  
-        if (!uploadRes.ok) {
-          throw new Error("Failed to upload operation attachment");
-        }
-  
-        attachmentMeta = {
-          key: presignJson.key,
-          url: presignJson.getUrl || "",
-          name: opAttachment.name || "",
-          type: opAttachment.type || "",
-          size: opAttachment.size || 0,
-        };
       }
   
       const res = await fetch(

@@ -91,6 +91,11 @@ function buildEmailAttachmentsFromRequest(doc) {
 
   return files
     .filter((f) => f?.url)
+    .filter((f) => {
+      const size = Number(f?.size || 0);
+      if (!size) return true;
+      return size <= 20 * 1024 * 1024;
+    })
     .map((f, idx) => ({
       filename: f?.name || `attachment-${idx + 1}`,
       path: encodeURI(String(f.url)),
@@ -127,6 +132,8 @@ function buildFinalApproveEmailAttachmentsExcludeRequest(snapshotFiles, doc) {
   let idx = 0;
   for (const f of Array.isArray(snapshotFiles) ? snapshotFiles : []) {
     if (!f?.url) continue;
+    const size = Number(f?.size || 0);
+    if (size && size > 20 * 1024 * 1024) continue;
     const k = String(f.key || "").trim();
     const u = String(f.url || "").trim();
     if ((k && docKeys.has(k)) || (u && docUrls.has(u))) continue;

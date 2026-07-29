@@ -1,13 +1,17 @@
 import { NextResponse } from "next/server";
-import {
-  S3Client,
-  PutObjectCommand,
-  GetObjectCommand,
-} from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { cookies } from "next/headers";
+import {
+  assertS3Env,
+  buildPublicS3Url,
+  buildUploadKey,
+} from "@/lib/s3/s3Env";
 
 export const runtime = "nodejs";
+
+/** صلاحية طويلة لدعم رفع ملفات كبيرة (حتى غيغات) */
+const PUT_URL_EXPIRES_IN = 60 * 60 * 12; // 12 ساعة
 
 export async function POST(req) {
   try {
@@ -30,55 +34,39 @@ export async function POST(req) {
       );
     }
 
-    const bucket = process.env.S3_BUCKET_NAME;
-    const region = process.env.S3_REGION;
-    const accessKeyId = process.env.S3_ACCESS_KEY_ID;
-    const secretAccessKey = process.env.S3_SECRET_ACCESS_KEY;
-
-    if (!bucket || !region) {
-      return NextResponse.json(
-        { success: false, error: "Missing S3 env", bucket, region },
-        { status: 500 }
-      );
-    }
-    if (!accessKeyId || !secretAccessKey) {
-      return NextResponse.json(
-        { success: false, error: "Missing S3 credentials" },
-        { status: 500 }
-      );
-    }
-
-    const safeName = String(fileName).replace(/[^\w.\-() ]+/g, "_");
-    const folder = prefix || "uploads";
-    const key = `${folder}/${Date.now()}-${Math.random()
-      .toString(16)
-      .slice(2)}-${safeName}`;
+    const env = assertS3Env();
+    const key = buildUploadKey(fileName, prefix);
 
     const s3 = new S3Client({
-      region,
-      credentials: { accessKeyId, secretAccessKey },
+      region: env.region,
+      credentials: {
+        accessKeyId: env.accessKeyId,
+        secretAccessKey: env.secretAccessKey,
+      },
     });
 
-    // ✅ Signed PUT (رفع)
     const putUrl = await getSignedUrl(
       s3,
       new PutObjectCommand({
-        Bucket: bucket,
+        Bucket: env.bucket,
         Key: key,
         ContentType: fileType || "application/octet-stream",
       }),
-      { expiresIn: 600 }
+      { expiresIn: PUT_URL_EXPIRES_IN }
     );
 
-    // ✅ Signed GET (فتح/تحميل) — هذا يحل AccessDenied
-    const getUrl = `https://${bucket}.s3.${region}.amazonaws.com/${key}`;
+    const getUrl = buildPublicS3Url(env.bucket, env.region, key);
 
     return NextResponse.json({ success: true, url: putUrl, key, getUrl });
   } catch (err) {
     console.error("presign error:", err);
     return NextResponse.json(
-      { success: false, error: err?.message || "Presign failed" },
-      { status: 500 }
+      {
+        success: false,
+        error: err?.message || "Presign failed",
+        ...(err?.details || {}),
+      },
+      { status: err?.status || 500 }
     );
   }
 }
