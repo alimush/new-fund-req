@@ -18,6 +18,7 @@ import {
 
     
   } from "react-icons/fi";
+import { openSignedAttachment } from "@/lib/s3/browserOpenAttachment";
   
 // ✅ فورماتر الأرقام
 const fmt = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
@@ -166,8 +167,13 @@ const addFiles = (filesArr) => {
 const openAttachment = (file) => {
   if (!file) return;
 
-  if (isExistingAttachment(file) && file.url) {
-    window.open(file.url, "_blank", "noopener,noreferrer");
+  if (isExistingAttachment(file) && (file.key || file.url)) {
+    try {
+      openSignedAttachment(file);
+    } catch (e) {
+      console.error(e);
+      if (file.url) window.open(file.url, "_blank", "noopener,noreferrer");
+    }
     return;
   }
 

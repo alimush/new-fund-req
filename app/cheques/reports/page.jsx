@@ -29,6 +29,7 @@ import {
 import TablePagination from "@/components/TablePagination";
 import { useToast } from "@/components/ui/ToastProvider";
 import { useChequeAccess } from "@/components/cheques/useChequeAccess";
+import { attachmentOpenHref } from "@/lib/s3/browserOpenAttachment";
 
 const Select = dynamic(() => import("react-select").then((m) => m.default), {
   ssr: false,
@@ -871,7 +872,7 @@ export default function ChequeReportsPage() {
 
                         {r.status === "void" && r.voidAttachment?.url ? (
                           <a
-                            href={encodeURI(r.voidAttachment.url)}
+                            href={attachmentOpenHref(r.voidAttachment)}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="w-full rounded-xl border border-rose-300 bg-rose-50 px-2 py-1.5 text-center text-[11px] font-extrabold text-rose-800 hover:bg-rose-100"
@@ -1034,7 +1035,7 @@ export default function ChequeReportsPage() {
                           حذف الاتاج
                         </button>
                         <a
-                          href={att?.url ? encodeURI(att.url) : "#"}
+                          href={attachmentOpenHref(att)}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="px-3 py-2 rounded-xl border border-blue-200 bg-blue-50 text-blue-700 text-[13px] font-extrabold hover:bg-blue-100"

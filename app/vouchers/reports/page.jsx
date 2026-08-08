@@ -36,6 +36,7 @@ const Select = dynamic(() => import("react-select").then((m) => m.default), {
 import { COMPANIES } from "@/lib/voucher/companies";
 import { formatAmount } from "@/lib/voucher/utils";
 import { formatVoucherDateDisplay } from "@/lib/voucher/voucherDate";
+import { attachmentOpenHref } from "@/lib/s3/browserOpenAttachment";
 
 const getCompanyName = (key) => {
   if (!key) return "-";
@@ -1600,7 +1601,7 @@ export default function VoucherReportsPage() {
                           حذف الاتاج
                         </button>
                         <a
-                          href={att?.url ? encodeURI(att.url) : "#"}
+                          href={attachmentOpenHref(att)}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="px-3 py-2 rounded-xl border border-blue-200 bg-blue-50 text-blue-700 text-[13px] font-extrabold hover:bg-blue-100"

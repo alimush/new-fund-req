@@ -15,6 +15,7 @@ import {
   FiSlash,
   FiUploadCloud,
 } from "react-icons/fi";
+import { attachmentOpenHref } from "@/lib/s3/browserOpenAttachment";
 
 /* ======================= helpers ======================= */
 const isImageUrl = (u) => /(\.jpg|\.jpeg|\.png|\.gif|\.webp)(\?|$)/i.test(u || "");
@@ -536,7 +537,7 @@ export default function CommentModal({
               name,
             });
 
-            const fileUrl = file?.url || "";
+            const fileUrl = attachmentOpenHref(file);
 
             return (
               <div
@@ -566,7 +567,7 @@ export default function CommentModal({
                   </div>
 
                   <div className="flex items-center gap-2 shrink-0">
-                    {fileUrl ? (
+                    {fileUrl && fileUrl !== "#" ? (
                       <a
                         href={fileUrl}
                         target="_blank"

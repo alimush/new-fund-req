@@ -10,7 +10,11 @@ export const runtime = "nodejs";
 
 function attachmentUrl(key) {
   if (!key) return "";
-  return `https://${process.env.S3_BUCKET_NAME}.s3.${process.env.S3_REGION}.amazonaws.com/${key}`;
+  const encoded = String(key)
+    .split("/")
+    .map(encodeURIComponent)
+    .join("/");
+  return `https://${process.env.S3_BUCKET_NAME}.s3.${process.env.S3_REGION}.amazonaws.com/${encoded}`;
 }
 
 export async function GET(req, { params }) {

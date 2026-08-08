@@ -9,6 +9,7 @@ import { Cairo } from "next/font/google";
 import { getExForm } from "@/lib/exForms/registry";
 import { formatMoneyInput, parseMoneyNumber } from "@/lib/ex/formatMoneyInput";
 import { uploadFileToS3 } from "@/lib/s3/browserUpload";
+import { openSignedAttachment } from "@/lib/s3/browserOpenAttachment";
 
 const cairo = Cairo({ subsets: ["arabic"], weight: ["400", "600", "700", "800"] });
 
@@ -255,14 +256,24 @@ export default function ReplaceBookingTransferGenerator({
   const openAttachment = (file) => {
     if (!file) return;
 
-    if (file.url) {
-      window.open(file.url, "_blank", "noopener,noreferrer");
-      return;
+    if (file.key || file.url) {
+      try {
+        openSignedAttachment(file);
+        return;
+      } catch (e) {
+        console.error(e);
+      }
     }
 
-    const url = URL.createObjectURL(file);
-    window.open(url, "_blank", "noopener,noreferrer");
-    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    if (file instanceof File || file?.name) {
+      try {
+        const url = URL.createObjectURL(file);
+        window.open(url, "_blank", "noopener,noreferrer");
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+      } catch {
+        /* ignore */
+      }
+    }
   };
 
   const pageRef = useRef(null);

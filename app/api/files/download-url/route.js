@@ -4,6 +4,20 @@ import { getPresignedDownloadUrl } from "@/lib/s3/attachmentAccess";
 
 export const runtime = "nodejs";
 
+function fullyDecodeURIComponent(input = "") {
+  let cur = String(input || "");
+  for (let i = 0; i < 4; i++) {
+    try {
+      const next = decodeURIComponent(cur);
+      if (next === cur) break;
+      cur = next;
+    } catch {
+      break;
+    }
+  }
+  return cur;
+}
+
 export async function POST(req) {
   try {
     const cookieStore = await cookies();
@@ -18,17 +32,20 @@ export async function POST(req) {
 
     const body = await req.json().catch(() => ({}));
     let key = String(body?.key || "").trim();
+    const fileName = String(body?.fileName || body?.name || "").trim();
 
     if (!key && body?.url) {
       try {
         const parsed = new URL(String(body.url));
         if (String(parsed.hostname || "").includes(".amazonaws.com")) {
-          key = decodeURIComponent(parsed.pathname.replace(/^\/+/, ""));
+          key = fullyDecodeURIComponent(parsed.pathname.replace(/^\/+/, ""));
         }
       } catch {
         /* ignore */
       }
     }
+
+    if (key) key = fullyDecodeURIComponent(key);
 
     if (!key) {
       return NextResponse.json(
@@ -37,7 +54,7 @@ export async function POST(req) {
       );
     }
 
-    const url = await getPresignedDownloadUrl(key, 7200);
+    const url = await getPresignedDownloadUrl(key, 7200, fileName);
 
     return NextResponse.json({ success: true, url });
   } catch (err) {

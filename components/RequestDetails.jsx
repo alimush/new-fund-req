@@ -39,6 +39,7 @@ import {
   resolveVoucherCompanyKeyForUser,
   hasVoucherPermissionForRequest,
 } from "@/lib/voucher/resolveVoucherCompanyKey";
+import { attachmentOpenHref } from "@/lib/s3/browserOpenAttachment";
 import VoucherModal from "@/components/VoucherModal";
 import html2canvas from "html2canvas";
 import { captureRequestPrintCanvas } from "@/lib/pdf/sanitizeHtml2CanvasClone";
@@ -976,10 +977,11 @@ export default function RequestDetails({ id, companyKey }) {
                 const isImage =
                   /\.(jpg|jpeg|png|gif|webp)$/i.test(String(file?.name || "")) ||
                   String(file?.type || "").startsWith("image/");
+                const openHref = attachmentOpenHref(file);
                 return (
                   <a
                     key={idx}
-                    href={file.url}
+                    href={openHref}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="group block"
@@ -987,7 +989,7 @@ export default function RequestDetails({ id, companyKey }) {
                     <div className="relative aspect-square overflow-hidden rounded-2xl border border-slate-200/80 bg-white/70 shadow-sm ring-1 ring-slate-200/50 transition duration-300 group-hover:-translate-y-1 group-hover:shadow-lg group-hover:ring-slate-300/80">
                       {isImage ? (
                         <img
-                          src={file.url}
+                          src={openHref}
                           alt={file.name}
                           className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
                         />
@@ -1196,8 +1198,9 @@ export default function RequestDetails({ id, companyKey }) {
                                 : null;
 
                             setStepAttachment(
-                              last?.url
+                              last?.url || last?.key
                                 ? {
+                                    key: last.key,
                                     url: last.url,
                                     name: last.name,
                                     type: last.type,

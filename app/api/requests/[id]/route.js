@@ -49,8 +49,12 @@ function getS3() {
 function buildPublicUrl(key) {
   const bucket = process.env.S3_BUCKET_NAME;
   const region = process.env.S3_REGION;
-
-  return `https://${bucket}.s3.${region}.amazonaws.com/${key}`;
+  if (!bucket || !region || !key) return "";
+  const encoded = String(key)
+    .split("/")
+    .map(encodeURIComponent)
+    .join("/");
+  return `https://${bucket}.s3.${region}.amazonaws.com/${encoded}`;
 }
 function resetStepToPendingClean(st) {
   if (!st) return;
