@@ -1,7 +1,5 @@
 import { NextResponse } from "next/server";
 import dbConnect from "@/lib/mongodb";
-import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
-import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import Workflow from "@/models/Workflow";
 import { getModelForCompany } from "@/models/Request";
 import {
@@ -22,6 +20,7 @@ import {
   voucherLookupByRequestPipeline,
   voucherLookupLetFields,
 } from "@/lib/voucher/voucherLookupPipeline";
+import { buildPublicS3Url } from "@/lib/s3/attachmentAccess";
 
 export const runtime = "nodejs";
 
@@ -159,24 +158,10 @@ async function signAttachmentsIfAny(request) {
   if (!request) return request;
 
   if (Array.isArray(request.attachments) && request.attachments.length > 0) {
-    const s3 = new S3Client({
-      region: process.env.S3_REGION,
-      credentials: {
-        accessKeyId: process.env.S3_ACCESS_KEY_ID,
-        secretAccessKey: process.env.S3_SECRET_ACCESS_KEY,
-      },
-    });
-
     for (const file of request.attachments) {
       if (!file?.key) continue;
-      file.url = await getSignedUrl(
-        s3,
-        new GetObjectCommand({
-          Bucket: process.env.S3_BUCKET_NAME,
-          Key: file.key,
-        }),
-        { expiresIn: 3600 }
-      );
+      // رابط دائم — لا نرجّع رابط موقّع ينتهي بعد ساعة
+      file.url = buildPublicS3Url(file.key);
     }
   }
 

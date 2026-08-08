@@ -6,8 +6,7 @@ import Permissions from "@/models/Permissions";
 import { getModelForCompany } from "@/models/Request";
 import { PERMISSIONS } from "@/lib/permission";
 import { mergeAdminWorkflowSteps } from "@/lib/adminRequestsWorkflowCommon";
-import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
-import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { buildPublicS3Url } from "@/lib/s3/attachmentAccess";
 
 export const runtime = "nodejs";
 
@@ -31,44 +30,20 @@ async function hasManagePermissions(userId) {
   return set.has(PERMISSIONS.MANAGE_PERMISSIONS);
 }
 
-function getS3() {
-  return new S3Client({
-    region: process.env.S3_REGION,
-    credentials: {
-      accessKeyId: process.env.S3_ACCESS_KEY_ID,
-      secretAccessKey: process.env.S3_SECRET_ACCESS_KEY,
-    },
-  });
-}
-
 async function signAttachmentsIfAny(request) {
   if (!request) return request;
   if (!Array.isArray(request.attachments) || request.attachments.length === 0) {
     return request;
   }
-  const s3 = getS3();
   for (const file of request.attachments) {
     if (!file?.key) continue;
-    try {
-      file.url = await getSignedUrl(
-        s3,
-        new GetObjectCommand({
-          Bucket: process.env.S3_BUCKET_NAME,
-          Key: file.key,
-        }),
-        { expiresIn: 3600 }
-      );
-    } catch {
-      /* ignore */
-    }
+    file.url = buildPublicS3Url(file.key);
   }
   return request;
 }
 
 function buildPublicUrl(key) {
-  const bucket = process.env.S3_BUCKET_NAME;
-  const region = process.env.S3_REGION;
-  return `https://${bucket}.s3.${region}.amazonaws.com/${key}`;
+  return buildPublicS3Url(key);
 }
 
 export async function GET(req, { params }) {

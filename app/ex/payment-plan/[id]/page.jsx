@@ -35,6 +35,10 @@ import { PAYMENT_PLAN_TEMPLATE } from "@/lib/ex/paymentPlanTemplate";
 import { fieldsFromPaymentPlanTemplate } from "@/lib/ex/paymentPlanLayoutMerge";
 import { parseMoneyNumber, formatPayPercent } from "@/lib/ex/formatMoneyInput";
 import { uploadFileToS3 } from "@/lib/s3/browserUpload";
+import {
+  attachmentOpenHref,
+  downloadSignedAttachment,
+} from "@/lib/s3/browserOpenAttachment";
 /* =================== HARD KEY (مؤقتاً) =================== */
 const PAGE_KEY = "exceptions";
 
@@ -286,17 +290,13 @@ const fileExt = (name = "") => {
 };
 
 const downloadFile = async (file) => {
-  if (!file?.url) return;
-  // طريقة تحفظ باسم الملف حتى لو signed
-  const res = await fetch(file.url);
-  const blob = await res.blob();
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = file.name || `file.${fileExt(file.name) || "bin"}`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(a.href), 2500);
+  if (!file?.key && !file?.url) return;
+  try {
+    await downloadSignedAttachment(file);
+  } catch (e) {
+    console.error(e);
+    alert(e?.message || "تعذر تحميل الملف");
+  }
 };
 function PaymentPlanDetailsPageContent() {
   const router = useRouter();
@@ -1151,11 +1151,11 @@ const isOperationUser =
 
               <div className="flex items-center gap-2">
                 <a
-                  href={file?.url || "#"}
+                  href={attachmentOpenHref(file)}
                   target="_blank"
                   rel="noopener noreferrer"
                   onClick={(e) => {
-                    if (!file?.url) e.preventDefault();
+                    if (!file?.key && !file?.url) e.preventDefault();
                   }}
                   className="px-3 py-1.5 rounded-xl text-xs font-bold bg-gray-900 text-white hover:bg-black"
                 >
@@ -1165,7 +1165,7 @@ const isOperationUser =
                 <button
                   type="button"
                   onClick={() => downloadFile(file)}
-                  disabled={!file?.url}
+                  disabled={!file?.key && !file?.url}
                   className="px-3 py-1.5 rounded-xl text-xs font-bold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60 inline-flex items-center gap-1.5"
                 >
                   <FiDownload /> Download

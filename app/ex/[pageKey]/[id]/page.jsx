@@ -34,6 +34,10 @@ import {
   canUserViewExStepAttachments,
 } from "@/lib/ex/exAttachmentAccess";
 import { uploadFileToS3 } from "@/lib/s3/browserUpload";
+import {
+  attachmentOpenHref,
+  downloadSignedAttachment,
+} from "@/lib/s3/browserOpenAttachment";
 const pct = (p) => ({ top: `${p.top}%`, left: `${p.left}%` });
 
 function displayExRef(doc) {
@@ -292,16 +296,13 @@ const fileExt = (name = "") => {
   return i >= 0 ? s.slice(i + 1) : "";
 };
 const downloadFile = async (file) => {
-  if (!file?.url) return;
-  const res = await fetch(file.url);
-  const blob = await res.blob();
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = file.name || `file.${fileExt(file.name) || "bin"}`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(a.href), 2500);
+  if (!file?.key && !file?.url) return;
+  try {
+    await downloadSignedAttachment(file);
+  } catch (e) {
+    console.error(e);
+    alert(e?.message || "تعذر تحميل الملف");
+  }
 };
 
 /**
@@ -815,11 +816,11 @@ const isOperationUser =
 
               <div className="flex items-center gap-2">
                 <a
-                  href={file?.url || "#"}
+                  href={attachmentOpenHref(file)}
                   target="_blank"
                   rel="noopener noreferrer"
                   onClick={(e) => {
-                    if (!file?.url) e.preventDefault();
+                    if (!file?.key && !file?.url) e.preventDefault();
                   }}
                   className="px-3 py-1.5 rounded-xl text-xs font-bold bg-gray-900 text-white hover:bg-black"
                 >
@@ -829,7 +830,7 @@ const isOperationUser =
                 <button
                   type="button"
                   onClick={() => downloadFile(file)}
-                  disabled={!file?.url}
+                  disabled={!file?.key && !file?.url}
                   className="px-3 py-1.5 rounded-xl text-xs font-bold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60 inline-flex items-center gap-1.5"
                 >
                   <FiDownload /> Download
@@ -892,11 +893,11 @@ const isOperationUser =
 
                     <div className="flex items-center gap-2">
                       <a
-                        href={file?.url || "#"}
+                        href={attachmentOpenHref(file)}
                         target="_blank"
                         rel="noopener noreferrer"
                         onClick={(e) => {
-                          if (!file?.url) e.preventDefault();
+                          if (!file?.key && !file?.url) e.preventDefault();
                         }}
                         className="px-3 py-1.5 rounded-xl text-xs font-bold bg-gray-900 text-white hover:bg-black"
                       >
@@ -906,7 +907,7 @@ const isOperationUser =
                       <button
                         type="button"
                         onClick={() => downloadFile(file)}
-                        disabled={!file?.url}
+                        disabled={!file?.key && !file?.url}
                         className="px-3 py-1.5 rounded-xl text-xs font-bold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60 inline-flex items-center gap-1.5"
                       >
                         <FiDownload /> Download
@@ -1160,11 +1161,11 @@ const isOperationUser =
 
             <div className="flex items-center gap-2">
               <a
-                href={file?.url || "#"}
+                href={attachmentOpenHref(file)}
                 target="_blank"
                 rel="noopener noreferrer"
                 onClick={(e) => {
-                  if (!file?.url) e.preventDefault();
+                  if (!file?.key && !file?.url) e.preventDefault();
                 }}
                 className="px-3 py-1.5 rounded-xl text-xs font-bold bg-gray-900 text-white hover:bg-black"
               >
@@ -1174,7 +1175,7 @@ const isOperationUser =
               <button
                 type="button"
                 onClick={() => downloadFile(file)}
-                disabled={!file?.url}
+                disabled={!file?.key && !file?.url}
                 className="px-3 py-1.5 rounded-xl text-xs font-bold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60 inline-flex items-center gap-1.5"
               >
                 <FiDownload /> Download

@@ -1,11 +1,10 @@
 import { NextResponse } from "next/server";
-import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
-import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { cookies } from "next/headers";
 
 import dbConnect from "@/lib/mongodb";
 import { getModelForCompany } from "@/models/Request";
 import User from "@/models/User";
+import { buildPublicS3Url } from "@/lib/s3/attachmentAccess";
 
 function canEditLastStepAttachment(requestDoc, userId, stepIndex) {
   const steps = requestDoc?.workflow?.steps || [];
@@ -97,33 +96,27 @@ export async function POST(req) {
       );
     }
 
-    const s3 = new S3Client({
-      region,
-      credentials: {
-        accessKeyId: process.env.S3_ACCESS_KEY_ID,
-        secretAccessKey: process.env.S3_SECRET_ACCESS_KEY,
-      },
-    });
-
     const newAttachments = [];
 
     for (const att of attachments) {
-      const signedUrl = await getSignedUrl(
-        s3,
-        new GetObjectCommand({
-          Bucket: bucket,
-          Key: att.key,
-        }),
-        { expiresIn: 3600 }
-      );
+      const key = String(att?.key || "").trim();
+      if (!key) continue;
 
+      // رابط دائم (bucket عام للقراءة) — لا نخزّن رابط موقّع ينتهي بعد ساعة
       newAttachments.push({
-        key: att.key,
+        key,
         name: att.name || "",
         type: att.type || "",
         size: att.size || 0,
-        url: signedUrl,
+        url: buildPublicS3Url(key),
       });
+    }
+
+    if (newAttachments.length === 0) {
+      return NextResponse.json(
+        { success: false, error: "attachments are required" },
+        { status: 400 }
+      );
     }
 
     await dbConnect();

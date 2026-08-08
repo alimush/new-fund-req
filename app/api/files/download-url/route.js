@@ -17,7 +17,18 @@ export async function POST(req) {
     }
 
     const body = await req.json().catch(() => ({}));
-    const key = String(body?.key || "").trim();
+    let key = String(body?.key || "").trim();
+
+    if (!key && body?.url) {
+      try {
+        const parsed = new URL(String(body.url));
+        if (String(parsed.hostname || "").includes(".amazonaws.com")) {
+          key = decodeURIComponent(parsed.pathname.replace(/^\/+/, ""));
+        }
+      } catch {
+        /* ignore */
+      }
+    }
 
     if (!key) {
       return NextResponse.json(
