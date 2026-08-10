@@ -523,8 +523,10 @@ export async function GET(req) {
         {
           $match: {
             "_step.status": { $in: ["Pending", "pending"] },
-            "_step.users": { $in: [uid] },
-            ...pendingApprovalMongoExtraMatch(userPermissions),
+            $and: [
+              { "_step.users": { $in: [uid] } },
+              pendingApprovalMongoExtraMatch(userPermissions),
+            ].filter((c) => c && Object.keys(c).length > 0),
           },
         },
         { $sort: { createdAt: -1 } },

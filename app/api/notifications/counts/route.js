@@ -53,8 +53,12 @@ async function countPendingApprovals(Model, uid, userPermissions = []) {
     {
       $match: {
         "_currStep.status": { $in: ["Pending", "pending"] },
-        $or: [{ "_currStep.users": uid }, { "_currStep.users._id": uid }],
-        ...pendingApprovalMongoExtraMatch(userPermissions),
+        $and: [
+          {
+            $or: [{ "_currStep.users": uid }, { "_currStep.users._id": uid }],
+          },
+          pendingApprovalMongoExtraMatch(userPermissions),
+        ].filter((c) => c && Object.keys(c).length > 0),
       },
     },
     { $group: { _id: "$_id" } },
