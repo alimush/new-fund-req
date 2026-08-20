@@ -71,10 +71,18 @@ export async function POST(req) {
       throw new Error("buildDailyCashReportBuffer export missing");
     }
 
+    const host =
+      req.headers.get("x-forwarded-host") || req.headers.get("host") || "";
+    const proto = req.headers.get("x-forwarded-proto") || "https";
+    const templateUrl = host
+      ? `${proto}://${host}/templates/voucher-daily-form.xlsx`
+      : "";
+
     const buffer = await buildFn(vouchers, {
       dateFrom: body?.dateFrom || "",
       dateTo: body?.dateTo || "",
       companyFilter: body?.companyFilter || "all",
+      templateUrl,
     });
 
     const filename = `تقرير_صندوق_${new Date().toISOString().slice(0, 10)}.xlsx`;

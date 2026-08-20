@@ -1,6 +1,12 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: "standalone",
+  outputFileTracingIncludes: {
+    "/api/vouchers/reports/export": [
+      "./lib/voucher/templates/voucher-daily-form.xlsx",
+      "./public/templates/voucher-daily-form.xlsx",
+    ],
+  },
   images: {
     dangerouslyAllowSVG: true,
     contentDispositionType: "attachment",
