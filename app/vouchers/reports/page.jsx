@@ -3,7 +3,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import dynamic from "next/dynamic";
-import * as XLSX from "xlsx";
 import { createPortal } from "react-dom";
 
 import {
@@ -957,37 +956,61 @@ export default function VoucherReportsPage() {
       const { all } = await fetchAllForExport();
       if (!all || all.length === 0) return;
 
-      const rowsExcel = all.map((r) => ({
-        Company: getCompanyName(r.companyKey),
-        Mode: r.mode === "payment" ? "وصل صرف" : "وصل قبض",
-        Seq: r.voucherNo || String(r.seq ?? "").padStart(5, "0"),
-        Currency: r.currency || "-",
-        Amount: (() => {
-          const cleaned = String(r.amount ?? "").replace(/,/g, "").trim();
-          const n = Number(cleaned);
-          return Number.isFinite(n) ? n : "";
-        })(),
-        Beneficiary: r.beneficiary || "-",
-        ReceivedBy: r.receivedBy || "-",
-        Bank: r.bank || "-",
-        Description: r.description || "-",
-        Notes: r.notes || "-",
-        Date: formatVoucherDateDisplay(r),
-      }));
+      const companyVal = companyFilter?.value || "all";
+      const modeVal = modeFilter?.value || "all";
+      const currencyVal = currencyFilter?.value || "all";
 
-      const ws = XLSX.utils.json_to_sheet(rowsExcel);
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "Voucher Reports");
-      XLSX.writeFile(
-        wb,
-        `Voucher_Reports_${new Date().toISOString().slice(0, 10)}.xlsx`
-      );
+      const res = await fetch("/api/vouchers/reports/export", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          vouchers: all,
+          dateFrom: date.from,
+          dateTo: date.to,
+          companyFilter: companyVal,
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err?.error || `Export failed (${res.status})`);
+      }
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+
+      const parts = ["تقرير_صندوق"];
+      if (companyVal && companyVal !== "all") parts.push(companyVal);
+      if (modeVal && modeVal !== "all") {
+        parts.push(modeVal === "payment" ? "صرف" : "قبض");
+      }
+      if (currencyVal && currencyVal !== "all") parts.push(currencyVal);
+      if (date.from || date.to) {
+        parts.push([date.from || "", date.to || ""].filter(Boolean).join("_"));
+      }
+      parts.push(new Date().toISOString().slice(0, 10));
+      a.download = `${parts.join("_")}.xlsx`;
+
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
     } catch (e) {
       console.error("❌ Export vouchers error:", e);
     } finally {
       setLoading(false);
     }
-  }, [fetchAllForExport]);
+  }, [
+    fetchAllForExport,
+    date.from,
+    date.to,
+    companyFilter,
+    modeFilter,
+    currencyFilter,
+  ]);
 
   const Card = ({ icon, title, value, iconColor = "text-blue-600" }) => (
     <KpiCard label={title} value={value} icon={icon} iconColor={iconColor} />
