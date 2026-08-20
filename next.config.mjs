@@ -5,6 +5,12 @@ const nextConfig = {
     "/api/vouchers/reports/export": [
       "./lib/voucher/templates/voucher-daily-form.xlsx",
       "./public/templates/voucher-daily-form.xlsx",
+      "./lib/voucher/templates/logos/**/*",
+      "./public/بدور_النجف.png",
+      "./public/بدور_بغداد.png",
+      "./public/طيبة_النجف.png",
+      "./public/غدير_كربلاء.png",
+      "./public/الغدير.png",
     ],
   },
   images: {
