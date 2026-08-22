@@ -1,8 +1,10 @@
 "use client";
 
-import { useMemo, useState, useCallback } from "react";
+import { useMemo, useState, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import VoucherRichTextInput from "@/components/VoucherRichTextInput";
+import PersonNameSuggestDropdown from "@/components/PersonNameSuggestDropdown";
+import { useVoucherPersonSuggest } from "@/hooks/useVoucherPersonSuggest";
 import { applyStyleToRange, getStyleAtRange, trimStyleRange } from "@/lib/voucher/fieldColorRuns";
 import {
   FiPrinter,
@@ -179,6 +181,84 @@ export default function VoucherCanvasDialog({
     month: vDateMM || todayMM || "",
     day: vDateDD || todayDD || "",
   });
+
+  const personSuggestEnabled = open && (!isViewPage || editMode);
+  const activePersonFieldRef = useRef("receivedBy");
+  const {
+    options: personOptions,
+    show: personShow,
+    activeIdx: personActiveIdx,
+    setActiveIdx: setPersonActiveIdx,
+    pos: personPos,
+    boxRef: personBoxRef,
+    openFor: openPersonSuggest,
+    close: closePersonSuggest,
+    handleKeyDown: handlePersonSuggestKeyDown,
+  } = useVoucherPersonSuggest({
+    companyKey: "",
+    enabled: personSuggestEnabled,
+    minLength: 2,
+  });
+
+  const applyPersonPick = useCallback(
+    (opt) => {
+      if (!opt) return;
+
+      const activeField = activePersonFieldRef.current || "receivedBy";
+      if (activeField === "beneficiary") {
+        setVBeneficiary?.(opt.name || "");
+      } else {
+        setVReceivedBy?.(opt.name || "");
+      }
+
+      if (opt.nationalId) setVNationalId?.(opt.nationalId);
+      if (opt.phone) setVPhone?.(opt.phone);
+      if (opt.bank) setVBank?.(opt.bank);
+      if (opt.chequeNo) setVChequeNo?.(opt.chequeNo);
+      if (opt.sanadNo) setVSanadNo?.(opt.sanadNo);
+
+      closePersonSuggest();
+    },
+    [
+      closePersonSuggest,
+      setVBank,
+      setVBeneficiary,
+      setVChequeNo,
+      setVNationalId,
+      setVPhone,
+      setVReceivedBy,
+      setVSanadNo,
+    ]
+  );
+
+  const makePersonChangeHandler = useCallback(
+    (fieldName, setter, inputRef) => (text) => {
+      activePersonFieldRef.current = fieldName;
+      setter(text);
+      openPersonSuggest(fieldName, text, inputRef);
+    },
+    [openPersonSuggest]
+  );
+
+  const handlePersonKeyDown = useCallback(
+    (e) => {
+      const action = handlePersonSuggestKeyDown(e);
+      if (action === "pick" && personActiveIdx >= 0) {
+        applyPersonPick(personOptions[personActiveIdx]);
+      }
+    },
+    [applyPersonPick, handlePersonSuggestKeyDown, personActiveIdx, personOptions]
+  );
+
+  const handleReceivedByChange = useMemo(
+    () => makePersonChangeHandler("receivedBy", setVReceivedBy, receivedByRef),
+    [makePersonChangeHandler, setVReceivedBy, receivedByRef]
+  );
+
+  const handleBeneficiaryChange = useMemo(
+    () => makePersonChangeHandler("beneficiary", setVBeneficiary, beneficiaryRef),
+    [makePersonChangeHandler, setVBeneficiary, beneficiaryRef]
+  );
 
   const only2Digits = (value) => String(value || "").replace(/\D/g, "").slice(0, 2);
 
@@ -787,7 +867,7 @@ export default function VoucherCanvasDialog({
 
                           <VoucherRichTextInput
                             ref={receivedByRef}
-                            {...richFieldProps("receivedBy", vReceivedBy, setVReceivedBy, {
+                            {...richFieldProps("receivedBy", vReceivedBy, handleReceivedByChange, {
                               singleLine: true,
                               className: "absolute resize-none",
                               style: {
@@ -797,6 +877,7 @@ export default function VoucherCanvasDialog({
                                 ...oneLineRtl("receivedBy"),
                               },
                               direction: "rtl",
+                              onKeyDown: handlePersonKeyDown,
                             })}
                           />
 
@@ -897,17 +978,23 @@ export default function VoucherCanvasDialog({
                           {EXTRA.beneficiary ? (
                             <VoucherRichTextInput
                               ref={beneficiaryRef}
-                              {...richFieldProps("beneficiary", vBeneficiary, setVBeneficiary, {
-                                singleLine: true,
-                                className: "absolute resize-none",
-                                style: {
-                                  ...pctStyle(EXTRA.beneficiary),
-                                  width: `${EXTRA.beneficiary.width}%`,
-                                  height: `${EXTRA.beneficiary.height}%`,
-                                  ...oneLineRtl("beneficiary"),
-                                },
-                                direction: "rtl",
-                              })}
+                              {...richFieldProps(
+                                "beneficiary",
+                                vBeneficiary,
+                                handleBeneficiaryChange,
+                                {
+                                  singleLine: true,
+                                  className: "absolute resize-none",
+                                  style: {
+                                    ...pctStyle(EXTRA.beneficiary),
+                                    width: `${EXTRA.beneficiary.width}%`,
+                                    height: `${EXTRA.beneficiary.height}%`,
+                                    ...oneLineRtl("beneficiary"),
+                                  },
+                                  direction: "rtl",
+                                  onKeyDown: handlePersonKeyDown,
+                                }
+                              )}
                             />
                           ) : null}
 
@@ -1371,6 +1458,16 @@ export default function VoucherCanvasDialog({
                 only2Digits={only2Digits}
                 onClose={() => setDateModalOpen(false)}
                 onSave={saveDateModal}
+              />
+
+              <PersonNameSuggestDropdown
+                show={personShow}
+                options={personOptions}
+                activeIdx={personActiveIdx}
+                setActiveIdx={setPersonActiveIdx}
+                pos={personPos}
+                boxRef={personBoxRef}
+                onPick={applyPersonPick}
               />
             </motion.div>
           </div>
