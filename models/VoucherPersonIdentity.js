@@ -28,9 +28,15 @@ const VoucherPersonIdentitySchema = new mongoose.Schema(
       index: true,
     },
 
+    attachments: {
+      type: [IdentityAttachmentSchema],
+      default: [],
+    },
+
+    /** @deprecated legacy single file — kept for old records */
     attachment: {
       type: IdentityAttachmentSchema,
-      required: true,
+      default: null,
     },
 
     uploadedByUserId: { type: String, default: "" },

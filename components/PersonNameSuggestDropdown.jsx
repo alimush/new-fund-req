@@ -121,12 +121,16 @@ export default function PersonNameSuggestDropdown({
                         {opt.name}
                       </div>
 
-                      {(opt.nationalId || opt.phone || opt.bank || opt.identityAttachment) && (
+                      {(opt.nationalId || opt.phone || opt.bank || opt.identityAttachmentCount > 0) && (
                         <div className="mt-2 flex flex-wrap justify-end gap-1.5">
-                          {opt.identityAttachment ? (
+                          {opt.identityAttachmentCount > 0 ? (
                             <span className="inline-flex items-center gap-1 rounded-lg bg-violet-100/90 px-2 py-0.5 text-[11px] font-bold text-violet-700">
                               <FiPaperclip className="shrink-0" size={11} />
-                              <span>مرفق هوية</span>
+                              <span>
+                                {opt.identityAttachmentCount > 1
+                                  ? `مرفقات هوية (${opt.identityAttachmentCount})`
+                                  : "مرفق هوية"}
+                              </span>
                             </span>
                           ) : null}
                           <MetaChip

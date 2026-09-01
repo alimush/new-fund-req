@@ -6,6 +6,7 @@ import { PERMISSIONS } from "@/lib/permission";
 import { COMPANIES } from "@/lib/voucher/companies";
 import VoucherPersonIdentity from "@/models/VoucherPersonIdentity";
 import { personNameKey } from "@/lib/voucher/normalizePersonName";
+import { formatIdentityRecord } from "@/lib/voucher/personIdentityAttachments";
 import mongoose from "mongoose";
 
 export const runtime = "nodejs";
@@ -195,16 +196,19 @@ export async function GET(req) {
       const identities = await VoucherPersonIdentity.find({
         personNameKey: { $in: identityKeys },
       })
-        .select("personNameKey attachment")
+        .select("personNameKey attachments attachment")
         .lean();
 
       const identityByKey = Object.fromEntries(
-        identities.map((row) => [row.personNameKey, row.attachment || null])
+        identities.map((row) => [row.personNameKey, formatIdentityRecord(row)])
       );
 
       for (const item of out) {
         const key = personNameKey(item.name);
-        item.identityAttachment = key ? identityByKey[key] || null : null;
+        const record = key ? identityByKey[key] : null;
+        item.identityAttachments = record?.attachments || [];
+        item.identityAttachmentCount = record?.attachmentCount || 0;
+        item.identityAttachment = item.identityAttachments[0] || null;
       }
     }
 

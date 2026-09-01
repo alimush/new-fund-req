@@ -39,7 +39,7 @@ import { formatAmount } from "@/lib/voucher/utils";
 import { formatVoucherDateDisplay } from "@/lib/voucher/voucherDate";
 import { attachmentOpenHref } from "@/lib/s3/browserOpenAttachment";
 import { normalizePersonName, personNameKey } from "@/lib/voucher/normalizePersonName";
-import { uploadPersonIdentity } from "@/lib/voucher/uploadPersonIdentityClient";
+import { uploadPersonIdentityFiles } from "@/lib/voucher/uploadPersonIdentityClient";
 
 const getCompanyName = (key) => {
   if (!key) return "-";
@@ -50,6 +50,13 @@ const getCompanyName = (key) => {
 const getVoucherCustomerName = (row) => {
   if (!row) return "";
   return String(row.receivedBy || "").trim();
+};
+
+const getIdentityAttachmentsFromEntry = (entry) => {
+  if (!entry) return [];
+  if (Array.isArray(entry.attachments)) return entry.attachments.filter((item) => item?.url);
+  if (entry.attachment?.url) return [entry.attachment];
+  return [];
 };
 
 export default function VoucherReportsPage() {
@@ -112,10 +119,19 @@ export default function VoucherReportsPage() {
   const [portalReady, setPortalReady] = useState(false);
   const [uploadingId, setUploadingId] = useState(null);
   const [uploadingIdentityKey, setUploadingIdentityKey] = useState(null);
+  const [deletingIdentityKey, setDeletingIdentityKey] = useState(null);
   const [identityByKey, setIdentityByKey] = useState({});
+  const [identityModal, setIdentityModal] = useState({
+    open: false,
+    rowId: null,
+    personName: "",
+    personKey: "",
+    attachments: [],
+    loading: false,
+  });
   const [deletingId, setDeletingId] = useState(null);
+  const identityModalFileRef = useRef(null);
   const fileInputRefs = useRef({});
-  const identityInputRefs = useRef({});
   const inputRef = useRef(null);
   const suggestBoxRef = useRef(null);
   const [suggestPos, setSuggestPos] = useState({ top: 0, left: 0, width: 0 });
@@ -921,79 +937,107 @@ export default function VoucherReportsPage() {
     }
   }, []);
 
-  const triggerIdentityPick = useCallback((rowId) => {
-    const ref = identityInputRefs.current[rowId];
-    if (ref) ref.click();
+  const applyIdentityRecord = useCallback((personKey, record) => {
+    if (!personKey) return;
+    if (record) {
+      setIdentityByKey((prev) => ({ ...prev, [personKey]: record }));
+    } else {
+      setIdentityByKey((prev) => {
+        const next = { ...prev };
+        delete next[personKey];
+        return next;
+      });
+    }
+  }, []);
+
+  const fetchIdentityRecord = useCallback(async (personName) => {
+    const trimmed = normalizePersonName(personName);
+    if (trimmed.length < 2) return null;
+
+    const params = new URLSearchParams({ name: trimmed });
+    const res = await fetch(`/api/vouchers/person-identity?${params.toString()}`, {
+      credentials: "include",
+    });
+    const json = await res.json();
+    if (!json?.success) {
+      throw new Error(json?.error || "تعذر تحميل الهوية");
+    }
+    return json.data || null;
+  }, []);
+
+  const openIdentityModal = useCallback(
+    async (row) => {
+      const personName = getVoucherCustomerName(row);
+      if (!personName || personName.length < 2) {
+        alert("حقل «استلمت من» فارغ على هذا الوصل");
+        return;
+      }
+
+      const key = personNameKey(personName);
+      setIdentityModal({
+        open: true,
+        rowId: row._id,
+        personName,
+        personKey: key,
+        attachments: getIdentityAttachmentsFromEntry(identityByKey[key]),
+        loading: true,
+      });
+
+      try {
+        const record = await fetchIdentityRecord(personName);
+        const attachments = getIdentityAttachmentsFromEntry(record);
+        applyIdentityRecord(key, record);
+        setIdentityModal((prev) => ({
+          ...prev,
+          attachments,
+          loading: false,
+        }));
+      } catch (err) {
+        console.error("identity modal load error:", err);
+        setIdentityModal((prev) => ({ ...prev, loading: false }));
+        alert(err.message || "تعذر تحميل الهوية");
+      }
+    },
+    [applyIdentityRecord, fetchIdentityRecord, identityByKey]
+  );
+
+  const closeIdentityModal = useCallback(() => {
+    setIdentityModal({
+      open: false,
+      rowId: null,
+      personName: "",
+      personKey: "",
+      attachments: [],
+      loading: false,
+    });
   }, []);
 
   const handleIdentityAction = useCallback(
     async (row, e) => {
       e?.stopPropagation?.();
-
-      const personName = getVoucherCustomerName(row);
-      if (!personName || personName.length < 2) {
-        alert("حقل «استلمت من» فارغ على هذا الوصل");
-        return;
-      }
-
-      const key = personNameKey(personName);
-      const cached = identityByKey[key]?.attachment;
-
-      if (cached) {
-        window.open(attachmentOpenHref(cached), "_blank", "noopener,noreferrer");
-        return;
-      }
-
-      try {
-        const params = new URLSearchParams({ name: personName });
-        const res = await fetch(`/api/vouchers/person-identity?${params.toString()}`, {
-          credentials: "include",
-        });
-        const json = await res.json();
-
-        if (!json?.success) {
-          throw new Error(json?.error || "تعذر تحميل الهوية");
-        }
-
-        const attachment = json.data?.attachment;
-        if (attachment) {
-          setIdentityByKey((prev) => ({
-            ...prev,
-            [key]: { personName, attachment },
-          }));
-          window.open(attachmentOpenHref(attachment), "_blank", "noopener,noreferrer");
-          return;
-        }
-      } catch (err) {
-        console.error("View identity error:", err);
-        alert(err.message || "تعذر عرض الهوية");
-        return;
-      }
-
-      triggerIdentityPick(row._id);
+      await openIdentityModal(row);
     },
-    [identityByKey, triggerIdentityPick]
+    [openIdentityModal]
   );
 
   const handleUploadIdentity = useCallback(
-    async (row, file) => {
-      if (!row?._id || !file) return;
+    async (personName, personKey, files) => {
+      const fileList = Array.from(files || []).filter(Boolean);
+      if (!fileList.length) return;
 
-      const personName = getVoucherCustomerName(row);
-      const key = personNameKey(personName);
       if (!personName || personName.length < 2) {
-        alert("حقل «استلمت من» فارغ على هذا الوصل");
+        alert("حقل «استلمت من» فارغ");
         return;
       }
 
       try {
-        setUploadingIdentityKey(key);
-        const attachment = await uploadPersonIdentity({ personName, file });
-        setIdentityByKey((prev) => ({
+        setUploadingIdentityKey(personKey);
+        const saved = await uploadPersonIdentityFiles({ personName, files: fileList });
+        applyIdentityRecord(personKey, saved);
+        setIdentityModal((prev) => ({
           ...prev,
-          [key]: { personName, attachment },
+          attachments: getIdentityAttachmentsFromEntry(saved),
         }));
-        alert("✅ تم رفع الهوية بنجاح");
       } catch (err) {
         console.error("Upload identity error:", err);
         alert(err.message || "فشل رفع الهوية");
@@ -1001,7 +1045,57 @@ export default function VoucherReportsPage() {
         setUploadingIdentityKey(null);
       }
     },
-    []
+    [applyIdentityRecord]
+  );
+
+  const handleDeleteIdentityAttachment = useCallback(
+    async (att) => {
+      const personName = identityModal.personName;
+      const personKey = identityModal.personKey;
+      if (!personName || !att) return;
+
+      const deleteKey = String(att.key || "").trim();
+      const deleteUrl = String(att.url || "").trim();
+      const matchId = deleteKey || deleteUrl;
+      if (!matchId) {
+        alert("لا يمكن تحديد هذا المرفق للحذف");
+        return;
+      }
+
+      const ok = window.confirm(`حذف المرفق "${att.name || "ملف"}"؟`);
+      if (!ok) return;
+
+      try {
+        setDeletingIdentityKey(matchId);
+        const res = await fetch("/api/vouchers/person-identity", {
+          method: "DELETE",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            personName,
+            deleteAttachmentKey: deleteKey,
+            deleteAttachmentUrl: deleteUrl,
+          }),
+        });
+        const json = await res.json();
+        if (!json?.success) {
+          throw new Error(json?.error || "فشل حذف المرفق");
+        }
+
+        const record = json.data || null;
+        applyIdentityRecord(personKey, record);
+        setIdentityModal((prev) => ({
+          ...prev,
+          attachments: getIdentityAttachmentsFromEntry(record),
+        }));
+      } catch (err) {
+        console.error("Delete identity attachment error:", err);
+        alert(err.message || "فشل حذف المرفق");
+      } finally {
+        setDeletingIdentityKey(null);
+      }
+    },
+    [applyIdentityRecord, identityModal.personKey, identityModal.personName]
   );
 
   const handleSearch = async () => {
@@ -1676,26 +1770,15 @@ export default function VoucherReportsPage() {
                         {(() => {
                           const personName = getVoucherCustomerName(r);
                           const personKey = personNameKey(personName);
-                          const hasIdentity = Boolean(identityByKey[personKey]?.attachment);
+                          const identityAttachments = getIdentityAttachmentsFromEntry(
+                            identityByKey[personKey]
+                          );
+                          const hasIdentity = identityAttachments.length > 0;
                           const isUploadingIdentity = uploadingIdentityKey === personKey;
                           const missingName = !personName || personName.length < 2;
 
                           return (
                             <div className="flex flex-col items-end gap-1.5">
-                              <input
-                                ref={(el) => {
-                                  if (el) identityInputRefs.current[r._id] = el;
-                                }}
-                                type="file"
-                                hidden
-                                accept="image/*,.pdf"
-                                onChange={(e) => {
-                                  const file = (e.target.files || [])[0];
-                                  if (file) handleUploadIdentity(r, file);
-                                  e.target.value = "";
-                                }}
-                              />
-
                               {missingName ? (
                                 <span className="text-[12px] text-slate-400">—</span>
                               ) : (
@@ -1703,11 +1786,7 @@ export default function VoucherReportsPage() {
                                   type="button"
                                   onClick={(e) => handleIdentityAction(r, e)}
                                   disabled={isUploadingIdentity}
-                                  title={
-                                    hasIdentity
-                                      ? `عرض هوية: ${personName}`
-                                      : `رفع هوية لـ: ${personName}`
-                                  }
+                                  title={`إدارة هوية: ${personName}`}
                                   className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-[12px] font-extrabold transition disabled:cursor-not-allowed disabled:opacity-60 ${
                                     isUploadingIdentity
                                       ? "border-slate-200 bg-slate-100 text-slate-500"
@@ -1718,16 +1797,14 @@ export default function VoucherReportsPage() {
                                 >
                                   {isUploadingIdentity ? (
                                     <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-violet-400 border-t-transparent" />
-                                  ) : hasIdentity ? (
-                                    <FiCreditCard className="text-sm" />
                                   ) : (
-                                    <FiUploadCloud className="text-sm" />
+                                    <FiCreditCard className="text-sm" />
                                   )}
                                   {isUploadingIdentity
                                     ? "جاري الرفع..."
                                     : hasIdentity
-                                    ? "عرض الهوية"
-                                    : "رفع الهوية"}
+                                    ? `الهوية (${identityAttachments.length})`
+                                    : "الهوية"}
                                 </button>
                               )}
                             </div>
@@ -1869,6 +1946,130 @@ export default function VoucherReportsPage() {
                 ) : (
                   <div className="text-center text-gray-500 font-extrabold py-8">
                     لا توجد اتاجات
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {identityModal.open && (
+          <motion.div
+            className="fixed inset-0 z-[99999] bg-black/40 flex items-center justify-center p-4"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={closeIdentityModal}
+          >
+            <motion.div
+              initial={{ scale: 0.96, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.96, opacity: 0 }}
+              transition={{ duration: 0.18 }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-2xl rounded-3xl bg-white shadow-2xl border border-gray-200 overflow-hidden"
+            >
+              <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={closeIdentityModal}
+                  className="px-3 py-2 rounded-xl border border-gray-200 bg-white text-gray-700 font-extrabold hover:bg-gray-50"
+                >
+                  إغلاق
+                </button>
+
+                <div className="text-right min-w-0 flex-1">
+                  <div className="text-lg font-extrabold text-gray-900">الهوية</div>
+                  <div className="text-sm text-gray-500 font-bold truncate">
+                    {identityModal.personName}
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  disabled={
+                    identityModal.loading ||
+                    uploadingIdentityKey === identityModal.personKey
+                  }
+                  onClick={() => identityModalFileRef.current?.click()}
+                  className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-violet-200 bg-violet-50 text-violet-800 text-[13px] font-extrabold hover:bg-violet-100 disabled:opacity-50"
+                >
+                  <FiUploadCloud />
+                  {uploadingIdentityKey === identityModal.personKey
+                    ? "جاري الرفع..."
+                    : "إضافة مرفقات"}
+                </button>
+              </div>
+
+              <input
+                ref={identityModalFileRef}
+                type="file"
+                hidden
+                multiple
+                accept="image/*,.pdf"
+                onChange={(e) => {
+                  const files = e.target.files;
+                  if (files?.length) {
+                    handleUploadIdentity(
+                      identityModal.personName,
+                      identityModal.personKey,
+                      files
+                    );
+                  }
+                  e.target.value = "";
+                }}
+              />
+
+              <div className="p-5 max-h-[70vh] overflow-y-auto space-y-3">
+                {identityModal.loading ? (
+                  <div className="text-center text-gray-500 font-extrabold py-8">
+                    جاري التحميل...
+                  </div>
+                ) : identityModal.attachments.length > 0 ? (
+                  identityModal.attachments.map((att, idx) => {
+                    const matchId = String(att.key || att.url || "").trim();
+                    const isDeleting = deletingIdentityKey === matchId;
+
+                    return (
+                      <div
+                        key={`${att.key || att.name}-${idx}`}
+                        className="rounded-2xl border border-gray-200 p-4 flex items-center justify-between gap-3"
+                      >
+                        <div className="flex items-center gap-2 shrink-0">
+                          <button
+                            type="button"
+                            disabled={Boolean(deletingIdentityKey)}
+                            onClick={() => handleDeleteIdentityAttachment(att)}
+                            className="px-3 py-2 rounded-xl border border-red-200 bg-red-50 text-red-700 text-[13px] font-extrabold hover:bg-red-100 disabled:opacity-50"
+                          >
+                            {isDeleting ? "..." : "حذف"}
+                          </button>
+                          <a
+                            href={attachmentOpenHref(att)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-3 py-2 rounded-xl border border-violet-200 bg-violet-50 text-violet-800 text-[13px] font-extrabold hover:bg-violet-100"
+                          >
+                            فتح
+                          </a>
+                        </div>
+
+                        <div className="text-right min-w-0">
+                          <div className="font-extrabold text-gray-900 truncate">
+                            {att.name || `مرفق ${idx + 1}`}
+                          </div>
+                          <div className="text-xs text-gray-500 truncate">
+                            {att.contentType || "-"}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="text-center text-gray-500 font-extrabold py-8">
+                    لا توجد مرفقات — اضغط «إضافة مرفقات»
                   </div>
                 )}
               </div>
