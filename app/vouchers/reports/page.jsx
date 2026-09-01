@@ -20,6 +20,7 @@ import {
   FiCreditCard,
   FiTrash2,
   FiCheckCircle,
+  FiUploadCloud,
 } from "react-icons/fi";
 
 import { FaMoneyBillWave } from "react-icons/fa6";
@@ -36,11 +37,18 @@ import { COMPANIES } from "@/lib/voucher/companies";
 import { formatAmount } from "@/lib/voucher/utils";
 import { formatVoucherDateDisplay } from "@/lib/voucher/voucherDate";
 import { attachmentOpenHref } from "@/lib/s3/browserOpenAttachment";
+import { normalizePersonName, personNameKey } from "@/lib/voucher/normalizePersonName";
+import { uploadPersonIdentity } from "@/lib/voucher/uploadPersonIdentityClient";
 
 const getCompanyName = (key) => {
   if (!key) return "-";
   const found = COMPANIES.find((c) => String(c.key).toLowerCase() === String(key).toLowerCase());
   return found ? found.name : key;
+};
+
+const getVoucherCustomerName = (row) => {
+  if (!row) return "";
+  return String(row.receivedBy || "").trim();
 };
 
 export default function VoucherReportsPage() {
@@ -102,8 +110,11 @@ export default function VoucherReportsPage() {
   const [activeIdx, setActiveIdx] = useState(-1);
   const [portalReady, setPortalReady] = useState(false);
   const [uploadingId, setUploadingId] = useState(null);
+  const [uploadingIdentityKey, setUploadingIdentityKey] = useState(null);
+  const [identityByKey, setIdentityByKey] = useState({});
   const [deletingId, setDeletingId] = useState(null);
   const fileInputRefs = useRef({});
+  const identityInputRefs = useRef({});
   const inputRef = useRef(null);
   const suggestBoxRef = useRef(null);
   const [suggestPos, setSuggestPos] = useState({ top: 0, left: 0, width: 0 });
@@ -716,6 +727,32 @@ export default function VoucherReportsPage() {
     ]
   );
 
+  const loadIdentitiesForRows = useCallback(async (pageRows) => {
+    const names = [
+      ...new Set(
+        (pageRows || [])
+          .map((row) => normalizePersonName(getVoucherCustomerName(row)))
+          .filter((name) => name.length >= 2)
+      ),
+    ];
+
+    if (!names.length) return;
+
+    try {
+      const params = new URLSearchParams({ names: names.join(",") });
+      const res = await fetch(`/api/vouchers/person-identity?${params.toString()}`, {
+        credentials: "include",
+      });
+      const json = await res.json();
+
+      if (json?.success && json.data && typeof json.data === "object") {
+        setIdentityByKey((prev) => ({ ...prev, ...json.data }));
+      }
+    } catch (err) {
+      console.error("load identities error:", err);
+    }
+  }, []);
+
   const fetchPage = useCallback(
     async (pageValue) => {
       setLoading(true);
@@ -727,7 +764,8 @@ export default function VoucherReportsPage() {
         const json = await res.json();
 
         if (json?.success) {
-          setRows(json.data || []);
+          const nextRows = json.data || [];
+          setRows(nextRows);
           setMeta(
             json.meta || {
               total: 0,
@@ -736,6 +774,7 @@ export default function VoucherReportsPage() {
               pageSize: PAGE_SIZE,
             }
           );
+          loadIdentitiesForRows(nextRows);
         } else {
           setRows([]);
           setMeta({
@@ -758,7 +797,7 @@ export default function VoucherReportsPage() {
         setLoading(false);
       }
     },
-    [buildParams]
+    [buildParams, loadIdentitiesForRows]
   );
 
   useEffect(() => {
@@ -880,6 +919,89 @@ export default function VoucherReportsPage() {
       setUploadingId(null);
     }
   }, []);
+
+  const triggerIdentityPick = useCallback((rowId) => {
+    const ref = identityInputRefs.current[rowId];
+    if (ref) ref.click();
+  }, []);
+
+  const handleIdentityAction = useCallback(
+    async (row, e) => {
+      e?.stopPropagation?.();
+
+      const personName = getVoucherCustomerName(row);
+      if (!personName || personName.length < 2) {
+        alert("حقل «استلمت من» فارغ على هذا الوصل");
+        return;
+      }
+
+      const key = personNameKey(personName);
+      const cached = identityByKey[key]?.attachment;
+
+      if (cached) {
+        window.open(attachmentOpenHref(cached), "_blank", "noopener,noreferrer");
+        return;
+      }
+
+      try {
+        const params = new URLSearchParams({ name: personName });
+        const res = await fetch(`/api/vouchers/person-identity?${params.toString()}`, {
+          credentials: "include",
+        });
+        const json = await res.json();
+
+        if (!json?.success) {
+          throw new Error(json?.error || "تعذر تحميل الهوية");
+        }
+
+        const attachment = json.data?.attachment;
+        if (attachment) {
+          setIdentityByKey((prev) => ({
+            ...prev,
+            [key]: { personName, attachment },
+          }));
+          window.open(attachmentOpenHref(attachment), "_blank", "noopener,noreferrer");
+          return;
+        }
+      } catch (err) {
+        console.error("View identity error:", err);
+        alert(err.message || "تعذر عرض الهوية");
+        return;
+      }
+
+      triggerIdentityPick(row._id);
+    },
+    [identityByKey, triggerIdentityPick]
+  );
+
+  const handleUploadIdentity = useCallback(
+    async (row, file) => {
+      if (!row?._id || !file) return;
+
+      const personName = getVoucherCustomerName(row);
+      const key = personNameKey(personName);
+      if (!personName || personName.length < 2) {
+        alert("حقل «استلمت من» فارغ على هذا الوصل");
+        return;
+      }
+
+      try {
+        setUploadingIdentityKey(key);
+        const attachment = await uploadPersonIdentity({ personName, file });
+        setIdentityByKey((prev) => ({
+          ...prev,
+          [key]: { personName, attachment },
+        }));
+        alert("✅ تم رفع الهوية بنجاح");
+      } catch (err) {
+        console.error("Upload identity error:", err);
+        alert(err.message || "فشل رفع الهوية");
+      } finally {
+        setUploadingIdentityKey(null);
+      }
+    },
+    []
+  );
 
   const handleSearch = async () => {
     hasSearchedRef.current = true;
@@ -1395,6 +1517,7 @@ export default function VoucherReportsPage() {
                       "البنك",
                       "الوصف",
                       "الاتاج",
+                      "الهوية",
                       "التاريخ",
                       "حذف الوصل",
                     ].map((h, i) => (
@@ -1510,6 +1633,72 @@ export default function VoucherReportsPage() {
                             <span className="text-[12px] text-slate-400">لا يوجد</span>
                           )}
                         </div>
+                      </td>
+
+                      <td
+                        className="px-6 py-4 text-right whitespace-nowrap"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {(() => {
+                          const personName = getVoucherCustomerName(r);
+                          const personKey = personNameKey(personName);
+                          const hasIdentity = Boolean(identityByKey[personKey]?.attachment);
+                          const isUploadingIdentity = uploadingIdentityKey === personKey;
+                          const missingName = !personName || personName.length < 2;
+
+                          return (
+                            <div className="flex flex-col items-end gap-1.5">
+                              <input
+                                ref={(el) => {
+                                  if (el) identityInputRefs.current[r._id] = el;
+                                }}
+                                type="file"
+                                hidden
+                                accept="image/*,.pdf"
+                                onChange={(e) => {
+                                  const file = (e.target.files || [])[0];
+                                  if (file) handleUploadIdentity(r, file);
+                                  e.target.value = "";
+                                }}
+                              />
+
+                              {missingName ? (
+                                <span className="text-[12px] text-slate-400">—</span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={(e) => handleIdentityAction(r, e)}
+                                  disabled={isUploadingIdentity}
+                                  title={
+                                    hasIdentity
+                                      ? `عرض هوية: ${personName}`
+                                      : `رفع هوية لـ: ${personName}`
+                                  }
+                                  className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-[12px] font-extrabold transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                                    isUploadingIdentity
+                                      ? "border-slate-200 bg-slate-100 text-slate-500"
+                                      : hasIdentity
+                                      ? "border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
+                                      : "border-violet-200 bg-violet-50 text-violet-800 hover:bg-violet-100"
+                                  }`}
+                                >
+                                  {isUploadingIdentity ? (
+                                    <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-violet-400 border-t-transparent" />
+                                  ) : hasIdentity ? (
+                                    <FiCreditCard className="text-sm" />
+                                  ) : (
+                                    <FiUploadCloud className="text-sm" />
+                                  )}
+                                  {isUploadingIdentity
+                                    ? "جاري الرفع..."
+                                    : hasIdentity
+                                    ? "عرض الهوية"
+                                    : "رفع الهوية"}
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </td>
 
                       <td className="px-6 py-4 text-right whitespace-nowrap text-slate-700">

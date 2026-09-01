@@ -3,7 +3,7 @@
 import { createPortal } from "react-dom";
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { FiUser, FiCreditCard, FiPhone, FiHome } from "react-icons/fi";
+import { FiUser, FiCreditCard, FiPhone, FiHome, FiPaperclip } from "react-icons/fi";
 
 const listVariants = {
   hidden: { opacity: 0 },
@@ -121,19 +121,23 @@ export default function PersonNameSuggestDropdown({
                         {opt.name}
                       </div>
 
-                      {(opt.nationalId || opt.phone || opt.bank) && (
+                      {(opt.nationalId || opt.phone || opt.bank || opt.identityAttachment) && (
                         <div className="mt-2 flex flex-wrap justify-end gap-1.5">
+                          {opt.identityAttachment ? (
+                            <span className="inline-flex items-center gap-1 rounded-lg bg-violet-100/90 px-2 py-0.5 text-[11px] font-bold text-violet-700">
+                              <FiPaperclip className="shrink-0" size={11} />
+                              <span>مرفق هوية</span>
+                            </span>
+                          ) : null}
                           <MetaChip
                             icon={FiCreditCard}
-                            label="هوية"
                             value={opt.nationalId}
                           />
                           <MetaChip
                             icon={FiPhone}
-                            label="هاتف"
                             value={opt.phone}
                           />
-                          <MetaChip icon={FiHome} label="بنك" value={opt.bank} />
+                          <MetaChip icon={FiHome} value={opt.bank} />
                         </div>
                       )}
                     </div>

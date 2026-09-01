@@ -4,6 +4,7 @@ import { useMemo, useState, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import VoucherRichTextInput from "@/components/VoucherRichTextInput";
 import PersonNameSuggestDropdown from "@/components/PersonNameSuggestDropdown";
+import VoucherPersonIdentityPanel from "@/components/VoucherPersonIdentityPanel";
 import { useVoucherPersonSuggest } from "@/hooks/useVoucherPersonSuggest";
 import { applyStyleToRange, getStyleAtRange, trimStyleRange } from "@/lib/voucher/fieldColorRuns";
 import {
@@ -600,6 +601,8 @@ export default function VoucherCanvasDialog({
   };
 
   if (!selectedCompany) return null;
+
+  const customerPersonName = vReceivedBy;
 
   const dateStyle = getStyle("date");
   const currencyMarkStyle = getStyle("currencyMark");
@@ -1232,6 +1235,11 @@ export default function VoucherCanvasDialog({
                   </div>
 
                   <div className="sticky top-4 rounded-3xl bg-white/55 backdrop-blur-2xl ring-1 ring-white/30 p-4 shadow-sm">
+                    <VoucherPersonIdentityPanel
+                      personName={customerPersonName}
+                      disabled={isViewPage && !editMode}
+                    />
+
                     <div className="flex items-center gap-2 mb-4 text-gray-900 font-extrabold">
                       <FiType />
                       أدوات النص

@@ -4,6 +4,8 @@ import dbConnect from "@/lib/mongodb";
 import Permissions from "@/models/Permissions";
 import { PERMISSIONS } from "@/lib/permission";
 import { COMPANIES } from "@/lib/voucher/companies";
+import VoucherPersonIdentity from "@/models/VoucherPersonIdentity";
+import { personNameKey } from "@/lib/voucher/normalizePersonName";
 import mongoose from "mongoose";
 
 export const runtime = "nodejs";
@@ -183,6 +185,27 @@ export async function GET(req) {
       }
 
       if (out.length >= 20) break;
+    }
+
+    const identityKeys = [
+      ...new Set(out.map((item) => personNameKey(item.name)).filter(Boolean)),
+    ];
+
+    if (identityKeys.length) {
+      const identities = await VoucherPersonIdentity.find({
+        personNameKey: { $in: identityKeys },
+      })
+        .select("personNameKey attachment")
+        .lean();
+
+      const identityByKey = Object.fromEntries(
+        identities.map((row) => [row.personNameKey, row.attachment || null])
+      );
+
+      for (const item of out) {
+        const key = personNameKey(item.name);
+        item.identityAttachment = key ? identityByKey[key] || null : null;
+      }
     }
 
     return NextResponse.json({ success: true, data: out });
