@@ -10,6 +10,7 @@ import {
   parseFilterDayStart,
   voucherEffectiveDateAddFields,
 } from "@/lib/voucher/voucherDate";
+import { enrichVouchersWithRequestLinks } from "@/lib/voucher/voucherRequestLink";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -347,9 +348,12 @@ export async function GET(req) {
       ])
       .toArray();
 
+    const mapped = results.map((r) => ({ ...r, _id: r._id.toString() }));
+    const enriched = await enrichVouchersWithRequestLinks(mapped);
+
     return NextResponse.json({
       success: true,
-      data: results.map(r => ({ ...r, _id: r._id.toString() })),
+      data: enriched,
       meta: {
         total,
         totalPages: Math.ceil(total / pageSize),

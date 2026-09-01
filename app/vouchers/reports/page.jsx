@@ -21,6 +21,7 @@ import {
   FiTrash2,
   FiCheckCircle,
   FiUploadCloud,
+  FiExternalLink,
 } from "react-icons/fi";
 
 import { FaMoneyBillWave } from "react-icons/fa6";
@@ -1503,13 +1504,14 @@ export default function VoucherReportsPage() {
               }}
               className="relative overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
             >
-              <table className="min-w-[1600px] w-full text-[14px] md:text-[15px] text-slate-800 font-bold">
+              <table className="min-w-[1720px] w-full text-[14px] md:text-[15px] text-slate-800 font-bold">
                 <thead className="sticky top-0 z-10">
                   <tr className="border-b border-slate-200/80 bg-white/90 backdrop-blur">
                     {[
                       "الشركة",
                       "نوع الوصل",
                       "رقم الوصل",
+                      "طلب الصرف",
                       "العملة",
                       "المبلغ",
                       // "المستفيد",
@@ -1561,6 +1563,38 @@ export default function VoucherReportsPage() {
 
                       <td className="px-6 py-4 text-right font-mono text-slate-900 whitespace-nowrap">
                         {r.voucherNo || String(r.seq ?? "").padStart(5, "0")}
+                      </td>
+
+                      <td
+                        className="px-6 py-4 text-right whitespace-nowrap"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {r.requestLink?.href ? (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              window.open(
+                                r.requestLink.href,
+                                "_blank",
+                                "noopener,noreferrer"
+                              );
+                            }}
+                            title={
+                              r.requestLink.requestCode
+                                ? `طلب ${r.requestLink.requestCode}`
+                                : "فتح طلب الصرف"
+                            }
+                            className="inline-flex items-center gap-1.5 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-[12px] font-extrabold text-sky-800 transition hover:bg-sky-100"
+                          >
+                            <FiExternalLink className="text-sm" />
+                            {r.requestLink.requestCode
+                              ? `طلب ${r.requestLink.requestCode}`
+                              : "فتح الطلب"}
+                          </button>
+                        ) : (
+                          <span className="text-[12px] text-slate-400">—</span>
+                        )}
                       </td>
 
                       <td className="px-6 py-4 text-right whitespace-nowrap font-extrabold">

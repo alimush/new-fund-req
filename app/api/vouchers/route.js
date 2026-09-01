@@ -455,6 +455,7 @@ export async function POST(req) {
 
       requestId: requestId ? safeString(requestId) : null,
       requestCode: requestCodeHint || safeString(requestCode),
+      requestCompanyKey: requestId ? requestCompany : "",
 
       voucherDate: buildVoucherDateFromParts(vDateYY, vDateMM, vDateDD) || new Date(),
 

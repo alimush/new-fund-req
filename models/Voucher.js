@@ -294,6 +294,12 @@ const VoucherSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+
+    requestCompanyKey: {
+      type: String,
+      default: "",
+      index: true,
+    },
   },
   {
     timestamps: true,
