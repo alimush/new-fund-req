@@ -15,6 +15,9 @@ import {
 
 export const runtime = "nodejs";
 
+/** حد أقصى لطلبات كل شركة عند مسح المبالغ لاقتراحات البحث الموحّد */
+const SUGGEST_AMOUNT_SCAN_PER_COMPANY = 250;
+
 const safeSplit = (v) =>
   String(v || "")
     .split(",")
@@ -120,7 +123,8 @@ function amountMatchesPart(total, part) {
   const s = amountToMatchString(total);
   if (!s) return false;
   if (s === "0" && p !== "0") return false;
-  return s.includes(p);
+  // بادئة: "34" → 34000 / 340000 / 34213 ...
+  return s.startsWith(p);
 }
 
 function mergeQueryParts(base, parts = []) {
@@ -771,12 +775,10 @@ export async function GET(req) {
       }
 
       if (qIsNumber && Number.isFinite(qAmount)) {
-        const target = normalizeAmount(qAmount);
-        mergedAll = mergedAll.filter((d) => {
-          const v = normalizeAmount(d.totalAmount);
-          if (v == null || target == null) return false;
-          return v === target;
-        });
+        const digitPart = String(qParam).replace(/,/g, "").trim();
+        mergedAll = mergedAll.filter((d) =>
+          amountMatchesPart(d.totalAmount, digitPart)
+        );
       }
 
       mergedAll.sort((a, b) => {
