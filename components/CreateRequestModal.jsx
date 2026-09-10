@@ -126,15 +126,28 @@ export default function CreateRequestModal({
   mode = "create",       // create | edit | clone
   initialData = null,    // بيانات الريكويست
   requestId = null,      // id عند التعديل
+  /** "settlement" = تسويه لشركة الرضا فقط (اتاج + نفس ورك فلو الرضا) */
+  variant = "default",
 }) {
   const { showToast } = useToast();
-  const steps = [
-    { key: "Basic Info", label: "أساسي", icon: FiFileText },
-    { key: "Financial", label: "مالي", icon: FiDollarSign },
-    { key: "Items", label: "مواد", icon: FiShoppingCart },
-    { key: "Attachment", label: "مرفقات", icon: FiPaperclip },
-    { key: "Review", label: "مراجعة", icon: FiLayers },
-  ];
+  const isSettlement = variant === "settlement" && companyKey === "Al-Rida";
+  const steps = useMemo(
+    () =>
+      isSettlement
+        ? [
+            { key: "Basic Info", label: "أساسي", icon: FiFileText },
+            { key: "Attachment", label: "الاتاج", icon: FiPaperclip },
+            { key: "Review", label: "مراجعة", icon: FiLayers },
+          ]
+        : [
+            { key: "Basic Info", label: "أساسي", icon: FiFileText },
+            { key: "Financial", label: "مالي", icon: FiDollarSign },
+            { key: "Items", label: "مواد", icon: FiShoppingCart },
+            { key: "Attachment", label: "مرفقات", icon: FiPaperclip },
+            { key: "Review", label: "مراجعة", icon: FiLayers },
+          ],
+    [isSettlement]
+  );
 
   // ✅ حالات مودال الإنشاء
   const [isCreating, setIsCreating] = useState(false);
@@ -216,11 +229,11 @@ const formatInputMoney = (v) => {
 
   const resetForm = () => {
     const isBadurBaghdad = companyKey === "Badur-Baghdad";
-    setRequestType(isBadurBaghdad ? "تسديد مستحقات" : "");
+    setRequestType(isSettlement ? "تسويه" : isBadurBaghdad ? "تسديد مستحقات" : "");
     setDescription("");
     setCurrency("IQD");
     setProjectName(isBadurBaghdad ? "بدور بغداد" : "");
-    setDepartment("");
+    setDepartment(isSettlement ? "الحسابات" : "");
     setExpenseType("");
     setItems([]);
     setNewItem({ desc: "", qty: "", price: "" });
@@ -284,6 +297,16 @@ const formatInputMoney = (v) => {
 
   // ✅ POST create request (presigned URL upload)
   const handleCreate = async () => {
+    if (isSettlement) {
+      const hasFiles = (attachment || []).length > 0;
+      if (!hasFiles) {
+        throw new Error("يجب رفع اتاج واحد على الأقل للتسويه");
+      }
+      if (!description.trim()) {
+        throw new Error("يجب كتابة ملاحظة للتسويه");
+      }
+    }
+
     const uploadedAttachments = [];
   
     // نرفع فقط الملفات الجديدة
@@ -334,13 +357,13 @@ const formatInputMoney = (v) => {
   
     const payload = {
       company: companyKey,
-      requestType,
+      requestType: isSettlement ? "تسويه" : requestType,
       projectName,
       description,
-      currency,
+      currency: currency || "IQD",
       expenseType,
-      department,
-      items,
+      department: department || (isSettlement ? "الحسابات" : ""),
+      items: isSettlement ? [] : items,
       attachments: finalAttachments,
     };
   
@@ -406,6 +429,183 @@ const formatInputMoney = (v) => {
 
   if (!open) return null;
 
+  const submitSettlement = async () => {
+    if (!canCreate) return;
+    setIsCreating(true);
+    try {
+      const result = await handleCreate();
+      onClose?.();
+      onCreated?.(result);
+      showToast("تم إنشاء التسويه بنجاح", "success");
+    } catch (e) {
+      console.error(e);
+      showToast(e?.message || "فشل إنشاء التسويه", "error");
+    } finally {
+      setIsCreating(false);
+    }
+  };
+
+  if (isSettlement) {
+    return (
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => {
+              if (!isCreating) onClose?.();
+            }}
+          >
+            <motion.section
+              className={`flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden text-[15px] font-bold text-slate-900 ${modalShell}`}
+              initial={{ y: 28, opacity: 0, scale: 0.98 }}
+              animate={{ y: 0, opacity: 1, scale: 1 }}
+              exit={{ y: 20, opacity: 0, scale: 0.98 }}
+              transition={{ type: "spring", stiffness: 140, damping: 18 }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="border-b border-slate-200/60 bg-slate-50/90 px-4 py-4 sm:px-5">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h2 className="text-xl font-black text-gray-900">تسويه</h2>
+                    <p className="mt-1 text-xs font-semibold text-gray-600">
+                      اتاج + ملاحظة — موافقات ورك فلو الرضا
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!isCreating) onClose?.();
+                    }}
+                    className={btnSecondary}
+                  >
+                    <FiX /> إغلاق
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex-1 space-y-4 overflow-y-auto p-4 sm:p-5">
+                <div>
+                  <FieldLabel required>الملاحظة</FieldLabel>
+                  <textarea
+                    placeholder="اكتب الملاحظة..."
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    className={`${fieldClass} min-h-[110px] resize-y`}
+                    rows={4}
+                  />
+                </div>
+
+                <SectionBlock
+                  title="الاتاج"
+                  subtitle="ارفع ملف واحد على الأقل"
+                  icon={FiPaperclip}
+                  right={
+                    attachment?.length > 0 ? (
+                      <span className="rounded-full border border-violet-200 bg-violet-50 px-2.5 py-1 text-[11px] font-extrabold text-violet-800">
+                        {attachment.length} ملف
+                      </span>
+                    ) : null
+                  }
+                >
+                  <div
+                    className={`rounded-xl border p-4 transition ${
+                      dragOver
+                        ? "border-violet-300 bg-violet-50/50 ring-2 ring-violet-200/80"
+                        : "border-slate-200/70 bg-slate-50/60"
+                    }`}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      setDragOver(true);
+                    }}
+                    onDragLeave={(e) => {
+                      e.preventDefault();
+                      setDragOver(false);
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      setDragOver(false);
+                      addFiles(Array.from(e.dataTransfer.files || []));
+                    }}
+                  >
+                    <label className={`cursor-pointer ${btnPrimary}`}>
+                      <FiPlus className="text-base" />
+                      اختيار ملفات
+                      <input
+                        type="file"
+                        className="hidden"
+                        multiple
+                        onChange={(e) => {
+                          addFiles(Array.from(e.target.files || []));
+                          e.target.value = "";
+                        }}
+                      />
+                    </label>
+
+                    {attachment?.length > 0 ? (
+                      <div className="mt-4 space-y-2">
+                        {attachment.map((file, i) => (
+                          <div
+                            key={i}
+                            className={`flex items-center justify-between gap-3 p-3 ${requestCard}`}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => openAttachment(file)}
+                              className="min-w-0 truncate text-right text-sm font-extrabold text-gray-900"
+                            >
+                              {file.name}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setAttachment((prev) => prev.filter((_, idx) => idx !== i))
+                              }
+                              className="inline-flex items-center gap-1 rounded-xl border border-red-200 bg-red-50 px-2.5 py-1.5 text-xs font-extrabold text-red-700"
+                            >
+                              <FiTrash2 /> حذف
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mt-3 text-center text-xs font-semibold text-gray-500">
+                        لا يوجد اتاج بعد
+                      </p>
+                    )}
+                  </div>
+                </SectionBlock>
+              </div>
+
+              <div className="border-t border-slate-200/60 bg-slate-50/80 px-4 py-3 sm:px-5">
+                <div className="flex justify-end gap-2">
+                  <button
+                    type="button"
+                    disabled={isCreating}
+                    onClick={() => onClose?.()}
+                    className={btnSecondary}
+                  >
+                    إلغاء
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isCreating || !canCreate}
+                    onClick={submitSettlement}
+                    className={btnPrimary}
+                  >
+                    {isCreating ? "جاري الإنشاء..." : "إنشاء التسويه"}
+                  </button>
+                </div>
+              </div>
+            </motion.section>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    );
+  }
+
   return (
     <AnimatePresence>
       {open && (
@@ -438,13 +638,19 @@ const formatInputMoney = (v) => {
                       Fund Requests
                     </p>
                     <h2 className="mt-0.5 text-xl font-black text-gray-900 sm:text-2xl">
-                      {mode === "edit"
+                      {isSettlement
+                        ? "تسويه"
+                        : mode === "edit"
                         ? "تعديل الطلب"
                         : mode === "clone"
                           ? "إنشاء طلب مشابه"
                           : "إنشاء طلب جديد"}
                     </h2>
-                    <p className="mt-1 text-xs font-semibold text-gray-600">طلبات {companyKey}</p>
+                    <p className="mt-1 text-xs font-semibold text-gray-600">
+                      {isSettlement
+                        ? "رفع الاتاج — موافقات ورك فلو الرضا"
+                        : `طلبات ${companyKey}`}
+                    </p>
                   </div>
                 </div>
                 <button
@@ -530,6 +736,14 @@ const formatInputMoney = (v) => {
 
                     <div>
                       <FieldLabel required>نوع الطلب</FieldLabel>
+                      {isSettlement ? (
+                        <input
+                          type="text"
+                          value="تسويه"
+                          readOnly
+                          className={`${fieldClass} bg-violet-50 text-violet-900`}
+                        />
+                      ) : (
                       <select
                         value={requestType}
                         onChange={(e) => setRequestType(e.target.value)}
@@ -554,6 +768,7 @@ const formatInputMoney = (v) => {
                         <option value="قرض شخصي">قرض شخصي</option>
                         <option value="سلفة">سلفة</option>
                       </select>
+                      )}
                     </div>
 
                     {supportsExpenseType(companyKey) ? (
@@ -583,9 +798,13 @@ const formatInputMoney = (v) => {
                     </div>
 
                     <div className="sm:col-span-2">
-                      <FieldLabel>الوصف</FieldLabel>
+                      <FieldLabel required={isSettlement}>الوصف</FieldLabel>
                       <textarea
-                        placeholder="اكتب وصف الطلب..."
+                        placeholder={
+                          isSettlement
+                            ? "اكتب وصف التسويه..."
+                            : "اكتب وصف الطلب..."
+                        }
                         value={description}
                         onChange={(e) => setDescription(e.target.value)}
                         className={`${fieldClass} min-h-[96px] resize-y`}
@@ -739,8 +958,12 @@ const formatInputMoney = (v) => {
 
               {activeTab === "Attachment" && (
                 <SectionBlock
-                  title="المرفقات"
-                  subtitle="PDF، Excel، صور أو أي ملفات داعمة"
+                  title={isSettlement ? "الاتاج" : "المرفقات"}
+                  subtitle={
+                    isSettlement
+                      ? "ارفع ملفات الاتاج — ستمر على موافقات ورك فلو الرضا"
+                      : "PDF، Excel، صور أو أي ملفات داعمة"
+                  }
                   icon={FiPaperclip}
                   right={
                     attachment?.length > 0 ? (
@@ -779,9 +1002,13 @@ const formatInputMoney = (v) => {
                           <FiPaperclip className="text-lg" />
                         </div>
                         <div>
-                          <div className="text-sm font-extrabold text-gray-900">رفع مرفق</div>
+                          <div className="text-sm font-extrabold text-gray-900">
+                            {isSettlement ? "رفع الاتاج" : "رفع مرفق"}
+                          </div>
                           <div className="text-xs font-semibold text-gray-600">
-                            اختر ملفات أو اسحبها وأفلتها هنا
+                            {isSettlement
+                              ? "مطلوب رفع ملف واحد على الأقل"
+                              : "اختر ملفات أو اسحبها وأفلتها هنا"}
                           </div>
                         </div>
                       </div>
@@ -883,7 +1110,7 @@ const formatInputMoney = (v) => {
                   </div>
 
                   <SectionBlock
-                    title="المرفقات"
+                    title={isSettlement ? "الاتاج" : "المرفقات"}
                     subtitle={attachment?.length ? `${attachment.length} مرفق` : "لا توجد مرفقات"}
                     icon={FiPaperclip}
                   >
@@ -1004,7 +1231,8 @@ const formatInputMoney = (v) => {
                       } catch (e) {
                         console.error(e);
                         showToast(
-                          mode === "edit" ? "فشل تعديل الطلب" : "فشل إنشاء الطلب",
+                          e?.message ||
+                            (mode === "edit" ? "فشل تعديل الطلب" : "فشل إنشاء الطلب"),
                           "error"
                         );
                       } finally {
@@ -1025,6 +1253,8 @@ const formatInputMoney = (v) => {
                       </>
                     ) : mode === "edit" ? (
                       "حفظ التعديل"
+                    ) : isSettlement ? (
+                      "إنشاء التسويه"
                     ) : (
                       "إنشاء الطلب"
                     )}

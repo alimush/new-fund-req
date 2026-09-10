@@ -129,6 +129,28 @@ async function canEditOrDeleteRequest({ Model, id, userId, username, isAdmin }) 
   return { ok: false, status: 403, error: "Not allowed" };
 }
 
+function applyKindFilter(filter, kind) {
+  const k = String(kind || "all").toLowerCase();
+  if (k === "settlement" || k === "تسويه") {
+    return { ...filter, requestType: "تسويه" };
+  }
+  if (k === "requests" || k === "request") {
+    return { ...filter, requestType: { $ne: "تسويه" } };
+  }
+  return filter;
+}
+
+function filterListByKind(list, kind) {
+  const k = String(kind || "all").toLowerCase();
+  if (k === "settlement" || k === "تسويه") {
+    return (list || []).filter((r) => String(r?.requestType || "") === "تسويه");
+  }
+  if (k === "requests" || k === "request") {
+    return (list || []).filter((r) => String(r?.requestType || "") !== "تسويه");
+  }
+  return list || [];
+}
+
 function buildSearchFilter(q) {
   const t = String(q || "").trim();
   if (!t) return null;
@@ -148,8 +170,7 @@ function buildSearchFilter(q) {
       { department: rx },
       { createdBy: rx },
       { projectName: rx },
-    {expenseType: rx}
-      // _id as string search (fallback): we can't regex ObjectId directly reliably, so ignore
+      { expenseType: rx },
     ],
   };
 }
@@ -446,6 +467,7 @@ export async function GET(req) {
     const scope = String(searchParams.get("scope") || "mine").toLowerCase();
     const q = String(searchParams.get("q") || "").trim();
     const statusParam = String(searchParams.get("status") || "all").toLowerCase(); // ✅ جديد
+    const kindParam = String(searchParams.get("kind") || "all").trim();
 
     // ✅ حماية
     const auth = await requireCompanyAccess(req, company);
@@ -503,7 +525,10 @@ export async function GET(req) {
       }
     
       const searchFilter = buildSearchFilter(q);
-      const finalFilter = searchFilter ? { $and: [filter, searchFilter] } : filter;
+      const withKind = applyKindFilter(filter, kindParam);
+      const finalFilter = searchFilter
+        ? { $and: [withKind, searchFilter] }
+        : withKind;
     
       const list = await Model.find(finalFilter).lean().sort({ createdAt: -1 });
     
@@ -518,7 +543,12 @@ export async function GET(req) {
       const uid = new mongoose.Types.ObjectId(userId);
 
       const pipeline = [
-        { $match: { status: { $in: ["Pending", "pending"] } } },
+        {
+          $match: applyKindFilter(
+            { status: { $in: ["Pending", "pending"] } },
+            kindParam
+          ),
+        },
         { $addFields: { _step: { $arrayElemAt: ["$workflow.steps", "$currentStep"] } } },
         {
           $match: {
@@ -536,9 +566,10 @@ export async function GET(req) {
       const list = await Model.aggregate(pipeline);
 
       // ✅ search (بعد الـ aggregate) — كافي للأحجام المعتادة
+      let out = filterListByKind(list, kindParam);
       if (q) {
         const tq = q.toLowerCase();
-        const out = list.filter((r) => {
+        out = out.filter((r) => {
           const text = [
             r.requestCode,
             r.company,
@@ -556,10 +587,8 @@ export async function GET(req) {
             .toLowerCase();
           return text.includes(tq);
         });
-        return NextResponse.json({ success: true, data: out });
       }
-
-      return NextResponse.json({ success: true, data: list });
+      return NextResponse.json({ success: true, data: out });
     }
 
     // =========================

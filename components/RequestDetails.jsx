@@ -516,6 +516,7 @@ export default function RequestDetails({ id, companyKey }) {
     : "غير مصروف";
 
   const showExpenseType = supportsExpenseType(companyKey);
+  const isSettlement = String(request?.requestType || "") === "تسويه";
   const expenseTypeLabel = request?.expenseType || "-";
   const expenseTypeIsSpent = expenseTypeLabel === "مصروف";
   const kpiColumnCount =
@@ -567,7 +568,11 @@ export default function RequestDetails({ id, companyKey }) {
       <div className="mx-auto w-full max-w-7xl">
         {/* =================== HERO =================== */}
         <motion.div
-          className="relative mb-6 overflow-hidden rounded-3xl border border-slate-200/80 bg-white/85 p-5 shadow-sm sm:p-6"
+          className={`relative mb-6 overflow-hidden rounded-3xl border p-5 shadow-sm sm:p-6 ${
+            isSettlement
+              ? "border-violet-200/80 bg-gradient-to-br from-violet-50 via-white to-fuchsia-50/40"
+              : "border-slate-200/80 bg-white/85"
+          }`}
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.45 }}
@@ -586,14 +591,20 @@ export default function RequestDetails({ id, companyKey }) {
 
           <div className="mt-5 border-b border-slate-100 pb-4">
             <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-              تفاصيل طلب الصرف
+              {isSettlement ? "تفاصيل التسويه" : "تفاصيل طلب الصرف"}
             </p>
             <h1 className="mt-1 text-2xl font-extrabold leading-tight tracking-tight text-slate-900 sm:text-3xl">
-              {projectName}
+              {isSettlement ? "تسويه" : projectName}
             </h1>
           </div>
 
-          <div className="mt-4 flex flex-wrap items-center gap-2 rounded-2xl bg-slate-50/90 p-2.5 ring-1 ring-slate-200/70">
+          <div
+            className={`mt-4 flex flex-wrap items-center gap-2 rounded-2xl p-2.5 ring-1 ${
+              isSettlement
+                ? "bg-violet-50/90 ring-violet-200/70"
+                : "bg-slate-50/90 ring-slate-200/70"
+            }`}
+          >
             <div className="relative">
               <AnimatePresence>
                 {codeCopied ? (
@@ -624,15 +635,15 @@ export default function RequestDetails({ id, companyKey }) {
             </HeroMetaChip>
             {request.requestType ? (
               <HeroMetaChip icon={<FiInfo className="text-sm" />} iconColor="text-indigo-600">
-                {request.requestType}
+                {isSettlement ? "تسويه" : request.requestType}
               </HeroMetaChip>
             ) : null}
-            {request.department ? (
+            {!isSettlement && request.department ? (
               <HeroMetaChip icon={<FiUsers className="text-sm" />} iconColor="text-blue-600">
                 {request.department}
               </HeroMetaChip>
             ) : null}
-            {showExpenseType ? (
+            {!isSettlement && showExpenseType ? (
               <HeroMetaChip
                 icon={<FiDollarSign className="text-sm" />}
                 iconColor={expenseTypeIsSpent ? "text-emerald-600" : "text-rose-600"}
@@ -642,9 +653,9 @@ export default function RequestDetails({ id, companyKey }) {
             ) : null}
           </div>
 
-          {(canCancel || canEdit || canPrint || canDuplicate) && (
+          {(canCancel || canEdit || canPrint || (canDuplicate && !isSettlement)) && (
             <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
-              {canDuplicate && (
+              {canDuplicate && !isSettlement && (
                 <button
                   type="button"
                   onClick={() =>
@@ -664,7 +675,11 @@ export default function RequestDetails({ id, companyKey }) {
                 <button
                   type="button"
                   onClick={async () => {
-                    const ok = window.confirm("هل أنت متأكد من إلغاء الطلب؟");
+                    const ok = window.confirm(
+                      isSettlement
+                        ? "هل أنت متأكد من إلغاء التسويه؟"
+                        : "هل أنت متأكد من إلغاء الطلب؟"
+                    );
                     if (!ok) return;
                     try {
                       setLoading(true);
@@ -781,10 +796,12 @@ export default function RequestDetails({ id, companyKey }) {
 
         {/* =================== SUMMARY =================== */}
         <div className="mb-8 grid grid-cols-1 gap-6 lg:grid-cols-2">
-          <Section title="معلومات الطلب" icon={<ColoredIcon color="text-blue-600"><FiInfo /></ColoredIcon>}>
+          <Section title={isSettlement ? "معلومات التسويه" : "معلومات الطلب"} icon={<ColoredIcon color="text-blue-600"><FiInfo /></ColoredIcon>}>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <Info label="الشركة" value={companyLabel} icon={<FiUsers />} iconColor="text-blue-600" />
-              {showExpenseType ? (
+              <Info label="النوع" value={request.requestType} icon={<FiInfo />} iconColor="text-teal-600" />
+              <Info label="رمز الطلب" value={requestCodeLabel} icon={<FiHash />} iconColor="text-purple-600" />
+              {!isSettlement && showExpenseType ? (
                 <Info
                   label="المصروفية"
                   value={expenseTypeLabel}
@@ -792,11 +809,15 @@ export default function RequestDetails({ id, companyKey }) {
                   iconColor={expenseTypeIsSpent ? "text-emerald-600" : "text-rose-600"}
                 />
               ) : null}
-              <Info label="اسم المشروع" value={projectName} icon={<FiLayers />} iconColor="text-indigo-600" className="sm:col-span-2" />
-              <Info label="رمز الطلب" value={requestCodeLabel} icon={<FiHash />} iconColor="text-purple-600" />
-              <Info label="النوع" value={request.requestType} icon={<FiInfo />} iconColor="text-teal-600" />
-              <Info label="القسم" value={request.department} icon={<FiBriefcase />} iconColor="text-amber-600" />
-              <Info label="العملة" value={request.currency} icon={<GrCurrency />} iconColor="text-emerald-600" />
+              {!isSettlement ? (
+                <Info label="اسم المشروع" value={projectName} icon={<FiLayers />} iconColor="text-indigo-600" className="sm:col-span-2" />
+              ) : null}
+              {!isSettlement ? (
+                <Info label="القسم" value={request.department} icon={<FiBriefcase />} iconColor="text-amber-600" />
+              ) : null}
+              {!isSettlement ? (
+                <Info label="العملة" value={request.currency} icon={<GrCurrency />} iconColor="text-emerald-600" />
+              ) : null}
             </div>
           </Section>
 
@@ -819,14 +840,18 @@ export default function RequestDetails({ id, companyKey }) {
           </Section>
         </div>
 
-        {/* =================== DESCRIPTION =================== */}
-        <Section title="الوصف" icon={<ColoredIcon color="text-teal-600"><FiMessageSquare /></ColoredIcon>}>
+        {/* =================== NOTE / DESCRIPTION =================== */}
+        <Section
+          title={isSettlement ? "الملاحظة" : "الوصف"}
+          icon={<ColoredIcon color="text-teal-600"><FiMessageSquare /></ColoredIcon>}
+        >
           <p className="rounded-2xl bg-white/70 p-4 text-[15px] font-medium leading-relaxed text-slate-800 ring-1 ring-slate-200/70 transition duration-300 hover:-translate-y-0.5 hover:bg-white hover:shadow-md hover:ring-slate-300/70">
             {request.description || "—"}
           </p>
         </Section>
 
         {/* =================== ITEMS =================== */}
+        {!isSettlement ? (
         <Section
           title="Items"
           icon={<ColoredIcon color="text-emerald-600"><FiList /></ColoredIcon>}
@@ -968,10 +993,20 @@ export default function RequestDetails({ id, companyKey }) {
           </div>
         </div>
       </Section>
+        ) : null}
 
         {/* =================== ATTACHMENTS =================== */}
-        {Array.isArray(request.attachments) && request.attachments.length > 0 && (
-          <Section title="المرفقات" icon={<ColoredIcon color="text-amber-600"><FiPaperclip /></ColoredIcon>} badge={`${request.attachments.length} ملف`} badgeClass="bg-amber-50 text-amber-700 ring-amber-200/70">
+        <Section
+          title={isSettlement ? "الاتاج" : "المرفقات"}
+          icon={<ColoredIcon color="text-amber-600"><FiPaperclip /></ColoredIcon>}
+          badge={
+            Array.isArray(request.attachments) && request.attachments.length > 0
+              ? `${request.attachments.length} ملف`
+              : null
+          }
+          badgeClass="bg-amber-50 text-amber-700 ring-amber-200/70"
+        >
+          {Array.isArray(request.attachments) && request.attachments.length > 0 ? (
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
               {request.attachments.map((file, idx) => {
                 const isImage =
@@ -1010,8 +1045,12 @@ export default function RequestDetails({ id, companyKey }) {
                 );
               })}
             </div>
-          </Section>
-        )}
+          ) : (
+            <p className="rounded-2xl bg-white/70 p-4 text-sm font-semibold text-slate-500 ring-1 ring-slate-200/70">
+              {isSettlement ? "لا يوجد اتاج" : "لا توجد مرفقات"}
+            </p>
+          )}
+        </Section>
 
         {/* ================= WORKFLOW ================= */}
         {workflow && (

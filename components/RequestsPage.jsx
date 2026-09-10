@@ -12,6 +12,7 @@ import {
   FiXCircle,
   FiFilter,
   FiCopy,
+  FiPaperclip,
 } from "react-icons/fi";
 import { useRouter } from "next/navigation";
 import { usePermissions } from "@/context/PermissionContext";
@@ -222,7 +223,10 @@ function SectionShell({
 function RequestCard({ r, variant = "default", companyKey, canDuplicate = false }) {
   const router = useRouter();
   const isDisbursement = variant === "disbursementPending";
+  const isSettlement =
+    variant === "settlement" || String(r?.requestType || "") === "تسويه";
   const dateText = r.createdAt ? new Date(r.createdAt).toLocaleDateString() : "-";
+  const attCount = Array.isArray(r.attachments) ? r.attachments.length : 0;
 
   const fmt = useMemo(
     () => new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }),
@@ -243,14 +247,52 @@ function RequestCard({ r, variant = "default", companyKey, canDuplicate = false 
     <div
       onClick={() => router.push(`/requests/${companyKey}/${r._id}`)}
       className={[
-        "group relative cursor-pointer rounded-2xl backdrop-blur-xl p-5 transition-all duration-300 hover:-translate-y-[2px]",
-        isDisbursement
+        "group relative cursor-pointer rounded-2xl p-4 transition-all duration-300 hover:-translate-y-[1px] sm:p-5",
+        isSettlement
+          ? "border border-violet-200/80 bg-white shadow-sm ring-1 ring-violet-100 hover:border-violet-300 hover:shadow-md"
+          : isDisbursement
           ? "bg-gradient-to-br from-emerald-50/95 via-green-50/50 to-white/70 ring-2 ring-emerald-300/50 shadow-[0_12px_35px_-18px_rgba(5,150,105,0.22)] hover:ring-emerald-400/60 hover:shadow-[0_18px_55px_-22px_rgba(5,150,105,0.3)]"
           : "bg-white/60 ring-1 ring-black/5 shadow-[0_12px_35px_-18px_rgba(0,0,0,0.28)] hover:bg-white/75 hover:ring-black/10 hover:shadow-[0_18px_55px_-22px_rgba(0,0,0,0.38)]",
       ].join(" ")}
     >
-      <div className="pointer-events-none absolute inset-0 rounded-2xl opacity-0 transition-opacity duration-300 group-hover:opacity-100 bg-gradient-to-br from-white/45 via-transparent to-transparent" />
+      {!isSettlement ? (
+        <div className="pointer-events-none absolute inset-0 rounded-2xl opacity-0 transition-opacity duration-300 group-hover:opacity-100 bg-gradient-to-br from-white/45 via-transparent to-transparent" />
+      ) : null}
 
+      {isSettlement ? (
+        <div className="relative space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <StatusBadge status={r.status} />
+              <span className="text-[12px] font-semibold text-slate-500">{dateText}</span>
+            </div>
+            <span className="inline-flex items-center gap-1.5 rounded-lg bg-violet-50 px-2.5 py-1 text-[12px] font-extrabold text-violet-700 ring-1 ring-violet-200">
+              <FiPaperclip className="text-sm" />
+              {attCount} اتاج
+            </span>
+          </div>
+
+          <div>
+            <p className="text-[13px] font-bold text-slate-500">الملاحظة</p>
+            <p className="mt-1 text-[15px] font-extrabold leading-relaxed text-slate-900 line-clamp-2">
+              {r.description || "—"}
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3 text-[12px]">
+            <span className="font-mono font-semibold text-slate-600">
+              {r.requestCode || r._id}
+            </span>
+            <span className="font-semibold text-slate-600">
+              بواسطة{" "}
+              <span className="font-extrabold text-slate-900">
+                {r.createdBy || "Unknown"}
+              </span>
+            </span>
+          </div>
+        </div>
+      ) : (
+      <>
       <div className="relative flex items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
@@ -271,7 +313,7 @@ function RequestCard({ r, variant = "default", companyKey, canDuplicate = false 
           </div>
 
           <div className="mt-2 text-[18px] font-extrabold text-gray-900 line-clamp-1">
-            {r.requestType || "Request"}
+            {r.requestType || "طلب"}
           </div>
 
           <div className="mt-2 text-[14px] text-gray-800/90 leading-relaxed line-clamp-2">
@@ -307,7 +349,9 @@ function RequestCard({ r, variant = "default", companyKey, canDuplicate = false 
       <div className="relative mt-4 flex items-center justify-between gap-3 text-[13px] text-gray-700/85">
         <span className="inline-flex items-center gap-2 min-w-0">
           <FiFileText className="text-[16px]" />
-          <span className="truncate max-w-[240px] font-semibold">{r.company || companyKey}</span>
+          <span className="truncate max-w-[240px] font-semibold">
+            {r.company || companyKey}
+          </span>
         </span>
 
         <span className="truncate max-w-[55%]">
@@ -333,6 +377,8 @@ function RequestCard({ r, variant = "default", companyKey, canDuplicate = false 
           </button>
         </div>
       ) : null}
+      </>
+      )}
     </div>
   );
 }
@@ -426,6 +472,12 @@ export default function RequestsPage({ companyKey }) {
 
   // ===== Modal =====
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [isSettlementOpen, setIsSettlementOpen] = useState(false);
+  const [listKind, setListKind] = useState(
+    companyKey === "Al-Rida" ? "requests" : "all"
+  ); // all | requests | settlement
+  const isRida = companyKey === "Al-Rida";
+  const isSettlementsView = isRida && listKind === "settlement";
 
   // ===== Suggestions =====
   const [mounted, setMounted] = useState(false);
@@ -555,13 +607,17 @@ export default function RequestsPage({ companyKey }) {
 
       const q = String(appliedSearch || "").trim();
       const qPart = q ? `&q=${encodeURIComponent(q)}` : "";
+      const kindPart =
+        companyKey === "Al-Rida"
+          ? `&kind=${encodeURIComponent(listKind === "settlement" ? "settlement" : "requests")}`
+          : "";
 
       // ✅ status فقط على mine
       const st = String(myStatus || "all").toLowerCase();
       const stPart = st && st !== "all" ? `&status=${encodeURIComponent(st)}` : `&status=all`;
 
-      const mineUrl = `${base}&scope=mine${stPart}${qPart}`;
-      const pendingUrl = `${base}&scope=pending${qPart}`;
+      const mineUrl = `${base}&scope=mine${stPart}${qPart}${kindPart}`;
+      const pendingUrl = `${base}&scope=pending${qPart}${kindPart}`;
 
       const fetches = [
         fetch(mineUrl, { cache: "no-store" }),
@@ -666,6 +722,7 @@ export default function RequestsPage({ companyKey }) {
     router,
     appliedSearch,
     myStatus,
+    listKind,
     canViewReceipts,
     canDelegateVoucher,
     user?.id,
@@ -677,7 +734,7 @@ export default function RequestsPage({ companyKey }) {
     fetchAll();
   }, [accessChecked, accessDenied, fetchAll]);
 
-  // fetch only when applied search OR myStatus changes
+  // fetch only when applied search OR myStatus OR listKind changes
   useEffect(() => {
     if (!accessChecked || accessDenied) return;
     setPageMy(1);
@@ -685,7 +742,7 @@ export default function RequestsPage({ companyKey }) {
     setPageDelegated(1);
     setPageDisbursed(1);
     fetchAll();
-  }, [appliedSearch, myStatus]); // eslint-disable-line
+  }, [appliedSearch, myStatus, listKind]); // eslint-disable-line
 
   useEffect(() => {
     if (!accessChecked || !companyKey) return;
@@ -813,13 +870,30 @@ export default function RequestsPage({ companyKey }) {
               </div>
 
               {canCreate ? (
-                <button
-                  type="button"
-                  onClick={() => setIsCreateOpen(true)}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-gray-900 px-4 py-2.5 text-white shadow-sm transition hover:bg-black"
-                >
-                  <FiPlus /> إنشاء طلب
-                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                  {isRida ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setListKind("settlement");
+                        setIsSettlementOpen(true);
+                      }}
+                      className="inline-flex items-center justify-center gap-2 rounded-xl border border-violet-300 bg-gradient-to-l from-violet-600 to-fuchsia-600 px-4 py-2.5 font-extrabold text-white shadow-md shadow-violet-300/30 transition hover:brightness-110"
+                    >
+                      <FiPaperclip /> تسويه
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (isRida) setListKind("requests");
+                      setIsCreateOpen(true);
+                    }}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-gray-900 px-4 py-2.5 text-white shadow-sm transition hover:bg-black"
+                  >
+                    <FiPlus /> إنشاء طلب
+                  </button>
+                </div>
               ) : null}
             </div>
           </div>
@@ -831,9 +905,49 @@ export default function RequestsPage({ companyKey }) {
           </div>
         </section>
 
+        {/* خانة الطلبات / التسويات — الرضا فقط */}
+        {isRida ? (
+          <section className="overflow-hidden rounded-3xl border border-violet-200/50 bg-gradient-to-l from-violet-50/80 via-white to-slate-50/80 p-2 shadow-sm ring-1 ring-violet-100/80">
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setListKind("requests")}
+                className={[
+                  "inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-3.5 text-sm font-black transition",
+                  !isSettlementsView
+                    ? "bg-gray-900 text-white shadow-md"
+                    : "bg-white/80 text-gray-700 ring-1 ring-slate-200 hover:bg-white",
+                ].join(" ")}
+              >
+                <FiFileText />
+                خانة الطلبات
+              </button>
+              <button
+                type="button"
+                onClick={() => setListKind("settlement")}
+                className={[
+                  "inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-3.5 text-sm font-black transition",
+                  isSettlementsView
+                    ? "bg-gradient-to-l from-violet-600 to-fuchsia-600 text-white shadow-md shadow-violet-300/40"
+                    : "bg-violet-50 text-violet-800 ring-1 ring-violet-200 hover:bg-violet-100",
+                ].join(" ")}
+              >
+                <FiPaperclip />
+                خانة التسويات
+              </button>
+            </div>
+          </section>
+        ) : null}
+
         {/* البحث */}
-        <section className={`${glassCard} p-4 sm:p-5`}>
-          <p className="mb-3 text-xs font-extrabold text-gray-600">بحث في الطلبات</p>
+        <section
+          className={`${glassCard} p-4 sm:p-5 ${
+            isSettlementsView ? "ring-2 ring-violet-200/70 bg-violet-50/30" : ""
+          }`}
+        >
+          <p className="mb-3 text-xs font-extrabold text-gray-600">
+            {isSettlementsView ? "بحث في التسويات" : "بحث في الطلبات"}
+          </p>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
             <div className="relative w-full sm:flex-1" ref={searchBoxRef}>
               <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-600/70" />
@@ -967,22 +1081,34 @@ export default function RequestsPage({ companyKey }) {
         {/* القوائم */}
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
           <SectionShell
-            title="قيد الانتظار للموافقة"
-            subtitle="طلبات تحتاج موافقتك"
-            icon={FiClock}
+            title={
+              isSettlementsView
+                ? "تسويات بانتظار الموافقة"
+                : "قيد الانتظار للموافقة"
+            }
+            subtitle={
+              isSettlementsView
+                ? "تسويات تحتاج موافقتك"
+                : "طلبات تحتاج موافقتك"
+            }
+            icon={isSettlementsView ? FiPaperclip : FiClock}
             accent="red"
             badgeCount={notifyApproval}
             badgeTone="approval"
             right={
               <span className="rounded-full bg-white/70 px-2.5 py-1 text-[11px] font-extrabold text-gray-700 ring-1 ring-white/50">
-                {pendingPaged.total} طلب
+                {pendingPaged.total} {isSettlementsView ? "تسويه" : "طلب"}
               </span>
             }
           >
             <ListState
               loading={loading}
               empty={pendingApprovals.length === 0}
-              emptyText="لا يوجد طلبات قيد الانتظار للموافقة"
+              emptyText={
+                isSettlementsView
+                  ? "لا توجد تسويات قيد الانتظار للموافقة"
+                  : "لا يوجد طلبات قيد الانتظار للموافقة"
+              }
             >
               <ScrollBox>
                 <div className="space-y-3">
@@ -991,7 +1117,8 @@ export default function RequestsPage({ companyKey }) {
                       key={r._id}
                       r={r}
                       companyKey={companyKey}
-                      canDuplicate={canDuplicate}
+                      variant={isSettlementsView ? "settlement" : "default"}
+                      canDuplicate={canDuplicate && !isSettlementsView}
                     />
                   ))}
                 </div>
@@ -1005,14 +1132,26 @@ export default function RequestsPage({ companyKey }) {
           </SectionShell>
 
           <SectionShell
-            title="طلباتي"
-            subtitle={currentUsername ? `أنشأها: ${currentUsername}` : "طلباتك"}
-            icon={FiFileText}
+            title={
+              isSettlementsView
+                ? "التسويات التي انشئتها"
+                : "طلباتي"
+            }
+            subtitle={
+              isSettlementsView
+                ? currentUsername
+                  ? `بواسطة: ${currentUsername}`
+                  : "التسويات التي أنشأتها أنت"
+                : currentUsername
+                ? `أنشأها: ${currentUsername}`
+                : "طلباتك"
+            }
+            icon={isSettlementsView ? FiPaperclip : FiFileText}
             right={
               <div className="flex flex-wrap items-center justify-end gap-2">
                 <div className="hidden sm:block">{statusFilter}</div>
                 <span className="rounded-full bg-white/70 px-2.5 py-1 text-[11px] font-extrabold text-gray-700 ring-1 ring-white/50">
-                  {myPaged.total} طلب
+                  {myPaged.total} {isSettlementsView ? "تسويه" : "طلب"}
                 </span>
               </div>
             }
@@ -1021,7 +1160,11 @@ export default function RequestsPage({ companyKey }) {
             <ListState
               loading={loading}
               empty={myRequests.length === 0}
-              emptyText="لا يوجد طلبات حسب الفلتر"
+              emptyText={
+                isSettlementsView
+                  ? "لا توجد تسويات حسب الفلتر"
+                  : "لا يوجد طلبات حسب الفلتر"
+              }
             >
               <ScrollBox>
                 <div className="space-y-3">
@@ -1030,7 +1173,8 @@ export default function RequestsPage({ companyKey }) {
                       key={r._id}
                       r={r}
                       companyKey={companyKey}
-                      canDuplicate={canDuplicate}
+                      variant={isSettlementsView ? "settlement" : "default"}
+                      canDuplicate={canDuplicate && !isSettlementsView}
                     />
                   ))}
                 </div>
@@ -1135,6 +1279,18 @@ export default function RequestsPage({ companyKey }) {
           }}
         />
       )}
+
+      {canCreate && companyKey === "Al-Rida" ? (
+        <CreateRequestModal
+          open={isSettlementOpen}
+          onClose={() => setIsSettlementOpen(false)}
+          companyKey={companyKey}
+          variant="settlement"
+          onCreated={async () => {
+            await fetchAll();
+          }}
+        />
+      ) : null}
     </div>
   );
 }
