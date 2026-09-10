@@ -27,6 +27,7 @@ import PageLoader from "@/components/PageLoader";
 import {
   supportsExpenseType,
   isApprovalOnlyCompany,
+  supportsSettlements,
 } from "@/lib/companies/expenseTypeCompanies";
 
 const norm = (v) => String(v ?? "").trim().toLowerCase();
@@ -473,11 +474,11 @@ export default function RequestsPage({ companyKey }) {
   // ===== Modal =====
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isSettlementOpen, setIsSettlementOpen] = useState(false);
+  const settlementsEnabled = supportsSettlements(companyKey);
   const [listKind, setListKind] = useState(
-    companyKey === "Al-Rida" ? "requests" : "all"
+    settlementsEnabled ? "requests" : "all"
   ); // all | requests | settlement
-  const isRida = companyKey === "Al-Rida";
-  const isSettlementsView = isRida && listKind === "settlement";
+  const isSettlementsView = settlementsEnabled && listKind === "settlement";
 
   // ===== Suggestions =====
   const [mounted, setMounted] = useState(false);
@@ -607,10 +608,9 @@ export default function RequestsPage({ companyKey }) {
 
       const q = String(appliedSearch || "").trim();
       const qPart = q ? `&q=${encodeURIComponent(q)}` : "";
-      const kindPart =
-        companyKey === "Al-Rida"
-          ? `&kind=${encodeURIComponent(listKind === "settlement" ? "settlement" : "requests")}`
-          : "";
+      const kindPart = settlementsEnabled
+        ? `&kind=${encodeURIComponent(listKind === "settlement" ? "settlement" : "requests")}`
+        : "";
 
       // ✅ status فقط على mine
       const st = String(myStatus || "all").toLowerCase();
@@ -723,6 +723,7 @@ export default function RequestsPage({ companyKey }) {
     appliedSearch,
     myStatus,
     listKind,
+    settlementsEnabled,
     canViewReceipts,
     canDelegateVoucher,
     user?.id,
@@ -871,7 +872,7 @@ export default function RequestsPage({ companyKey }) {
 
               {canCreate ? (
                 <div className="flex flex-wrap items-center gap-2">
-                  {isRida ? (
+                  {settlementsEnabled ? (
                     <button
                       type="button"
                       onClick={() => {
@@ -886,7 +887,7 @@ export default function RequestsPage({ companyKey }) {
                   <button
                     type="button"
                     onClick={() => {
-                      if (isRida) setListKind("requests");
+                      if (settlementsEnabled) setListKind("requests");
                       setIsCreateOpen(true);
                     }}
                     className="inline-flex items-center justify-center gap-2 rounded-xl bg-gray-900 px-4 py-2.5 text-white shadow-sm transition hover:bg-black"
@@ -905,8 +906,8 @@ export default function RequestsPage({ companyKey }) {
           </div>
         </section>
 
-        {/* خانة الطلبات / التسويات — الرضا فقط */}
-        {isRida ? (
+        {/* خانة الطلبات / التسويات — الرضا واليانزا */}
+        {settlementsEnabled ? (
           <section className="overflow-hidden rounded-3xl border border-violet-200/50 bg-gradient-to-l from-violet-50/80 via-white to-slate-50/80 p-2 shadow-sm ring-1 ring-violet-100/80">
             <div className="grid grid-cols-2 gap-2">
               <button
@@ -1280,7 +1281,7 @@ export default function RequestsPage({ companyKey }) {
         />
       )}
 
-      {canCreate && companyKey === "Al-Rida" ? (
+      {canCreate && settlementsEnabled ? (
         <CreateRequestModal
           open={isSettlementOpen}
           onClose={() => setIsSettlementOpen(false)}

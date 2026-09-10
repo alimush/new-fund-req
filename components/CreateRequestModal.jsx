@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useToast } from "@/components/ui/ToastProvider";
-import { supportsExpenseType } from "@/lib/companies/expenseTypeCompanies";
+import { supportsExpenseType, supportsSettlements } from "@/lib/companies/expenseTypeCompanies";
 import { FiX } from "react-icons/fi";
 import {
     FiPaperclip,
@@ -126,11 +126,15 @@ export default function CreateRequestModal({
   mode = "create",       // create | edit | clone
   initialData = null,    // بيانات الريكويست
   requestId = null,      // id عند التعديل
-  /** "settlement" = تسويه لشركة الرضا فقط (اتاج + نفس ورك فلو الرضا) */
+  /** "settlement" = تسويه للرضا واليانزا (اتاج + ورك فلو الموافقات) */
   variant = "default",
 }) {
   const { showToast } = useToast();
-  const isSettlement = variant === "settlement" && companyKey === "Al-Rida";
+  const isSettlement = variant === "settlement" && supportsSettlements(companyKey);
+  const settlementCompanyLabel =
+    String(companyKey || "").trim().toLowerCase() === "alleanza"
+      ? "اليانزا"
+      : "الرضا";
   const steps = useMemo(
     () =>
       isSettlement
@@ -471,7 +475,7 @@ const formatInputMoney = (v) => {
                   <div>
                     <h2 className="text-xl font-black text-gray-900">تسويه</h2>
                     <p className="mt-1 text-xs font-semibold text-gray-600">
-                      اتاج + ملاحظة — موافقات ورك فلو الرضا
+                      اتاج + ملاحظة — موافقات ورك فلو {settlementCompanyLabel}
                     </p>
                   </div>
                   <button
@@ -648,7 +652,7 @@ const formatInputMoney = (v) => {
                     </h2>
                     <p className="mt-1 text-xs font-semibold text-gray-600">
                       {isSettlement
-                        ? "رفع الاتاج — موافقات ورك فلو الرضا"
+                        ? `رفع الاتاج — موافقات ورك فلو ${settlementCompanyLabel}`
                         : `طلبات ${companyKey}`}
                     </p>
                   </div>
@@ -961,7 +965,7 @@ const formatInputMoney = (v) => {
                   title={isSettlement ? "الاتاج" : "المرفقات"}
                   subtitle={
                     isSettlement
-                      ? "ارفع ملفات الاتاج — ستمر على موافقات ورك فلو الرضا"
+                      ? `ارفع ملفات الاتاج — ستمر على موافقات ورك فلو ${settlementCompanyLabel}`
                       : "PDF، Excel، صور أو أي ملفات داعمة"
                   }
                   icon={FiPaperclip}
