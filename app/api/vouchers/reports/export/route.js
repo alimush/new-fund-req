@@ -45,17 +45,29 @@ export async function POST(req) {
       allowedPerms.includes(PERMISSIONS.VIEW_ALL_REPORTS) ||
       allowedPerms.includes(PERMISSIONS.RECEIPTS) ||
       hasAnyCompanyPerm;
+    const canExportEmpty = allowedPerms.includes(
+      PERMISSIONS.MANAGE_PERMISSIONS
+    );
 
-    if (!canView) {
+    const body = await req.json();
+    const emptyForm = Boolean(body?.emptyForm);
+
+    if (emptyForm) {
+      if (!canExportEmpty) {
+        return NextResponse.json(
+          { success: false, error: "Forbidden" },
+          { status: 403 }
+        );
+      }
+    } else if (!canView) {
       return NextResponse.json(
         { success: false, error: "Forbidden" },
         { status: 403 }
       );
     }
 
-    const body = await req.json();
     const vouchers = Array.isArray(body?.vouchers) ? body.vouchers : [];
-    if (!vouchers.length) {
+    if (!emptyForm && !vouchers.length) {
       return NextResponse.json(
         { success: false, error: "No vouchers" },
         { status: 400 }
@@ -78,14 +90,18 @@ export async function POST(req) {
       ? `${proto}://${host}/templates/voucher-daily-form.xlsx`
       : "";
 
-    const buffer = await buildFn(vouchers, {
+    const buffer = await buildFn(emptyForm ? [] : vouchers, {
       dateFrom: body?.dateFrom || "",
       dateTo: body?.dateTo || "",
       companyFilter: body?.companyFilter || "all",
       templateUrl,
+      emptyForm,
     });
 
-    const filename = `تقرير_صندوق_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    const filename = emptyForm
+      ? `فورمة_صندوق_فارغة_${new Date().toISOString().slice(0, 10)}.xlsx`
+      : `تقرير_صندوق_${new Date().toISOString().slice(0, 10)}.xlsx`;
+
     return new NextResponse(Buffer.from(buffer), {
       status: 200,
       headers: {

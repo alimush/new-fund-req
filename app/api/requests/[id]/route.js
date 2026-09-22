@@ -32,8 +32,33 @@ async function hasCompanyAccess(userId, company) {
   if (!Types.ObjectId.isValid(userId)) return false;
 
   const uid = new Types.ObjectId(userId);
-  const exists = await Permissions.exists({ users: uid, companies: company });
-  return !!exists;
+  const target = String(company).trim().toLowerCase();
+  if (!target || target === "undefined" || target === "null") return false;
+
+  const groups = await Permissions.find({ users: uid }).select("companies").lean();
+  return groups.some((g) =>
+    (g.companies || []).some((c) => String(c).trim().toLowerCase() === target)
+  );
+}
+
+async function hasOldDataAccess(userId, companyKey) {
+  if (!userId || !Types.ObjectId.isValid(userId)) return false;
+  const uid = new Types.ObjectId(userId);
+
+  if (await hasCompanyAccess(userId, companyKey)) return true;
+  if (await hasCompanyAccess(userId, "old-data")) return true;
+
+  const groups = await Permissions.find({ users: uid })
+    .select("permissions")
+    .lean();
+  const perms = new Set();
+  for (const g of groups) {
+    (g.permissions || []).forEach((p) => perms.add(String(p).trim()));
+  }
+  return (
+    perms.has(PERMISSIONS.VIEW_NEW_OLD_DATA) ||
+    perms.has(PERMISSIONS.VIEW_ALL_REPORTS)
+  );
 }
 
 function getS3() {
@@ -108,8 +133,17 @@ export async function GET(req, { params }) {
 
     const { id } = await params;
     const { searchParams } = new URL(req.url);
-    const company = searchParams.get("company");
+    let company = searchParams.get("company");
     const source = searchParams.get("source") || "new";
+    const isOldSource = source === "old";
+
+    if (
+      !company ||
+      company === "undefined" ||
+      company === "null"
+    ) {
+      company = isOldSource ? "old-data" : "";
+    }
 
     if (!company) {
       return NextResponse.json({ success: false, error: "Company is required" }, { status: 400 });
@@ -122,12 +156,7 @@ export async function GET(req, { params }) {
       return NextResponse.json({ success: false, error: "Not authenticated" }, { status: 401 });
     }
 
-    const allowedCompany = await hasCompanyAccess(userId, company);
-    if (!allowedCompany) {
-      return NextResponse.json({ success: false, error: "No access to this company" }, { status: 403 });
-    }
-
-    const Model = source === "old" ? RequestOldData : getModelForCompany(company);
+    const Model = isOldSource ? RequestOldData : getModelForCompany(company);
     const request = await Model.findById(id)
       .populate({ path: "workflow.steps.users", model: "User", strictPopulate: false })
       .populate({ path: "workflow.steps.actedBy", model: "User", strictPopulate: false })
@@ -138,6 +167,19 @@ export async function GET(req, { params }) {
     if (!request) {
       return NextResponse.json({ success: false, error: "Request not found" }, { status: 404 });
     }
+
+    const accessCompany =
+      String(request.companyKey || request.company || company || "").trim() ||
+      company;
+
+    const allowedCompany = isOldSource
+      ? await hasOldDataAccess(userId, accessCompany)
+      : await hasCompanyAccess(userId, accessCompany);
+    if (!allowedCompany) {
+      return NextResponse.json({ success: false, error: "No access to this company" }, { status: 403 });
+    }
+
+    company = accessCompany;
 
    
 

@@ -194,7 +194,9 @@ export default function RequestDetails({ id, companyKey }) {
   // 🟢 ---------------- FETCH DATA FUNCTION (خارج useEffect) ----------------
   const fetchData = async () => {
     try {
-      const res = await fetch(`/api/requests/${id}?company=${companyKey}&source=${encodeURIComponent(source)}`, {
+      const res = await fetch(
+        `/api/requests/${encodeURIComponent(id)}?company=${encodeURIComponent(companyKey)}&source=${encodeURIComponent(source)}`,
+        {
         cache: "no-store",
         credentials: "include",
       });
@@ -224,7 +226,7 @@ export default function RequestDetails({ id, companyKey }) {
     (async () => {
       try {
         const res = await fetch(
-          `/api/requests/${id}?company=${companyKey}&source=${encodeURIComponent(source)}`,
+          `/api/requests/${encodeURIComponent(id)}?company=${encodeURIComponent(companyKey)}&source=${encodeURIComponent(source)}`,
           { cache: "no-store", credentials: "include" }
         );
 
@@ -248,7 +250,7 @@ export default function RequestDetails({ id, companyKey }) {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, companyKey]);
+  }, [id, companyKey, source]);
 
   useEffect(() => {
     const steps = request?.workflow?.steps || [];

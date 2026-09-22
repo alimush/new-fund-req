@@ -203,7 +203,7 @@ function docApprovedByUser(doc, actor) {
 }
 
 const REPORT_LIST_SELECT =
-  "requestCode requestType createdBy status department currency description createdAt items workflow currentStep approvalHistory";
+  "companyKey requestCode requestType createdBy status department currency description createdAt items workflow currentStep approvalHistory";
 
 async function countDocsBySource({ source, companyList, queryBase }) {
   if (source === "old") {
@@ -234,7 +234,7 @@ async function fetchPageDocsBySource({
   const skip = (page - 1) * pageSize;
 
   if (source === "old") {
-    return RequestOldData.find({
+    const docs = await RequestOldData.find({
       ...queryBase,
       companyKey: { $in: companyList },
     })
@@ -243,6 +243,10 @@ async function fetchPageDocsBySource({
       .skip(skip)
       .limit(pageSize)
       .lean();
+    return (docs || []).map((d) => ({
+      ...d,
+      companyKey: d.companyKey || d.company || "old-data",
+    }));
   }
 
   if (companyList.length === 1) {
@@ -395,7 +399,11 @@ async function getOldDocs({
   if (limitPerCompany) q = q.limit(limitPerCompany);
   if (select) q = q.select(select);
 
-  return await q.lean();
+  const docs = await q.lean();
+  return (docs || []).map((d) => ({
+    ...d,
+    companyKey: d.companyKey || d.company || "old-data",
+  }));
 }
 
 async function getDocsBySource({

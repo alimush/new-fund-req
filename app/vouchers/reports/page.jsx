@@ -314,6 +314,10 @@ export default function VoucherReportsPage() {
      permissions.includes(PERMISSIONS.VIEW_ALL_REPORTS) ||
      permissions.includes(PERMISSIONS.RECEIPTS));
 
+  const canExportEmptyForm =
+    Array.isArray(permissions) &&
+    permissions.includes(PERMISSIONS.MANAGE_PERMISSIONS);
+
   useEffect(() => setPortalReady(true), []);
 
   const [menuTarget, setMenuTarget] = useState(null);
@@ -1229,6 +1233,47 @@ export default function VoucherReportsPage() {
     currencyFilter,
   ]);
 
+  const handleExportEmptyForm = useCallback(async () => {
+    try {
+      setLoading(true);
+      const companyVal = companyFilter?.value || "all";
+
+      const res = await fetch("/api/vouchers/reports/export", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          emptyForm: true,
+          dateFrom: date.from,
+          dateTo: date.to,
+          companyFilter: companyVal,
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err?.error || `Export failed (${res.status})`);
+      }
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const parts = ["فورمة_صندوق_فارغة"];
+      if (companyVal && companyVal !== "all") parts.push(companyVal);
+      parts.push(new Date().toISOString().slice(0, 10));
+      a.download = `${parts.join("_")}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error("❌ Export empty form error:", e);
+    } finally {
+      setLoading(false);
+    }
+  }, [companyFilter, date.from, date.to]);
+
   const Card = ({ icon, title, value, iconColor = "text-blue-600" }) => (
     <KpiCard label={title} value={value} icon={icon} iconColor={iconColor} />
   );
@@ -1315,6 +1360,23 @@ export default function VoucherReportsPage() {
                 <FiDownload className="text-base" />
                 Excel
               </motion.button>
+
+              {canExportEmptyForm ? (
+                <motion.button
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.99 }}
+                  onClick={handleExportEmptyForm}
+                  disabled={loading}
+                  className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-extrabold shadow-sm transition ${
+                    loading
+                      ? "cursor-not-allowed bg-slate-100 text-slate-400 ring-1 ring-slate-200/80"
+                      : "bg-violet-50 text-violet-800 ring-1 ring-violet-200/80 hover:bg-violet-100"
+                  }`}
+                >
+                  <FiDownload className="text-base" />
+                  فورمة فارغة
+                </motion.button>
+              ) : null}
             </div>
           </div>
         </motion.div>

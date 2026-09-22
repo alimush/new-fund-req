@@ -1160,14 +1160,21 @@ export default function ReportsPage() {
                       key={r._id}
                       whileHover={{ backgroundColor: "rgba(248,250,252,0.95)" }}
                       transition={{ duration: 0.12 }}
-                      onClick={() =>
+                      onClick={() => {
+                        const company = String(
+                          r.companyKey || r.company || ""
+                        ).trim();
+                        const id = String(r._id || "").trim();
+                        const source = dataSource?.value || "new";
+                        if (!id) return;
+                        const companyPath =
+                          company || (source === "old" ? "old-data" : "");
+                        if (!companyPath) return;
                         window.open(
-                          `/requests/${r.companyKey}/${r._id}?source=${encodeURIComponent(
-                            dataSource?.value || "new"
-                          )}`,
+                          `/requests/${encodeURIComponent(companyPath)}/${encodeURIComponent(id)}?source=${encodeURIComponent(source)}`,
                           "_blank"
-                        )
-                      }
+                        );
+                      }}
                       className={`cursor-pointer transition-colors hover:bg-slate-50 ${
                         idx % 2 === 0 ? "bg-white/50" : "bg-white/30"
                       }`}
