@@ -70,6 +70,9 @@ export default function VoucherPage() {
         if (String(c.key).trim() === "Badur-Baghdad-Safebox-Istishar") {
           return c.permission && permissions.includes(c.permission);
         }
+        if (String(c.key).trim() === "Badur-Baghdad-Elite") {
+          return c.permission && permissions.includes(c.permission);
+        }
         if (String(c.key).trim() === "010") {
           return c.permission && permissions.includes(c.permission);
         }

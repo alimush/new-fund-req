@@ -4,7 +4,7 @@ import { useMemo, useState, useEffect, useRef, useCallback, Suspense } from "rea
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence, MotionConfig } from "framer-motion";
 import { usePermissions } from "@/context/PermissionContext";
-import { FiPrinter, FiX, FiEdit2, FiSave } from "react-icons/fi";
+import { FiPrinter, FiX, FiEdit2, FiSave, FiDownload } from "react-icons/fi";
 import { toPng } from "html-to-image";
 import { Cairo } from "next/font/google";
 import VoucherDateModal from "@/components/VoucherDateModal";
@@ -132,6 +132,7 @@ function VoucherViewPageContent() {
 
   const [loading, setLoading] = useState(true);
   const [isPrinting, setIsPrinting] = useState(false);
+  const [isExportingExcel, setIsExportingExcel] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [voucher, setVoucher] = useState(null);
   const [error, setError] = useState("");
@@ -608,6 +609,49 @@ function VoucherViewPageContent() {
     }
   };
 
+  const exportVoucherExcel = async () => {
+    if (!id) {
+      alert("لا يوجد وصل محدد للتصدير");
+      return;
+    }
+    try {
+      setIsExportingExcel(true);
+      const res = await fetch(
+        `/api/vouchers/export-form?id=${encodeURIComponent(id)}`,
+        { method: "GET", credentials: "include" }
+      );
+      if (!res.ok) {
+        let msg = "فشل تصدير Excel";
+        try {
+          const j = await res.json();
+          if (j?.error) msg = j.error;
+        } catch {
+          /* ignore */
+        }
+        throw new Error(msg);
+      }
+      const blob = await res.blob();
+      const cd = res.headers.get("Content-Disposition") || "";
+      const m = /filename\*=UTF-8''([^;]+)|filename="?([^";]+)"?/i.exec(cd);
+      const filename = decodeURIComponent(
+        m?.[1] || m?.[2] || `voucher-${id}.xlsx`
+      );
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error(e);
+      alert(e?.message || "تعذر تصدير الوصل إلى Excel");
+    } finally {
+      setIsExportingExcel(false);
+    }
+  };
+
   const handleCancel = () => {
     fillForm(voucher);
     setEditMode(false);
@@ -751,11 +795,24 @@ function VoucherViewPageContent() {
 
                       <button
                         onClick={printCurrentPreviewA4}
-                        disabled={isPrinting || isSaving}
+                        disabled={isPrinting || isSaving || isExportingExcel}
                         className="flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-white/70 backdrop-blur ring-1 ring-black/5 shadow-sm font-extrabold text-gray-800 hover:bg-white hover:shadow-md active:scale-[0.97] disabled:opacity-60 transition-all duration-150"
                       >
                         <FiPrinter className={`text-lg ${isPrinting ? "animate-spin" : ""}`} />
                         {isPrinting ? "جاري الطباعة..." : "طباعة"}
+                      </button>
+
+                      <button
+                        onClick={exportVoucherExcel}
+                        disabled={isExportingExcel || isSaving || isPrinting || !id}
+                        className="flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-emerald-700 text-white shadow-sm font-extrabold hover:bg-emerald-800 hover:shadow-md active:scale-[0.97] disabled:opacity-60 transition-all duration-150"
+                      >
+                        <FiDownload className={`text-lg ${isExportingExcel ? "animate-pulse" : ""}`} />
+                        {isExportingExcel
+                          ? "جاري التصدير..."
+                          : mode === "payment"
+                            ? "Excel صرف"
+                            : "Excel قبض"}
                       </button>
 
                       <button

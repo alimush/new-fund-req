@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import dbConnect from "@/lib/mongodb";
 import Permissions from "@/models/Permissions";
+import User from "@/models/User";
 import { PERMISSIONS } from "@/lib/permission";
 import { COMPANIES } from "@/lib/voucher/companies";
 
@@ -36,7 +37,11 @@ export async function POST(req) {
       );
     }
 
-    const { allowedPerms } = await getUserAccess(userId);
+    const [{ allowedPerms }, currentUser] = await Promise.all([
+      getUserAccess(userId),
+      User.findById(userId).select("username").lean(),
+    ]);
+    const exportedByUsername = String(currentUser?.username || "").trim();
     const hasAnyCompanyPerm = COMPANIES.some(
       (c) => c.permission && allowedPerms.includes(c.permission)
     );
@@ -83,19 +88,12 @@ export async function POST(req) {
       throw new Error("buildDailyCashReportBuffer export missing");
     }
 
-    const host =
-      req.headers.get("x-forwarded-host") || req.headers.get("host") || "";
-    const proto = req.headers.get("x-forwarded-proto") || "https";
-    const templateUrl = host
-      ? `${proto}://${host}/templates/voucher-daily-form.xlsx`
-      : "";
-
     const buffer = await buildFn(emptyForm ? [] : vouchers, {
       dateFrom: body?.dateFrom || "",
       dateTo: body?.dateTo || "",
       companyFilter: body?.companyFilter || "all",
-      templateUrl,
       emptyForm,
+      exportedByUsername,
     });
 
     const filename = emptyForm
