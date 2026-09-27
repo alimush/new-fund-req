@@ -3,9 +3,11 @@ const nextConfig = {
   output: "standalone",
   outputFileTracingIncludes: {
     "/api/vouchers/reports/export": [
+      "./lib/voucher/companyFormConfig.json",
+      "./lib/voucher/assets/**/*",
       "./lib/voucher/templates/voucher-daily-form.xlsx",
-      "./public/templates/voucher-daily-form.xlsx",
       "./lib/voucher/templates/logos/**/*",
+      "./public/templates/voucher-daily-form.xlsx",
       "./public/بدور_النجف.png",
       "./public/بدور_بغداد.png",
       "./public/طيبة_النجف.png",

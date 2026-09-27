@@ -1660,7 +1660,7 @@ export default function VoucherReportsPage() {
               }}
               className="relative overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
             >
-              <table className="min-w-[1840px] w-full text-[14px] md:text-[15px] text-slate-800 font-bold">
+              <table className="w-max min-w-full table-auto text-[14px] md:text-[15px] text-slate-800 font-bold">
                 <thead className="sticky top-0 z-10">
                   <tr className="border-b border-slate-200/80 bg-white/90 backdrop-blur">
                     {[
@@ -1682,7 +1682,7 @@ export default function VoucherReportsPage() {
                     ].map((h, i) => (
                       <th
                         key={`${h}-${i}`}
-                        className="px-6 py-4 text-right text-[12px] md:text-[13px] font-extrabold tracking-wide text-slate-900 whitespace-nowrap"
+                        className="px-4 py-4 text-right text-[12px] md:text-[13px] font-extrabold tracking-wide text-slate-900 whitespace-nowrap"
                       >
                         {h}
                       </th>
@@ -1710,20 +1710,20 @@ export default function VoucherReportsPage() {
                         idx % 2 === 0 ? "bg-white/50" : "bg-white/30"
                       }`}
                     >
-                      <td className="px-6 py-4 text-right font-extrabold text-slate-900 whitespace-nowrap">
+                      <td className="px-4 py-4 text-right font-extrabold text-slate-900 whitespace-nowrap">
                         {getCompanyName(r.companyKey)}
                       </td>
 
-                      <td className="px-6 py-4 text-right whitespace-nowrap">
+                      <td className="px-4 py-4 text-right whitespace-nowrap">
                         <VoucherModeBadge mode={r.mode} />
                       </td>
 
-                      <td className="px-6 py-4 text-right font-mono text-slate-900 whitespace-nowrap">
+                      <td className="px-4 py-4 text-right font-mono text-slate-900 whitespace-nowrap">
                         {r.voucherNo || String(r.seq ?? "").padStart(5, "0")}
                       </td>
 
                       <td
-                        className="px-6 py-4 text-right whitespace-nowrap"
+                        className="px-4 py-4 text-right whitespace-nowrap"
                         onClick={(e) => e.stopPropagation()}
                       >
                         {r.requestLink?.href ? (
@@ -1754,28 +1754,28 @@ export default function VoucherReportsPage() {
                         )}
                       </td>
 
-                      <td className="px-6 py-4 text-right whitespace-nowrap font-extrabold">
+                      <td className="px-4 py-4 text-right whitespace-nowrap font-extrabold">
                         {r.currency || "-"}
                       </td>
 
-                      <td className="px-6 py-4 text-right font-extrabold text-slate-900 whitespace-nowrap">
+                      <td className="px-4 py-4 text-right font-extrabold text-slate-900 whitespace-nowrap">
                         {fmtAmount(r.amount)}
                       </td>
 
-                      {/* <td className="px-6 py-4 text-right whitespace-nowrap">
+                      {/* <td className="px-4 py-4 text-right whitespace-nowrap">
                         {r.beneficiary || "-"}
                       </td> */}
 
-                      <td className="px-6 py-4 text-right whitespace-nowrap">
+                      <td className="px-4 py-4 text-right whitespace-nowrap">
                         {r.receivedBy || "-"}
                       </td>
 
-                      <td className="px-6 py-4 text-right whitespace-nowrap">
+                      <td className="px-4 py-4 text-right whitespace-nowrap">
                         {r.bank || "-"}
                       </td>
 
                       <td
-                        className="px-6 py-4 text-right whitespace-nowrap"
+                        className="px-4 py-4 text-right whitespace-nowrap"
                         onClick={(e) => e.stopPropagation()}
                       >
                         {r.chequeNo ? (
@@ -1807,14 +1807,12 @@ export default function VoucherReportsPage() {
                         )}
                       </td>
 
-                      <td className="px-6 py-4 text-right">
-                        <div className="max-w-[320px] truncate text-slate-700">
-                          {r.description || "-"}
-                        </div>
+                      <td className="px-4 py-4 text-right whitespace-nowrap text-slate-700">
+                        {r.description || "-"}
                       </td>
 
                       <td
-                        className="px-6 py-4 text-right whitespace-nowrap"
+                        className="px-4 py-4 text-right whitespace-nowrap"
                         onClick={(e) => e.stopPropagation()}
                       >
                         <input
@@ -1860,7 +1858,7 @@ export default function VoucherReportsPage() {
                       </td>
 
                       <td
-                        className="px-6 py-4 text-right whitespace-nowrap"
+                        className="px-4 py-4 text-right whitespace-nowrap"
                         onClick={(e) => e.stopPropagation()}
                       >
                         {(() => {
@@ -1908,12 +1906,12 @@ export default function VoucherReportsPage() {
                         })()}
                       </td>
 
-                      <td className="px-6 py-4 text-right whitespace-nowrap text-slate-700">
+                      <td className="px-4 py-4 text-right whitespace-nowrap text-slate-700">
                         {formatVoucherDateDisplay(r)}
                       </td>
 
                       <td
-                        className="px-6 py-4 text-right whitespace-nowrap"
+                        className="px-4 py-4 text-right whitespace-nowrap"
                         onClick={(e) => e.stopPropagation()}
                       >
                         <button
