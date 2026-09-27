@@ -380,6 +380,16 @@ export async function POST(req) {
       );
     }
 
+    if (companyConfig?.receiptOnly && mode !== "receipt") {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "هذا الصندوق يدعم وصل القبض فقط حالياً",
+        },
+        { status: 400 }
+      );
+    }
+
     const saveCompanyKey = safeString(voucherCompanyKey);
     const saveCompanyName = safeString(
       companyName || resolvedConfig?.name || voucherCompanyKey

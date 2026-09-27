@@ -73,6 +73,9 @@ export default function VoucherPage() {
         if (String(c.key).trim() === "Badur-Baghdad-Elite") {
           return c.permission && permissions.includes(c.permission);
         }
+        if (String(c.key).trim() === "Badur-Elite-MIB") {
+          return c.permission && permissions.includes(c.permission);
+        }
         if (String(c.key).trim() === "010") {
           return c.permission && permissions.includes(c.permission);
         }
@@ -180,7 +183,7 @@ export default function VoucherPage() {
 
   useEffect(() => {
     setOpenModal(false);
-    setMode("payment");
+    setMode(selectedCompany?.receiptOnly ? "receipt" : "payment");
 
     setVDateYY("");
     setVDateMM("");
@@ -212,7 +215,7 @@ export default function VoucherPage() {
 
     setGlobalTextStyle(DEFAULT_GLOBAL_TEXT_STYLE);
     setFieldStyles(DEFAULT_FIELD_STYLES);
-  }, [selectedKey]);
+  }, [selectedKey, selectedCompany?.receiptOnly]);
 
   const handleCreateOnly = async () => {
     try {
@@ -542,6 +545,7 @@ export default function VoucherPage() {
 
   const openPayment = () => {
     if (!selectedCompany) return;
+    if (selectedCompany.receiptOnly) return;
     setMode("payment");
     setOpenModal(true);
     setActiveField("date");
@@ -808,18 +812,24 @@ export default function VoucherPage() {
                     variants={list}
                     initial="hidden"
                     animate="show"
-                    className="grid grid-cols-1 gap-4 md:grid-cols-2 md:gap-5"
+                    className={`grid grid-cols-1 gap-4 md:gap-5 ${
+                      selectedCompany.receiptOnly
+                        ? "md:grid-cols-1 max-w-xl mx-auto"
+                        : "md:grid-cols-2"
+                    }`}
                   >
-                    <ActionButton
-                      accent="payment"
-                      title="وصل صرف"
-                      subtitle="نافذة الإدخال ثم الطباعة بحجم A5"
-                      onClick={openPayment}
-                    />
+                    {!selectedCompany.receiptOnly ? (
+                      <ActionButton
+                        accent="payment"
+                        title="وصل صرف"
+                        subtitle="نافذة الإدخال ثم الطباعة بحجم A5"
+                        onClick={openPayment}
+                      />
+                    ) : null}
                     <ActionButton
                       accent="receipt"
                       title="وصل قبض"
-                      subtitle="نفس خطوات الصرف ثم الطباعة بحجم A5"
+                      subtitle="نافذة الإدخال ثم الطباعة بحجم A5"
                       onClick={openReceipt}
                     />
                   </motion.div>
