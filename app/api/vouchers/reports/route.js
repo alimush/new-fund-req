@@ -52,6 +52,7 @@ function buildSmartOr(qRaw) {
     { beneficiary: { $regex: escapeRegex(q), $options: "i" } },
     { receivedBy: { $regex: escapeRegex(q), $options: "i" } },
     { bank: { $regex: escapeRegex(q), $options: "i" } },
+    { chequeNo: { $regex: escapeRegex(q), $options: "i" } },
     ...buildAmountSmartClauses(q),
   ];
 

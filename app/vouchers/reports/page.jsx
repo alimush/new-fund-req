@@ -1660,7 +1660,7 @@ export default function VoucherReportsPage() {
               }}
               className="relative overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
             >
-              <table className="min-w-[1720px] w-full text-[14px] md:text-[15px] text-slate-800 font-bold">
+              <table className="min-w-[1840px] w-full text-[14px] md:text-[15px] text-slate-800 font-bold">
                 <thead className="sticky top-0 z-10">
                   <tr className="border-b border-slate-200/80 bg-white/90 backdrop-blur">
                     {[
@@ -1673,6 +1673,7 @@ export default function VoucherReportsPage() {
                       // "المستفيد",
                       "استلمت من",
                       "البنك",
+                      "رقم الصك",
                       "الوصف",
                       "الاتاج",
                       "الهوية",
@@ -1771,6 +1772,39 @@ export default function VoucherReportsPage() {
 
                       <td className="px-6 py-4 text-right whitespace-nowrap">
                         {r.bank || "-"}
+                      </td>
+
+                      <td
+                        className="px-6 py-4 text-right whitespace-nowrap"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {r.chequeNo ? (
+                          r.chequeId ? (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                window.open(
+                                  `/cheques/view?id=${encodeURIComponent(
+                                    String(r.chequeId)
+                                  )}`,
+                                  "_blank",
+                                  "noopener,noreferrer"
+                                )
+                              }
+                              title="فتح الصك المرتبط"
+                              className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 font-mono text-[12px] font-extrabold text-emerald-800 transition hover:bg-emerald-100"
+                            >
+                              <FiCreditCard className="text-sm" />
+                              {r.chequeNo}
+                            </button>
+                          ) : (
+                            <span className="font-mono text-slate-800">
+                              {r.chequeNo}
+                            </span>
+                          )
+                        ) : (
+                          <span className="text-[12px] text-slate-400">—</span>
+                        )}
                       </td>
 
                       <td className="px-6 py-4 text-right">

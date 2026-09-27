@@ -143,6 +143,7 @@ export default function VoucherModal({
   const [vNotes, setVNotes] = useState("");
 
   const [vChequeNo, setVChequeNo] = useState("");
+  const [chequeId, setChequeId] = useState(null);
   const [vNationalId, setVNationalId] = useState("");
   const [vPhone, setVPhone] = useState("");
   const [vSanadNo, setVSanadNo] = useState("");
@@ -224,6 +225,7 @@ export default function VoucherModal({
     setVNotes(doc?.notes || doc?.vNotes || "");
 
     setVChequeNo(doc?.chequeNo || doc?.vChequeNo || "");
+    setChequeId(doc?.chequeId ? String(doc.chequeId) : null);
     setVNationalId(doc?.nationalId || doc?.vNationalId || "");
     setVPhone(doc?.phone || doc?.vPhone || "");
     setVSanadNo(doc?.sanadNo || doc?.vSanadNo || "");
@@ -577,6 +579,7 @@ export default function VoucherModal({
       vNotes,
 
       vChequeNo,
+      chequeId,
       vNationalId,
       vPhone,
       vSanadNo,
@@ -764,6 +767,8 @@ export default function VoucherModal({
       vChequeNo={vChequeNo}
       chequeNoRef={chequeNoRef}
       setVChequeNo={isLockedAfterCreate ? noop : setVChequeNo}
+      chequeId={chequeId}
+      setChequeId={isLockedAfterCreate ? noop : setChequeId}
       vNationalId={vNationalId}
       vPhone={vPhone}
       vSanadNo={vSanadNo}

@@ -116,6 +116,7 @@ export default function VoucherPage() {
   const [pendingPrint, setPendingPrint] = useState(false);
 
   const [vChequeNo, setVChequeNo] = useState("");
+  const [chequeId, setChequeId] = useState(null);
   const [vNationalId, setVNationalId] = useState("");
   const [vPhone, setVPhone] = useState("");
   const [vSanadNo, setVSanadNo] = useState("");
@@ -196,6 +197,7 @@ export default function VoucherPage() {
     setVNotes("");
 
     setVChequeNo("");
+    setChequeId(null);
     setVNationalId("");
     setVPhone("");
     setVSanadNo("");
@@ -248,6 +250,8 @@ export default function VoucherPage() {
           vNotes,
 
           vChequeNo,
+          chequeId,
+
           vNationalId,
           vPhone,
           vSanadNo,
@@ -505,6 +509,8 @@ export default function VoucherPage() {
           vNotes,
 
           vChequeNo,
+          chequeId,
+
           vNationalId,
           vPhone,
           vSanadNo,
@@ -882,6 +888,8 @@ export default function VoucherPage() {
           vChequeNo={vChequeNo}
           chequeNoRef={chequeNoRef}
           setVChequeNo={setVChequeNo}
+          chequeId={chequeId}
+          setChequeId={setChequeId}
           vNationalId={vNationalId}
           vPhone={vPhone}
           vSanadNo={vSanadNo}

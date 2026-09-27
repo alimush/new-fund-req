@@ -155,6 +155,7 @@ function VoucherViewPageContent() {
   const [voucherNo, setVoucherNo] = useState(null);
 
   const [vChequeNo, setVChequeNo] = useState("");
+  const [chequeId, setChequeId] = useState(null);
   const [vNationalId, setVNationalId] = useState("");
   const [vPhone, setVPhone] = useState("");
   const [vSanadNo, setVSanadNo] = useState("");
@@ -199,6 +200,7 @@ function VoucherViewPageContent() {
     setCbTwo(Boolean(doc?.cbTwo));
 
     setVChequeNo(doc?.vChequeNo || doc?.chequeNo || "");
+    setChequeId(doc?.chequeId ? String(doc.chequeId) : null);
     setVNationalId(doc?.vNationalId || doc?.nationalId || "");
     setVPhone(doc?.vPhone || doc?.phone || "");
     setVSanadNo(doc?.vSanadNo || doc?.sanadNo || "");
@@ -419,6 +421,7 @@ function VoucherViewPageContent() {
         vBeneficiary,
         vNotes,
         vChequeNo,
+        chequeId,
         vNationalId,
         vPhone,
         vSanadNo,
@@ -1702,6 +1705,8 @@ function VoucherViewPageContent() {
   vChequeNo={vChequeNo}
   chequeNoRef={chequeNoRef}
   setVChequeNo={guardSetter(setVChequeNo)}
+  chequeId={chequeId}
+  setChequeId={guardSetter(setChequeId)}
   vNationalId={vNationalId}
   vPhone={vPhone}
   vSanadNo={vSanadNo}

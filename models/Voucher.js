@@ -117,6 +117,14 @@ const VoucherSchema = new mongoose.Schema(
       default: "",
     },
 
+    /** ربط الوصل بصك من نظام الصكوك */
+    chequeId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Cheque",
+      default: null,
+      index: true,
+    },
+
     nationalId: {
       type: String,
       default: "",
@@ -207,7 +215,7 @@ const VoucherSchema = new mongoose.Schema(
       bank: {
         type: TextStyleSchema,
         default: () => ({
-          fontSize: 16,
+          fontSize: 13,
           fontWeight: 700,
           color: "#111827",
         }),

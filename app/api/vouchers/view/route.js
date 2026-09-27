@@ -10,6 +10,7 @@ import VoucherCounter from "@/models/VoucherCounter";
 import { getModelForCompany } from "@/models/Request";
 import { buildVoucherDateFromParts } from "@/lib/voucher/voucherDate";
 import { sanitizeFieldColorRuns } from "@/lib/voucher/fieldColorRuns";
+import { resolveVoucherChequeLink } from "@/lib/voucher/resolveVoucherChequeLink";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,7 +31,7 @@ const DEFAULT_FIELD_STYLES = {
   amount: { fontSize: 16, fontWeight: 800, color: "#111827" },
   words: { fontSize: 16, fontWeight: 700, color: "#111827" },
   desc: { fontSize: 16, fontWeight: 600, color: "#111827" },
-  bank: { fontSize: 16, fontWeight: 700, color: "#111827" },
+  bank: { fontSize: 13, fontWeight: 700, color: "#111827" },
   fxRate: { fontSize: 16, fontWeight: 800, color: "#111827" },
   receivedBy: { fontSize: 16, fontWeight: 600, color: "#111827" },
   beneficiary: { fontSize: 16, fontWeight: 700, color: "#111827" },
@@ -419,8 +420,16 @@ export async function PUT(req) {
       );
     } else {
       // Full voucher edit path
+      const baseUpdate = buildBody(body);
+      const chequeLink = await resolveVoucherChequeLink({
+        chequeId: body.chequeId,
+        chequeNo: body.vChequeNo ?? baseUpdate.chequeNo,
+      });
+
       const updateData = {
-        ...buildBody(body),
+        ...baseUpdate,
+        chequeNo: chequeLink.chequeNo,
+        chequeId: chequeLink.chequeId,
         updatedBy: userId,
         updatedAt: now,
       };

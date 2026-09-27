@@ -17,6 +17,7 @@ import { findVoucherForRequest } from "@/lib/voucher/findVoucherForRequest";
 import { linkVoucherToRequest } from "@/lib/voucher/linkVoucherToRequest";
 import { buildVoucherDateFromParts } from "@/lib/voucher/voucherDate";
 import { sanitizeFieldColorRuns } from "@/lib/voucher/fieldColorRuns";
+import { resolveVoucherChequeLink } from "@/lib/voucher/resolveVoucherChequeLink";
 
 export const runtime = "nodejs";
 
@@ -31,7 +32,7 @@ const DEFAULT_FIELD_STYLES = {
   amount: { fontSize: 16, fontWeight: 800, color: "#111827" },
   words: { fontSize: 16, fontWeight: 700, color: "#111827" },
   desc: { fontSize: 16, fontWeight: 600, color: "#111827" },
-  bank: { fontSize: 16, fontWeight: 700, color: "#111827" },
+  bank: { fontSize: 13, fontWeight: 700, color: "#111827" },
   fxRate: { fontSize: 16, fontWeight: 700, color: "#111827" },
   receivedBy: { fontSize: 16, fontWeight: 700, color: "#111827" },
   notes: { fontSize: 16, fontWeight: 600, color: "#111827" },
@@ -300,6 +301,7 @@ export async function POST(req) {
       vNotes,
 
       vChequeNo,
+      chequeId: bodyChequeId = null,
       vNationalId,
       vPhone,
       vSanadNo,
@@ -446,6 +448,11 @@ export async function POST(req) {
     const seq = counter.seq;
     const voucherNo = String(seq).padStart(5, "0");
 
+    const chequeLink = await resolveVoucherChequeLink({
+      chequeId: bodyChequeId,
+      chequeNo: vChequeNo,
+    });
+
     const doc = await Voucher.create({
       companyKey: saveCompanyKey,
       companyName: saveCompanyName,
@@ -477,7 +484,8 @@ export async function POST(req) {
       beneficiary: safeString(vBeneficiary),
       notes: safeString(vNotes),
 
-      chequeNo: safeString(vChequeNo),
+      chequeNo: chequeLink.chequeNo,
+      chequeId: chequeLink.chequeId,
       nationalId: safeString(vNationalId),
       phone: safeString(vPhone),
       sanadNo: safeString(vSanadNo),

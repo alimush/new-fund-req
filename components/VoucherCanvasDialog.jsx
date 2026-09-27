@@ -4,8 +4,10 @@ import { useMemo, useState, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import VoucherRichTextInput from "@/components/VoucherRichTextInput";
 import PersonNameSuggestDropdown from "@/components/PersonNameSuggestDropdown";
+import ChequeSuggestDropdown from "@/components/ChequeSuggestDropdown";
 import VoucherPersonIdentityPanel from "@/components/VoucherPersonIdentityPanel";
 import { useVoucherPersonSuggest } from "@/hooks/useVoucherPersonSuggest";
+import { useVoucherChequeSuggest } from "@/hooks/useVoucherChequeSuggest";
 import { applyStyleToRange, getStyleAtRange, trimStyleRange } from "@/lib/voucher/fieldColorRuns";
 import {
   FiPrinter,
@@ -16,7 +18,8 @@ import {
   FiPlus,
   FiEdit2,
   FiSave,
-} from "react-icons/fi";import { Cairo } from "next/font/google";
+} from "react-icons/fi";
+import { Cairo } from "next/font/google";
 import VoucherDateModal from "@/components/VoucherDateModal";
 
 const cairo = Cairo({
@@ -36,7 +39,7 @@ const DEFAULT_FIELD_STYLES = {
   amount: { fontSize: 16, fontWeight: 800, color: "#111827" },
   words: { fontSize: 16, fontWeight: 700, color: "#111827" },
   desc: { fontSize: 16, fontWeight: 600, color: "#111827" },
-  bank: { fontSize: 16, fontWeight: 700, color: "#111827" },
+  bank: { fontSize: 13, fontWeight: 700, color: "#111827" },
   fxRate: { fontSize: 16, fontWeight: 800, color: "#111827" },
   receivedBy: { fontSize: 16, fontWeight: 600, color: "#111827" },
   beneficiary: { fontSize: 16, fontWeight: 700, color: "#111827" },
@@ -149,6 +152,8 @@ export default function VoucherCanvasDialog({
   vChequeNo,
   chequeNoRef,
   setVChequeNo,
+  chequeId = null,
+  setChequeId,
 
   vNationalId,
   vPhone,
@@ -200,6 +205,90 @@ export default function VoucherCanvasDialog({
     enabled: personSuggestEnabled,
     minLength: 2,
   });
+
+  const {
+    options: chequeOptions,
+    show: chequeShow,
+    activeIdx: chequeActiveIdx,
+    setActiveIdx: setChequeActiveIdx,
+    pos: chequePos,
+    boxRef: chequeBoxRef,
+    openFor: openChequeSuggest,
+    close: closeChequeSuggest,
+    handleKeyDown: handleChequeSuggestKeyDown,
+  } = useVoucherChequeSuggest({
+    enabled: personSuggestEnabled,
+    minLength: 1,
+  });
+
+  const applyChequePick = useCallback(
+    (opt) => {
+      if (!opt) return;
+
+      const number = String(opt.chequeNumber || "").trim();
+      if (number) setVChequeNo?.(number);
+      setChequeId?.(opt.chequeId || opt.id || null);
+
+      if (opt.bankName) setVBank?.(opt.bankName);
+      if (opt.payee) setVReceivedBy?.(opt.payee);
+
+      if (opt.amountText || opt.amount != null) {
+        const cleaned = cleanAmount?.(
+          opt.amountText || String(opt.amount ?? "")
+        );
+        if (cleaned) {
+          setVAmount?.(formatAmount ? formatAmount(cleaned) : cleaned);
+        }
+      }
+      if (opt.amountWords) setVWords?.(opt.amountWords);
+      if (opt.currency) setVCurrency?.(opt.currency === "USD" ? "USD" : "IQD");
+
+      // شيك مربوط → تفعيل صندوق الشيك
+      setCbTwo?.(true);
+      setCbOne?.(false);
+
+      closeChequeSuggest();
+    },
+    [
+      cleanAmount,
+      closeChequeSuggest,
+      formatAmount,
+      setCbOne,
+      setCbTwo,
+      setChequeId,
+      setVAmount,
+      setVBank,
+      setVChequeNo,
+      setVCurrency,
+      setVReceivedBy,
+      setVWords,
+    ]
+  );
+
+  const handleChequeNoChange = useCallback(
+    (text) => {
+      setVChequeNo?.(text);
+      // تغيير الرقم يدوياً يقطع الربط حتى يُختار اقتراح من جديد
+      if (chequeId) setChequeId?.(null);
+      openChequeSuggest(text, chequeNoRef);
+    },
+    [chequeId, chequeNoRef, openChequeSuggest, setChequeId, setVChequeNo]
+  );
+
+  const handleChequeKeyDown = useCallback(
+    (e) => {
+      const action = handleChequeSuggestKeyDown(e);
+      if (action === "pick" && chequeActiveIdx >= 0) {
+        applyChequePick(chequeOptions[chequeActiveIdx]);
+      }
+    },
+    [
+      applyChequePick,
+      chequeActiveIdx,
+      chequeOptions,
+      handleChequeSuggestKeyDown,
+    ]
+  );
 
   const applyPersonPick = useCallback(
     (opt) => {
@@ -1004,7 +1093,7 @@ export default function VoucherCanvasDialog({
                           {EXTRA.chequeNo ? (
                             <VoucherRichTextInput
                               ref={chequeNoRef}
-                              {...richFieldProps("chequeNo", vChequeNo, setVChequeNo, {
+                              {...richFieldProps("chequeNo", vChequeNo, handleChequeNoChange, {
                                 singleLine: true,
                                 className: "absolute resize-none",
                                 style: {
@@ -1014,6 +1103,9 @@ export default function VoucherCanvasDialog({
                                   ...oneLineLtr("chequeNo"),
                                 },
                                 direction: "ltr",
+                                onKeyDown: handleChequeKeyDown,
+                                onFocus: () =>
+                                  openChequeSuggest(vChequeNo, chequeNoRef),
                               })}
                             />
                           ) : null}
@@ -1476,6 +1568,16 @@ export default function VoucherCanvasDialog({
                 pos={personPos}
                 boxRef={personBoxRef}
                 onPick={applyPersonPick}
+              />
+
+              <ChequeSuggestDropdown
+                show={chequeShow}
+                options={chequeOptions}
+                activeIdx={chequeActiveIdx}
+                setActiveIdx={setChequeActiveIdx}
+                pos={chequePos}
+                boxRef={chequeBoxRef}
+                onPick={applyChequePick}
               />
             </motion.div>
           </div>
