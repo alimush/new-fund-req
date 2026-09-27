@@ -650,6 +650,16 @@ export default function VoucherCanvasDialog({
     setFieldFontWeight(selectedField, next);
   };
 
+  const nudgeAllSize = (diff) => {
+    const next = Math.max(8, Math.min(72, globalTextStyle.fontSize + diff));
+    setAllFontSize(next);
+  };
+
+  const nudgeAllWeight = (diff) => {
+    const next = Math.max(100, Math.min(900, globalTextStyle.fontWeight + diff));
+    setAllFontWeight(next);
+  };
+
   const oneLineRtl = (fieldKey) =>
     mergeFieldTextStyle(fieldKey, {
       textAlign: "right",
@@ -1480,6 +1490,22 @@ export default function VoucherCanvasDialog({
                           <span>حجم الخط العام</span>
                           <span>{globalTextStyle.fontSize}px</span>
                         </div>
+                        <div className="flex items-center gap-2 mb-2">
+                          <button
+                            type="button"
+                            onClick={() => nudgeAllSize(-1)}
+                            className="w-9 h-9 rounded-xl bg-white ring-1 ring-black/5 grid place-items-center"
+                          >
+                            <FiMinus />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => nudgeAllSize(1)}
+                            className="w-9 h-9 rounded-xl bg-white ring-1 ring-black/5 grid place-items-center"
+                          >
+                            <FiPlus />
+                          </button>
+                        </div>
                         <input
                           type="range"
                           min="8"
@@ -1495,6 +1521,22 @@ export default function VoucherCanvasDialog({
                         <div className="flex items-center justify-between text-sm font-bold text-gray-700 mb-2">
                           <span>سماكة الخط العامة</span>
                           <span>{globalTextStyle.fontWeight}</span>
+                        </div>
+                        <div className="flex items-center gap-2 mb-2">
+                          <button
+                            type="button"
+                            onClick={() => nudgeAllWeight(-100)}
+                            className="w-9 h-9 rounded-xl bg-white ring-1 ring-black/5 grid place-items-center"
+                          >
+                            <FiMinus />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => nudgeAllWeight(100)}
+                            className="w-9 h-9 rounded-xl bg-white ring-1 ring-black/5 grid place-items-center"
+                          >
+                            <FiBold />
+                          </button>
                         </div>
                         <input
                           type="range"
