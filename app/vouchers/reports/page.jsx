@@ -22,10 +22,12 @@ import {
   FiCheckCircle,
   FiUploadCloud,
   FiExternalLink,
+  FiPrinter,
 } from "react-icons/fi";
 
 import { FaMoneyBillWave } from "react-icons/fa6";
 import { usePermissions } from "@/context/PermissionContext";
+import { useUser } from "@/context/UserContext";
 import { PERMISSIONS } from "@/lib/permission";
 import TablePagination from "@/components/TablePagination";
 import VoucherModeBadge from "@/components/VoucherModeBadge";
@@ -35,8 +37,14 @@ const Select = dynamic(() => import("react-select").then((m) => m.default), {
 });
 
 import { COMPANIES } from "@/lib/voucher/companies";
-import { formatAmount } from "@/lib/voucher/utils";
+import { formatAmount, isAlGhadeerMain } from "@/lib/voucher/utils";
 import { formatVoucherDateDisplay } from "@/lib/voucher/voucherDate";
+import {
+  buildDailyCashPrintPackages,
+  listDailyCashPrintCompanies,
+  openBlankDailyCashPrintWindow,
+  openDailyCashPrintWindow,
+} from "@/lib/voucher/dailyCashPrint";
 import { attachmentOpenHref } from "@/lib/s3/browserOpenAttachment";
 import { normalizePersonName, personNameKey } from "@/lib/voucher/normalizePersonName";
 import { uploadPersonIdentityFiles } from "@/lib/voucher/uploadPersonIdentityClient";
@@ -128,6 +136,12 @@ export default function VoucherReportsPage() {
     personKey: "",
     attachments: [],
     loading: false,
+  });
+  const [printModal, setPrintModal] = useState({
+    open: false,
+    vouchers: [],
+    companies: [],
+    balances: {},
   });
   const [deletingId, setDeletingId] = useState(null);
   const identityModalFileRef = useRef(null);
@@ -306,7 +320,11 @@ export default function VoucherReportsPage() {
     [hScrollUi, setTableScrollLeft]
   );
 
-  const { permissions } = usePermissions();
+  const { permissions, user: permUser } = usePermissions();
+  const { user: ctxUser } = useUser();
+  const printerUsername = String(
+    permUser?.username || ctxUser?.username || ""
+  ).trim();
 
   const canViewReports =
     Array.isArray(permissions) &&
@@ -1274,6 +1292,130 @@ export default function VoucherReportsPage() {
     }
   }, [companyFilter, date.from, date.to]);
 
+  const handlePrintDailyCash = useCallback(async () => {
+    try {
+      setLoading(true);
+      const { all } = await fetchAllForExport();
+      if (!all || all.length === 0) return;
+
+      const companyVal = companyFilter?.value || "all";
+      const companies = listDailyCashPrintCompanies(all, {
+        companyFilter: companyVal,
+      });
+      if (!companies.length) return;
+
+      const balances = {};
+      for (const c of companies) {
+        balances[c.key] = isAlGhadeerMain(c.key)
+          ? { iqd: "", usd: "", eur: "" }
+          : { iqd: "", usd: "" };
+      }
+
+      setPrintModal({
+        open: true,
+        vouchers: all,
+        companies,
+        balances,
+      });
+    } catch (e) {
+      console.error("❌ Print daily cash prepare error:", e);
+      alert(e?.message || "تعذر تجهيز الطباعة");
+    } finally {
+      setLoading(false);
+    }
+  }, [fetchAllForExport, companyFilter]);
+
+  const closePrintModal = useCallback(() => {
+    setPrintModal({
+      open: false,
+      vouchers: [],
+      companies: [],
+      balances: {},
+    });
+  }, []);
+
+  const updatePrintBalance = useCallback((companyKey, field, value) => {
+    setPrintModal((prev) => ({
+      ...prev,
+      balances: {
+        ...prev.balances,
+        [companyKey]: {
+          ...(prev.balances?.[companyKey] || { iqd: "", usd: "" }),
+          [field]: value,
+        },
+      },
+    }));
+  }, []);
+
+  const confirmPrintDailyCash = useCallback(async () => {
+    // Open immediately on confirm click so popup blockers do not block it.
+    const printWin = openBlankDailyCashPrintWindow();
+    try {
+      setLoading(true);
+      const all = printModal.vouchers || [];
+      if (!all.length) {
+        try {
+          printWin?.close();
+        } catch {
+          /* ignore */
+        }
+        return;
+      }
+
+      let cashier = printerUsername;
+      if (!cashier) {
+        try {
+          const meRes = await fetch("/api/user-permissions", {
+            cache: "no-store",
+            credentials: "include",
+          });
+          const meJson = await meRes.json().catch(() => ({}));
+          cashier = String(meJson?.user?.username || "").trim();
+        } catch {
+          /* ignore */
+        }
+      }
+
+      const packages = buildDailyCashPrintPackages(all, {
+        dateFrom: date.from,
+        dateTo: date.to,
+        companyFilter: companyFilter?.value || "all",
+        cashier,
+        prevBalances: printModal.balances || {},
+      });
+
+      if (!packages.length) {
+        try {
+          printWin?.close();
+        } catch {
+          /* ignore */
+        }
+        return;
+      }
+
+      closePrintModal();
+      await openDailyCashPrintWindow(packages, printWin);
+    } catch (e) {
+      console.error("❌ Print daily cash error:", e);
+      try {
+        printWin?.close();
+      } catch {
+        /* ignore */
+      }
+      alert(e?.message || "تعذر فتح نافذة الطباعة");
+    } finally {
+      setLoading(false);
+    }
+  }, [
+    printModal.vouchers,
+    printModal.balances,
+    date.from,
+    date.to,
+    companyFilter,
+    printerUsername,
+    closePrintModal,
+  ]);
+
   const Card = ({ icon, title, value, iconColor = "text-blue-600" }) => (
     <KpiCard label={title} value={value} icon={icon} iconColor={iconColor} />
   );
@@ -1359,6 +1501,21 @@ export default function VoucherReportsPage() {
               >
                 <FiDownload className="text-base" />
                 Excel
+              </motion.button>
+
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.99 }}
+                onClick={handlePrintDailyCash}
+                disabled={loading || rows.length === 0}
+                className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-extrabold shadow-sm transition ${
+                  loading || rows.length === 0
+                    ? "cursor-not-allowed bg-slate-100 text-slate-400 ring-1 ring-slate-200/80"
+                    : "bg-sky-50 text-sky-800 ring-1 ring-sky-200/80 hover:bg-sky-100"
+                }`}
+              >
+                <FiPrinter className="text-base" />
+                طباعة التقرير
               </motion.button>
 
               {canExportEmptyForm ? (
@@ -1961,6 +2118,139 @@ export default function VoucherReportsPage() {
             className="rounded-3xl border border-slate-200/70 bg-white/75 py-16 text-center text-lg font-extrabold text-slate-600 shadow-sm ring-1 ring-slate-200/50"
           >
             لا توجد نتائج — اضغط «بحث»
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {printModal.open && (
+          <motion.div
+            className="fixed inset-0 z-[99999] bg-black/40 flex items-center justify-center p-4"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={closePrintModal}
+          >
+            <motion.div
+              initial={{ scale: 0.96, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.96, opacity: 0 }}
+              transition={{ duration: 0.18 }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-xl rounded-3xl bg-white shadow-2xl border border-gray-200 overflow-hidden"
+              dir="rtl"
+            >
+              <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={closePrintModal}
+                  className="px-3 py-2 rounded-xl border border-gray-200 bg-white text-gray-700 font-extrabold hover:bg-gray-50"
+                >
+                  إلغاء
+                </button>
+                <div className="text-right">
+                  <div className="text-lg font-extrabold text-gray-900">
+                    طباعة التقرير اليومي
+                  </div>
+                  <div className="text-sm text-gray-500 font-bold">
+                    أدخل الرصيد السابق لكل شركة (مثل Excel)
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-5 max-h-[65vh] overflow-y-auto space-y-4">
+                {(printModal.companies || []).map((c) => (
+                  <div
+                    key={c.key}
+                    className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 space-y-3"
+                  >
+                    <div className="text-right text-sm font-extrabold text-slate-900">
+                      {c.name}
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <label className="block text-right">
+                        <span className="mb-1 block text-xs font-bold text-slate-600">
+                          الرصيد السابق - دينار
+                        </span>
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          value={printModal.balances?.[c.key]?.iqd ?? ""}
+                          onChange={(e) =>
+                            updatePrintBalance(c.key, "iqd", e.target.value)
+                          }
+                          placeholder="0"
+                          className="w-full rounded-xl bg-white px-3 py-2.5 text-[14px] font-extrabold text-slate-900 outline-none ring-1 ring-slate-200/90 focus:ring-sky-300 text-left"
+                          dir="ltr"
+                        />
+                      </label>
+                      <label className="block text-right">
+                        <span className="mb-1 block text-xs font-bold text-slate-600">
+                          الرصيد السابق - دولار
+                        </span>
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          value={printModal.balances?.[c.key]?.usd ?? ""}
+                          onChange={(e) =>
+                            updatePrintBalance(c.key, "usd", e.target.value)
+                          }
+                          placeholder="0"
+                          className="w-full rounded-xl bg-white px-3 py-2.5 text-[14px] font-extrabold text-slate-900 outline-none ring-1 ring-slate-200/90 focus:ring-sky-300 text-left"
+                          dir="ltr"
+                        />
+                      </label>
+                      {isAlGhadeerMain(c.key) ? (
+                        <label className="block text-right sm:col-span-2">
+                          <span className="mb-1 block text-xs font-bold text-slate-600">
+                            الرصيد السابق - يورو
+                          </span>
+                          <input
+                            type="text"
+                            inputMode="decimal"
+                            value={printModal.balances?.[c.key]?.eur ?? ""}
+                            onChange={(e) =>
+                              updatePrintBalance(c.key, "eur", e.target.value)
+                            }
+                            placeholder="0"
+                            className="w-full rounded-xl bg-white px-3 py-2.5 text-[14px] font-extrabold text-slate-900 outline-none ring-1 ring-slate-200/90 focus:ring-sky-300 text-left"
+                            dir="ltr"
+                          />
+                        </label>
+                      ) : null}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="px-5 py-4 border-t border-gray-200 flex items-center justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={closePrintModal}
+                  disabled={loading}
+                  className="px-4 py-2.5 rounded-xl border border-gray-200 bg-white text-gray-700 font-extrabold hover:bg-gray-50 disabled:opacity-60"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="button"
+                  onClick={confirmPrintDailyCash}
+                  disabled={loading}
+                  className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-extrabold shadow-sm ${
+                    loading
+                      ? "cursor-not-allowed bg-slate-300 text-slate-500"
+                      : "bg-sky-600 text-white hover:bg-sky-700"
+                  }`}
+                >
+                  {loading ? (
+                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                  ) : (
+                    <FiPrinter className="text-base" />
+                  )}
+                  طباعة
+                </button>
+              </div>
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>

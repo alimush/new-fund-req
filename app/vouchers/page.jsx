@@ -176,7 +176,12 @@ export default function VoucherPage() {
     }
 
     const words = numberToArabicWords(cleaned);
-    const currencyText = vCurrency === "USD" ? "دولار فقط لا غير" : "دينار فقط لا غير";
+    const currencyText =
+      vCurrency === "USD"
+        ? "دولار فقط لا غير"
+        : vCurrency === "EUR"
+          ? "يورو فقط لا غير"
+          : "دينار فقط لا غير";
     setVWords(words ? `${words} ${currencyText}` : "");
     setFieldColorRuns((prev) => ({ ...prev, words: [] }));
   }, [vAmount, vCurrency]);

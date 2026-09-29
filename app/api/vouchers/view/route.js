@@ -11,6 +11,10 @@ import { getModelForCompany } from "@/models/Request";
 import { buildVoucherDateFromParts } from "@/lib/voucher/voucherDate";
 import { sanitizeFieldColorRuns } from "@/lib/voucher/fieldColorRuns";
 import { resolveVoucherChequeLink } from "@/lib/voucher/resolveVoucherChequeLink";
+import {
+  isAlGhadeerMain,
+  normalizeVoucherCurrency,
+} from "@/lib/voucher/utils";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -115,7 +119,11 @@ function sanitizeFieldStyles(input = {}, globalStyle = DEFAULT_GLOBAL_TEXT_STYLE
   return out;
 }
 
-function buildBody(body) {
+function buildBody(body, { companyKey = "" } = {}) {
+  const allowEur = isAlGhadeerMain(companyKey);
+  const currency = normalizeVoucherCurrency(body.vCurrency || body.currency, {
+    allowEur,
+  });
   const globalTextStyle = sanitizeGlobalTextStyle(body.globalTextStyle || {});
   const fieldStyles = sanitizeFieldStyles(body.fieldStyles || {}, globalTextStyle);
 
@@ -164,7 +172,7 @@ function buildBody(body) {
     amountText: String(body.vAmount ?? "").trim(),
     amountWords: String(body.vWords ?? "").trim(),
     description: String(body.vDesc ?? "").trim(),
-    currency: body.vCurrency === "USD" ? "USD" : "IQD",
+    currency,
 
     bank: String(body.vBank ?? "").trim(),
     fxRate: String(body.vFxRate ?? "").trim(),
@@ -197,7 +205,7 @@ function buildBody(body) {
     vAmount: String(body.vAmount ?? "").trim(),
     vWords: String(body.vWords ?? "").trim(),
     vDesc: String(body.vDesc ?? "").trim(),
-    vCurrency: body.vCurrency === "USD" ? "USD" : "IQD",
+    vCurrency: currency,
     vDateYY,
     vDateMM,
     vDateDD,
@@ -420,7 +428,7 @@ export async function PUT(req) {
       );
     } else {
       // Full voucher edit path
-      const baseUpdate = buildBody(body);
+      const baseUpdate = buildBody(body, { companyKey: doc.companyKey });
       const chequeLink = await resolveVoucherChequeLink({
         chequeId: body.chequeId,
         chequeNo: body.vChequeNo ?? baseUpdate.chequeNo,

@@ -1476,7 +1476,7 @@
       "footer": 0.5
     },
     "logo": {
-      "file": "image4.png",
+      "file": "budoor_elite.png",
       "tl": {
         "nativeCol": 9,
         "nativeColOff": 126641,
@@ -1490,8 +1490,8 @@
         "nativeRowOff": 0
       },
       "ext": {
-        "width": 93,
-        "height": 159
+        "width": 180,
+        "height": 70
       }
     }
   },
@@ -1612,7 +1612,7 @@
       "footer": 0.5
     },
     "logo": {
-      "file": "image4.png",
+      "file": "budoor_elite.png",
       "tl": {
         "nativeCol": 9,
         "nativeColOff": 126641,
@@ -1626,8 +1626,8 @@
         "nativeRowOff": 0
       },
       "ext": {
-        "width": 93,
-        "height": 159
+        "width": 180,
+        "height": 70
       }
     }
   }

@@ -270,7 +270,11 @@ function VoucherViewPageContent() {
     }
 
     const currencyText =
-      vCurrency === "USD" ? "دولار فقط لا غير" : "دينار فقط لا غير";
+      vCurrency === "USD"
+        ? "دولار فقط لا غير"
+        : vCurrency === "EUR"
+          ? "يورو فقط لا غير"
+          : "دينار فقط لا غير";
 
     setVWords(`${numberToArabicWords(cleaned)} ${currencyText}`.trim());
     setFieldColorRuns((prev) => ({ ...prev, words: [] }));
@@ -391,7 +395,11 @@ function VoucherViewPageContent() {
 
     const formatted = Number(cleaned).toLocaleString("en-US");
     const currencyText =
-      vCurrency === "USD" ? "دولار فقط لا غير" : "دينار فقط لا غير";
+      vCurrency === "USD"
+        ? "دولار فقط لا غير"
+        : vCurrency === "EUR"
+          ? "يورو فقط لا غير"
+          : "دينار فقط لا غير";
 
     setVAmount(formatted);
     setVWords(`${numberToArabicWords(cleaned)} ${currencyText}`.trim());

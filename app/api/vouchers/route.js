@@ -18,6 +18,10 @@ import { linkVoucherToRequest } from "@/lib/voucher/linkVoucherToRequest";
 import { buildVoucherDateFromParts } from "@/lib/voucher/voucherDate";
 import { sanitizeFieldColorRuns } from "@/lib/voucher/fieldColorRuns";
 import { resolveVoucherChequeLink } from "@/lib/voucher/resolveVoucherChequeLink";
+import {
+  isAlGhadeerMain,
+  normalizeVoucherCurrency,
+} from "@/lib/voucher/utils";
 
 export const runtime = "nodejs";
 
@@ -485,7 +489,9 @@ export async function POST(req) {
       amount: toNumber(vAmount, 0),
       amountText: safeString(vAmount),
       amountWords: safeString(vWords),
-      currency: safeString(vCurrency || "IQD").toUpperCase(),
+      currency: normalizeVoucherCurrency(vCurrency || "IQD", {
+        allowEur: isAlGhadeerMain(saveCompanyKey),
+      }),
 
       description: safeString(vDesc),
       bank: safeString(vBank),

@@ -21,6 +21,7 @@ import {
 } from "react-icons/fi";
 import { Cairo } from "next/font/google";
 import VoucherDateModal from "@/components/VoucherDateModal";
+import { isAlGhadeerMain } from "@/lib/voucher/utils";
 
 const cairo = Cairo({
   subsets: ["arabic"],
@@ -241,7 +242,13 @@ export default function VoucherCanvasDialog({
         }
       }
       if (opt.amountWords) setVWords?.(opt.amountWords);
-      if (opt.currency) setVCurrency?.(opt.currency === "USD" ? "USD" : "IQD");
+      if (opt.currency) {
+        const c = String(opt.currency || "").toUpperCase();
+        if (c === "USD") setVCurrency?.("USD");
+        else if (c === "EUR" && isAlGhadeerMain(selectedCompany?.key))
+          setVCurrency?.("EUR");
+        else setVCurrency?.("IQD");
+      }
 
       // شيك مربوط → تفعيل صندوق الشيك
       setCbTwo?.(true);
@@ -262,6 +269,7 @@ export default function VoucherCanvasDialog({
       setVCurrency,
       setVReceivedBy,
       setVWords,
+      selectedCompany?.key,
     ]
   );
 
@@ -702,10 +710,18 @@ export default function VoucherCanvasDialog({
   if (!selectedCompany) return null;
 
   const customerPersonName = vReceivedBy;
+  const allowEur = isAlGhadeerMain(selectedCompany?.key);
 
   const dateStyle = getStyle("date");
   const currencyMarkStyle = getStyle("currencyMark");
   const voucherNoStyle = getStyle("voucherNo");
+
+  const currencyMarkPos =
+    vCurrency === "USD"
+      ? POS.currencyUSDBox
+      : vCurrency === "EUR" && allowEur && POS.currencyEURBox
+        ? POS.currencyEURBox
+        : POS.currencyIQDBox;
 
   return (
     <AnimatePresence>
@@ -731,6 +747,28 @@ export default function VoucherCanvasDialog({
                 </div>
 
                 <div className="flex items-center gap-3 flex-wrap">
+                {allowEur ? (
+                  <div className="flex items-center gap-1 rounded-xl bg-white/70 p-1 ring-1 ring-slate-200/80">
+                    {[
+                      { code: "IQD", label: "دينار" },
+                      { code: "USD", label: "دولار" },
+                      { code: "EUR", label: "يورو" },
+                    ].map((opt) => (
+                      <button
+                        key={opt.code}
+                        type="button"
+                        onClick={() => setVCurrency?.(opt.code)}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-extrabold transition ${
+                          vCurrency === opt.code
+                            ? "bg-emerald-600 text-white"
+                            : "text-slate-700 hover:bg-slate-100"
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
                 {isViewPage && !editMode ? (
   <button
     onClick={onToggleEdit}
@@ -814,7 +852,7 @@ export default function VoucherCanvasDialog({
                         <div
                           className={`absolute leading-none ${cairo.className}`}
                           style={{
-                            ...pctStyle(vCurrency === "USD" ? POS.currencyUSDBox : POS.currencyIQDBox),
+                            ...pctStyle(currencyMarkPos),
                             fontSize: `${currencyMarkStyle.fontSize}px`,
                             fontWeight: currencyMarkStyle.fontWeight,
                             color: currencyMarkStyle.color,
@@ -966,6 +1004,20 @@ export default function VoucherCanvasDialog({
                             style={{ ...pctStyle(POS.currencyIQDBox), width: "7%", height: "7%", opacity: 0 }}
                             aria-label="IQD"
                           />
+                          {allowEur && POS.currencyEURBox ? (
+                            <button
+                              type="button"
+                              onClick={() => setVCurrency("EUR")}
+                              className="absolute"
+                              style={{
+                                ...pctStyle(POS.currencyEURBox),
+                                width: "7%",
+                                height: "7%",
+                                opacity: 0,
+                              }}
+                              aria-label="EUR"
+                            />
+                          ) : null}
 
                           <VoucherRichTextInput
                             ref={receivedByRef}
