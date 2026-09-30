@@ -1193,7 +1193,7 @@ export default function VoucherReportsPage() {
       setLoading(true);
 
       const { all } = await fetchAllForExport();
-      if (!all || all.length === 0) return;
+      const vouchers = Array.isArray(all) ? all : [];
 
       const companyVal = companyFilter?.value || "all";
       const modeVal = modeFilter?.value || "all";
@@ -1204,7 +1204,7 @@ export default function VoucherReportsPage() {
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          vouchers: all,
+          vouchers,
           dateFrom: date.from,
           dateTo: date.to,
           companyFilter: companyVal,

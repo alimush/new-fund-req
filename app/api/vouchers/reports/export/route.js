@@ -42,6 +42,8 @@ export async function POST(req) {
       User.findById(userId).select("username").lean(),
     ]);
     const exportedByUsername = String(currentUser?.username || "").trim();
+    const excludeSubFunds =
+      exportedByUsername.toLowerCase() === "mohaemn.ali";
     const hasAnyCompanyPerm = COMPANIES.some(
       (c) => c.permission && allowedPerms.includes(c.permission)
     );
@@ -72,12 +74,6 @@ export async function POST(req) {
     }
 
     const vouchers = Array.isArray(body?.vouchers) ? body.vouchers : [];
-    if (!emptyForm && !vouchers.length) {
-      return NextResponse.json(
-        { success: false, error: "No vouchers" },
-        { status: 400 }
-      );
-    }
 
     const reportMod = await import("@/lib/voucher/buildDailyCashReportExcel");
     const buildFn =
@@ -94,6 +90,7 @@ export async function POST(req) {
       companyFilter: body?.companyFilter || "all",
       emptyForm,
       exportedByUsername,
+      excludeSubFunds,
     });
 
     const filename = emptyForm
