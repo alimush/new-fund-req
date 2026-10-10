@@ -76,6 +76,9 @@ export default function VoucherPage() {
         if (String(c.key).trim() === "Badur-Elite-MIB") {
           return c.permission && permissions.includes(c.permission);
         }
+        if (String(c.key).trim() === "Badur-Baghdad-MIB") {
+          return c.permission && permissions.includes(c.permission);
+        }
         if (String(c.key).trim() === "010") {
           return c.permission && permissions.includes(c.permission);
         }
