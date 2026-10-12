@@ -34,6 +34,9 @@ import {
   COMPANIES
 } from "@/lib/voucher/companies";
 
+/** صناديق MIB — تُعرض بفاصل أسفل باقي الشركات */
+const MIB_FUND_KEYS = new Set(["Badur-Elite-MIB", "Badur-Baghdad-MIB"]);
+
 export default function VoucherPage() {
   const { permissions } = usePermissions();
   const router = useRouter();
@@ -87,7 +90,18 @@ export default function VoucherPage() {
       if (c.permission && permissions.includes(c.permission)) return true;
       return false;
     });
-  }, [permissions]);
+  }, [permissions, isSuperAdmin]);
+
+  const mainCompanies = useMemo(
+    () => filteredCompanies.filter((c) => !MIB_FUND_KEYS.has(String(c.key).trim())),
+    [filteredCompanies]
+  );
+
+  const mibCompanies = useMemo(
+    () =>
+      filteredCompanies.filter((c) => MIB_FUND_KEYS.has(String(c.key).trim())),
+    [filteredCompanies]
+  );
 
   const selectedCompany = useMemo(
     () => filteredCompanies.find((c) => c.key === selectedKey) || null,
@@ -756,19 +770,53 @@ export default function VoucherPage() {
             </div>
           </motion.div>
 
-          <p className="mb-4 text-right text-xs font-extrabold uppercase tracking-wider text-slate-400">
-            الشركات
-          </p>
-          <motion.div
-            variants={list}
-            initial="hidden"
-            animate="show"
-            className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5 xl:grid-cols-3 xl:gap-5 auto-rows-fr"
-          >
-            {filteredCompanies.map((company) => (
-              <CompanyCard key={company.key} company={company} />
-            ))}
-          </motion.div>
+          {mainCompanies.length > 0 ? (
+            <>
+              <p className="mb-4 text-right text-xs font-extrabold uppercase tracking-wider text-slate-400">
+                الشركات
+              </p>
+              <motion.div
+                variants={list}
+                initial="hidden"
+                animate="show"
+                className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5 xl:grid-cols-3 xl:gap-5 auto-rows-fr"
+              >
+                {mainCompanies.map((company) => (
+                  <CompanyCard key={company.key} company={company} />
+                ))}
+              </motion.div>
+            </>
+          ) : null}
+
+          {mibCompanies.length > 0 ? (
+            <div className={mainCompanies.length > 0 ? "mt-10" : ""}>
+              <div className="mb-6 flex items-center gap-4" dir="rtl">
+                <div className="h-px flex-1 bg-gradient-to-l from-slate-300 via-slate-200 to-transparent" />
+                <div className="shrink-0 text-center">
+                  <p className="text-sm font-extrabold text-slate-800">
+                    صناديق MIB
+                  </p>
+                  <p className="mt-0.5 text-[11px] font-bold text-slate-500">
+                    بدور ايليت وبدور بغداد
+                  </p>
+                </div>
+                <div className="h-px flex-1 bg-gradient-to-r from-slate-300 via-slate-200 to-transparent" />
+              </div>
+
+              <div className="rounded-3xl border border-slate-200/90 bg-slate-50/70 p-4 sm:p-5">
+                <motion.div
+                  variants={list}
+                  initial="hidden"
+                  animate="show"
+                  className="mx-auto grid max-w-3xl grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5"
+                >
+                  {mibCompanies.map((company) => (
+                    <CompanyCard key={company.key} company={company} />
+                  ))}
+                </motion.div>
+              </div>
+            </div>
+          ) : null}
 
           <div className="mt-8">
             <AnimatePresence mode="wait" initial={false}>
