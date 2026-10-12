@@ -56,8 +56,22 @@ export async function POST(req) {
       PERMISSIONS.MANAGE_PERMISSIONS
     );
 
+    // نفس فلترة التقارير: لا إكسل لصندوق ما عنده صلاحية عليه
+    const allowedCompanyKeys = allowedPerms.includes(
+      PERMISSIONS.VIEW_ALL_REPORTS
+    )
+      ? COMPANIES.filter(
+          (c) =>
+            String(c.key).trim() !== "010" ||
+            (c.permission && allowedPerms.includes(c.permission))
+        ).map((c) => c.key)
+      : COMPANIES.filter((c) => allowedPerms.includes(c.permission)).map(
+          (c) => c.key
+        );
+
     const body = await req.json();
     const emptyForm = Boolean(body?.emptyForm);
+    const companyFilter = String(body?.companyFilter || "all").trim();
 
     if (emptyForm) {
       if (!canExportEmpty) {
@@ -73,7 +87,25 @@ export async function POST(req) {
       );
     }
 
+    if (companyFilter && companyFilter.toLowerCase() !== "all") {
+      const allowedLc = new Set(
+        allowedCompanyKeys.map((k) => String(k).trim().toLowerCase())
+      );
+      if (!allowedLc.has(companyFilter.toLowerCase())) {
+        return NextResponse.json(
+          { success: false, error: "Forbidden" },
+          { status: 403 }
+        );
+      }
+    }
+
     const vouchers = Array.isArray(body?.vouchers) ? body.vouchers : [];
+    const allowedLc = new Set(
+      allowedCompanyKeys.map((k) => String(k).trim().toLowerCase())
+    );
+    const safeVouchers = vouchers.filter((v) =>
+      allowedLc.has(String(v?.companyKey || "").trim().toLowerCase())
+    );
 
     const reportMod = await import("@/lib/voucher/buildDailyCashReportExcel");
     const buildFn =
@@ -84,13 +116,14 @@ export async function POST(req) {
       throw new Error("buildDailyCashReportBuffer export missing");
     }
 
-    const buffer = await buildFn(emptyForm ? [] : vouchers, {
+    const buffer = await buildFn(emptyForm ? [] : safeVouchers, {
       dateFrom: body?.dateFrom || "",
       dateTo: body?.dateTo || "",
-      companyFilter: body?.companyFilter || "all",
+      companyFilter,
       emptyForm,
       exportedByUsername,
       excludeSubFunds,
+      allowedCompanyKeys,
     });
 
     const filename = emptyForm

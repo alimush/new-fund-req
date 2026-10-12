@@ -23,6 +23,9 @@ import {
   FiUploadCloud,
   FiExternalLink,
   FiPrinter,
+  FiType,
+  FiMinus,
+  FiPlus,
 } from "react-icons/fi";
 
 import { FaMoneyBillWave } from "react-icons/fa6";
@@ -41,9 +44,16 @@ import { formatAmount, isAlGhadeerMain } from "@/lib/voucher/utils";
 import { formatVoucherDateDisplay } from "@/lib/voucher/voucherDate";
 import {
   buildDailyCashPrintPackages,
+  buildDailyCashPrintPreviewHtml,
+  clampPrintFontSize,
+  defaultPrintFontSizes,
   listDailyCashPrintCompanies,
+  normalizeFontTarget,
+  normalizePrintFontSizes,
   openBlankDailyCashPrintWindow,
   openDailyCashPrintWindow,
+  PRINT_COLUMN_KEYS,
+  PRINT_FONT_TARGETS,
 } from "@/lib/voucher/dailyCashPrint";
 import { attachmentOpenHref } from "@/lib/s3/browserOpenAttachment";
 import { normalizePersonName, personNameKey } from "@/lib/voucher/normalizePersonName";
@@ -142,7 +152,14 @@ export default function VoucherReportsPage() {
     vouchers: [],
     companies: [],
     balances: {},
+    fontSize: 9,
+    fontBold: true,
+    fontTarget: "all",
+    fontSizes: defaultPrintFontSizes(9),
   });
+  const [fontSettingsOpen, setFontSettingsOpen] = useState(false);
+  const [savingFontPrefs, setSavingFontPrefs] = useState(false);
+  const [fontPrefsLoaded, setFontPrefsLoaded] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
   const identityModalFileRef = useRef(null);
   const fileInputRefs = useRef({});
@@ -1296,13 +1313,17 @@ export default function VoucherReportsPage() {
     try {
       setLoading(true);
       const { all } = await fetchAllForExport();
-      if (!all || all.length === 0) return;
+      const vouchers = Array.isArray(all) ? all : [];
 
       const companyVal = companyFilter?.value || "all";
-      const companies = listDailyCashPrintCompanies(all, {
+      const companies = listDailyCashPrintCompanies(vouchers, {
         companyFilter: companyVal,
+        includeEmpty: true,
       });
-      if (!companies.length) return;
+      if (!companies.length) {
+        alert("اختر صندوقاً للطباعة أو تأكد من صلاحياتك");
+        return;
+      }
 
       const balances = {};
       for (const c of companies) {
@@ -1311,12 +1332,17 @@ export default function VoucherReportsPage() {
           : { iqd: "", usd: "" };
       }
 
-      setPrintModal({
+      setPrintModal((prev) => ({
         open: true,
-        vouchers: all,
+        vouchers,
         companies,
         balances,
-      });
+        fontSize: prev.fontSize || 9,
+        fontBold: prev.fontBold !== false,
+        fontTarget: prev.fontTarget || "all",
+        fontSizes: normalizePrintFontSizes(prev.fontSizes, prev.fontSize || 9),
+      }));
+      setFontSettingsOpen(false);
     } catch (e) {
       console.error("❌ Print daily cash prepare error:", e);
       alert(e?.message || "تعذر تجهيز الطباعة");
@@ -1326,13 +1352,165 @@ export default function VoucherReportsPage() {
   }, [fetchAllForExport, companyFilter]);
 
   const closePrintModal = useCallback(() => {
-    setPrintModal({
+    setFontSettingsOpen(false);
+    setPrintModal((prev) => ({
+      ...prev,
       open: false,
       vouchers: [],
       companies: [],
       balances: {},
+    }));
+  }, []);
+
+  const updatePrintFont = useCallback((patch) => {
+    setPrintModal((prev) => {
+      const prevSizes = normalizePrintFontSizes(
+        prev.fontSizes,
+        prev.fontSize || 9
+      );
+      const nextTarget = normalizeFontTarget(
+        patch.fontTarget ?? prev.fontTarget ?? "all"
+      );
+      let nextSizes = prevSizes;
+      let nextSize = clampPrintFontSize(prev.fontSize || 9);
+
+      if (patch.fontSize != null) {
+        nextSize = clampPrintFontSize(patch.fontSize);
+        if (nextTarget === "all") {
+          nextSizes = defaultPrintFontSizes(nextSize);
+        } else {
+          nextSizes = { ...prevSizes, [nextTarget]: nextSize };
+        }
+      } else if (patch.fontTarget != null) {
+        // عند تبديل الهدف: اعرض حجم ذلك الجزء دون تغيير الباقي
+        if (nextTarget === "all") {
+          const vals = PRINT_COLUMN_KEYS.map((k) => prevSizes[k]);
+          const same = vals.every((v) => v === vals[0]);
+          nextSize = same ? vals[0] : clampPrintFontSize(prev.fontSize || 9);
+        } else {
+          nextSize = prevSizes[nextTarget] ?? 9;
+        }
+      }
+
+      return {
+        ...prev,
+        fontBold:
+          patch.fontBold !== undefined
+            ? patch.fontBold !== false
+            : prev.fontBold !== false,
+        fontTarget: nextTarget,
+        fontSizes: nextSizes,
+        fontSize: nextSize,
+      };
     });
   }, []);
+
+  const loadPrintFontPrefs = useCallback(async () => {
+    try {
+      const res = await fetch("/api/vouchers/reports/print-prefs", {
+        credentials: "include",
+        cache: "no-store",
+      });
+      const json = await res.json().catch(() => ({}));
+      if (json?.success && json.data) {
+        const fontSize = clampPrintFontSize(json.data.fontSize || 9);
+        const fontSizes = normalizePrintFontSizes(
+          json.data.fontSizes,
+          fontSize
+        );
+        const fontTarget = normalizeFontTarget(json.data.fontTarget);
+        setPrintModal((prev) => ({
+          ...prev,
+          fontSize:
+            fontTarget === "all"
+              ? fontSize
+              : fontSizes[fontTarget] ?? fontSize,
+          fontBold: json.data.fontBold !== false,
+          fontTarget,
+          fontSizes,
+        }));
+      }
+    } catch {
+      /* keep defaults */
+    } finally {
+      setFontPrefsLoaded(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!fontPrefsLoaded) loadPrintFontPrefs();
+  }, [fontPrefsLoaded, loadPrintFontPrefs]);
+
+  const savePrintFontPrefs = useCallback(async () => {
+    try {
+      setSavingFontPrefs(true);
+      const fontSizes = normalizePrintFontSizes(
+        printModal.fontSizes,
+        printModal.fontSize || 9
+      );
+      const res = await fetch("/api/vouchers/reports/print-prefs", {
+        method: "PUT",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fontSize: printModal.fontSize || 9,
+          fontBold: printModal.fontBold !== false,
+          fontTarget: printModal.fontTarget || "all",
+          fontSizes,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json?.success) {
+        throw new Error(json?.error || "تعذر الحفظ");
+      }
+      const nextSizes = normalizePrintFontSizes(
+        json.data?.fontSizes,
+        json.data?.fontSize || 9
+      );
+      const nextTarget = normalizeFontTarget(json.data?.fontTarget);
+      setPrintModal((prev) => ({
+        ...prev,
+        fontSize: clampPrintFontSize(
+          nextTarget === "all"
+            ? json.data?.fontSize || 9
+            : nextSizes[nextTarget] ?? 9
+        ),
+        fontBold: json.data?.fontBold !== false,
+        fontTarget: nextTarget,
+        fontSizes: nextSizes,
+      }));
+      setFontSettingsOpen(false);
+    } catch (e) {
+      alert(e?.message || "تعذر حفظ إعدادات الخط");
+    } finally {
+      setSavingFontPrefs(false);
+    }
+  }, [
+    printModal.fontSize,
+    printModal.fontBold,
+    printModal.fontTarget,
+    printModal.fontSizes,
+  ]);
+
+  const printFontPreviewHtml = useMemo(() => {
+    const companyName =
+      printModal.companies?.[0]?.name || companyFilter?.label || "صندوق تجريبي";
+    return buildDailyCashPrintPreviewHtml({
+      fontSize: printModal.fontSize || 9,
+      fontBold: printModal.fontBold !== false,
+      fontSizes: normalizePrintFontSizes(
+        printModal.fontSizes,
+        printModal.fontSize || 9
+      ),
+      companyName,
+    });
+  }, [
+    printModal.fontSize,
+    printModal.fontBold,
+    printModal.fontSizes,
+    printModal.companies,
+    companyFilter?.label,
+  ]);
 
   const updatePrintBalance = useCallback((companyKey, field, value) => {
     setPrintModal((prev) => ({
@@ -1352,15 +1530,7 @@ export default function VoucherReportsPage() {
     const printWin = openBlankDailyCashPrintWindow();
     try {
       setLoading(true);
-      const all = printModal.vouchers || [];
-      if (!all.length) {
-        try {
-          printWin?.close();
-        } catch {
-          /* ignore */
-        }
-        return;
-      }
+      const all = Array.isArray(printModal.vouchers) ? printModal.vouchers : [];
 
       let cashier = printerUsername;
       if (!cashier) {
@@ -1382,6 +1552,7 @@ export default function VoucherReportsPage() {
         companyFilter: companyFilter?.value || "all",
         cashier,
         prevBalances: printModal.balances || {},
+        includeEmpty: true,
       });
 
       if (!packages.length) {
@@ -1390,11 +1561,19 @@ export default function VoucherReportsPage() {
         } catch {
           /* ignore */
         }
+        alert("ماكو صندوق للطباعة");
         return;
       }
 
       closePrintModal();
-      await openDailyCashPrintWindow(packages, printWin);
+      await openDailyCashPrintWindow(packages, printWin, {
+        fontSize: printModal.fontSize || 9,
+        fontBold: printModal.fontBold !== false,
+        fontSizes: normalizePrintFontSizes(
+          printModal.fontSizes,
+          printModal.fontSize || 9
+        ),
+      });
     } catch (e) {
       console.error("❌ Print daily cash error:", e);
       try {
@@ -1409,6 +1588,9 @@ export default function VoucherReportsPage() {
   }, [
     printModal.vouchers,
     printModal.balances,
+    printModal.fontSize,
+    printModal.fontBold,
+    printModal.fontSizes,
     date.from,
     date.to,
     companyFilter,
@@ -1492,9 +1674,9 @@ export default function VoucherReportsPage() {
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.99 }}
                 onClick={handleExportExcel}
-                disabled={loading || rows.length === 0}
+                disabled={loading}
                 className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-extrabold shadow-sm transition ${
-                  loading || rows.length === 0
+                  loading
                     ? "cursor-not-allowed bg-slate-100 text-slate-400 ring-1 ring-slate-200/80"
                     : "bg-emerald-50 text-emerald-800 ring-1 ring-emerald-200/80 hover:bg-emerald-100"
                 }`}
@@ -1507,9 +1689,9 @@ export default function VoucherReportsPage() {
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.99 }}
                 onClick={handlePrintDailyCash}
-                disabled={loading || rows.length === 0}
+                disabled={loading}
                 className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-extrabold shadow-sm transition ${
-                  loading || rows.length === 0
+                  loading
                     ? "cursor-not-allowed bg-slate-100 text-slate-400 ring-1 ring-slate-200/80"
                     : "bg-sky-50 text-sky-800 ring-1 ring-sky-200/80 hover:bg-sky-100"
                 }`}
@@ -2137,17 +2319,27 @@ export default function VoucherReportsPage() {
               exit={{ scale: 0.96, opacity: 0 }}
               transition={{ duration: 0.18 }}
               onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-xl rounded-3xl bg-white shadow-2xl border border-gray-200 overflow-hidden"
+              className="relative w-full max-w-xl rounded-3xl bg-white shadow-2xl border border-gray-200 overflow-hidden"
               dir="rtl"
             >
               <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between gap-3">
-                <button
-                  type="button"
-                  onClick={closePrintModal}
-                  className="px-3 py-2 rounded-xl border border-gray-200 bg-white text-gray-700 font-extrabold hover:bg-gray-50"
-                >
-                  إلغاء
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={closePrintModal}
+                    className="px-3 py-2 rounded-xl border border-gray-200 bg-white text-gray-700 font-extrabold hover:bg-gray-50"
+                  >
+                    إلغاء
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFontSettingsOpen(true)}
+                    className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-indigo-200 bg-indigo-50 text-indigo-800 text-sm font-extrabold hover:bg-indigo-100"
+                  >
+                    <FiType className="text-base" />
+                    تغيير حجم الخط
+                  </button>
+                </div>
                 <div className="text-right">
                   <div className="text-lg font-extrabold text-gray-900">
                     طباعة التقرير اليومي
@@ -2248,6 +2440,269 @@ export default function VoucherReportsPage() {
                     <FiPrinter className="text-base" />
                   )}
                   طباعة
+                </button>
+              </div>
+
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {fontSettingsOpen && (
+          <motion.div
+            className="fixed inset-0 z-[100050] bg-black/50 flex items-center justify-center p-3 sm:p-5"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => !savingFontPrefs && setFontSettingsOpen(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.97, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.97, opacity: 0 }}
+              transition={{ duration: 0.16 }}
+              onClick={(e) => e.stopPropagation()}
+              className="flex h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl"
+              dir="rtl"
+            >
+              <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">
+                <button
+                  type="button"
+                  disabled={savingFontPrefs}
+                  onClick={() => setFontSettingsOpen(false)}
+                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 font-extrabold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                >
+                  إغلاق
+                </button>
+                <div className="text-right">
+                  <div className="text-lg font-extrabold text-slate-900">
+                    إعدادات خط الطباعة
+                  </div>
+                  <div className="text-sm font-bold text-slate-500">
+                    حجم الفورمة ثابت — يتغير الخط فقط. احفظ ثم أكمل الرصيد واطبع
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid min-h-0 flex-1 grid-cols-1 gap-0 lg:grid-cols-[340px_minmax(0,1fr)]">
+                <div className="space-y-4 overflow-y-auto border-b border-slate-200 p-5 lg:border-b-0 lg:border-l">
+                  <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="text-right text-sm font-extrabold text-slate-800">
+                      تطبيق على
+                    </div>
+                    <div className="text-right text-[11px] font-bold leading-5 text-slate-500">
+                      كل جزء يحفظ حجمه لوحده — تغيير جزء ما يصغّر الباقي
+                    </div>
+                    <div className="grid grid-cols-1 gap-2">
+                      {PRINT_FONT_TARGETS.map((opt) => {
+                        const active =
+                          (printModal.fontTarget || "all") === opt.key;
+                        const sizes = normalizePrintFontSizes(
+                          printModal.fontSizes,
+                          printModal.fontSize || 9
+                        );
+                        const sizeBadge =
+                          opt.key === "all"
+                            ? null
+                            : `${sizes[opt.key] ?? 9}px`;
+                        return (
+                          <button
+                            key={opt.key}
+                            type="button"
+                            onClick={() =>
+                              updatePrintFont({ fontTarget: opt.key })
+                            }
+                            className={`flex items-center justify-between gap-2 rounded-xl px-3 py-2.5 text-right text-xs font-extrabold ring-1 transition ${
+                              active
+                                ? "bg-indigo-600 text-white ring-indigo-600"
+                                : "bg-white text-slate-700 ring-slate-200 hover:bg-slate-50"
+                            }`}
+                          >
+                            <span
+                              className={`rounded-md px-1.5 py-0.5 text-[10px] font-black tabular-nums ${
+                                active
+                                  ? "bg-white/20 text-white"
+                                  : "bg-slate-100 text-slate-600"
+                              }`}
+                            >
+                              {sizeBadge || "الكل"}
+                            </span>
+                            <span>{opt.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-sm font-extrabold text-slate-800">
+                        حجم الخط
+                      </span>
+                      <span className="rounded-lg bg-white px-2.5 py-1 text-sm font-black text-indigo-700 ring-1 ring-indigo-100">
+                        {printModal.fontSize || 9}px
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updatePrintFont({
+                            fontSize: (printModal.fontSize || 9) - 1,
+                          })
+                        }
+                        className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                        aria-label="تصغير الخط"
+                      >
+                        <FiMinus />
+                      </button>
+                      <input
+                        type="range"
+                        min={7}
+                        max={14}
+                        step={1}
+                        value={printModal.fontSize || 9}
+                        onChange={(e) =>
+                          updatePrintFont({
+                            fontSize: Number(e.target.value),
+                          })
+                        }
+                        className="w-full accent-indigo-600"
+                      />
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updatePrintFont({
+                            fontSize: (printModal.fontSize || 9) + 1,
+                          })
+                        }
+                        className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                        aria-label="تكبير الخط"
+                      >
+                        <FiPlus />
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-4 gap-2">
+                      {[
+                        { label: "صغير", size: 7 },
+                        { label: "عادي", size: 9 },
+                        { label: "كبير", size: 11 },
+                        { label: "أكبر", size: 13 },
+                      ].map((opt) => {
+                        const active =
+                          Number(printModal.fontSize || 9) === opt.size;
+                        return (
+                          <button
+                            key={opt.size}
+                            type="button"
+                            onClick={() =>
+                              updatePrintFont({ fontSize: opt.size })
+                            }
+                            className={`rounded-xl px-2 py-2.5 text-xs font-extrabold ring-1 transition ${
+                              active
+                                ? "bg-indigo-600 text-white ring-indigo-600"
+                                : "bg-white text-slate-700 ring-slate-200 hover:bg-slate-50"
+                            }`}
+                          >
+                            {opt.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="text-right text-sm font-extrabold text-slate-800">
+                      غمق الخط
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => updatePrintFont({ fontBold: false })}
+                        className={`rounded-xl px-3 py-3.5 text-sm font-medium ring-1 transition ${
+                          printModal.fontBold === false
+                            ? "bg-indigo-600 text-white ring-indigo-600"
+                            : "bg-white text-slate-700 ring-slate-200 hover:bg-slate-50"
+                        }`}
+                      >
+                        عادي
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => updatePrintFont({ fontBold: true })}
+                        className={`rounded-xl px-3 py-3.5 text-sm font-extrabold ring-1 transition ${
+                          printModal.fontBold !== false
+                            ? "bg-indigo-600 text-white ring-indigo-600"
+                            : "bg-white text-slate-700 ring-slate-200 hover:bg-slate-50"
+                        }`}
+                      >
+                        غامق
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-indigo-100 bg-indigo-50/70 p-4 text-right text-xs font-bold leading-6 text-indigo-900">
+                    الحفظ يخزّن الإعداد فقط ولا يفتح الطباعة. بعد الحفظ أكمل
+                    الرصيد السابق ثم اضغط طباعة من نافذة التقرير.
+                  </div>
+                </div>
+
+                <div className="flex min-h-0 flex-col bg-slate-100/80 p-3 sm:p-4">
+                  <div className="mb-2 flex items-center justify-between gap-2 px-1">
+                    <span className="rounded-lg bg-white px-2.5 py-1 text-[11px] font-extrabold text-slate-600 ring-1 ring-slate-200">
+                      حجم ثابت · يتغير الخط فقط
+                    </span>
+                    <span className="text-sm font-extrabold text-slate-700">
+                      معاينة فورمة الطباعة
+                    </span>
+                  </div>
+                  <div className="relative min-h-0 flex-1 overflow-auto rounded-2xl border border-slate-200 bg-slate-200/70 p-3">
+                    {/* إطار A4 ثابت الأبعاد — لا نكبّر/نصغّر الصفحة مع الخط */}
+                    <div
+                      className="mx-auto"
+                      style={{
+                        width: "210mm",
+                        height: "297mm",
+                        maxWidth: "100%",
+                      }}
+                    >
+                      <iframe
+                        title="معاينة فورمة الطباعة"
+                        srcDoc={printFontPreviewHtml}
+                        className="block h-full w-full rounded-md border border-slate-300 bg-white shadow-lg"
+                        style={{ width: "210mm", height: "297mm", maxWidth: "100%" }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between gap-3 border-t border-slate-200 px-5 py-4">
+                <button
+                  type="button"
+                  disabled={savingFontPrefs}
+                  onClick={() => setFontSettingsOpen(false)}
+                  className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-extrabold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="button"
+                  disabled={savingFontPrefs}
+                  onClick={savePrintFontPrefs}
+                  className={`inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-extrabold shadow-sm ${
+                    savingFontPrefs
+                      ? "cursor-not-allowed bg-slate-300 text-slate-500"
+                      : "bg-indigo-600 text-white hover:bg-indigo-700"
+                  }`}
+                >
+                  {savingFontPrefs ? (
+                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                  ) : (
+                    <FiCheckCircle className="text-base" />
+                  )}
+                  حفظ الإعدادات
                 </button>
               </div>
             </motion.div>
