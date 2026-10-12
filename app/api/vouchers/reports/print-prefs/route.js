@@ -7,51 +7,16 @@ import VoucherDailyPrintPrefs from "@/models/VoucherDailyPrintPrefs";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const COLUMN_KEYS = [
-  "details",
-  "amounts",
-  "bank",
-  "cheque",
-  "fx",
-  "doctype",
-  "vno",
-];
-
-const TARGET_KEYS = new Set(["all", ...COLUMN_KEYS]);
-
 function clampFontSize(n) {
   const v = Number(n);
   if (!Number.isFinite(v)) return 9;
   return Math.min(14, Math.max(7, Math.round(v)));
 }
 
-function normalizeFontTarget(raw) {
-  const key = String(raw || "all").trim();
-  return TARGET_KEYS.has(key) ? key : "all";
-}
-
-function defaultFontSizes(size = 9) {
-  const s = clampFontSize(size);
-  return Object.fromEntries(COLUMN_KEYS.map((k) => [k, s]));
-}
-
-function normalizeFontSizes(raw, fallbackSize = 9) {
-  const out = defaultFontSizes(fallbackSize);
-  if (!raw || typeof raw !== "object") return out;
-  for (const k of COLUMN_KEYS) {
-    if (raw[k] != null) out[k] = clampFontSize(raw[k]);
-  }
-  return out;
-}
-
 function prefsPayload(doc) {
-  const fontSize = clampFontSize(doc?.fontSize ?? 9);
-  const fontSizes = normalizeFontSizes(doc?.fontSizes, fontSize);
   return {
-    fontSize,
+    fontSize: clampFontSize(doc?.fontSize ?? 9),
     fontBold: doc?.fontBold !== false,
-    fontTarget: normalizeFontTarget(doc?.fontTarget),
-    fontSizes,
   };
 }
 
@@ -103,12 +68,13 @@ export async function PUT(req) {
     const body = await req.json().catch(() => ({}));
     const fontSize = clampFontSize(body?.fontSize);
     const fontBold = body?.fontBold !== false;
-    const fontTarget = normalizeFontTarget(body?.fontTarget);
-    const fontSizes = normalizeFontSizes(body?.fontSizes, fontSize);
 
     const doc = await VoucherDailyPrintPrefs.findOneAndUpdate(
       { userId },
-      { $set: { fontSize, fontBold, fontTarget, fontSizes } },
+      {
+        $set: { fontSize, fontBold },
+        $unset: { fontTarget: 1, fontSizes: 1 },
+      },
       { upsert: true, new: true, setDefaultsOnInsert: true }
     ).lean();
 

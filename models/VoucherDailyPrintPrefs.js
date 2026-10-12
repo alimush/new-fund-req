@@ -9,16 +9,9 @@ const VoucherDailyPrintPrefsSchema = new mongoose.Schema(
       unique: true,
       index: true,
     },
-    /** آخر حجم عُرض في شريط التحكم (للتوافق / واجهة «كل الأعمدة») */
+    /** حجم خط واحد عام لكل خلايا جدول الطباعة */
     fontSize: { type: Number, default: 9, min: 7, max: 14 },
     fontBold: { type: Boolean, default: true },
-    /** all | details | amounts | bank | cheque | fx | doctype | vno */
-    fontTarget: { type: String, default: "all", trim: true },
-    /**
-     * حجم مستقل لكل عمود — تعديل عمود لا يصغّر الباقي
-     * { details, amounts, bank, cheque, fx, doctype, vno }
-     */
-    fontSizes: { type: mongoose.Schema.Types.Mixed, default: undefined },
   },
   { timestamps: true }
 );

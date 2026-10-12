@@ -46,14 +46,9 @@ import {
   buildDailyCashPrintPackages,
   buildDailyCashPrintPreviewHtml,
   clampPrintFontSize,
-  defaultPrintFontSizes,
   listDailyCashPrintCompanies,
-  normalizeFontTarget,
-  normalizePrintFontSizes,
   openBlankDailyCashPrintWindow,
   openDailyCashPrintWindow,
-  PRINT_COLUMN_KEYS,
-  PRINT_FONT_TARGETS,
 } from "@/lib/voucher/dailyCashPrint";
 import { attachmentOpenHref } from "@/lib/s3/browserOpenAttachment";
 import { normalizePersonName, personNameKey } from "@/lib/voucher/normalizePersonName";
@@ -154,8 +149,6 @@ export default function VoucherReportsPage() {
     balances: {},
     fontSize: 9,
     fontBold: true,
-    fontTarget: "all",
-    fontSizes: defaultPrintFontSizes(9),
   });
   const [fontSettingsOpen, setFontSettingsOpen] = useState(false);
   const [savingFontPrefs, setSavingFontPrefs] = useState(false);
@@ -1339,8 +1332,6 @@ export default function VoucherReportsPage() {
         balances,
         fontSize: prev.fontSize || 9,
         fontBold: prev.fontBold !== false,
-        fontTarget: prev.fontTarget || "all",
-        fontSizes: normalizePrintFontSizes(prev.fontSizes, prev.fontSize || 9),
       }));
       setFontSettingsOpen(false);
     } catch (e) {
@@ -1363,46 +1354,16 @@ export default function VoucherReportsPage() {
   }, []);
 
   const updatePrintFont = useCallback((patch) => {
-    setPrintModal((prev) => {
-      const prevSizes = normalizePrintFontSizes(
-        prev.fontSizes,
-        prev.fontSize || 9
-      );
-      const nextTarget = normalizeFontTarget(
-        patch.fontTarget ?? prev.fontTarget ?? "all"
-      );
-      let nextSizes = prevSizes;
-      let nextSize = clampPrintFontSize(prev.fontSize || 9);
-
-      if (patch.fontSize != null) {
-        nextSize = clampPrintFontSize(patch.fontSize);
-        if (nextTarget === "all") {
-          nextSizes = defaultPrintFontSizes(nextSize);
-        } else {
-          nextSizes = { ...prevSizes, [nextTarget]: nextSize };
-        }
-      } else if (patch.fontTarget != null) {
-        // عند تبديل الهدف: اعرض حجم ذلك الجزء دون تغيير الباقي
-        if (nextTarget === "all") {
-          const vals = PRINT_COLUMN_KEYS.map((k) => prevSizes[k]);
-          const same = vals.every((v) => v === vals[0]);
-          nextSize = same ? vals[0] : clampPrintFontSize(prev.fontSize || 9);
-        } else {
-          nextSize = prevSizes[nextTarget] ?? 9;
-        }
-      }
-
-      return {
-        ...prev,
-        fontBold:
-          patch.fontBold !== undefined
-            ? patch.fontBold !== false
-            : prev.fontBold !== false,
-        fontTarget: nextTarget,
-        fontSizes: nextSizes,
-        fontSize: nextSize,
-      };
-    });
+    setPrintModal((prev) => ({
+      ...prev,
+      fontBold:
+        patch.fontBold !== undefined
+          ? patch.fontBold !== false
+          : prev.fontBold !== false,
+      fontSize: clampPrintFontSize(
+        patch.fontSize != null ? patch.fontSize : prev.fontSize
+      ),
+    }));
   }, []);
 
   const loadPrintFontPrefs = useCallback(async () => {
@@ -1413,21 +1374,10 @@ export default function VoucherReportsPage() {
       });
       const json = await res.json().catch(() => ({}));
       if (json?.success && json.data) {
-        const fontSize = clampPrintFontSize(json.data.fontSize || 9);
-        const fontSizes = normalizePrintFontSizes(
-          json.data.fontSizes,
-          fontSize
-        );
-        const fontTarget = normalizeFontTarget(json.data.fontTarget);
         setPrintModal((prev) => ({
           ...prev,
-          fontSize:
-            fontTarget === "all"
-              ? fontSize
-              : fontSizes[fontTarget] ?? fontSize,
+          fontSize: clampPrintFontSize(json.data.fontSize || 9),
           fontBold: json.data.fontBold !== false,
-          fontTarget,
-          fontSizes,
         }));
       }
     } catch {
@@ -1444,10 +1394,6 @@ export default function VoucherReportsPage() {
   const savePrintFontPrefs = useCallback(async () => {
     try {
       setSavingFontPrefs(true);
-      const fontSizes = normalizePrintFontSizes(
-        printModal.fontSizes,
-        printModal.fontSize || 9
-      );
       const res = await fetch("/api/vouchers/reports/print-prefs", {
         method: "PUT",
         credentials: "include",
@@ -1455,29 +1401,16 @@ export default function VoucherReportsPage() {
         body: JSON.stringify({
           fontSize: printModal.fontSize || 9,
           fontBold: printModal.fontBold !== false,
-          fontTarget: printModal.fontTarget || "all",
-          fontSizes,
         }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok || !json?.success) {
         throw new Error(json?.error || "تعذر الحفظ");
       }
-      const nextSizes = normalizePrintFontSizes(
-        json.data?.fontSizes,
-        json.data?.fontSize || 9
-      );
-      const nextTarget = normalizeFontTarget(json.data?.fontTarget);
       setPrintModal((prev) => ({
         ...prev,
-        fontSize: clampPrintFontSize(
-          nextTarget === "all"
-            ? json.data?.fontSize || 9
-            : nextSizes[nextTarget] ?? 9
-        ),
+        fontSize: clampPrintFontSize(json.data?.fontSize || 9),
         fontBold: json.data?.fontBold !== false,
-        fontTarget: nextTarget,
-        fontSizes: nextSizes,
       }));
       setFontSettingsOpen(false);
     } catch (e) {
@@ -1485,12 +1418,7 @@ export default function VoucherReportsPage() {
     } finally {
       setSavingFontPrefs(false);
     }
-  }, [
-    printModal.fontSize,
-    printModal.fontBold,
-    printModal.fontTarget,
-    printModal.fontSizes,
-  ]);
+  }, [printModal.fontSize, printModal.fontBold]);
 
   const printFontPreviewHtml = useMemo(() => {
     const companyName =
@@ -1498,16 +1426,11 @@ export default function VoucherReportsPage() {
     return buildDailyCashPrintPreviewHtml({
       fontSize: printModal.fontSize || 9,
       fontBold: printModal.fontBold !== false,
-      fontSizes: normalizePrintFontSizes(
-        printModal.fontSizes,
-        printModal.fontSize || 9
-      ),
       companyName,
     });
   }, [
     printModal.fontSize,
     printModal.fontBold,
-    printModal.fontSizes,
     printModal.companies,
     companyFilter?.label,
   ]);
@@ -1569,10 +1492,6 @@ export default function VoucherReportsPage() {
       await openDailyCashPrintWindow(packages, printWin, {
         fontSize: printModal.fontSize || 9,
         fontBold: printModal.fontBold !== false,
-        fontSizes: normalizePrintFontSizes(
-          printModal.fontSizes,
-          printModal.fontSize || 9
-        ),
       });
     } catch (e) {
       console.error("❌ Print daily cash error:", e);
@@ -1590,7 +1509,6 @@ export default function VoucherReportsPage() {
     printModal.balances,
     printModal.fontSize,
     printModal.fontBold,
-    printModal.fontSizes,
     date.from,
     date.to,
     companyFilter,
@@ -2480,65 +2398,17 @@ export default function VoucherReportsPage() {
                     إعدادات خط الطباعة
                   </div>
                   <div className="text-sm font-bold text-slate-500">
-                    حجم الفورمة ثابت — يتغير الخط فقط. احفظ ثم أكمل الرصيد واطبع
+                    تحكم واحد يغيّر خط الجدول كله — حجم الفورمة ثابت
                   </div>
                 </div>
               </div>
 
-              <div className="grid min-h-0 flex-1 grid-cols-1 gap-0 lg:grid-cols-[340px_minmax(0,1fr)]">
+              <div className="grid min-h-0 flex-1 grid-cols-1 gap-0 lg:grid-cols-[320px_minmax(0,1fr)]">
                 <div className="space-y-4 overflow-y-auto border-b border-slate-200 p-5 lg:border-b-0 lg:border-l">
-                  <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                    <div className="text-right text-sm font-extrabold text-slate-800">
-                      تطبيق على
-                    </div>
-                    <div className="text-right text-[11px] font-bold leading-5 text-slate-500">
-                      كل جزء يحفظ حجمه لوحده — تغيير جزء ما يصغّر الباقي
-                    </div>
-                    <div className="grid grid-cols-1 gap-2">
-                      {PRINT_FONT_TARGETS.map((opt) => {
-                        const active =
-                          (printModal.fontTarget || "all") === opt.key;
-                        const sizes = normalizePrintFontSizes(
-                          printModal.fontSizes,
-                          printModal.fontSize || 9
-                        );
-                        const sizeBadge =
-                          opt.key === "all"
-                            ? null
-                            : `${sizes[opt.key] ?? 9}px`;
-                        return (
-                          <button
-                            key={opt.key}
-                            type="button"
-                            onClick={() =>
-                              updatePrintFont({ fontTarget: opt.key })
-                            }
-                            className={`flex items-center justify-between gap-2 rounded-xl px-3 py-2.5 text-right text-xs font-extrabold ring-1 transition ${
-                              active
-                                ? "bg-indigo-600 text-white ring-indigo-600"
-                                : "bg-white text-slate-700 ring-slate-200 hover:bg-slate-50"
-                            }`}
-                          >
-                            <span
-                              className={`rounded-md px-1.5 py-0.5 text-[10px] font-black tabular-nums ${
-                                active
-                                  ? "bg-white/20 text-white"
-                                  : "bg-slate-100 text-slate-600"
-                              }`}
-                            >
-                              {sizeBadge || "الكل"}
-                            </span>
-                            <span>{opt.label}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
                   <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
                     <div className="flex items-center justify-between gap-3">
                       <span className="text-sm font-extrabold text-slate-800">
-                        حجم الخط
+                        حجم الخط (لكل الجدول)
                       </span>
                       <span className="rounded-lg bg-white px-2.5 py-1 text-sm font-black text-indigo-700 ring-1 ring-indigo-100">
                         {printModal.fontSize || 9}px
@@ -2643,8 +2513,8 @@ export default function VoucherReportsPage() {
                   </div>
 
                   <div className="rounded-2xl border border-indigo-100 bg-indigo-50/70 p-4 text-right text-xs font-bold leading-6 text-indigo-900">
-                    الحفظ يخزّن الإعداد فقط ولا يفتح الطباعة. بعد الحفظ أكمل
-                    الرصيد السابق ثم اضغط طباعة من نافذة التقرير.
+                    غيّر الحجم أو الغمق مرة واحدة — ينطبق على كل الأعمدة بنفس
+                    النتيجة. الحفظ يخزّن الإعداد فقط ولا يفتح الطباعة.
                   </div>
                 </div>
 
