@@ -5,9 +5,11 @@ import { motion, AnimatePresence } from "framer-motion";
 import VoucherRichTextInput from "@/components/VoucherRichTextInput";
 import PersonNameSuggestDropdown from "@/components/PersonNameSuggestDropdown";
 import ChequeSuggestDropdown from "@/components/ChequeSuggestDropdown";
+import DescSuggestDropdown from "@/components/DescSuggestDropdown";
 import VoucherPersonIdentityPanel from "@/components/VoucherPersonIdentityPanel";
 import { useVoucherPersonSuggest } from "@/hooks/useVoucherPersonSuggest";
 import { useVoucherChequeSuggest } from "@/hooks/useVoucherChequeSuggest";
+import { useVoucherDescSuggest } from "@/hooks/useVoucherDescSuggest";
 import { applyStyleToRange, getStyleAtRange, trimStyleRange } from "@/lib/voucher/fieldColorRuns";
 import {
   FiPrinter,
@@ -222,6 +224,22 @@ export default function VoucherCanvasDialog({
     minLength: 1,
   });
 
+  const {
+    options: descOptions,
+    show: descShow,
+    activeIdx: descActiveIdx,
+    setActiveIdx: setDescActiveIdx,
+    pos: descPos,
+    boxRef: descBoxRef,
+    openFor: openDescSuggest,
+    close: closeDescSuggest,
+    handleKeyDown: handleDescSuggestKeyDown,
+  } = useVoucherDescSuggest({
+    companyKey: selectedCompany?.key || "",
+    enabled: personSuggestEnabled,
+    minLength: 2,
+  });
+
   const applyChequePick = useCallback(
     (opt) => {
       if (!opt) return;
@@ -356,6 +374,34 @@ export default function VoucherCanvasDialog({
   const handleBeneficiaryChange = useMemo(
     () => makePersonChangeHandler("beneficiary", setVBeneficiary, beneficiaryRef),
     [makePersonChangeHandler, setVBeneficiary, beneficiaryRef]
+  );
+
+  const applyDescPick = useCallback(
+    (opt) => {
+      if (!opt) return;
+      const text = String(opt.text || opt.label || "").trim();
+      if (text) setVDesc?.(text);
+      closeDescSuggest();
+    },
+    [closeDescSuggest, setVDesc]
+  );
+
+  const handleDescChange = useCallback(
+    (text) => {
+      setVDesc?.(text);
+      openDescSuggest(text, descRef);
+    },
+    [descRef, openDescSuggest, setVDesc]
+  );
+
+  const handleDescKeyDown = useCallback(
+    (e) => {
+      const action = handleDescSuggestKeyDown(e);
+      if (action === "pick" && descActiveIdx >= 0) {
+        applyDescPick(descOptions[descActiveIdx]);
+      }
+    },
+    [applyDescPick, descActiveIdx, descOptions, handleDescSuggestKeyDown]
   );
 
   const only2Digits = (value) => String(value || "").replace(/\D/g, "").slice(0, 2);
@@ -1102,7 +1148,7 @@ export default function VoucherCanvasDialog({
 
                           <VoucherRichTextInput
                             ref={descRef}
-                            {...richFieldProps("desc", vDesc, setVDesc, {
+                            {...richFieldProps("desc", vDesc, handleDescChange, {
                               className: "absolute resize-none",
                               style: {
                                 ...pctStyle(POS.description),
@@ -1111,6 +1157,13 @@ export default function VoucherCanvasDialog({
                                 ...multiLineRtl("desc"),
                               },
                               direction: "rtl",
+                              onKeyDown: handleDescKeyDown,
+                              onFocus: () => {
+                                setSelectedField("desc");
+                                if (String(vDesc || "").trim().length >= 2) {
+                                  openDescSuggest(vDesc, descRef);
+                                }
+                              },
                             })}
                           />
 
@@ -1672,6 +1725,16 @@ export default function VoucherCanvasDialog({
                 pos={chequePos}
                 boxRef={chequeBoxRef}
                 onPick={applyChequePick}
+              />
+
+              <DescSuggestDropdown
+                show={descShow}
+                options={descOptions}
+                activeIdx={descActiveIdx}
+                setActiveIdx={setDescActiveIdx}
+                pos={descPos}
+                boxRef={descBoxRef}
+                onPick={applyDescPick}
               />
             </motion.div>
           </div>
