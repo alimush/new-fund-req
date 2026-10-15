@@ -17,7 +17,7 @@ import {
   cleanAmount, 
   formatAmount,
   displayAmount,
-  numberToArabicWords, 
+  amountToArabicVoucherWords, 
   waitForImages 
 } from "@/lib/voucher/utils";
 
@@ -269,14 +269,7 @@ function VoucherViewPageContent() {
       return;
     }
 
-    const currencyText =
-      vCurrency === "USD"
-        ? "دولار فقط لا غير"
-        : vCurrency === "EUR"
-          ? "يورو فقط لا غير"
-          : "دينار فقط لا غير";
-
-    setVWords(`${numberToArabicWords(cleaned)} ${currencyText}`.trim());
+    setVWords(amountToArabicVoucherWords(cleaned, vCurrency));
     setFieldColorRuns((prev) => ({ ...prev, words: [] }));
   }, [vAmount, vCurrency]);
 
@@ -394,15 +387,9 @@ function VoucherViewPageContent() {
     }
 
     const formatted = Number(cleaned).toLocaleString("en-US");
-    const currencyText =
-      vCurrency === "USD"
-        ? "دولار فقط لا غير"
-        : vCurrency === "EUR"
-          ? "يورو فقط لا غير"
-          : "دينار فقط لا غير";
 
     setVAmount(formatted);
-    setVWords(`${numberToArabicWords(cleaned)} ${currencyText}`.trim());
+    setVWords(amountToArabicVoucherWords(cleaned, vCurrency));
   };
 
   const guardSetter = (setter) => (value) => {

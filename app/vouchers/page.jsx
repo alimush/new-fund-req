@@ -21,7 +21,7 @@ import {
   only2Digits, 
   cleanAmount, 
   formatAmount, 
-  numberToArabicWords, 
+  amountToArabicVoucherWords, 
   waitForImages 
 } from "@/lib/voucher/utils";
 
@@ -192,14 +192,7 @@ export default function VoucherPage() {
       return;
     }
 
-    const words = numberToArabicWords(cleaned);
-    const currencyText =
-      vCurrency === "USD"
-        ? "دولار فقط لا غير"
-        : vCurrency === "EUR"
-          ? "يورو فقط لا غير"
-          : "دينار فقط لا غير";
-    setVWords(words ? `${words} ${currencyText}` : "");
+    setVWords(amountToArabicVoucherWords(cleaned, vCurrency));
     setFieldColorRuns((prev) => ({ ...prev, words: [] }));
   }, [vAmount, vCurrency]);
 

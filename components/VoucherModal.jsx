@@ -10,7 +10,7 @@ import {
   cleanAmount, 
   formatAmount,
   displayAmount, 
-  numberToArabicWords, 
+  amountToArabicVoucherWords, 
   waitForImages 
 } from "@/lib/voucher/utils";
 
@@ -186,9 +186,7 @@ export default function VoucherModal({
 
       const currency = String(reqDoc?.currency || "IQD").toUpperCase();
       const formattedAmount = formatAmount(total);
-      const words = `${numberToArabicWords(total)} ${
-        currency === "USD" ? "دولار فقط لا غير" : "دينار فقط لا غير"
-      }`.trim();
+      const words = amountToArabicVoucherWords(total, currency);
 
       setVAmount(formattedAmount);
       setVWords(words);
@@ -690,8 +688,7 @@ export default function VoucherModal({
       setVWords("");
       return;
     }
-    const currencyText = vCurrency === "USD" ? "دولار فقط لا غير" : "دينار فقط لا غير";
-    setVWords(`${numberToArabicWords(cleaned)} ${currencyText}`.trim());
+    setVWords(amountToArabicVoucherWords(cleaned, vCurrency));
     setFieldColorRuns((prev) => ({ ...prev, words: [] }));
   }, [open, vAmount, vCurrency]);
 
