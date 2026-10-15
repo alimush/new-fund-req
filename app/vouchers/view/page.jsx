@@ -386,9 +386,7 @@ function VoucherViewPageContent() {
       return;
     }
 
-    const formatted = Number(cleaned).toLocaleString("en-US");
-
-    setVAmount(formatted);
+    setVAmount(formatAmount(cleaned));
     setVWords(amountToArabicVoucherWords(cleaned, vCurrency));
   };
 
