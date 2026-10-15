@@ -2398,7 +2398,7 @@ export default function VoucherReportsPage() {
                     إعدادات خط الطباعة
                   </div>
                   <div className="text-sm font-bold text-slate-500">
-                    تحكم واحد يغيّر خط الجدول كله — حجم الفورمة ثابت
+                    تحكم واحد لخط الجدول — الفورمة ثابتة والرصيد يبقى ظاهراً
                   </div>
                 </div>
               </div>

@@ -46,6 +46,7 @@ export default function AdminRequestsWorkflowListPage() {
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [bulkWorkflowName, setBulkWorkflowName] = useState("");
   const [bulkSteps, setBulkSteps] = useState([]);
+  const [movingKey, setMovingKey] = useState("");
 
   const companyOptions = useMemo(() => {
     const fromApi = Array.isArray(apiCompanies) ? apiCompanies : [];
@@ -130,6 +131,47 @@ export default function AdminRequestsWorkflowListPage() {
     if (!authorized) return;
     fetchList();
   }, [authorized, fetchList]);
+
+  const moveStep = useCallback(
+    async (row, direction) => {
+      const key = `${row.companyKey}-${row._id}-${direction}`;
+      if (movingKey) return;
+      setMovingKey(key);
+      try {
+        const res = await fetch(`/api/admin/requests-workflow/${row._id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ company: row.companyKey, direction }),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok || !json?.success) {
+          showToast(json?.error || "تعذر تحريك الخطوة", "error");
+          return;
+        }
+        const label = direction === "forward" ? "تم تقديم خطوة" : "تم إرجاع خطوة";
+        showToast(
+          `${label} — الحالة: ${json.data?.status ?? "—"}، الخطوة: ${json.data?.currentStep ?? "—"}`,
+          "success"
+        );
+        setRows((prev) =>
+          prev.map((r) =>
+            String(r._id) === String(row._id) && r.companyKey === row.companyKey
+              ? {
+                  ...r,
+                  status: json.data.status,
+                  currentStep: json.data.currentStep,
+                }
+              : r
+          )
+        );
+      } catch {
+        showToast("تعذر تحريك الخطوة", "error");
+      } finally {
+        setMovingKey("");
+      }
+    },
+    [movingKey, showToast]
+  );
 
   const loadUsers = useCallback(async () => {
     setLoadingUsers(true);
@@ -406,40 +448,88 @@ export default function AdminRequestsWorkflowListPage() {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r) => (
-                  <tr key={`${r.companyKey}-${r._id}`} className="border-b border-gray-100 hover:bg-gray-50/80">
-                    <td className="px-4 py-2 font-mono text-xs text-gray-900">{r.requestCode || "—"}</td>
-                    <td className="px-4 py-2 text-gray-800">{r.companyKey}</td>
-                    <td className="px-4 py-2">
-                      {r.hasVoucherOut ? (
-                        <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-900">
-                          مصروفة
-                        </span>
-                      ) : (
-                        <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-semibold text-gray-700">
-                          —
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-4 py-2 text-gray-800">{r.status}</td>
-                    <td className="px-4 py-2 text-gray-800">{r.currentStep}</td>
-                    <td className="px-4 py-2 text-gray-800">{r.stepsCount}</td>
-                    <td className="px-4 py-2 text-gray-800">{r.createdBy}</td>
-                    <td className="px-4 py-2">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          router.push(
-                            `/admin/requests-workflow/${r._id}?company=${encodeURIComponent(r.companyKey)}`
-                          )
-                        }
-                        className="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-3 py-1.5 text-white hover:bg-blue-700"
-                      >
-                        <FiEdit3 /> تعديل الوورك فلو
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {rows.map((r) => {
+                  const rowKey = `${r.companyKey}-${r._id}`;
+                  const cs = Number.isInteger(r.currentStep) ? r.currentStep : 0;
+                  const lastIdx = Math.max(0, (Number(r.stepsCount) || 1) - 1);
+                  const statusStr = String(r.status || "");
+                  const cancelled = /^cancelled$/i.test(statusStr);
+                  const canForward =
+                    !cancelled && !(/^approved$/i.test(statusStr) && cs >= lastIdx);
+                  const canBack = !cancelled && !(cs <= 0 && /^pending$/i.test(statusStr));
+                  const busy =
+                    movingKey === `${rowKey}-forward` || movingKey === `${rowKey}-back`;
+
+                  return (
+                    <tr
+                      key={rowKey}
+                      className="group border-b border-gray-100 hover:bg-indigo-50/40"
+                    >
+                      <td className="px-4 py-2 font-mono text-xs text-gray-900">
+                        {r.requestCode || "—"}
+                      </td>
+                      <td className="px-4 py-2 text-gray-800">{r.companyKey}</td>
+                      <td className="px-4 py-2">
+                        {r.hasVoucherOut ? (
+                          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-900">
+                            مصروفة
+                          </span>
+                        ) : (
+                          <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-semibold text-gray-700">
+                            —
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-2 text-gray-800">{r.status}</td>
+                      <td className="px-4 py-2">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                            <button
+                              type="button"
+                              title="إرجاع خطوة"
+                              disabled={!canBack || busy}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                moveStep(r, "back");
+                              }}
+                              className="rounded-lg border border-amber-200 bg-amber-50 p-1.5 text-amber-900 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-30"
+                            >
+                              <FiChevronRight className="h-4 w-4" />
+                            </button>
+                            <button
+                              type="button"
+                              title="تقديم خطوة"
+                              disabled={!canForward || busy}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                moveStep(r, "forward");
+                              }}
+                              className="rounded-lg border border-emerald-200 bg-emerald-50 p-1.5 text-emerald-900 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-30"
+                            >
+                              <FiChevronLeft className="h-4 w-4" />
+                            </button>
+                          </div>
+                          <span className="min-w-[1.5rem] text-gray-800">{r.currentStep}</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-2 text-gray-800">{r.stepsCount}</td>
+                      <td className="px-4 py-2 text-gray-800">{r.createdBy}</td>
+                      <td className="px-4 py-2">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            router.push(
+                              `/admin/requests-workflow/${r._id}?company=${encodeURIComponent(r.companyKey)}`
+                            )
+                          }
+                          className="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-3 py-1.5 text-white hover:bg-blue-700"
+                        >
+                          <FiEdit3 /> تعديل الوورك فلو
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </motion.div>

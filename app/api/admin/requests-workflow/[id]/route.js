@@ -5,7 +5,10 @@ import dbConnect from "@/lib/mongodb";
 import Permissions from "@/models/Permissions";
 import { getModelForCompany } from "@/models/Request";
 import { PERMISSIONS } from "@/lib/permission";
-import { mergeAdminWorkflowSteps } from "@/lib/adminRequestsWorkflowCommon";
+import {
+  applyAdminStepMove,
+  mergeAdminWorkflowSteps,
+} from "@/lib/adminRequestsWorkflowCommon";
 import { buildPublicS3Url } from "@/lib/s3/attachmentAccess";
 
 export const runtime = "nodejs";
@@ -215,6 +218,86 @@ export async function PUT(req, { params }) {
     return NextResponse.json({ success: true, data: fresh });
   } catch (err) {
     console.error("admin requests-workflow PUT:", err);
+    return NextResponse.json(
+      { success: false, error: err?.message || "Server error" },
+      { status: 500 }
+    );
+  }
+}
+
+/** تقديم / إرجاع خطوة واحدة مع مزامنة حالة الطلب */
+export async function PATCH(req, { params }) {
+  try {
+    await dbConnect();
+    const { id } = await params;
+    const body = await req.json();
+    const company = String(body.company || "").trim();
+    const direction = String(body.direction || body.action || "").trim();
+
+    if (!company) {
+      return NextResponse.json({ success: false, error: "company is required" }, { status: 400 });
+    }
+    if (!isValidObjectId(id)) {
+      return NextResponse.json({ success: false, error: "Invalid id" }, { status: 400 });
+    }
+
+    const cookieStore = await cookies();
+    const userId = cookieStore.get("userId")?.value;
+    if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
+      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    }
+
+    const okPerm = await hasManagePermissions(userId);
+    if (!okPerm) {
+      return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
+    }
+
+    const allowedCo = await hasCompanyAccess(userId, company);
+    if (!allowedCo) {
+      return NextResponse.json({ success: false, error: "No access to this company" }, { status: 403 });
+    }
+
+    const Model = getModelForCompany(company);
+    const request = await Model.findById(id);
+    if (!request) {
+      return NextResponse.json({ success: false, error: "Request not found" }, { status: 404 });
+    }
+
+    let moved;
+    try {
+      moved = applyAdminStepMove(request, direction, userId);
+    } catch (e) {
+      const code = e?.code || "";
+      const map = {
+        INVALID_DIRECTION: { status: 400, error: "direction يجب أن يكون forward أو back" },
+        CANCELLED: { status: 400, error: "لا يمكن تحريك خطوة لطلب ملغى" },
+        NO_STEPS: { status: 400, error: "الطلب بدون خطوات وورك فلو" },
+        ALREADY_LAST: { status: 400, error: "الطلب بالفعل في آخر خطوة وموافق" },
+        ALREADY_FIRST: { status: 400, error: "الطلب بالفعل في أول خطوة بانتظار الموافقة" },
+      };
+      const m = map[code];
+      if (m) {
+        return NextResponse.json({ success: false, error: m.error }, { status: m.status });
+      }
+      throw e;
+    }
+
+    request.markModified("workflow");
+    request.markModified("approvalHistory");
+    await request.save();
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        _id: String(request._id),
+        companyKey: company,
+        status: request.status,
+        currentStep: request.currentStep,
+        direction: moved.direction,
+      },
+    });
+  } catch (err) {
+    console.error("admin requests-workflow PATCH:", err);
     return NextResponse.json(
       { success: false, error: err?.message || "Server error" },
       { status: 500 }
