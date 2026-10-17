@@ -161,174 +161,6 @@ export default function VoucherReportsPage() {
   const [suggestPos, setSuggestPos] = useState({ top: 0, left: 0, width: 0 });
 
   const hasSearchedRef = useRef(false);
-  const tableScrollRef = useRef(null);
-  const hScrollTrackRef = useRef(null);
-  const hScrollDragRef = useRef(null);
-  const [tableHScroll, setTableHScroll] = useState({
-    scrollLeft: 0,
-    clientWidth: 0,
-    scrollWidth: 0,
-  });
-  const [fixedHScroll, setFixedHScroll] = useState({
-    visible: false,
-    left: 0,
-    width: 0,
-  });
-
-  const readTableScrollMetrics = useCallback(() => {
-    const el = tableScrollRef.current;
-    if (!el) return;
-    setTableHScroll({
-      scrollLeft: el.scrollLeft,
-      clientWidth: el.clientWidth,
-      scrollWidth: el.scrollWidth,
-    });
-  }, []);
-
-  const setTableScrollLeft = useCallback((nextLeft) => {
-    const el = tableScrollRef.current;
-    if (!el) return;
-    const max = Math.max(0, el.scrollWidth - el.clientWidth);
-    const clamped = Math.min(max, Math.max(0, nextLeft));
-    el.scrollLeft = clamped;
-    setTableHScroll({
-      scrollLeft: clamped,
-      clientWidth: el.clientWidth,
-      scrollWidth: el.scrollWidth,
-    });
-  }, []);
-
-  useEffect(() => {
-    const el = tableScrollRef.current;
-    if (!el) return;
-
-    readTableScrollMetrics();
-    el.addEventListener("scroll", readTableScrollMetrics, { passive: true });
-
-    const ro = new ResizeObserver(readTableScrollMetrics);
-    ro.observe(el);
-    window.addEventListener("resize", readTableScrollMetrics);
-
-    return () => {
-      el.removeEventListener("scroll", readTableScrollMetrics);
-      ro.disconnect();
-      window.removeEventListener("resize", readTableScrollMetrics);
-    };
-  }, [rows, loading, readTableScrollMetrics]);
-
-  useEffect(() => {
-    const el = tableScrollRef.current;
-    if (!el || rows.length === 0) {
-      setFixedHScroll({ visible: false, left: 0, width: 0 });
-      return;
-    }
-
-    const updateFixedBar = () => {
-      const rect = el.getBoundingClientRect();
-      const inView = rect.bottom > 0 && rect.top < window.innerHeight;
-      setFixedHScroll({
-        visible: inView && rect.width > 0,
-        left: rect.left,
-        width: rect.width,
-      });
-    };
-
-    updateFixedBar();
-    window.addEventListener("scroll", updateFixedBar, { passive: true, capture: true });
-    window.addEventListener("resize", updateFixedBar);
-
-    const ro = new ResizeObserver(updateFixedBar);
-    ro.observe(el);
-
-    return () => {
-      window.removeEventListener("scroll", updateFixedBar, { capture: true });
-      window.removeEventListener("resize", updateFixedBar);
-      ro.disconnect();
-    };
-  }, [rows, loading]);
-
-  const hScrollUi = useMemo(() => {
-    const { scrollLeft, clientWidth, scrollWidth } = tableHScroll;
-    const scrollable = Math.max(0, scrollWidth - clientWidth);
-    const trackWidth = clientWidth || 1;
-    const thumbWidth =
-      scrollable > 0
-        ? Math.max(56, (clientWidth / scrollWidth) * trackWidth)
-        : trackWidth;
-    const thumbTravel = Math.max(0, trackWidth - thumbWidth);
-    const thumbLeft =
-      scrollable > 0 ? (scrollLeft / scrollable) * thumbTravel : 0;
-
-    return {
-      scrollable,
-      thumbWidth,
-      thumbTravel,
-      thumbLeft,
-      canScroll: scrollable > 0,
-    };
-  }, [tableHScroll]);
-
-  const onHScrollThumbMouseDown = useCallback(
-    (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      const el = tableScrollRef.current;
-      if (!el || hScrollUi.scrollable <= 0) return;
-
-      hScrollDragRef.current = {
-        startX: e.clientX,
-        startScrollLeft: el.scrollLeft,
-        scrollable: hScrollUi.scrollable,
-        thumbTravel: hScrollUi.thumbTravel,
-      };
-
-      const onMove = (ev) => {
-        const drag = hScrollDragRef.current;
-        if (!drag) return;
-        const deltaX = ev.clientX - drag.startX;
-        const scrollDelta =
-          drag.thumbTravel > 0
-            ? (deltaX / drag.thumbTravel) * drag.scrollable
-            : 0;
-        setTableScrollLeft(drag.startScrollLeft + scrollDelta);
-      };
-
-      const onUp = () => {
-        hScrollDragRef.current = null;
-        document.removeEventListener("mousemove", onMove);
-        document.removeEventListener("mouseup", onUp);
-        document.body.style.cursor = "";
-        document.body.style.userSelect = "";
-      };
-
-      document.body.style.cursor = "grabbing";
-      document.body.style.userSelect = "none";
-      document.addEventListener("mousemove", onMove);
-      document.addEventListener("mouseup", onUp);
-    },
-    [hScrollUi, setTableScrollLeft]
-  );
-
-  const onHScrollTrackMouseDown = useCallback(
-    (e) => {
-      if (e.button !== 0 || !hScrollUi.canScroll) return;
-      const track = hScrollTrackRef.current;
-      if (!track || e.target !== track) return;
-
-      const rect = track.getBoundingClientRect();
-      const clickX = e.clientX - rect.left;
-      const targetThumbLeft = Math.min(
-        hScrollUi.thumbTravel,
-        Math.max(0, clickX - hScrollUi.thumbWidth / 2)
-      );
-      const newScrollLeft =
-        hScrollUi.thumbTravel > 0
-          ? (targetThumbLeft / hScrollUi.thumbTravel) * hScrollUi.scrollable
-          : 0;
-      setTableScrollLeft(newScrollLeft);
-    },
-    [hScrollUi, setTableScrollLeft]
-  );
 
   const { permissions, user: permUser } = usePermissions();
   const { user: ctxUser } = useUser();
@@ -1856,45 +1688,6 @@ export default function VoucherReportsPage() {
           document.body
         )}
 
-      {portalReady &&
-        fixedHScroll.visible &&
-        rows.length > 0 &&
-        createPortal(
-          <div
-            ref={hScrollTrackRef}
-            role="scrollbar"
-            aria-orientation="horizontal"
-            aria-valuemin={0}
-            aria-valuemax={Math.max(0, hScrollUi.scrollable)}
-            aria-valuenow={tableHScroll.scrollLeft}
-            aria-controls="voucher-reports-table"
-            onMouseDown={onHScrollTrackMouseDown}
-            style={{
-              position: "fixed",
-              left: fixedHScroll.left,
-              width: fixedHScroll.width,
-              bottom: 12,
-              zIndex: 99990,
-            }}
-            className="relative h-5 shrink-0 rounded-xl border border-slate-300/80 bg-slate-200/95 px-1 shadow-lg backdrop-blur cursor-pointer select-none"
-            aria-label="تمرير أفقي للجدول"
-          >
-            <div
-              onMouseDown={onHScrollThumbMouseDown}
-              className={`absolute top-1/2 h-3.5 -translate-y-1/2 rounded-full border border-slate-400/40 shadow-sm ${
-                hScrollUi.canScroll
-                  ? "cursor-grab bg-slate-500 hover:bg-slate-600 active:cursor-grabbing"
-                  : "cursor-default bg-slate-400/70"
-              }`}
-              style={{
-                width: `${hScrollUi.thumbWidth}px`,
-                left: `${hScrollUi.thumbLeft}px`,
-              }}
-            />
-          </div>,
-          document.body
-        )}
-
       <AnimatePresence mode="wait">
         {loading ? (
           <VoucherReportsSearchLoading />
@@ -1905,41 +1698,45 @@ export default function VoucherReportsPage() {
             transition={{ duration: 0.22, ease: "easeOut" }}
             className="relative z-0 overflow-hidden rounded-3xl border border-slate-200/70 bg-white/75 shadow-sm ring-1 ring-slate-200/50"
           >
-            <div
-              id="voucher-reports-table"
-              ref={tableScrollRef}
-              onWheel={(e) => {
-                if (!e.shiftKey || !tableScrollRef.current) return;
-                e.preventDefault();
-                setTableScrollLeft(
-                  tableScrollRef.current.scrollLeft + e.deltaY
-                );
-              }}
-              className="relative overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
-            >
-              <table className="w-max min-w-full table-auto text-[14px] md:text-[15px] text-slate-800 font-bold">
+            <div id="voucher-reports-table" className="relative w-full overflow-hidden">
+              <table className="w-full table-fixed border-collapse text-[11px] leading-snug text-slate-800 font-bold md:text-[12px]">
+                <colgroup>
+                  <col className="w-[8%]" />
+                  <col className="w-[7%]" />
+                  <col className="w-[5%]" />
+                  <col className="w-[7%]" />
+                  <col className="w-[4%]" />
+                  <col className="w-[7%]" />
+                  <col className="w-[8%]" />
+                  <col className="w-[7%]" />
+                  <col className="w-[6%]" />
+                  <col className="w-[12%]" />
+                  <col className="w-[8%]" />
+                  <col className="w-[7%]" />
+                  <col className="w-[7%]" />
+                  <col className="w-[5%]" />
+                </colgroup>
                 <thead className="sticky top-0 z-10">
-                  <tr className="border-b border-slate-200/80 bg-white/90 backdrop-blur">
+                  <tr className="border-b border-slate-200/80 bg-white/95 backdrop-blur">
                     {[
                       "الشركة",
-                      "نوع الوصل",
-                      "رقم الوصل",
-                      "طلب الصرف",
+                      "النوع",
+                      "الرقم",
+                      "الطلب",
                       "العملة",
                       "المبلغ",
-                      // "المستفيد",
                       "استلمت من",
                       "البنك",
-                      "رقم الصك",
+                      "الصك",
                       "الوصف",
                       "الاتاج",
                       "الهوية",
                       "التاريخ",
-                      "حذف الوصل",
+                      "حذف",
                     ].map((h, i) => (
                       <th
                         key={`${h}-${i}`}
-                        className="px-4 py-4 text-right text-[12px] md:text-[13px] font-extrabold tracking-wide text-slate-900 whitespace-nowrap"
+                        className="px-1.5 py-2.5 text-right text-[10px] font-extrabold tracking-wide text-slate-900 md:px-2 md:text-[11px]"
                       >
                         {h}
                       </th>
@@ -1967,20 +1764,27 @@ export default function VoucherReportsPage() {
                         idx % 2 === 0 ? "bg-white/50" : "bg-white/30"
                       }`}
                     >
-                      <td className="px-4 py-4 text-right font-extrabold text-slate-900 whitespace-nowrap">
-                        {getCompanyName(r.companyKey)}
+                      <td
+                        className="px-1.5 py-2 text-right font-extrabold text-slate-900 md:px-2"
+                        title={getCompanyName(r.companyKey)}
+                      >
+                        <span className="line-clamp-2 break-words">
+                          {getCompanyName(r.companyKey)}
+                        </span>
                       </td>
 
-                      <td className="px-4 py-4 text-right whitespace-nowrap">
-                        <VoucherModeBadge mode={r.mode} />
+                      <td className="px-1.5 py-2 text-right md:px-2">
+                        <VoucherModeBadge mode={r.mode} compact />
                       </td>
 
-                      <td className="px-4 py-4 text-right font-mono text-slate-900 whitespace-nowrap">
-                        {r.voucherNo || String(r.seq ?? "").padStart(5, "0")}
+                      <td className="px-1.5 py-2 text-right font-mono text-slate-900 md:px-2">
+                        <span className="break-all">
+                          {r.voucherNo || String(r.seq ?? "").padStart(5, "0")}
+                        </span>
                       </td>
 
                       <td
-                        className="px-4 py-4 text-right whitespace-nowrap"
+                        className="px-1.5 py-2 text-right md:px-2"
                         onClick={(e) => e.stopPropagation()}
                       >
                         {r.requestLink?.href ? (
@@ -1999,40 +1803,49 @@ export default function VoucherReportsPage() {
                                 ? `طلب ${r.requestLink.requestCode}`
                                 : "فتح طلب الصرف"
                             }
-                            className="inline-flex items-center gap-1.5 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-[12px] font-extrabold text-sky-800 transition hover:bg-sky-100"
+                            className="inline-flex max-w-full items-center gap-1 rounded-lg border border-sky-200 bg-sky-50 px-1.5 py-1 text-[10px] font-extrabold text-sky-800 transition hover:bg-sky-100 md:text-[11px]"
                           >
-                            <FiExternalLink className="text-sm" />
-                            {r.requestLink.requestCode
-                              ? `طلب ${r.requestLink.requestCode}`
-                              : "فتح الطلب"}
+                            <FiExternalLink className="shrink-0 text-xs" />
+                            <span className="truncate">
+                              {r.requestLink.requestCode || "طلب"}
+                            </span>
                           </button>
                         ) : (
-                          <span className="text-[12px] text-slate-400">—</span>
+                          <span className="text-slate-400">—</span>
                         )}
                       </td>
 
-                      <td className="px-4 py-4 text-right whitespace-nowrap font-extrabold">
+                      <td className="px-1.5 py-2 text-right font-extrabold md:px-2">
                         {r.currency || "-"}
                       </td>
 
-                      <td className="px-4 py-4 text-right font-extrabold text-slate-900 whitespace-nowrap">
-                        {fmtAmount(r.amount)}
-                      </td>
-
-                      {/* <td className="px-4 py-4 text-right whitespace-nowrap">
-                        {r.beneficiary || "-"}
-                      </td> */}
-
-                      <td className="px-4 py-4 text-right whitespace-nowrap">
-                        {r.receivedBy || "-"}
-                      </td>
-
-                      <td className="px-4 py-4 text-right whitespace-nowrap">
-                        {r.bank || "-"}
+                      <td
+                        className="px-1.5 py-2 text-right font-extrabold text-slate-900 md:px-2"
+                        title={fmtAmount(r.amount)}
+                      >
+                        <span className="break-all">{fmtAmount(r.amount)}</span>
                       </td>
 
                       <td
-                        className="px-4 py-4 text-right whitespace-nowrap"
+                        className="px-1.5 py-2 text-right md:px-2"
+                        title={r.receivedBy || ""}
+                      >
+                        <span className="line-clamp-2 break-words">
+                          {r.receivedBy || "-"}
+                        </span>
+                      </td>
+
+                      <td
+                        className="px-1.5 py-2 text-right md:px-2"
+                        title={r.bank || ""}
+                      >
+                        <span className="line-clamp-2 break-words">
+                          {r.bank || "-"}
+                        </span>
+                      </td>
+
+                      <td
+                        className="px-1.5 py-2 text-right md:px-2"
                         onClick={(e) => e.stopPropagation()}
                       >
                         {r.chequeNo ? (
@@ -2049,27 +1862,32 @@ export default function VoucherReportsPage() {
                                 )
                               }
                               title="فتح الصك المرتبط"
-                              className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 font-mono text-[12px] font-extrabold text-emerald-800 transition hover:bg-emerald-100"
+                              className="inline-flex max-w-full items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-1.5 py-1 font-mono text-[10px] font-extrabold text-emerald-800 transition hover:bg-emerald-100 md:text-[11px]"
                             >
-                              <FiCreditCard className="text-sm" />
-                              {r.chequeNo}
+                              <FiCreditCard className="shrink-0 text-xs" />
+                              <span className="truncate">{r.chequeNo}</span>
                             </button>
                           ) : (
-                            <span className="font-mono text-slate-800">
+                            <span className="break-all font-mono text-slate-800">
                               {r.chequeNo}
                             </span>
                           )
                         ) : (
-                          <span className="text-[12px] text-slate-400">—</span>
+                          <span className="text-slate-400">—</span>
                         )}
                       </td>
 
-                      <td className="px-4 py-4 text-right whitespace-nowrap text-slate-700">
-                        {r.description || "-"}
+                      <td
+                        className="px-1.5 py-2 text-right text-slate-700 md:px-2"
+                        title={r.description || ""}
+                      >
+                        <span className="line-clamp-3 break-words">
+                          {r.description || "-"}
+                        </span>
                       </td>
 
                       <td
-                        className="px-4 py-4 text-right whitespace-nowrap"
+                        className="px-1.5 py-2 text-right md:px-2"
                         onClick={(e) => e.stopPropagation()}
                       >
                         <input
@@ -2086,36 +1904,36 @@ export default function VoucherReportsPage() {
                           }}
                         />
 
-                        <div className="flex flex-col items-end gap-2">
+                        <div className="flex flex-col items-stretch gap-1">
                           <button
                             type="button"
                             onClick={() => triggerAttachmentPick(r._id)}
                             disabled={uploadingId === r._id}
-                            className={`px-3 py-2 rounded-xl border text-[13px] font-extrabold transition ${
+                            className={`rounded-lg border px-1.5 py-1 text-[10px] font-extrabold transition md:text-[11px] ${
                               uploadingId === r._id
-                                ? "bg-gray-200 text-gray-500 border-gray-200 cursor-not-allowed"
-                                : "bg-white hover:bg-gray-50 text-slate-900 border-gray-200"
+                                ? "cursor-not-allowed border-gray-200 bg-gray-200 text-gray-500"
+                                : "border-gray-200 bg-white text-slate-900 hover:bg-gray-50"
                             }`}
                           >
-                            {uploadingId === r._id ? "جاري الرفع..." : "رفع مرفق"}
+                            {uploadingId === r._id ? "رفع..." : "رفع"}
                           </button>
 
                           {Array.isArray(r.attachments) && r.attachments.length > 0 ? (
                             <button
                               type="button"
                               onClick={() => openAttachmentsModal(r)}
-                              className="px-3 py-2 rounded-xl border border-blue-200 bg-blue-50 text-blue-700 text-[13px] font-extrabold hover:bg-blue-100"
+                              className="rounded-lg border border-blue-200 bg-blue-50 px-1.5 py-1 text-[10px] font-extrabold text-blue-700 hover:bg-blue-100 md:text-[11px]"
                             >
-                              عرض الاتاجات ({r.attachments.length})
+                              عرض ({r.attachments.length})
                             </button>
                           ) : (
-                            <span className="text-[12px] text-slate-400">لا يوجد</span>
+                            <span className="text-center text-[10px] text-slate-400">—</span>
                           )}
                         </div>
                       </td>
 
                       <td
-                        className="px-4 py-4 text-right whitespace-nowrap"
+                        className="px-1.5 py-2 text-right md:px-2"
                         onClick={(e) => e.stopPropagation()}
                       >
                         {(() => {
@@ -2128,65 +1946,65 @@ export default function VoucherReportsPage() {
                           const isUploadingIdentity = uploadingIdentityKey === personKey;
                           const missingName = !personName || personName.length < 2;
 
-                          return (
-                            <div className="flex flex-col items-end gap-1.5">
-                              {missingName ? (
-                                <span className="text-[12px] text-slate-400">—</span>
+                          return missingName ? (
+                            <span className="text-slate-400">—</span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={(e) => handleIdentityAction(r, e)}
+                              disabled={isUploadingIdentity}
+                              title={`إدارة هوية: ${personName}`}
+                              className={`inline-flex w-full items-center justify-center gap-1 rounded-lg border px-1.5 py-1 text-[10px] font-extrabold transition disabled:cursor-not-allowed disabled:opacity-60 md:text-[11px] ${
+                                isUploadingIdentity
+                                  ? "border-slate-200 bg-slate-100 text-slate-500"
+                                  : hasIdentity
+                                  ? "border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
+                                  : "border-violet-200 bg-violet-50 text-violet-800 hover:bg-violet-100"
+                              }`}
+                            >
+                              {isUploadingIdentity ? (
+                                <span className="h-3 w-3 animate-spin rounded-full border-2 border-violet-400 border-t-transparent" />
                               ) : (
-                                <button
-                                  type="button"
-                                  onClick={(e) => handleIdentityAction(r, e)}
-                                  disabled={isUploadingIdentity}
-                                  title={`إدارة هوية: ${personName}`}
-                                  className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-[12px] font-extrabold transition disabled:cursor-not-allowed disabled:opacity-60 ${
-                                    isUploadingIdentity
-                                      ? "border-slate-200 bg-slate-100 text-slate-500"
-                                      : hasIdentity
-                                      ? "border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
-                                      : "border-violet-200 bg-violet-50 text-violet-800 hover:bg-violet-100"
-                                  }`}
-                                >
-                                  {isUploadingIdentity ? (
-                                    <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-violet-400 border-t-transparent" />
-                                  ) : (
-                                    <FiCreditCard className="text-sm" />
-                                  )}
-                                  {isUploadingIdentity
-                                    ? "جاري الرفع..."
-                                    : hasIdentity
-                                    ? `الهوية (${identityAttachments.length})`
-                                    : "الهوية"}
-                                </button>
+                                <FiCreditCard className="shrink-0 text-xs" />
                               )}
-                            </div>
+                              <span className="truncate">
+                                {isUploadingIdentity
+                                  ? "..."
+                                  : hasIdentity
+                                  ? `(${identityAttachments.length})`
+                                  : "هوية"}
+                              </span>
+                            </button>
                           );
                         })()}
                       </td>
 
-                      <td className="px-4 py-4 text-right whitespace-nowrap text-slate-700">
-                        {formatVoucherDateDisplay(r)}
+                      <td className="px-1.5 py-2 text-right text-slate-700 md:px-2">
+                        <span className="break-words">
+                          {formatVoucherDateDisplay(r)}
+                        </span>
                       </td>
 
                       <td
-                        className="px-4 py-4 text-right whitespace-nowrap"
+                        className="px-1.5 py-2 text-right md:px-2"
                         onClick={(e) => e.stopPropagation()}
                       >
                         <button
                           type="button"
                           onClick={(e) => handleDeleteVoucher(r, e)}
                           disabled={deletingId === r._id}
-                          className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border text-[13px] font-extrabold transition ${
+                          title="حذف الوصل"
+                          className={`inline-flex w-full items-center justify-center gap-1 rounded-lg border px-1.5 py-1 text-[10px] font-extrabold transition md:text-[11px] ${
                             deletingId === r._id
-                              ? "bg-gray-200 text-gray-500 border-gray-200 cursor-not-allowed"
+                              ? "cursor-not-allowed border-gray-200 bg-gray-200 text-gray-500"
                               : "border-red-200 bg-red-50 text-red-700 hover:bg-red-100"
                           }`}
                         >
                           {deletingId === r._id ? (
-                            <span className="w-3.5 h-3.5 border-2 border-red-400 border-t-transparent rounded-full animate-spin" />
+                            <span className="h-3 w-3 rounded-full border-2 border-red-400 border-t-transparent animate-spin" />
                           ) : (
-                            <FiTrash2 className="text-base" />
+                            <FiTrash2 className="shrink-0 text-sm" />
                           )}
-                          حذف
                         </button>
                       </td>
                     </motion.tr>
