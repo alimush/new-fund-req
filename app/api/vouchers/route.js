@@ -4,7 +4,11 @@ import { cookies } from "next/headers";
 import Voucher from "@/models/Voucher";
 import VoucherCounter from "@/models/VoucherCounter";
 import { PERMISSIONS } from "@/lib/permission";
-import { COMPANIES } from "@/lib/voucher/companies";
+import {
+  COMPANIES,
+  getCompanyCategoryChecklist,
+  sanitizeCategoryChecks,
+} from "@/lib/voucher/companies";
 import {
   resolveVoucherCompanyKeyForUser,
   hasVoucherPermissionForRequest,
@@ -312,6 +316,7 @@ export async function POST(req) {
 
       cbOne,
       cbTwo,
+      categoryChecks,
 
       globalTextStyle,
       fieldStyles,
@@ -508,6 +513,16 @@ export async function POST(req) {
 
       cbOne: Boolean(cbOne),
       cbTwo: Boolean(cbTwo),
+      categoryChecks: sanitizeCategoryChecks(
+        categoryChecks,
+        getCompanyCategoryChecklist(
+          COMPANIES.find(
+            (c) =>
+              String(c.key).toLowerCase() ===
+              String(saveCompanyKey || companyKey || "").toLowerCase()
+          )
+        )
+      ),
 
       globalTextStyle: sanitizeGlobalTextStyle(globalTextStyle),
       fieldStyles: sanitizeFieldStyles(fieldStyles),

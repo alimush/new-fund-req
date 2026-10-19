@@ -150,6 +150,12 @@ const VoucherSchema = new mongoose.Schema(
       default: false,
     },
 
+    /** جيك ليست الفئة (بدور سكنجر وغيرها) — مفاتيح حرة boolean */
+    categoryChecks: {
+      type: mongoose.Schema.Types.Mixed,
+      default: {},
+    },
+
     globalTextStyle: {
       type: new mongoose.Schema(
         {

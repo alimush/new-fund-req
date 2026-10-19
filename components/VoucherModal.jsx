@@ -28,9 +28,11 @@ import {
   COMPANIES,
   TEMPLATE_SWITCH_DATE,
   POS_OLD,
-  EXTRA_OLD,
   POS_NEW,
-  EXTRA_NEW,
+  getCompanyExtra,
+  getCompanyCategoryChecklist,
+  emptyCategoryChecks,
+  sanitizeCategoryChecks,
 } from "@/lib/voucher/companies";
 
 function buildLegacyStyles(doc) {
@@ -150,6 +152,7 @@ export default function VoucherModal({
 
   const [cbOne, setCbOne] = useState(false);
   const [cbTwo, setCbTwo] = useState(false);
+  const [categoryChecks, setCategoryChecks] = useState({});
 
   const [globalTextStyle, setGlobalTextStyle] = useState(DEFAULT_GLOBAL_TEXT_STYLE);
   const [fieldStyles, setFieldStyles] = useState(DEFAULT_FIELD_STYLES);
@@ -165,6 +168,20 @@ export default function VoucherModal({
       }) ?? null
     );
   }, [templateCompanyKey]);
+
+  const categoryChecklist = useMemo(
+    () => getCompanyCategoryChecklist(selectedCompany),
+    [selectedCompany]
+  );
+
+  const toggleCategoryCheck = (key, checked) => {
+    setCategoryChecks((prev) => ({ ...prev, [key]: Boolean(checked) }));
+  };
+
+  useEffect(() => {
+    if (existingVoucher?._id) return;
+    setCategoryChecks(emptyCategoryChecks(categoryChecklist));
+  }, [categoryChecklist, existingVoucher?._id]);
 
   const today = useMemo(() => new Date(), []);
   const todayYY = String(today.getFullYear()).slice(-2);
@@ -230,6 +247,18 @@ export default function VoucherModal({
 
     setCbOne(Boolean(doc?.cbOne));
     setCbTwo(Boolean(doc?.cbTwo));
+    setCategoryChecks(
+      sanitizeCategoryChecks(
+        doc?.categoryChecks,
+        getCompanyCategoryChecklist(
+          COMPANIES.find(
+            (c) =>
+              String(c.key).toLowerCase() ===
+              String(doc?.companyKey || "").toLowerCase()
+          )
+        )
+      )
+    );
 
     let normalizedGlobal = normalizeGlobalTextStyle(doc?.globalTextStyle || {});
     let normalizedFields = normalizeFieldStyles(doc?.fieldStyles || {}, normalizedGlobal);
@@ -362,13 +391,18 @@ export default function VoucherModal({
   }, [effectiveDate]);
 
   const currentPOS = useMemo(() => (useOldTemplate ? POS_OLD : POS_NEW), [useOldTemplate]);
-  const currentEXTRA = useMemo(() => (useOldTemplate ? EXTRA_OLD : EXTRA_NEW), [useOldTemplate]);
+  const currentEXTRA = useMemo(
+    () => getCompanyExtra(selectedCompany, useOldTemplate),
+    [selectedCompany, useOldTemplate]
+  );
 
   const currentImg = useMemo(() => {
     if (!selectedCompany) return "";
-    return useOldTemplate
-      ? selectedCompany.paymentImgJpg
-      : selectedCompany.paymentImgPng;
+    const jpg = selectedCompany.paymentImgJpg;
+    const png = selectedCompany.paymentImgPng || selectedCompany.paymentImg;
+    // شركات بدون JPG: لا تترك src فاضي فتعلق الشاشة بالتحميل
+    if (useOldTemplate) return jpg || png || "";
+    return png || jpg || "";
   }, [selectedCompany, useOldTemplate]);
   const isLockedAfterCreate = Boolean(existingVoucher?._id) || Boolean(treatAsExisting);
   const noop = () => {};
@@ -410,6 +444,8 @@ export default function VoucherModal({
         cacheBust: true,
         pixelRatio: 3,
         backgroundColor: "#ffffff",
+        filter: (node) =>
+          !(node?.classList && node.classList.contains("voucher-ui-only")),
       });
 
       const printStyles = useOldTemplate
@@ -584,6 +620,7 @@ export default function VoucherModal({
 
       cbOne,
       cbTwo,
+      categoryChecks,
 
       globalTextStyle,
       fieldStyles,
@@ -734,6 +771,9 @@ export default function VoucherModal({
       vNotes={vNotes}
       cbOne={cbOne}
       cbTwo={cbTwo}
+      categoryChecklist={categoryChecklist}
+      categoryChecks={categoryChecks}
+      onToggleCategoryCheck={isLockedAfterCreate ? undefined : toggleCategoryCheck}
       voucherNo={voucherNo}
       yyRef={yyRef}
       mmRef={mmRef}

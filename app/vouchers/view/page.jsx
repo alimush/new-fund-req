@@ -34,10 +34,13 @@ import {
   COMPANIES,
   TEMPLATE_SWITCH_DATE,
   POS_OLD,
-  EXTRA_OLD,
   POS_NEW,
-  EXTRA_NEW,
+  getCompanyExtra,
+  getCompanyCategoryChecklist,
+  sanitizeCategoryChecks,
 } from "@/lib/voucher/companies";
+import { prefetchVoucherLayout } from "@/lib/voucher/voucherLayoutCache";
+import VoucherCategoryChecklist from "@/components/VoucherCategoryChecklist";
 
 const cairo = Cairo({
   subsets: ["arabic"],
@@ -152,6 +155,7 @@ function VoucherViewPageContent() {
   const [vNotes, setVNotes] = useState("");
   const [cbOne, setCbOne] = useState(false);
   const [cbTwo, setCbTwo] = useState(false);
+  const [categoryChecks, setCategoryChecks] = useState({});
   const [voucherNo, setVoucherNo] = useState(null);
 
   const [vChequeNo, setVChequeNo] = useState("");
@@ -176,6 +180,16 @@ function VoucherViewPageContent() {
     [companyKey]
   );
 
+  const categoryChecklist = useMemo(
+    () => getCompanyCategoryChecklist(selectedCompany),
+    [selectedCompany]
+  );
+
+  const toggleCategoryCheck = (key, checked) => {
+    if (!editMode) return;
+    setCategoryChecks((prev) => ({ ...prev, [key]: Boolean(checked) }));
+  };
+
   const fillForm = useCallback((doc) => {
     if (!doc) return;
 
@@ -198,6 +212,18 @@ function VoucherViewPageContent() {
 
     setCbOne(Boolean(doc?.cbOne));
     setCbTwo(Boolean(doc?.cbTwo));
+    setCategoryChecks(
+      sanitizeCategoryChecks(
+        doc?.categoryChecks,
+        getCompanyCategoryChecklist(
+          COMPANIES.find(
+            (c) =>
+              String(c.key).toLowerCase() ===
+              String(doc?.companyKey || companyKey || "").toLowerCase()
+          )
+        )
+      )
+    );
 
     setVChequeNo(doc?.vChequeNo || doc?.chequeNo || "");
     setChequeId(doc?.chequeId ? String(doc.chequeId) : null);
@@ -224,7 +250,7 @@ function VoucherViewPageContent() {
     );
 
     setVoucherNo(doc?.seq ?? doc?.voucherNo ?? doc?.number ?? null);
-  }, []);
+  }, [companyKey]);
 
   const fetchVoucher = useCallback(async () => {
     if (!id) {
@@ -261,6 +287,12 @@ function VoucherViewPageContent() {
   useEffect(() => {
     fetchVoucher();
   }, [fetchVoucher]);
+
+  // حمّل تخطيط الحقول مع بيانات الوصل — حتى يكون جاهزاً قبل أول رسم
+  useEffect(() => {
+    if (!companyKey) return;
+    void prefetchVoucherLayout(companyKey);
+  }, [companyKey]);
 
   useEffect(() => {
     const cleaned = cleanAmount(vAmount);
@@ -303,15 +335,23 @@ function VoucherViewPageContent() {
   const currentImg = useMemo(() => {
     if (!selectedCompany) return "";
 
-    if (useOldTemplate) {
-      return isPayment ? selectedCompany.paymentImgJpg : selectedCompany.receiptImgJpg;
-    }
+    const jpg = isPayment
+      ? selectedCompany.paymentImgJpg
+      : selectedCompany.receiptImgJpg;
+    const png = isPayment
+      ? selectedCompany.paymentImgPng || selectedCompany.paymentImg
+      : selectedCompany.receiptImgPng || selectedCompany.receiptImg;
 
-    return isPayment ? selectedCompany.paymentImgPng : selectedCompany.receiptImgPng;
+    // شركات بدون JPG (مثل بدور النجف): fallback للـ PNG حتى لو التاريخ قبل TEMPLATE_SWITCH
+    if (useOldTemplate) return jpg || png || "";
+    return png || jpg || "";
   }, [selectedCompany, isPayment, useOldTemplate]);
 
   const currentPOS = useMemo(() => (useOldTemplate ? POS_OLD : POS_NEW), [useOldTemplate]);
-  const currentEXTRA = useMemo(() => (useOldTemplate ? EXTRA_OLD : EXTRA_NEW), [useOldTemplate]);
+  const currentEXTRA = useMemo(
+    () => getCompanyExtra(selectedCompany, useOldTemplate),
+    [selectedCompany, useOldTemplate]
+  );
 
   const todayYY = fallbackVoucherDate.yy;
   const todayMM = fallbackVoucherDate.mm;
@@ -420,6 +460,7 @@ function VoucherViewPageContent() {
         vSanadNo,
         cbOne,
         cbTwo,
+        categoryChecks,
         globalTextStyle,
         fieldStyles,
         fieldColorRuns,
@@ -485,6 +526,8 @@ function VoucherViewPageContent() {
         cacheBust: true,
         pixelRatio: 3,
         backgroundColor: "#ffffff",
+        filter: (node) =>
+          !(node?.classList && node.classList.contains("voucher-ui-only")),
       });
 
       const printStyles = `
@@ -653,7 +696,30 @@ function VoucherViewPageContent() {
     setEditMode(false);
   };
 
-  const [imgReady, setImgReady] = useState(false);
+  // حمّل صورة القالب مسبقاً مع طلب البيانات — بدون انتظارها لعرض الوصل
+  useEffect(() => {
+    if (!selectedCompany) return;
+    const urls = [
+      isPayment
+        ? selectedCompany.paymentImgJpg || selectedCompany.paymentImgPng || selectedCompany.paymentImg
+        : selectedCompany.receiptImgJpg || selectedCompany.receiptImgPng || selectedCompany.receiptImg,
+      isPayment
+        ? selectedCompany.paymentImgPng || selectedCompany.paymentImg
+        : selectedCompany.receiptImgPng || selectedCompany.receiptImg,
+    ].filter(Boolean);
+    urls.forEach((src) => {
+      const img = new window.Image();
+      img.decoding = "async";
+      img.src = src;
+    });
+  }, [selectedCompany, isPayment]);
+
+  useEffect(() => {
+    if (!currentImg) return;
+    const img = new window.Image();
+    img.decoding = "async";
+    img.src = currentImg;
+  }, [currentImg]);
 
   const handleClose = () => {
     if (editMode) {
@@ -664,7 +730,8 @@ function VoucherViewPageContent() {
     else window.close();
   };
 
-  const isActuallyLoading = loading || !imgReady;
+  /** السبنر فقط لجلب بيانات الوصل — لا نعلّق على صورة القالب */
+  const isActuallyLoading = loading;
 
   if (error) {
     return (
@@ -696,15 +763,16 @@ function VoucherViewPageContent() {
   const currencyMarkStyle = getStyle("currencyMark");
 
   return (
-    <MotionConfig transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}>
+    <MotionConfig transition={{ duration: 0.15, ease: [0.22, 1, 0.36, 1] }}>
       <div className={`min-h-screen bg-[#f8f9fa] ${cairo.className}`}>
-        <AnimatePresence mode="wait">
+        <AnimatePresence>
           {isActuallyLoading ? (
             <motion.div
               key="loader"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
+              transition={{ duration: 0.12 }}
               className="fixed inset-0 z-[10000] flex flex-col items-center justify-center bg-white/80 backdrop-blur-md"
             >
               <div className="relative flex flex-col items-center">
@@ -738,17 +806,11 @@ function VoucherViewPageContent() {
           ) : null}
         </AnimatePresence>
 
-        {selectedCompany && voucher && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="px-4 py-6"
-          >
-            <motion.div
+        {selectedCompany && voucher && !isActuallyLoading && (
+          <div className="px-4 py-6">
+            <div
               key="viewer"
               className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/5"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
             >
             {useOldTemplate ? (
               <motion.div
@@ -757,12 +819,14 @@ function VoucherViewPageContent() {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
+                transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
               >
                 <motion.div
                   className="w-full max-w-5xl rounded-3xl bg-white/40 backdrop-blur-2xl ring-1 ring-white/25 shadow-[0_18px_45px_-25px_rgba(0,0,0,0.45)] overflow-hidden"
-                  initial={{ y: 18, opacity: 0 }}
-                  animate={{ y: 0, opacity: 1 }}
-                  exit={{ y: 18, opacity: 0 }}
+                  initial={{ opacity: 0, y: 28, scale: 0.985 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 16, scale: 0.99 }}
+                  transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1], delay: 0.04 }}
                 >
                   <div className="flex items-center justify-between px-5 py-4 bg-white/25">
                     <div className="text-sm font-extrabold text-gray-900">
@@ -839,6 +903,7 @@ function VoucherViewPageContent() {
                             src={currentImg}
                             alt="voucher"
                             onLoad={() => setImgReady(true)}
+                            onError={() => setImgReady(true)}
                             className="absolute inset-0 w-full h-full object-contain"
                             draggable={false}
                           />
@@ -1196,6 +1261,19 @@ function VoucherViewPageContent() {
                               </div>
                             ) : null}
 
+                            <VoucherCategoryChecklist
+                              items={categoryChecklist}
+                              values={categoryChecks}
+                              showMarks
+                              showHits={false}
+                              className={cairo.className}
+                              markStyle={{
+                                fontSize: `${currencyMarkStyle.fontSize}px`,
+                                fontWeight: currencyMarkStyle.fontWeight,
+                                color: currencyMarkStyle.color,
+                              }}
+                            />
+
                             {voucherNo !== null ? (
                               <div
                                 className={`absolute ${cairo.className}`}
@@ -1411,6 +1489,14 @@ function VoucherViewPageContent() {
                                   style={{ width: "100%", height: "100%", margin: 0 }}
                                 />
                               </label>
+
+                              <VoucherCategoryChecklist
+                                items={categoryChecklist}
+                                values={categoryChecks}
+                                showMarks={false}
+                                showHits
+                                onToggle={toggleCategoryCheck}
+                              />
 
                               <input
                                 ref={bankRef}
@@ -1628,10 +1714,8 @@ function VoucherViewPageContent() {
                 className="relative"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
+                transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
               >
-              
-
               <VoucherCanvasDialog
   open={true}
   onClose={handleClose}
@@ -1668,6 +1752,9 @@ function VoucherViewPageContent() {
   vNotes={vNotes}
   cbOne={cbOne}
   cbTwo={cbTwo}
+  categoryChecklist={categoryChecklist}
+  categoryChecks={categoryChecks}
+  onToggleCategoryCheck={toggleCategoryCheck}
   voucherNo={voucherNo}
   yyRef={yyRef}
   mmRef={mmRef}
@@ -1717,12 +1804,11 @@ function VoucherViewPageContent() {
   setFieldStyles={guardSetter(setFieldStyles)}
   fieldColorRuns={fieldColorRuns}
   setFieldColorRuns={guardSetter(setFieldColorRuns)}
-  onImageLoad={() => setImgReady(true)}
 />
               </motion.div>
             )}
-          </motion.div>
-        </motion.div>
+          </div>
+        </div>
       )}
       </div>
     </MotionConfig>

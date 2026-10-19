@@ -15,6 +15,10 @@ import {
   isAlGhadeerMain,
   normalizeVoucherCurrency,
 } from "@/lib/voucher/utils";
+import {
+  getCompanyCategoryChecklist,
+  sanitizeCategoryChecks,
+} from "@/lib/voucher/companies";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -187,6 +191,15 @@ function buildBody(body, { companyKey = "" } = {}) {
 
     cbOne: Boolean(body.cbOne),
     cbTwo: Boolean(body.cbTwo),
+    categoryChecks: sanitizeCategoryChecks(
+      body.categoryChecks,
+      getCompanyCategoryChecklist(
+        COMPANIES.find(
+          (c) =>
+            String(c.key).toLowerCase() === String(companyKey || "").toLowerCase()
+        )
+      )
+    ),
 
     globalTextStyle,
     fieldStyles,

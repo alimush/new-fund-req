@@ -1,6 +1,14 @@
 "use client";
 
-import { useMemo, useState, useCallback, useRef } from "react";
+import {
+  useMemo,
+  useState,
+  useCallback,
+  useRef,
+  useEffect,
+  useLayoutEffect,
+  startTransition,
+} from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import VoucherRichTextInput from "@/components/VoucherRichTextInput";
 import PersonNameSuggestDropdown from "@/components/PersonNameSuggestDropdown";
@@ -20,10 +28,42 @@ import {
   FiPlus,
   FiEdit2,
   FiSave,
+  FiMove,
 } from "react-icons/fi";
 import { Cairo } from "next/font/google";
 import VoucherDateModal from "@/components/VoucherDateModal";
+import VoucherCategoryChecklist from "@/components/VoucherCategoryChecklist";
 import { isAlGhadeerMain } from "@/lib/voucher/utils";
+import { usePermissions } from "@/context/PermissionContext";
+import { PERMISSIONS, hasPermission } from "@/lib/permission";
+import {
+  buildDefaultVoucherLayoutFields,
+  applyLayoutToPosExtra,
+  applyLayoutToCategoryChecklist,
+  fieldsToMap,
+  getFieldLabel,
+  DEFAULT_VOUCHER_NO_POS,
+  isCategoryLayoutField,
+} from "@/lib/voucher/voucherLayout";
+import { POS_NEW, getCompanyExtra } from "@/lib/voucher/companies";
+import {
+  readCachedVoucherLayout,
+  writeCachedVoucherLayout,
+  prefetchVoucherLayout,
+} from "@/lib/voucher/voucherLayoutCache";
+
+function layoutFieldsEqual(a, b) {
+  if (a === b) return true;
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+  return a.every(
+    (f, i) =>
+      f.key === b[i]?.key &&
+      f.top === b[i]?.top &&
+      f.left === b[i]?.left &&
+      f.width === b[i]?.width &&
+      f.height === b[i]?.height
+  );
+}
 
 const cairo = Cairo({
   subsets: ["arabic"],
@@ -86,8 +126,8 @@ export default function VoucherCanvasDialog({
   isPayment,
   paperRef,
   currentImg,
-  POS,
-  EXTRA,
+  POS: posProp,
+  EXTRA: extraProp,
   editMode = false,
   onToggleEdit,
   onSave,
@@ -121,6 +161,9 @@ export default function VoucherCanvasDialog({
   vNotes,
   cbOne,
   cbTwo,
+  categoryChecklist = [],
+  categoryChecks = {},
+  onToggleCategoryCheck,
   voucherNo,
 
   yyRef,
@@ -181,8 +224,18 @@ export default function VoucherCanvasDialog({
   setFieldColorRuns,
   onImageLoad,
 }) {
+  const { permissions } = usePermissions();
+  const canLayout = hasPermission(permissions, PERMISSIONS.VOUCHERS_FIELD_LAYOUT);
+
   const [selectedField, setSelectedField] = useState(null);
   const [fieldSelection, setFieldSelection] = useState(null);
+  const [layoutMode, setLayoutMode] = useState(false);
+  const [layoutFields, setLayoutFields] = useState([]);
+  const [layoutLoading, setLayoutLoading] = useState(false);
+  const [layoutReady, setLayoutReady] = useState(true);
+  const [layoutSaving, setLayoutSaving] = useState(false);
+  const [layoutSelectedKey, setLayoutSelectedKey] = useState(null);
+  const layoutDragRef = useRef(null);
 
   const [dateModalOpen, setDateModalOpen] = useState(false);
   const [tmpDate, setTmpDate] = useState({
@@ -753,6 +806,173 @@ export default function VoucherCanvasDialog({
     };
   };
 
+  /** أساس موحّد للصرف والقبض — نفس POS/EXTRA بغض النظر عن نوع الوصل */
+  const layoutBasePOS = POS_NEW;
+  const layoutBaseEXTRA = useMemo(
+    () => getCompanyExtra(selectedCompany, false),
+    [selectedCompany?.key]
+  );
+
+  // قبل الرسم: طبّق الكاش/الافتراضي حتى ما يطلع الوصل فاضي بعد السبنر
+  useLayoutEffect(() => {
+    if (!open || !selectedCompany?.key) return;
+    const defaults = buildDefaultVoucherLayoutFields({
+      company: selectedCompany,
+      POS: POS_NEW,
+      EXTRA: getCompanyExtra(selectedCompany, false),
+    });
+    const cached = readCachedVoucherLayout(selectedCompany.key);
+    setLayoutFields(cached || defaults);
+    setLayoutReady(true);
+    setLayoutLoading(false);
+    setLayoutMode(false);
+    setLayoutSelectedKey(null);
+  }, [open, selectedCompany?.key]);
+
+  useEffect(() => {
+    if (!open || !selectedCompany?.key) return undefined;
+    let cancelled = false;
+
+    const companyKey = selectedCompany.key;
+    const defaults = buildDefaultVoucherLayoutFields({
+      company: selectedCompany,
+      POS: POS_NEW,
+      EXTRA: getCompanyExtra(selectedCompany, false),
+    });
+    const cached = readCachedVoucherLayout(companyKey);
+
+    const applyFields = (fields) => {
+      if (cancelled || !fields?.length) return;
+      writeCachedVoucherLayout(companyKey, fields);
+      startTransition(() => {
+        if (cancelled) return;
+        setLayoutFields((prev) => (layoutFieldsEqual(prev, fields) ? prev : fields));
+      });
+    };
+
+    // تحديث خلفي فقط — لا نعلّق الواجهة ولا ننتظر الشبكة
+    const schedule =
+      typeof window !== "undefined" && typeof window.requestIdleCallback === "function"
+        ? (cb) => window.requestIdleCallback(cb, { timeout: 1200 })
+        : (cb) => window.setTimeout(cb, cached ? 400 : 0);
+    const cancelSchedule =
+      typeof window !== "undefined" && typeof window.cancelIdleCallback === "function"
+        ? (id) => window.cancelIdleCallback(id)
+        : (id) => clearTimeout(id);
+
+    const idleId = schedule(() => {
+      if (cancelled) return;
+      void prefetchVoucherLayout(companyKey)
+        .then((fields) => applyFields(fields || cached || defaults))
+        .catch(() => {
+          if (!cached) applyFields(defaults);
+        });
+    });
+
+    return () => {
+      cancelled = true;
+      cancelSchedule(idleId);
+    };
+  }, [open, selectedCompany?.key]);
+
+  const fieldsMap = useMemo(() => fieldsToMap(layoutFields), [layoutFields]);
+
+  const { pos, extra } = useMemo(() => {
+    const applied = applyLayoutToPosExtra(layoutBasePOS, layoutBaseEXTRA, fieldsMap);
+    return { pos: applied.POS, extra: applied.EXTRA };
+  }, [layoutBaseEXTRA, fieldsMap]);
+
+  const liveChecklist = useMemo(
+    () => applyLayoutToCategoryChecklist(categoryChecklist, fieldsMap),
+    [categoryChecklist, fieldsMap]
+  );
+
+  const voucherNoPos = fieldsMap.voucherNo || DEFAULT_VOUCHER_NO_POS;
+
+  const updateLayoutField = useCallback((key, patch) => {
+    setLayoutFields((prev) =>
+      prev.map((f) => (f.key === key ? { ...f, ...patch } : f))
+    );
+  }, []);
+
+  const startLayoutDrag = useCallback(
+    (e, fieldKey) => {
+      if (!layoutMode || !paperRef?.current) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setLayoutSelectedKey(fieldKey);
+
+      const rect = paperRef.current.getBoundingClientRect();
+      const field = layoutFields.find((f) => f.key === fieldKey);
+      if (!field || !rect?.width || !rect?.height) return;
+
+      layoutDragRef.current = {
+        key: fieldKey,
+        startX: e.clientX,
+        startY: e.clientY,
+        startLeft: field.left,
+        startTop: field.top,
+        rectW: rect.width,
+        rectH: rect.height,
+      };
+
+      const onMove = (ev) => {
+        const d = layoutDragRef.current;
+        if (!d) return;
+        const dx = ((ev.clientX - d.startX) / d.rectW) * 100;
+        const dy = ((ev.clientY - d.startY) / d.rectH) * 100;
+        updateLayoutField(d.key, {
+          left: Math.round((d.startLeft + dx) * 100) / 100,
+          top: Math.round((d.startTop + dy) * 100) / 100,
+        });
+      };
+
+      const onUp = () => {
+        layoutDragRef.current = null;
+        window.removeEventListener("mousemove", onMove);
+        window.removeEventListener("mouseup", onUp);
+      };
+
+      window.addEventListener("mousemove", onMove);
+      window.addEventListener("mouseup", onUp);
+    },
+    [layoutMode, paperRef, layoutFields, updateLayoutField]
+  );
+
+  const saveLayout = useCallback(async () => {
+    if (!selectedCompany?.key || !canLayout) return;
+    try {
+      setLayoutSaving(true);
+      const res = await fetch("/api/vouchers/layout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          companyKey: selectedCompany.key,
+          fields: layoutFields,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json?.success) {
+        throw new Error(json?.error || "فشل حفظ التخطيط");
+      }
+      if (Array.isArray(json.data?.fields)) {
+        writeCachedVoucherLayout(selectedCompany.key, json.data.fields);
+        setLayoutFields(json.data.fields);
+      } else {
+        writeCachedVoucherLayout(selectedCompany.key, layoutFields);
+      }
+      setLayoutMode(false);
+      setLayoutSelectedKey(null);
+      alert("تم حفظ الإحداثيات — نفس الترتيب لوصل الصرف والقبض");
+    } catch (err) {
+      console.error(err);
+      alert(err.message || "تعذر حفظ التخطيط");
+    } finally {
+      setLayoutSaving(false);
+    }
+  }, [selectedCompany?.key, canLayout, layoutFields]);
+
   if (!selectedCompany) return null;
 
   const customerPersonName = vReceivedBy;
@@ -764,10 +984,12 @@ export default function VoucherCanvasDialog({
 
   const currencyMarkPos =
     vCurrency === "USD"
-      ? POS.currencyUSDBox
-      : vCurrency === "EUR" && allowEur && POS.currencyEURBox
-        ? POS.currencyEURBox
-        : POS.currencyIQDBox;
+      ? pos.currencyUSDBox
+      : vCurrency === "EUR" && allowEur && pos.currencyEURBox
+        ? pos.currencyEURBox
+        : pos.currencyIQDBox;
+
+  const easeOut = [0.22, 1, 0.36, 1];
 
   return (
     <AnimatePresence>
@@ -777,15 +999,17 @@ export default function VoucherCanvasDialog({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
+          transition={{ duration: 0.22, ease: easeOut }}
           onClick={onClose}
         >
           <div className="min-h-full flex items-start justify-center py-4 sm:py-6">
             <motion.div
               onClick={(e) => e.stopPropagation()}
               className="w-full max-w-[1180px] rounded-3xl bg-white/40 backdrop-blur-2xl ring-1 ring-white/25 shadow-[0_18px_45px_-25px_rgba(0,0,0,0.45)]"
-              initial={{ y: 18, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              exit={{ y: 18, opacity: 0 }}
+              initial={{ opacity: 0, y: 28, scale: 0.985 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 16, scale: 0.99 }}
+              transition={{ duration: 0.32, ease: easeOut, delay: 0.04 }}
             >
               <div className="flex items-center justify-between px-5 py-4 bg-white/25">
                 <div className="text-sm font-extrabold text-gray-900">
@@ -815,7 +1039,65 @@ export default function VoucherCanvasDialog({
                     ))}
                   </div>
                 ) : null}
-                {isViewPage && !editMode ? (
+                {canLayout ? (
+                  layoutMode ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={saveLayout}
+                        disabled={layoutSaving || layoutLoading}
+                        className="flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-emerald-600 text-white shadow-sm font-extrabold hover:bg-emerald-700 disabled:opacity-60 transition-all duration-150"
+                      >
+                        <FiSave className={`text-lg ${layoutSaving ? "animate-spin" : ""}`} />
+                        {layoutSaving ? "جاري الحفظ..." : "حفظ الإحداثيات"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          setLayoutSelectedKey(null);
+                          setLayoutMode(false);
+                          // أعد التحميل من السيرفر لإلغاء التعديلات غير المحفوظة
+                          try {
+                            const qs = new URLSearchParams({
+                              companyKey: selectedCompany.key,
+                            });
+                            const res = await fetch(`/api/vouchers/layout?${qs}`, {
+                              credentials: "include",
+                              cache: "no-store",
+                            });
+                            const json = await res.json();
+                            if (json?.success && Array.isArray(json.data?.fields)) {
+                              writeCachedVoucherLayout(
+                                selectedCompany.key,
+                                json.data.fields
+                              );
+                              setLayoutFields(json.data.fields);
+                              setLayoutReady(true);
+                            }
+                          } catch {
+                            /* ignore */
+                          }
+                        }}
+                        disabled={layoutSaving}
+                        className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-white/80 ring-1 ring-black/10 font-extrabold text-gray-800 hover:bg-white transition-all duration-150"
+                      >
+                        إلغاء
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setLayoutMode(true)}
+                      disabled={layoutLoading}
+                      className="flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-amber-500 text-white shadow-sm font-extrabold hover:bg-amber-600 disabled:opacity-60 transition-all duration-150"
+                      title="ترتيب أماكن كل الحقول بما فيها جيك بوكس الفئة"
+                    >
+                      <FiMove className="text-lg" />
+                      ترتيب الحقول
+                    </button>
+                  )
+                ) : null}
+                {isViewPage && !editMode && !layoutMode ? (
   <button
     onClick={onToggleEdit}
     className="flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-blue-600 text-white shadow-sm font-extrabold hover:bg-blue-700 hover:shadow-md active:scale-[0.97] transition-all duration-150"
@@ -823,7 +1105,7 @@ export default function VoucherCanvasDialog({
     <FiEdit2 className="text-lg" />
     Edit
   </button>
-) : isViewPage && editMode ? (
+) : isViewPage && editMode && !layoutMode ? (
   <button
     onClick={onSave}
     disabled={isSaving}
@@ -895,6 +1177,7 @@ export default function VoucherCanvasDialog({
                           }}
                         />
 
+                        <div className="absolute inset-0">
                         <div
                           className={`absolute leading-none ${cairo.className}`}
                           style={{
@@ -909,7 +1192,7 @@ export default function VoucherCanvasDialog({
 
                         <div
                           className={`absolute flex items-center gap-2 text-white font-extrabold ${cairo.className}`}
-                          style={{ ...pctStyle(POS.date), fontSize: "12px" }}
+                          style={{ ...pctStyle(pos.date), fontSize: "12px" }}
                         >
                           <span style={{ transform: "translateX(-12px)" }}>{vDateYY || todayYY}</span>
                           <span style={{ transform: "translateX(-2px)" }}>{vDateMM || todayMM}</span>
@@ -920,7 +1203,7 @@ export default function VoucherCanvasDialog({
                           <div
                             className={`absolute leading-none ${cairo.className}`}
                             style={{
-                              ...pctStyle(EXTRA.cb1),
+                              ...pctStyle(extra.cb1),
                               fontSize: `${currencyMarkStyle.fontSize}px`,
                               fontWeight: currencyMarkStyle.fontWeight,
                               color: currencyMarkStyle.color,
@@ -934,7 +1217,7 @@ export default function VoucherCanvasDialog({
                           <div
                             className={`absolute leading-none ${cairo.className}`}
                             style={{
-                              ...pctStyle(EXTRA.cb2),
+                              ...pctStyle(extra.cb2),
                               fontSize: `${currencyMarkStyle.fontSize}px`,
                               fontWeight: currencyMarkStyle.fontWeight,
                               color: currencyMarkStyle.color,
@@ -944,12 +1227,25 @@ export default function VoucherCanvasDialog({
                           </div>
                         ) : null}
 
-                        {voucherNo !== null ? (
+                        <VoucherCategoryChecklist
+                          items={liveChecklist}
+                          values={categoryChecks}
+                          showMarks
+                          showHits={false}
+                          className={cairo.className}
+                          markStyle={{
+                            fontSize: `${currencyMarkStyle.fontSize}px`,
+                            fontWeight: currencyMarkStyle.fontWeight,
+                            color: currencyMarkStyle.color,
+                          }}
+                        />
+
+                        {voucherNo !== null || layoutMode ? (
                           <div
                             className={`absolute ${cairo.className}`}
                             style={{
-                              top: "12.9%",
-                              left: "39.5%",
+                              top: `${voucherNoPos.top}%`,
+                              left: `${voucherNoPos.left}%`,
                               fontSize: "12px",
                               fontWeight: voucherNoStyle.fontWeight,
                               direction: "ltr",
@@ -958,14 +1254,23 @@ export default function VoucherCanvasDialog({
                               color: voucherNoStyle.color,
                             }}
                           >
-                            NO:{String(voucherNo).padStart(5, "0")}
+                            NO:{String(voucherNo ?? 0).padStart(5, "0")}
                           </div>
                         ) : null}
 
-                        <div className="absolute inset-0">
+                        <div
+                          className="absolute inset-0"
+                          style={{
+                            pointerEvents: layoutMode ? "none" : "auto",
+                          }}
+                        >
                           <div
                             className="absolute flex items-center gap-5"
-                            style={{ ...pctStyle(POS.date), width: "22%", height: "7%" }}
+                            style={{
+                              ...pctStyle(pos.date),
+                              width: `${pos.date?.width ?? 22}%`,
+                              height: `${pos.date?.height ?? 7}%`,
+                            }}
                           >
                             <textarea
                               ref={yyRef}
@@ -1040,23 +1345,23 @@ export default function VoucherCanvasDialog({
                             type="button"
                             onClick={() => setVCurrency("USD")}
                             className="absolute"
-                            style={{ ...pctStyle(POS.currencyUSDBox), width: "7%", height: "7%", opacity: 0 }}
+                            style={{ ...pctStyle(pos.currencyUSDBox), width: "7%", height: "7%", opacity: 0 }}
                             aria-label="USD"
                           />
                           <button
                             type="button"
                             onClick={() => setVCurrency("IQD")}
                             className="absolute"
-                            style={{ ...pctStyle(POS.currencyIQDBox), width: "7%", height: "7%", opacity: 0 }}
+                            style={{ ...pctStyle(pos.currencyIQDBox), width: "7%", height: "7%", opacity: 0 }}
                             aria-label="IQD"
                           />
-                          {allowEur && POS.currencyEURBox ? (
+                          {allowEur && pos.currencyEURBox ? (
                             <button
                               type="button"
                               onClick={() => setVCurrency("EUR")}
                               className="absolute"
                               style={{
-                                ...pctStyle(POS.currencyEURBox),
+                                ...pctStyle(pos.currencyEURBox),
                                 width: "7%",
                                 height: "7%",
                                 opacity: 0,
@@ -1071,9 +1376,9 @@ export default function VoucherCanvasDialog({
                               singleLine: true,
                               className: "absolute resize-none",
                               style: {
-                                ...pctStyle(EXTRA.receivedBy),
-                                width: `${EXTRA.receivedBy.width}%`,
-                                height: `${EXTRA.receivedBy.height}%`,
+                                ...pctStyle(extra.receivedBy),
+                                width: `${extra.receivedBy.width}%`,
+                                height: `${extra.receivedBy.height}%`,
                                 ...oneLineRtl("receivedBy"),
                               },
                               direction: "rtl",
@@ -1081,16 +1386,16 @@ export default function VoucherCanvasDialog({
                             })}
                           />
 
-                          {EXTRA.nationalId ? (
+                          {extra.nationalId ? (
                             <VoucherRichTextInput
                               ref={nationalIdRef}
                               {...richFieldProps("nationalId", vNationalId, setVNationalId, {
                                 singleLine: true,
                                 className: "absolute resize-none",
                                 style: {
-                                  ...pctStyle(EXTRA.nationalId),
-                                  width: `${EXTRA.nationalId.width}%`,
-                                  height: `${EXTRA.nationalId.height}%`,
+                                  ...pctStyle(extra.nationalId),
+                                  width: `${extra.nationalId.width}%`,
+                                  height: `${extra.nationalId.height}%`,
                                   ...oneLineRtl("nationalId"),
                                 },
                                 direction: "rtl",
@@ -1098,16 +1403,16 @@ export default function VoucherCanvasDialog({
                             />
                           ) : null}
 
-                          {EXTRA.phone ? (
+                          {extra.phone ? (
                             <VoucherRichTextInput
                               ref={phoneRef}
                               {...richFieldProps("phone", vPhone, setVPhone, {
                                 singleLine: true,
                                 className: "absolute resize-none",
                                 style: {
-                                  ...pctStyle(EXTRA.phone),
-                                  width: `${EXTRA.phone.width}%`,
-                                  height: `${EXTRA.phone.height}%`,
+                                  ...pctStyle(extra.phone),
+                                  width: `${extra.phone.width}%`,
+                                  height: `${extra.phone.height}%`,
                                   ...oneLineRtl("phone"),
                                 },
                                 direction: "rtl",
@@ -1115,16 +1420,16 @@ export default function VoucherCanvasDialog({
                             />
                           ) : null}
 
-                          {EXTRA.sanadNo ? (
+                          {extra.sanadNo ? (
                             <VoucherRichTextInput
                               ref={sanadRef}
                               {...richFieldProps("sanadNo", vSanadNo, setVSanadNo, {
                                 singleLine: true,
                                 className: "absolute resize-none",
                                 style: {
-                                  ...pctStyle(EXTRA.sanadNo),
-                                  width: `${EXTRA.sanadNo.width}%`,
-                                  height: `${EXTRA.sanadNo.height}%`,
+                                  ...pctStyle(extra.sanadNo),
+                                  width: `${extra.sanadNo.width}%`,
+                                  height: `${extra.sanadNo.height}%`,
                                   ...oneLineRtl("sanadNo"),
                                 },
                                 direction: "rtl",
@@ -1137,8 +1442,8 @@ export default function VoucherCanvasDialog({
                             {...richFieldProps("words", vWords, setVWords, {
                               className: "absolute resize-none",
                               style: {
-                                ...pctStyle(POS.amountWords),
-                                width: `${POS.amountWords.width}%`,
+                                ...pctStyle(pos.amountWords),
+                                width: `${pos.amountWords.width}%`,
                                 height: "13%",
                                 ...multiLineRtl("words"),
                               },
@@ -1151,9 +1456,9 @@ export default function VoucherCanvasDialog({
                             {...richFieldProps("desc", vDesc, handleDescChange, {
                               className: "absolute resize-none",
                               style: {
-                                ...pctStyle(POS.description),
-                                width: `${POS.description.width}%`,
-                                height: `${POS.description.height}%`,
+                                ...pctStyle(pos.description),
+                                width: `${pos.description.width}%`,
+                                height: `${pos.description.height}%`,
                                 ...multiLineRtl("desc"),
                               },
                               direction: "rtl",
@@ -1173,16 +1478,16 @@ export default function VoucherCanvasDialog({
                               singleLine: true,
                               className: "absolute resize-none",
                               style: {
-                                ...pctStyle(EXTRA.bank),
-                                width: `${EXTRA.bank.width}%`,
-                                height: `${EXTRA.bank.height}%`,
+                                ...pctStyle(extra.bank),
+                                width: `${extra.bank.width}%`,
+                                height: `${extra.bank.height}%`,
                                 ...oneLineRtl("bank"),
                               },
                               direction: "rtl",
                             })}
                           />
 
-                          {EXTRA.beneficiary ? (
+                          {extra.beneficiary ? (
                             <VoucherRichTextInput
                               ref={beneficiaryRef}
                               {...richFieldProps(
@@ -1193,9 +1498,9 @@ export default function VoucherCanvasDialog({
                                   singleLine: true,
                                   className: "absolute resize-none",
                                   style: {
-                                    ...pctStyle(EXTRA.beneficiary),
-                                    width: `${EXTRA.beneficiary.width}%`,
-                                    height: `${EXTRA.beneficiary.height}%`,
+                                    ...pctStyle(extra.beneficiary),
+                                    width: `${extra.beneficiary.width}%`,
+                                    height: `${extra.beneficiary.height}%`,
                                     ...oneLineRtl("beneficiary"),
                                   },
                                   direction: "rtl",
@@ -1205,16 +1510,16 @@ export default function VoucherCanvasDialog({
                             />
                           ) : null}
 
-                          {EXTRA.chequeNo ? (
+                          {extra.chequeNo ? (
                             <VoucherRichTextInput
                               ref={chequeNoRef}
                               {...richFieldProps("chequeNo", vChequeNo, handleChequeNoChange, {
                                 singleLine: true,
                                 className: "absolute resize-none",
                                 style: {
-                                  ...pctStyle(EXTRA.chequeNo),
-                                  width: `${EXTRA.chequeNo.width}%`,
-                                  height: `${EXTRA.chequeNo.height}%`,
+                                  ...pctStyle(extra.chequeNo),
+                                  width: `${extra.chequeNo.width}%`,
+                                  height: `${extra.chequeNo.height}%`,
                                   ...oneLineLtr("chequeNo"),
                                 },
                                 direction: "ltr",
@@ -1230,9 +1535,9 @@ export default function VoucherCanvasDialog({
                             {...richFieldProps("notes", vNotes, setVNotes, {
                               className: "absolute resize-none",
                               style: {
-                                ...pctStyle(EXTRA.notes),
-                                width: `${EXTRA.notes.width}%`,
-                                height: `${EXTRA.notes.height}%`,
+                                ...pctStyle(extra.notes),
+                                width: `${extra.notes.width}%`,
+                                height: `${extra.notes.height}%`,
                                 ...multiLineRtl("notes"),
                               },
                               direction: "rtl",
@@ -1256,7 +1561,7 @@ export default function VoucherCanvasDialog({
                             }}
                             className="absolute resize-none"
                             style={{
-                              ...pctStyle(POS.amountFixed),
+                              ...pctStyle(pos.amountFixed),
                               width: "22%",
                               height: "7%",
                               ...oneLineLtr("amount"),
@@ -1271,9 +1576,9 @@ export default function VoucherCanvasDialog({
                               singleLine: true,
                               className: "absolute resize-none",
                               style: {
-                                ...pctStyle(EXTRA.fxRate),
-                                width: `${EXTRA.fxRate.width}%`,
-                                height: `${EXTRA.fxRate.height}%`,
+                                ...pctStyle(extra.fxRate),
+                                width: `${extra.fxRate.width}%`,
+                                height: `${extra.fxRate.height}%`,
                                 ...oneLineLtr("fxRate"),
                               },
                               direction: "ltr",
@@ -1283,9 +1588,9 @@ export default function VoucherCanvasDialog({
                           <label
                             className="absolute"
                             style={{
-                              ...pctStyle(EXTRA.cb1),
-                              width: "3%",
-                              height: "3%",
+                              ...pctStyle(extra.cb1),
+                              width: `${extra.cb1?.width ?? 3}%`,
+                              height: `${extra.cb1?.height ?? 3}%`,
                               opacity: 0,
                               cursor: "pointer",
                             }}
@@ -1301,9 +1606,9 @@ export default function VoucherCanvasDialog({
                           <label
                             className="absolute"
                             style={{
-                              ...pctStyle(EXTRA.cb2),
-                              width: "3%",
-                              height: "3%",
+                              ...pctStyle(extra.cb2),
+                              width: `${extra.cb2?.width ?? 3}%`,
+                              height: `${extra.cb2?.height ?? 3}%`,
                               opacity: 0,
                               cursor: "pointer",
                             }}
@@ -1315,6 +1620,60 @@ export default function VoucherCanvasDialog({
                               style={{ width: "100%", height: "100%", margin: 0, cursor: "pointer" }}
                             />
                           </label>
+
+                          {!(isViewPage && !editMode) && !layoutMode ? (
+                            <VoucherCategoryChecklist
+                              items={liveChecklist}
+                              values={categoryChecks}
+                              showMarks={false}
+                              showHits
+                              onToggle={onToggleCategoryCheck}
+                            />
+                          ) : null}
+                        </div>
+
+                        {layoutMode ? (
+                          <div className="absolute inset-0 z-20">
+                            {layoutFields.map((f) => {
+                              const selected = layoutSelectedKey === f.key;
+                              const isCat = isCategoryLayoutField(f.key);
+                              const label = getFieldLabel(f.key, selectedCompany);
+                              return (
+                                <div
+                                  key={f.key}
+                                  onMouseDown={(e) => startLayoutDrag(e, f.key)}
+                                  className={`absolute flex items-center justify-center rounded-lg border-2 cursor-move select-none ${
+                                    selected
+                                      ? "border-amber-500 bg-amber-300/70"
+                                      : isCat
+                                        ? "border-violet-600 bg-violet-300/65"
+                                        : "border-sky-400/90 bg-sky-300/35"
+                                  }`}
+                                  style={{
+                                    top: `${f.top}%`,
+                                    left: `${f.left}%`,
+                                    width: `${Math.max(f.width || 8, isCat ? 10 : 6)}%`,
+                                    height: `${Math.max(f.height || 4, isCat ? 5 : 3)}%`,
+                                    minWidth: isCat ? 88 : 28,
+                                    minHeight: isCat ? 36 : 18,
+                                    zIndex: isCat ? 25 : 20,
+                                  }}
+                                  title={label}
+                                >
+                                  <span
+                                    className={`px-0.5 truncate max-w-full text-slate-900 ${
+                                      isCat
+                                        ? "text-[11px] font-black"
+                                        : "text-[9px] font-extrabold"
+                                    }`}
+                                  >
+                                    {label}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : null}
                         </div>
                       </div>
                     </div>

@@ -42,6 +42,8 @@ const Select = dynamic(() => import("react-select").then((m) => m.default), {
 import { COMPANIES } from "@/lib/voucher/companies";
 import { formatAmount, isAlGhadeerMain } from "@/lib/voucher/utils";
 import { formatVoucherDateDisplay } from "@/lib/voucher/voucherDate";
+import { formatCategoryChecksLabels } from "@/lib/voucher/voucherLayout";
+import { prefetchVoucherLayouts } from "@/lib/voucher/voucherLayoutCache";
 import {
   buildDailyCashPrintPackages,
   buildDailyCashPrintPreviewHtml,
@@ -59,6 +61,13 @@ const getCompanyName = (key) => {
   const found = COMPANIES.find((c) => String(c.key).toLowerCase() === String(key).toLowerCase());
   return found ? found.name : key;
 };
+
+const getCompanyByKey = (key) =>
+  COMPANIES.find((c) => String(c.key).toLowerCase() === String(key || "").toLowerCase()) ||
+  null;
+
+const isBadurSignatureKey = (key) =>
+  String(key || "").trim().toLowerCase() === "badur-signature";
 
 const getVoucherCustomerName = (row) => {
   if (!row) return "";
@@ -260,6 +269,50 @@ export default function VoucherReportsPage() {
     };
   }, [rows, meta.total]);
 
+  /** عمود الفئة: فلتر بدور سكنجر، أو «كل الشركات» إذا كانت بدور سكنجر ضمن الخيارات */
+  const showSignatureCategoryCol = useMemo(() => {
+    if (isBadurSignatureKey(companyFilter?.value)) return true;
+    if (String(companyFilter?.value || "").trim().toLowerCase() !== "all") {
+      return false;
+    }
+    return companiesOptions.some((o) => isBadurSignatureKey(o?.value));
+  }, [companyFilter?.value, companiesOptions]);
+  const signatureCompany = useMemo(
+    () => getCompanyByKey("Badur-Signature"),
+    []
+  );
+
+  /** جهّز تخطيط الحقول + صور القوالب قبل فتح الوصل */
+  useEffect(() => {
+    const keys = new Set(
+      (rows || []).map((r) => String(r?.companyKey || "").trim()).filter(Boolean)
+    );
+    if (isBadurSignatureKey(companyFilter?.value)) {
+      keys.add("Badur-Signature");
+    }
+    companiesOptions.forEach((o) => {
+      if (o?.value && o.value !== "all") keys.add(String(o.value).trim());
+    });
+    void prefetchVoucherLayouts([...keys]);
+
+    keys.forEach((key) => {
+      const company = getCompanyByKey(key);
+      if (!company) return;
+      [
+        company.paymentImgJpg,
+        company.receiptImgJpg,
+        company.paymentImgPng || company.paymentImg,
+        company.receiptImgPng || company.receiptImg,
+      ]
+        .filter(Boolean)
+        .forEach((src) => {
+          const img = new window.Image();
+          img.decoding = "async";
+          img.src = src;
+        });
+    });
+  }, [rows, companyFilter?.value, companiesOptions]);
+
   useEffect(() => {
     const loadFilters = async () => {
       try {
@@ -278,6 +331,9 @@ export default function VoucherReportsPage() {
             label: getCompanyName(key),
           })),
         ]);
+
+        // حمّل تخطيط كل الشركات المتاحة فوراً لتقليل التعليق عند فتح الوصل
+        void prefetchVoucherLayouts(apiCompanies);
 
         setModes([
           { value: "all", label: "كل الوصولات" },
@@ -1710,7 +1766,8 @@ export default function VoucherReportsPage() {
                   <col className="w-[8%]" />
                   <col className="w-[7%]" />
                   <col className="w-[6%]" />
-                  <col className="w-[12%]" />
+                  <col className={showSignatureCategoryCol ? "w-[10%]" : "w-[12%]"} />
+                  {showSignatureCategoryCol ? <col className="w-[9%]" /> : null}
                   <col className="w-[8%]" />
                   <col className="w-[7%]" />
                   <col className="w-[7%]" />
@@ -1729,6 +1786,7 @@ export default function VoucherReportsPage() {
                       "البنك",
                       "الصك",
                       "الوصف",
+                      ...(showSignatureCategoryCol ? ["الفئة"] : []),
                       "الاتاج",
                       "الهوية",
                       "التاريخ",
@@ -1885,6 +1943,33 @@ export default function VoucherReportsPage() {
                           {r.description || "-"}
                         </span>
                       </td>
+
+                      {showSignatureCategoryCol ? (
+                        <td className="px-1.5 py-2 text-right md:px-2">
+                          {(() => {
+                            const labels = formatCategoryChecksLabels(
+                              r.categoryChecks,
+                              signatureCompany || getCompanyByKey(r.companyKey)
+                            );
+                            if (!labels.length) {
+                              return <span className="text-slate-400">—</span>;
+                            }
+                            return (
+                              <div className="flex flex-wrap justify-end gap-1">
+                                {labels.map((label) => (
+                                  <span
+                                    key={`${r._id}-${label}`}
+                                    className="inline-flex rounded-md border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[10px] font-extrabold text-violet-800"
+                                    title={label}
+                                  >
+                                    {label}
+                                  </span>
+                                ))}
+                              </div>
+                            );
+                          })()}
+                        </td>
+                      ) : null}
 
                       <td
                         className="px-1.5 py-2 text-right md:px-2"

@@ -4,9 +4,8 @@ import { useMemo, useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence, MotionConfig } from "framer-motion";
 import { usePermissions } from "@/context/PermissionContext";
-import { PERMISSIONS } from "@/lib/permission";
+import { PERMISSIONS, hasPermission } from "@/lib/permission";
 import { toPng } from "html-to-image";
-import { POS, EXTRA } from "@/components/voucherConfig";
 import VoucherCanvasDialog from "@/components/VoucherCanvasDialog";
 import {
   FiPrinter,
@@ -14,6 +13,7 @@ import {
   FiFileText,
   FiArrowUpCircle,
   FiArrowDownCircle,
+  FiMove,
 } from "react-icons/fi";
 
 // Shared imports
@@ -31,9 +31,16 @@ import {
 } from "@/lib/voucher/styles";
 
 import {
-  COMPANIES
+  COMPANIES,
+  POS_NEW,
+  emptyCategoryChecks,
+  getCompanyCategoryChecklist,
+  getCompanyExtra,
 } from "@/lib/voucher/companies";
-
+import {
+  prefetchVoucherLayout,
+  prefetchVoucherLayouts,
+} from "@/lib/voucher/voucherLayoutCache";
 /** صناديق MIB — تُعرض بفاصل أسفل باقي الشركات */
 const MIB_FUND_KEYS = new Set(["Badur-Elite-MIB", "Badur-Baghdad-MIB"]);
 
@@ -42,6 +49,11 @@ export default function VoucherPage() {
   const router = useRouter();
   const checkedOnceRef = useRef(false);
   const isSuperAdmin = Array.isArray(permissions) && permissions.includes(PERMISSIONS.VIEW_ALL_REPORTS);
+  const canLayoutFields = hasPermission(permissions, PERMISSIONS.VOUCHERS_FIELD_LAYOUT);
+  const hasCategoryFunds = useMemo(
+    () => COMPANIES.some((c) => getCompanyCategoryChecklist(c).length > 0),
+    []
+  );
   const hasAnyCompanyPerm =
     Array.isArray(permissions) &&
     COMPANIES.some((c) => c.permission && permissions.includes(c.permission));
@@ -74,6 +86,9 @@ export default function VoucherPage() {
           return c.permission && permissions.includes(c.permission);
         }
         if (String(c.key).trim() === "Badur-Baghdad-Elite") {
+          return c.permission && permissions.includes(c.permission);
+        }
+        if (String(c.key).trim() === "Badur-Signature") {
           return c.permission && permissions.includes(c.permission);
         }
         if (String(c.key).trim() === "Badur-Elite-MIB") {
@@ -130,6 +145,38 @@ export default function VoucherPage() {
 
   const [cbOne, setCbOne] = useState(false);
   const [cbTwo, setCbTwo] = useState(false);
+  const [categoryChecks, setCategoryChecks] = useState({});
+
+  const categoryChecklist = useMemo(
+    () => getCompanyCategoryChecklist(selectedCompany),
+    [selectedCompany]
+  );
+
+  const dialogPOS = POS_NEW;
+  const dialogEXTRA = useMemo(
+    () => getCompanyExtra(selectedCompany, false),
+    [selectedCompany]
+  );
+
+  const toggleCategoryCheck = (key, checked) => {
+    setCategoryChecks((prev) => ({ ...prev, [key]: Boolean(checked) }));
+  };
+
+  useEffect(() => {
+    setCategoryChecks(emptyCategoryChecks(categoryChecklist));
+    setCbOne(false);
+    setCbTwo(false);
+  }, [selectedKey, categoryChecklist]);
+
+  // جهّز تخطيط الحقول مسبقاً حتى ما يتعطل فتح الوصل
+  useEffect(() => {
+    const keys = (filteredCompanies || []).map((c) => c.key).filter(Boolean);
+    if (keys.length) void prefetchVoucherLayouts(keys);
+  }, [filteredCompanies]);
+
+  useEffect(() => {
+    if (selectedKey) void prefetchVoucherLayout(selectedKey);
+  }, [selectedKey]);
 
   const [activeField, setActiveField] = useState("");
   const [isPrinting, setIsPrinting] = useState(false);
@@ -276,6 +323,7 @@ export default function VoucherPage() {
 
           cbOne,
           cbTwo,
+          categoryChecks,
 
           globalTextStyle,
           fieldStyles,
@@ -364,6 +412,8 @@ export default function VoucherPage() {
         cacheBust: true,
         pixelRatio: 2,
         backgroundColor: "#ffffff",
+        filter: (node) =>
+          !(node?.classList && node.classList.contains("voucher-ui-only")),
       });
 
       const iframe = document.createElement("iframe");
@@ -535,6 +585,7 @@ export default function VoucherPage() {
 
           cbOne,
           cbTwo,
+          categoryChecks,
 
           globalTextStyle,
           fieldStyles,
@@ -761,6 +812,16 @@ export default function VoucherPage() {
                 اختر الشركة ثم اطبع وصل صرف أو قبض بحجم A5
               </p>
             </div>
+            {canLayoutFields && hasCategoryFunds ? (
+              <button
+                type="button"
+                onClick={() => router.push("/vouchers/category-layout")}
+                className="inline-flex shrink-0 items-center gap-2 rounded-2xl bg-violet-600 px-4 py-2.5 text-sm font-extrabold text-white shadow-sm hover:bg-violet-700"
+              >
+                <FiMove />
+                جيك بوكس الفئة
+              </button>
+            ) : null}
           </motion.div>
 
           {mainCompanies.length > 0 ? (
@@ -897,8 +958,8 @@ export default function VoucherPage() {
           isPayment={isPayment}
           paperRef={paperRef}
           currentImg={currentImg}
-          POS={POS}
-          EXTRA={EXTRA}
+          POS={dialogPOS}
+          EXTRA={dialogEXTRA}
           vDateYY={vDateYY}
           vDateMM={vDateMM}
           vDateDD={vDateDD}
@@ -916,6 +977,9 @@ export default function VoucherPage() {
           vNotes={vNotes}
           cbOne={cbOne}
           cbTwo={cbTwo}
+          categoryChecklist={categoryChecklist}
+          categoryChecks={categoryChecks}
+          onToggleCategoryCheck={toggleCategoryCheck}
           voucherNo={voucherNo}
           mode={mode}
           yyRef={yyRef}

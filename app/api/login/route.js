@@ -47,18 +47,22 @@ export async function POST(req) {
       permissions,
     });
 
-    // ✅ تحديد البيئة
-    const isProd = process.env.NODE_ENV === "production";
-
-    // ✅ نحدد هل الدومين الحالي تابع لـ spc-it.com.iq لو لا
+    // ✅ secure فقط مع HTTPS الحقيقي — مو مع NODE_ENV=production على http://IP
     const host = req.headers.get("host") || "";
     const isSpcDomain = host.endsWith("spc-it.com.iq");
+    const forwardedProto = String(req.headers.get("x-forwarded-proto") || "")
+      .split(",")[0]
+      .trim()
+      .toLowerCase();
+    const isHttps =
+      forwardedProto === "https" ||
+      String(req.url || "").startsWith("https://");
 
     // ✅ cookie options
     const cookieOptions = {
       httpOnly: true,
       sameSite: "lax",
-      secure: isProd,          // بالـ prod لازم https
+      secure: isHttps,
       path: "/",
       maxAge: 60 * 60 * 24 * 365, // سنة
     };
