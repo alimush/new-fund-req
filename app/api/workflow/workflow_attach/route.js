@@ -5,6 +5,18 @@ import dbConnect from "@/lib/mongodb";
 import { getModelForCompany } from "@/models/Request";
 import User from "@/models/User";
 import { buildPublicS3Url } from "@/lib/s3/attachmentAccess";
+import { canUploadVoucherAttachment } from "@/lib/voucher/voucherStepAccess";
+import Permissions from "@/models/Permissions";
+
+async function getUserAccess(userId) {
+  if (!userId) return { allowedPerms: [] };
+  const groups = await Permissions.find({ users: userId }).select("permissions").lean();
+  const permsSet = new Set();
+  for (const g of groups) {
+    (g.permissions || []).forEach((p) => permsSet.add(String(p).trim()));
+  }
+  return { allowedPerms: Array.from(permsSet).filter(Boolean) };
+}
 
 function canEditLastStepAttachment(requestDoc, userId, stepIndex) {
   const steps = requestDoc?.workflow?.steps || [];
@@ -20,31 +32,6 @@ function canEditLastStepAttachment(requestDoc, userId, stepIndex) {
 
   const actedById = step.actedBy ? String(step.actedBy) : "";
   return !!actedById && actedById === String(userId);
-}
-
-function canActOnVoucherStep(requestDoc, userId, stepIndex) {
-  if (!requestDoc || !userId) return false;
-  const steps = requestDoc?.workflow?.steps || [];
-  if (!steps.length) return false;
-  const idx = Number(stepIndex);
-  const lastIdx = steps.length - 1;
-  if (idx !== lastIdx) return false;
-  const step = steps[idx];
-  if (!step) return false;
-
-  const isFinalApproved =
-    String(requestDoc.status || "") === "Approved" &&
-    Number(requestDoc.currentStep) === idx &&
-    String(step.status || "") === "Approved";
-  if (!isFinalApproved) return false;
-
-  const currentId = String(userId);
-  const inStep = (step.users || []).some((u) => String(u) === currentId);
-  if (!inStep) return false;
-
-  const delegatedTo = step?.voucherDelegateTo ? String(step.voucherDelegateTo) : "";
-  if (delegatedTo) return delegatedTo === currentId;
-  return true;
 }
 
 export const runtime = "nodejs";
@@ -149,7 +136,16 @@ export async function POST(req) {
       (step?.users || []).some((u) => String(u) === String(userId));
 
     if (isVoucherAttachment) {
-      if (!canActOnVoucherStep(requestDoc, userId, idx)) {
+      const { allowedPerms } = await getUserAccess(userId);
+      if (
+        !canUploadVoucherAttachment({
+          requestDoc,
+          requestCompanyKey: companyKey,
+          userId,
+          allowedPerms,
+          stepIndex: idx,
+        })
+      ) {
         return NextResponse.json(
           { success: false, error: "You are not allowed to upload voucher attachment on this step" },
           { status: 403 }

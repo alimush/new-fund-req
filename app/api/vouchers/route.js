@@ -26,6 +26,12 @@ import {
   isAlGhadeerMain,
   normalizeVoucherCurrency,
 } from "@/lib/voucher/utils";
+import {
+  canActOnVoucherStep,
+  canDelegateViewDisbursedVoucher,
+  canIssuePaymentVoucherForRequest,
+  canMainCashierEarlyIssuePayment,
+} from "@/lib/voucher/voucherStepAccess";
 
 export const runtime = "nodejs";
 
@@ -111,11 +117,22 @@ export async function GET(req) {
         companyKey: requestCompanyKey,
       })
         .select(
-          "status currentStep workflow.steps.users workflow.steps.status workflow.steps.voucherDelegateTo workflow.steps.voucherDelegateToUsername workflow.steps.voucherProcessedAt workflow.steps.voucherProcessedBy workflow.steps.voucherNo workflow.steps.voucherId"
+          "status companyKey currentStep workflow.steps.users workflow.steps.status workflow.steps.voucherDelegateTo workflow.steps.voucherDelegateToUsername workflow.steps.voucherProcessedAt workflow.steps.voucherProcessedBy workflow.steps.voucherNo workflow.steps.voucherId"
         )
         .lean();
 
       if (requestDoc && canActOnVoucherStep(requestDoc, userId)) {
+        hasAccess = true;
+      } else if (
+        requestDoc &&
+        canMainCashierEarlyIssuePayment({
+          requestDoc,
+          requestCompanyKey,
+          userId,
+          allowedPerms,
+          mode: "payment",
+        })
+      ) {
         hasAccess = true;
       } else if (requestDoc && canDelegateViewDisbursedVoucher(requestDoc, allowedPerms)) {
         hasAccess = true;
@@ -218,55 +235,6 @@ function sanitizeFieldStyles(input = {}) {
   return result;
 }
 
-function isFinalApprovedVoucherStep(requestDoc) {
-  if (!requestDoc) return false;
-  if (String(requestDoc.status || "").toLowerCase() === "cancelled") return false;
-  const steps = requestDoc?.workflow?.steps || [];
-  if (!steps.length) return false;
-  const lastIdx = steps.length - 1;
-  const step = steps[lastIdx];
-  if (!step) return false;
-  return (
-    String(requestDoc.status || "") === "Approved" &&
-    Number(requestDoc.currentStep) === lastIdx &&
-    String(step.status || "") === "Approved"
-  );
-}
-
-function canActOnVoucherStep(requestDoc, userId) {
-  if (!isFinalApprovedVoucherStep(requestDoc) || !userId) return false;
-  const steps = requestDoc.workflow.steps;
-  const step = steps[steps.length - 1];
-  const currentId = String(userId);
-  const inStep = (step.users || []).some((u) => String(u) === currentId);
-  if (!inStep) return false;
-
-  const delegatedTo = step?.voucherDelegateTo ? String(step.voucherDelegateTo) : "";
-  if (delegatedTo) return delegatedTo === currentId;
-  return true;
-}
-
-/** VOUCHER_DELEGATE: عرض وصل مصروف عبر تخويل */
-function canDelegateViewDisbursedVoucher(requestDoc, allowedPerms = []) {
-  if (!Array.isArray(allowedPerms) || !allowedPerms.includes(PERMISSIONS.VOUCHER_DELEGATE)) {
-    return false;
-  }
-  if (!isFinalApprovedVoucherStep(requestDoc)) return false;
-
-  const step = requestDoc.workflow.steps[requestDoc.workflow.steps.length - 1];
-  const wasDelegated =
-    step?.voucherDelegateTo != null ||
-    String(step?.voucherDelegateToUsername || "").trim();
-  if (!wasDelegated) return false;
-
-  return Boolean(
-    step?.voucherProcessedAt ||
-      step?.voucherProcessedBy ||
-      step?.voucherNo ||
-      step?.voucherId
-  );
-}
-
 export async function POST(req) {
   try {
     await dbConnect();
@@ -344,7 +312,7 @@ export async function POST(req) {
         companyKey: requestCompany,
       })
         .select(
-          "status currentStep workflow.steps.users workflow.steps.status workflow.steps.voucherDelegateTo workflow.steps.voucherDelegateCompanyKey"
+          "status companyKey currentStep workflow.steps.users workflow.steps.status workflow.steps.voucherDelegateTo workflow.steps.voucherDelegateCompanyKey"
         )
         .lean();
 
@@ -373,8 +341,21 @@ export async function POST(req) {
         allowedPerms.includes(PERMISSIONS.VIEW_ALL_REPORTS) ||
         hasVoucherPermissionForRequest(requestCompany, allowedPerms);
 
-    // ✅ استثناء: إذا المستخدم مخوَّل على آخر step لهذا الطلب، نسمح له حتى بدون صلاحية الوصولات
+    // ✅ استثناء: مخوَّل على آخر step، أو كاشير رئيسي لصرف مبكر
     if (!hasAccess && requestDocForVoucher && canActOnVoucherStep(requestDocForVoucher, userId)) {
+      hasAccess = true;
+    }
+    if (
+      !hasAccess &&
+      requestDocForVoucher &&
+      canMainCashierEarlyIssuePayment({
+        requestDoc: requestDocForVoucher,
+        requestCompanyKey: requestCompany,
+        userId,
+        allowedPerms,
+        mode,
+      })
+    ) {
       hasAccess = true;
     }
 
@@ -446,9 +427,21 @@ export async function POST(req) {
         );
       }
 
-      if (!canActOnVoucherStep(requestDocForVoucher, userId)) {
+      if (
+        !canIssuePaymentVoucherForRequest({
+          requestDoc: requestDocForVoucher,
+          requestCompanyKey: requestCompany,
+          userId,
+          allowedPerms,
+          mode,
+        })
+      ) {
         return NextResponse.json(
-          { success: false, error: "You are not allowed to issue voucher for this request" },
+          {
+            success: false,
+            error:
+              "لا يمكن إصدار وصل لهذا الطلب — يلزم اكتمال الموافقة أو صلاحية الكاشير الرئيسي (تخويل الصرف)",
+          },
           { status: 403 }
         );
       }

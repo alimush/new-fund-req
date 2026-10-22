@@ -140,6 +140,12 @@ export default function RequestDetails({ id, companyKey }) {
         : hasVoucherPermissionForRequest(companyKey, permissions)),
     [permissions, companyKey, isTestVoucherCompany, voucherCompanyConfig]
   );
+  /** كاشير رئيسي: تخويل صرف + صلاحية وصولات الشركة → صرف مبكر قبل اكتمال الموافقات */
+  const canEarlyIssuePayment =
+    canDelegateVoucher &&
+    canCreateVoucherForCompany &&
+    supportsVoucherWorkflow &&
+    !approvalOnlyCompany;
   const effectiveVoucherCompanyKey = useMemo(() => {
     const lastStep = workflowSteps[workflowSteps.length - 1];
     if (lastStep && currentUser) {
@@ -524,7 +530,7 @@ export default function RequestDetails({ id, companyKey }) {
   const kpiColumnCount =
     2 +
     (showExpenseType ? 1 : 0) +
-    (canViewReceipts && !approvalOnlyCompany ? 1 : 0) +
+    ((canViewReceipts || canEarlyIssuePayment) && !approvalOnlyCompany ? 1 : 0) +
     1;
 
   const requestCodeLabel =
@@ -778,7 +784,7 @@ export default function RequestDetails({ id, companyKey }) {
               iconColor={expenseTypeIsSpent ? "text-emerald-600" : "text-rose-600"}
             />
           ) : null}
-          {canViewReceipts && !approvalOnlyCompany ? (
+          {(canViewReceipts || canEarlyIssuePayment) && !approvalOnlyCompany ? (
             <KpiCard
               label="حالة الصرف"
               value={disburseStatusLabel}
@@ -795,6 +801,38 @@ export default function RequestDetails({ id, companyKey }) {
             iconColor="text-purple-600"
           />
         </motion.div>
+
+        {/* صرف مبكر — الكاشير الرئيسي قبل اكتمال الموافقات */}
+        {canEarlyIssuePayment &&
+          request &&
+          request.status !== "Cancelled" &&
+          request.status !== "Rejected" &&
+          supportsVoucherWorkflow &&
+          !approvalOnlyCompany && (
+            <div className="mb-6 rounded-3xl border border-emerald-200/80 bg-gradient-to-l from-emerald-50 via-white to-teal-50 p-4 shadow-sm ring-1 ring-emerald-100">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm font-extrabold text-emerald-900">
+                    صرف مبكر — الكاشير الرئيسي
+                  </p>
+                  <p className="mt-1 text-xs font-semibold text-emerald-800/80">
+                    {hasLinkedVoucher
+                      ? "تم ربط وصل الصرف بالطلب ويظهر كـ مصروف. عند الخطوة الأخيرة: موافقة + رفع مرفق فقط."
+                      : "يمكنك إنشاء وصل صرف وربطه بالطلب قبل اكتمال الموافقات — يظهر الطلب مصروفاً مباشرة."}
+                  </p>
+                </div>
+                <div className="flex shrink-0 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowVoucherModal(true)}
+                    className="rounded-2xl bg-slate-900 px-4 py-2.5 text-sm font-extrabold text-white shadow-sm transition hover:bg-black"
+                  >
+                    {hasLinkedVoucher ? "طباعة الوصل" : "إنشاء وصل صرف"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
         {/* =================== SUMMARY =================== */}
         <div className="mb-8 grid grid-cols-1 gap-6 lg:grid-cols-2">
@@ -1417,34 +1455,55 @@ export default function RequestDetails({ id, companyKey }) {
 
                         {/* ACTIONS */}
                         {canAct && !isCancelled && (
-                          <div className="mt-5 grid grid-cols-2 gap-2">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setActiveStep(idx);
-                                setCommentAction("approve");
-                                setCommentText("");
-                                setStepAttachment(null);
-                                setShowCommentModal(true);
-                              }}
-                              className="flex items-center justify-center gap-2 rounded-2xl bg-emerald-600 py-2.5 text-sm font-extrabold text-white shadow-sm transition hover:bg-emerald-700"
+                          <div className="mt-5 space-y-2">
+                            {isLast &&
+                            hasLinkedVoucher &&
+                            !approvalOnlyCompany &&
+                            supportsVoucherWorkflow ? (
+                              <p className="rounded-xl bg-emerald-50 px-3 py-2 text-center text-[11px] font-bold text-emerald-800 ring-1 ring-emerald-200/70">
+                                وصل الصرف مربوط مسبقاً — موافقة + رفع مرفق فقط
+                              </p>
+                            ) : null}
+                            <div
+                              className={`grid gap-2 ${
+                                isLast && hasLinkedVoucher && !approvalOnlyCompany
+                                  ? "grid-cols-1"
+                                  : "grid-cols-2"
+                              }`}
                             >
-                              <FiCheckCircle /> موافقة
-                            </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActiveStep(idx);
+                                  setCommentAction("approve");
+                                  setCommentText("");
+                                  setStepAttachment(null);
+                                  setShowCommentModal(true);
+                                }}
+                                className="flex items-center justify-center gap-2 rounded-2xl bg-emerald-600 py-2.5 text-sm font-extrabold text-white shadow-sm transition hover:bg-emerald-700"
+                              >
+                                <FiCheckCircle />{" "}
+                                {isLast && hasLinkedVoucher && !approvalOnlyCompany
+                                  ? "موافقة ورفع مرفق"
+                                  : "موافقة"}
+                              </button>
 
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setActiveStep(idx);
-                                setCommentAction("reject");
-                                setCommentText("");
-                                setStepAttachment(null);
-                                setShowCommentModal(true);
-                              }}
-                              className="flex items-center justify-center gap-2 rounded-2xl bg-red-600 py-2.5 text-sm font-extrabold text-white shadow-sm transition hover:bg-red-700"
-                            >
-                              <FiXCircle /> رفض
-                            </button>
+                              {!(isLast && hasLinkedVoucher && !approvalOnlyCompany) ? (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setActiveStep(idx);
+                                    setCommentAction("reject");
+                                    setCommentText("");
+                                    setStepAttachment(null);
+                                    setShowCommentModal(true);
+                                  }}
+                                  className="flex items-center justify-center gap-2 rounded-2xl bg-red-600 py-2.5 text-sm font-extrabold text-white shadow-sm transition hover:bg-red-700"
+                                >
+                                  <FiXCircle /> رفض
+                                </button>
+                              ) : null}
+                            </div>
                           </div>
                         )}
 
@@ -1491,7 +1550,8 @@ export default function RequestDetails({ id, companyKey }) {
                           </div>
                         )}
 
-{(showFullVoucherActions || showDelegatePrintOnly) &&
+{((showFullVoucherActions || showDelegatePrintOnly) ||
+  (isLast && canEarlyIssuePayment && hasLinkedVoucher && isFinalApproved)) &&
   isFinalApproved &&
   !approvalOnlyCompany &&
   supportsVoucherWorkflow && (
@@ -1501,7 +1561,12 @@ export default function RequestDetails({ id, companyKey }) {
           وصل صرف رقم {voucherNoLabel}
         </p>
       ) : null}
-      <motion.div className={`flex gap-3 ${showDelegatePrintOnly ? "" : ""}`}>
+      {hasLinkedVoucher ? (
+        <p className="text-center text-[11px] font-semibold text-slate-600">
+          موافقة مكتملة — طباعة أو رفع مرفق الوصل
+        </p>
+      ) : null}
+      <motion.div className="flex gap-3">
         <button
           onClick={(e) => {
             e.stopPropagation();
@@ -1509,12 +1574,13 @@ export default function RequestDetails({ id, companyKey }) {
           }}
           className="flex-1 rounded-2xl bg-slate-900 py-2.5 text-sm font-extrabold text-white shadow-sm transition hover:bg-black"
         >
-          {showPrintVoucher || showDelegatePrintOnly
+          {showPrintVoucher || showDelegatePrintOnly || hasLinkedVoucher
             ? "طباعة الوصل"
             : "إنشاء وصل صرف"}
         </button>
 
-        {showFullVoucherActions && !showDelegatePrintOnly ? (
+        {(showFullVoucherActions && !showDelegatePrintOnly) ||
+        (canEarlyIssuePayment && hasLinkedVoucher) ? (
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -1523,7 +1589,7 @@ export default function RequestDetails({ id, companyKey }) {
             className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-blue-600 py-2.5 text-sm font-extrabold text-white shadow-sm transition duration-300 hover:-translate-y-0.5 hover:bg-blue-700 hover:shadow-md"
           >
             <FiUploadCloud />
-            رفق الوصل
+            رفع مرفق
           </button>
         ) : null}
       </motion.div>
