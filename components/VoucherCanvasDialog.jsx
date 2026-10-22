@@ -45,7 +45,11 @@ import {
   DEFAULT_VOUCHER_NO_POS,
   isCategoryLayoutField,
 } from "@/lib/voucher/voucherLayout";
-import { POS_NEW, getCompanyExtra } from "@/lib/voucher/companies";
+import {
+  POS_NEW,
+  getCompanyExtra,
+  getCompanyLayoutSourceKey,
+} from "@/lib/voucher/companies";
 import {
   readCachedVoucherLayout,
   writeCachedVoucherLayout,
@@ -235,7 +239,39 @@ export default function VoucherCanvasDialog({
   const [layoutReady, setLayoutReady] = useState(true);
   const [layoutSaving, setLayoutSaving] = useState(false);
   const [layoutSelectedKey, setLayoutSelectedKey] = useState(null);
+  const [imageReady, setImageReady] = useState(false);
   const layoutDragRef = useRef(null);
+  const voucherImgRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) {
+      setImageReady(false);
+      return;
+    }
+    setImageReady(false);
+    if (!currentImg) {
+      setImageReady(true);
+      return;
+    }
+    // صورة من الكاش: onLoad قد لا يُستدعى
+    const id = requestAnimationFrame(() => {
+      const img = voucherImgRef.current;
+      if (img?.complete && img.naturalWidth > 0) {
+        setImageReady(true);
+      }
+    });
+    return () => cancelAnimationFrame(id);
+  }, [open, currentImg, selectedCompany?.key, isPayment]);
+
+  const voucherBooting = open && (!imageReady || !layoutReady);
+
+  const handleImageLoad = useCallback(
+    (e) => {
+      setImageReady(true);
+      onImageLoad?.(e);
+    },
+    [onImageLoad]
+  );
 
   const [dateModalOpen, setDateModalOpen] = useState(false);
   const [tmpDate, setTmpDate] = useState({
@@ -821,7 +857,12 @@ export default function VoucherCanvasDialog({
       POS: POS_NEW,
       EXTRA: getCompanyExtra(selectedCompany, false),
     });
-    const cached = readCachedVoucherLayout(selectedCompany.key);
+    const sourceKey = getCompanyLayoutSourceKey(selectedCompany);
+    const cached =
+      readCachedVoucherLayout(selectedCompany.key) ||
+      (sourceKey !== selectedCompany.key
+        ? readCachedVoucherLayout(sourceKey)
+        : null);
     setLayoutFields(cached || defaults);
     setLayoutReady(true);
     setLayoutLoading(false);
@@ -834,16 +875,22 @@ export default function VoucherCanvasDialog({
     let cancelled = false;
 
     const companyKey = selectedCompany.key;
+    const sourceKey = getCompanyLayoutSourceKey(selectedCompany);
     const defaults = buildDefaultVoucherLayoutFields({
       company: selectedCompany,
       POS: POS_NEW,
       EXTRA: getCompanyExtra(selectedCompany, false),
     });
-    const cached = readCachedVoucherLayout(companyKey);
+    const cached =
+      readCachedVoucherLayout(companyKey) ||
+      (sourceKey !== companyKey ? readCachedVoucherLayout(sourceKey) : null);
 
     const applyFields = (fields) => {
       if (cancelled || !fields?.length) return;
       writeCachedVoucherLayout(companyKey, fields);
+      if (sourceKey && sourceKey !== companyKey) {
+        writeCachedVoucherLayout(sourceKey, fields);
+      }
       startTransition(() => {
         if (cancelled) return;
         setLayoutFields((prev) => (layoutFieldsEqual(prev, fields) ? prev : fields));
@@ -862,11 +909,18 @@ export default function VoucherCanvasDialog({
 
     const idleId = schedule(() => {
       if (cancelled) return;
-      void prefetchVoucherLayout(companyKey)
-        .then((fields) => applyFields(fields || cached || defaults))
-        .catch(() => {
-          if (!cached) applyFields(defaults);
-        });
+      // حمّل تخطيط الصندوق (يرث من المصدر إن وُجد layoutSourceKey)
+      const load = async () => {
+        const force = sourceKey !== companyKey;
+        let fields = await prefetchVoucherLayout(companyKey, { force });
+        if (!fields?.length && sourceKey !== companyKey) {
+          fields = await prefetchVoucherLayout(sourceKey, { force: true });
+        }
+        applyFields(fields || cached || defaults);
+      };
+      void load().catch(() => {
+        if (!cached) applyFields(defaults);
+      });
     });
 
     return () => {
@@ -993,23 +1047,63 @@ export default function VoucherCanvasDialog({
 
   return (
     <AnimatePresence>
-      {open && (
+      {open && voucherBooting ? (
         <motion.div
-          className="fixed inset-0 z-[9999] overflow-y-auto bg-black/40 p-3 sm:p-4"
-          initial={{ opacity: 0 }}
+          key="voucher-boot-screen"
+          className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-950/55 p-4"
+          initial={{ opacity: 1 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          transition={{ duration: 0.22, ease: easeOut }}
+          transition={{ duration: 0.15, ease: "linear" }}
+        >
+          <div className="flex w-full max-w-xs flex-col items-center gap-4 rounded-2xl bg-white px-8 py-8 text-center shadow-[0_24px_60px_-28px_rgba(0,0,0,0.45)] ring-1 ring-slate-200/90">
+            <div
+              className="h-11 w-11 rounded-full border-[3px] border-slate-200 border-t-sky-500 animate-spin"
+              aria-hidden
+            />
+            <div>
+              <p className="text-[15px] font-extrabold text-slate-900">
+                جاري فتح الوصل
+              </p>
+              <p className="mt-1.5 text-[12px] font-semibold leading-relaxed text-slate-500">
+                {isPayment ? "وصل صرف" : "وصل قبض"}
+                {selectedCompany?.name ? ` — ${selectedCompany.name}` : ""}
+              </p>
+            </div>
+          </div>
+
+          {/* تحميل الصورة خارج الشاشة حتى يكتمل الـ onLoad */}
+          {currentImg ? (
+            <img
+              ref={voucherImgRef}
+              src={currentImg}
+              alt=""
+              className="pointer-events-none absolute h-px w-px opacity-0"
+              onLoad={handleImageLoad}
+              draggable={false}
+            />
+          ) : null}
+        </motion.div>
+      ) : null}
+
+      {open && !voucherBooting ? (
+        <motion.div
+          key="voucher-canvas-dialog"
+          className="fixed inset-0 z-[9999] overflow-y-auto bg-black/40 p-3 sm:p-4"
+          initial={{ opacity: 1 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.12, ease: "linear" }}
           onClick={onClose}
         >
           <div className="min-h-full flex items-start justify-center py-4 sm:py-6">
             <motion.div
               onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-[1180px] rounded-3xl bg-white/40 backdrop-blur-2xl ring-1 ring-white/25 shadow-[0_18px_45px_-25px_rgba(0,0,0,0.45)]"
-              initial={{ opacity: 0, y: 28, scale: 0.985 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 16, scale: 0.99 }}
-              transition={{ duration: 0.32, ease: easeOut, delay: 0.04 }}
+              className="relative w-full max-w-[1180px] rounded-3xl bg-white/40 backdrop-blur-2xl ring-1 ring-white/25 shadow-[0_18px_45px_-25px_rgba(0,0,0,0.45)] will-change-transform"
+              initial={{ y: 14 }}
+              animate={{ y: 0 }}
+              exit={{ y: 8 }}
+              transition={{ duration: 0.18, ease: easeOut }}
             >
               <div className="flex items-center justify-between px-5 py-4 bg-white/25">
                 <div className="text-sm font-extrabold text-gray-900">
@@ -1161,9 +1255,10 @@ export default function VoucherCanvasDialog({
                         }}
                       >
                         <img
+                          ref={voucherImgRef}
                           src={currentImg}
                           alt="voucher"
-                          onLoad={onImageLoad}
+                          onLoad={handleImageLoad}
                           draggable={false}
                           style={{
                             position: "absolute",
@@ -2098,7 +2193,7 @@ export default function VoucherCanvasDialog({
             </motion.div>
           </div>
         </motion.div>
-      )}
+      ) : null}
     </AnimatePresence>
   );
 }

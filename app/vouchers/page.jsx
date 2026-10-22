@@ -8,12 +8,15 @@ import { PERMISSIONS, hasPermission } from "@/lib/permission";
 import { toPng } from "html-to-image";
 import VoucherCanvasDialog from "@/components/VoucherCanvasDialog";
 import {
-  FiPrinter,
   FiChevronRight,
+  FiChevronLeft,
+  FiChevronDown,
   FiFileText,
   FiArrowUpCircle,
   FiArrowDownCircle,
   FiMove,
+  FiLayers,
+  FiX,
 } from "react-icons/fi";
 
 // Shared imports
@@ -41,41 +44,377 @@ import {
   prefetchVoucherLayout,
   prefetchVoucherLayouts,
 } from "@/lib/voucher/voucherLayoutCache";
-/** صناديق MIB — تُعرض بفاصل أسفل باقي الشركات */
+
+/** صناديق MIB — تُعرض كما هي بفاصل أسفل باقي الشركات */
 const MIB_FUND_KEYS = new Set(["Badur-Elite-MIB", "Badur-Baghdad-MIB"]);
 
+/**
+ * تجميع الصناديق تحت شركات (رئيسي / فرعي).
+ * مفاتيح غير موجودة في صلاحيات المستخدم تُخفى تلقائياً.
+ */
+const COMPANY_GROUPS = [
+  {
+    id: "al-ghadeer",
+    title: "شركة الغدير",
+    logo: "/الغدير.png",
+    funds: [
+      { key: "Al-Ghadeer", role: "main", shortLabel: "الرئيسي" },
+      { key: "Ghadeer-Najaf-Sub", role: "sub", shortLabel: "فرعي — النجف" },
+    ],
+  },
+  {
+    id: "ghadeer-karbala",
+    title: "غدير كربلاء",
+    logo: "/غدير_كربلاء.png",
+    funds: [
+      { key: "Ghadeer-Karbala", role: "main", shortLabel: "الرئيسي" },
+      { key: "Ghadeer-Karbala-Sub", role: "sub", shortLabel: "الفرعي" },
+      { key: "Ghadeer-Investments", role: "sub", shortLabel: "فرعي — استثمارات" },
+    ],
+  },
+  {
+    id: "badur-baghdad",
+    title: "بدور بغداد",
+    logo: "/بدور_بغداد.png",
+    funds: [
+      { key: "Badur-Baghdad", role: "main", shortLabel: "الرئيسي" },
+      {
+        key: "Badur-Baghdad-Safebox-Istishar",
+        role: "sub",
+        shortLabel: "أمانات المستشار",
+      },
+      { key: "Badur-Baghdad-Elite", role: "sub", shortLabel: "Elite" },
+      { key: "Badur-Signature", role: "sub", shortLabel: "سكنجر" },
+    ],
+  },
+  {
+    id: "tiba-najaf",
+    title: "طيبة النجف",
+    logo: "/طيبة_النجف.png",
+    funds: [
+      { key: "Tiba-Al-najaf", role: "main", shortLabel: "الرئيسي" },
+      { key: "Tiba-Al-najaf-Sales", role: "sub", shortLabel: "مركز المبيعات" },
+    ],
+  },
+  {
+    id: "badur-najaf",
+    title: "بدور النجف",
+    logo: "/بدور_النجف.png",
+    funds: [{ key: "Badur-Al-Najaf", role: "main", shortLabel: "الرئيسي" }],
+  },
+  {
+    id: "test-010",
+    title: "اختبار",
+    logo: "/12.png",
+    funds: [{ key: "010", role: "main", shortLabel: "010 (Test)" }],
+  },
+];
+
+const ALL_GROUP_IDS = COMPANY_GROUPS.map((g) => g.id);
+
+const MOTION_EASE = [0.22, 1, 0.36, 1];
+
+const listStagger = {
+  hidden: {},
+  show: { transition: { staggerChildren: 0.045, delayChildren: 0.04 } },
+};
+
+const fadeUp = {
+  hidden: { opacity: 0, y: 8 },
+  show: {
+    opacity: 1,
+    y: 0,
+    transition: { duration: 0.28, ease: MOTION_EASE },
+  },
+};
+
+function FundPickCard({ company, active, onSelect }) {
+  return (
+    <motion.button
+      type="button"
+      variants={fadeUp}
+      whileHover={{ y: -1 }}
+      whileTap={{ scale: 0.99 }}
+      onClick={() => onSelect(company.key)}
+      dir="rtl"
+      className={[
+        "group w-full rounded-2xl p-4 text-right outline-none transition-[box-shadow,background-color,ring-color] duration-150",
+        "bg-white ring-1",
+        active
+          ? "bg-sky-50/70 ring-sky-300 shadow-[0_6px_20px_-12px_rgba(14,165,233,0.35)]"
+          : "ring-slate-200/90 shadow-sm hover:ring-sky-200 hover:shadow-md",
+      ].join(" ")}
+    >
+      <div className="flex items-center gap-3">
+        <div
+          className={[
+            "flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl ring-1",
+            active ? "bg-white ring-sky-200" : "bg-slate-50 ring-slate-200/80",
+          ].join(" ")}
+        >
+          <img
+            src={company.logo}
+            alt={company.name}
+            className="h-full w-full object-contain p-1.5"
+            draggable={false}
+          />
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[15px] font-extrabold text-slate-900">
+            {company.name}
+          </div>
+          <p className="mt-0.5 text-[12px] font-semibold text-slate-500">
+            طباعة وصل صرف أو قبض
+          </p>
+        </div>
+
+        <div
+          className={[
+            "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition-colors duration-150",
+            active
+              ? "bg-sky-500 text-white"
+              : "bg-slate-100 text-slate-400 group-hover:bg-sky-500 group-hover:text-white",
+          ].join(" ")}
+        >
+          <FiChevronLeft className="text-base" />
+        </div>
+      </div>
+    </motion.button>
+  );
+}
+
+function CompanyGroupCard({
+  group,
+  open,
+  selectedKey,
+  onToggle,
+  onSelectFund,
+}) {
+  const hasActive = group.funds.some((f) => f.key === selectedKey);
+  const summaryParts = [];
+  if (group.mainCount) summaryParts.push(`${group.mainCount} رئيسي`);
+  if (group.subCount) summaryParts.push(`${group.subCount} فرعي`);
+
+  return (
+    <motion.div
+      variants={fadeUp}
+      className={[
+        "overflow-hidden rounded-2xl bg-white ring-1 transition-[box-shadow,ring-color] duration-200",
+        hasActive
+          ? "ring-sky-300/80 shadow-[0_8px_28px_-16px_rgba(14,165,233,0.22)]"
+          : "ring-slate-200/90 shadow-[0_2px_12px_-6px_rgba(15,23,42,0.08)]",
+      ].join(" ")}
+    >
+      <button
+        type="button"
+        onClick={() => onToggle(group.id)}
+        className="flex w-full items-center gap-3 p-4 text-right outline-none sm:gap-4 sm:p-4"
+      >
+        <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-slate-50 ring-1 ring-slate-200/80 sm:h-14 sm:w-14">
+          <img
+            src={group.logo}
+            alt={group.title}
+            className="h-full w-full object-contain p-2"
+            draggable={false}
+          />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <h2 className="text-[15px] font-extrabold text-slate-900 sm:text-base">
+              {group.title}
+            </h2>
+            {hasActive ? (
+              <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[10px] font-extrabold text-sky-700 ring-1 ring-sky-200/80">
+                نشط
+              </span>
+            ) : null}
+          </div>
+          <p className="mt-0.5 text-[12px] font-semibold text-slate-500">
+            {summaryParts.join(" · ") || `${group.funds.length} صندوق`}
+          </p>
+        </div>
+        <div
+          className={[
+            "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition-colors duration-200",
+            open
+              ? "bg-sky-500 text-white"
+              : "bg-slate-100 text-slate-500 ring-1 ring-slate-200",
+          ].join(" ")}
+        >
+          <FiChevronDown
+            className={`text-base transition-transform duration-200 ${open ? "rotate-180" : ""}`}
+          />
+        </div>
+      </button>
+
+      <AnimatePresence initial={false}>
+        {open ? (
+          <motion.div
+            key="funds"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.22, ease: MOTION_EASE }}
+            className="overflow-hidden"
+          >
+            <div className="space-y-1.5 border-t border-slate-100 bg-slate-50/70 px-3 pb-3 pt-2 sm:px-3">
+              {group.funds.map((fund) => {
+                const active = selectedKey === fund.key;
+                const isMain = fund.role === "main";
+                return (
+                  <motion.button
+                    key={fund.key}
+                    type="button"
+                    whileTap={{ scale: 0.985 }}
+                    onClick={() => onSelectFund(fund.key)}
+                    className={[
+                      "flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-right transition-[background-color,box-shadow,ring-color] duration-150",
+                      active
+                        ? "bg-sky-50 shadow-sm ring-2 ring-sky-400/70"
+                        : "bg-white/90 ring-1 ring-slate-200/80 hover:bg-white hover:ring-sky-200",
+                    ].join(" ")}
+                  >
+                    <div
+                      className={[
+                        "flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg ring-1",
+                        active
+                          ? "bg-white ring-sky-200"
+                          : "bg-slate-50 ring-slate-200/70",
+                      ].join(" ")}
+                    >
+                      <img
+                        src={fund.company.logo}
+                        alt=""
+                        className="h-full w-full object-contain p-1"
+                        draggable={false}
+                      />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center justify-end gap-1.5">
+                        <span className="text-[13px] font-extrabold text-slate-900">
+                          {fund.company.name}
+                        </span>
+                        <span
+                          className={[
+                            "rounded-full px-1.5 py-0.5 text-[10px] font-extrabold ring-1",
+                            isMain
+                              ? "bg-emerald-50 text-emerald-700 ring-emerald-200/80"
+                              : "bg-amber-50 text-amber-700 ring-amber-200/80",
+                          ].join(" ")}
+                        >
+                          {isMain ? "رئيسي" : "فرعي"}
+                        </span>
+                      </div>
+                      <p className="mt-0.5 text-[11px] font-semibold text-slate-500">
+                        {fund.shortLabel}
+                        {fund.company.receiptOnly ? " · قبض فقط" : ""}
+                      </p>
+                    </div>
+                    <div
+                      className={[
+                        "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors duration-150",
+                        active
+                          ? "bg-sky-500 text-white"
+                          : "bg-slate-100 text-slate-400",
+                      ].join(" ")}
+                    >
+                      <FiChevronRight className="text-sm" />
+                    </div>
+                  </motion.button>
+                );
+              })}
+            </div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+    </motion.div>
+  );
+}
+
+function VouchersLoadingShell({ message }) {
+  return (
+    <div className="min-h-screen bg-slate-50 px-4 py-8 sm:px-6 sm:py-10">
+      <div className="mx-auto max-w-5xl">
+        <motion.div
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.28, ease: MOTION_EASE }}
+          className="mb-7 flex items-center gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6"
+        >
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-sky-500 text-white shadow-sm shadow-sky-500/25 sm:h-14 sm:w-14">
+            <FiFileText className="text-xl sm:text-2xl" strokeWidth={2} />
+          </div>
+          <div className="min-w-0 flex-1 text-right">
+            <h1 className="text-2xl font-extrabold tracking-tight text-slate-900 sm:text-3xl">
+              إدارة الوصولات
+            </h1>
+            <p className="mt-1 text-sm font-semibold text-slate-500">{message}</p>
+          </div>
+        </motion.div>
+
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 lg:gap-4">
+          {[0, 1, 2, 3].map((i) => (
+            <motion.div
+              key={i}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{
+                duration: 0.3,
+                delay: 0.06 + i * 0.05,
+                ease: MOTION_EASE,
+              }}
+              className="h-[88px] overflow-hidden rounded-2xl border border-slate-200 bg-white"
+            >
+              <div className="h-full w-full animate-pulse bg-gradient-to-l from-slate-100 via-white to-slate-100" />
+            </motion.div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function VoucherPage() {
-  const { permissions } = usePermissions();
+  const { permissions, permissionsLoaded } = usePermissions();
   const router = useRouter();
-  const checkedOnceRef = useRef(false);
-  const isSuperAdmin = Array.isArray(permissions) && permissions.includes(PERMISSIONS.VIEW_ALL_REPORTS);
+  const isSuperAdmin =
+    permissionsLoaded &&
+    Array.isArray(permissions) &&
+    permissions.includes(PERMISSIONS.VIEW_ALL_REPORTS);
   const canLayoutFields = hasPermission(permissions, PERMISSIONS.VOUCHERS_FIELD_LAYOUT);
   const hasCategoryFunds = useMemo(
     () => COMPANIES.some((c) => getCompanyCategoryChecklist(c).length > 0),
     []
   );
   const hasAnyCompanyPerm =
+    permissionsLoaded &&
     Array.isArray(permissions) &&
     COMPANIES.some((c) => c.permission && permissions.includes(c.permission));
   const canEnter =
     isSuperAdmin ||
     hasAnyCompanyPerm ||
-    (Array.isArray(permissions) && permissions.includes(PERMISSIONS.RECEIPTS));
+    (permissionsLoaded &&
+      Array.isArray(permissions) &&
+      permissions.includes(PERMISSIONS.RECEIPTS));
 
   useEffect(() => {
-    if (!Array.isArray(permissions)) return;
-    if (checkedOnceRef.current) return;
-    checkedOnceRef.current = true;
-
+    if (!permissionsLoaded) return;
     if (!canEnter) {
       router.replace("/home");
     }
-  }, [permissions, router, canEnter]);
+  }, [permissionsLoaded, canEnter, router]);
 
-  if (!Array.isArray(permissions)) return null;
-  if (!canEnter) return null;
+  const permissionsReady = permissionsLoaded;
+  const accessDenied = permissionsReady && !canEnter;
 
   const [selectedKey, setSelectedKey] = useState(null);
+  const [showTypePicker, setShowTypePicker] = useState(false);
+
+  const selectFund = (key) => {
+    setSelectedKey(key);
+    setShowTypePicker(true);
+  };
 
   const filteredCompanies = useMemo(() => {
     if (!Array.isArray(permissions)) return [];
@@ -107,16 +446,49 @@ export default function VoucherPage() {
     });
   }, [permissions, isSuperAdmin]);
 
-  const mainCompanies = useMemo(
-    () => filteredCompanies.filter((c) => !MIB_FUND_KEYS.has(String(c.key).trim())),
-    [filteredCompanies]
-  );
+  const companyByKey = useMemo(() => {
+    const map = new Map();
+    for (const c of filteredCompanies) map.set(String(c.key).trim(), c);
+    return map;
+  }, [filteredCompanies]);
+
+  const companyGroups = useMemo(() => {
+    return COMPANY_GROUPS.map((group) => {
+      const funds = group.funds
+        .map((f) => {
+          const company = companyByKey.get(String(f.key).trim());
+          if (!company) return null;
+          return { ...f, company };
+        })
+        .filter(Boolean);
+      if (!funds.length) return null;
+      return {
+        ...group,
+        funds,
+        mainCount: funds.filter((f) => f.role === "main").length,
+        subCount: funds.filter((f) => f.role === "sub").length,
+      };
+    }).filter(Boolean);
+  }, [companyByKey]);
 
   const mibCompanies = useMemo(
     () =>
       filteredCompanies.filter((c) => MIB_FUND_KEYS.has(String(c.key).trim())),
     [filteredCompanies]
   );
+
+  const [expandedGroups, setExpandedGroups] = useState(
+    () => new Set(ALL_GROUP_IDS)
+  );
+
+  const toggleGroup = (id) => {
+    setExpandedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   const selectedCompany = useMemo(
     () => filteredCompanies.find((c) => c.key === selectedKey) || null,
@@ -175,7 +547,9 @@ export default function VoucherPage() {
   }, [filteredCompanies]);
 
   useEffect(() => {
-    if (selectedKey) void prefetchVoucherLayout(selectedKey);
+    if (!selectedKey) return;
+    // مركز المبيعات وغيرها: force ليأخذ مواضع المصدر (طيبة الرئيسي)
+    void prefetchVoucherLayout(selectedKey, { force: true });
   }, [selectedKey]);
 
   const [activeField, setActiveField] = useState("");
@@ -614,6 +988,7 @@ export default function VoucherPage() {
     if (selectedCompany.receiptOnly) return;
     setMode("payment");
     setOpenModal(true);
+    setShowTypePicker(false);
     setActiveField("date");
     setTimeout(() => yyRef.current?.focus(), 50);
   };
@@ -622,163 +997,13 @@ export default function VoucherPage() {
     if (!selectedCompany) return;
     setMode("receipt");
     setOpenModal(true);
+    setShowTypePicker(false);
     setActiveField("date");
     setTimeout(() => yyRef.current?.focus(), 50);
   };
 
-  const t = { dur: 0.18, ease: [0.2, 0.8, 0.2, 1] };
-  const wrap = {
-    hidden: { opacity: 0, y: 10 },
-    show: { opacity: 1, y: 0, transition: { duration: t.dur, ease: t.ease } },
-  };
-  const list = {
-    hidden: {},
-    show: { transition: { staggerChildren: 0.05, delayChildren: 0.03 } },
-  };
-  const card = {
-    hidden: { opacity: 0, y: 10, scale: 0.995 },
-    show: { opacity: 1, y: 0, scale: 1, transition: { duration: t.dur, ease: t.ease } },
-  };
-  const panel = {
-    hidden: { opacity: 0, y: 8 },
-    show: { opacity: 1, y: 0, transition: { duration: t.dur, ease: t.ease } },
-    exit: { opacity: 0, y: 8, transition: { duration: 0.12, ease: t.ease } },
-  };
-
-  const CompanyCard = ({ company }) => {
-    const active = selectedKey === company.key;
-
-    return (
-      <motion.button
-        type="button"
-        variants={card}
-        whileHover={{ y: -3 }}
-        whileTap={{ scale: 0.997 }}
-        onClick={() => setSelectedKey(company.key)}
-        className={[
-          "group relative w-full h-full min-h-[156px] text-right rounded-2xl p-5 md:p-6 outline-none transition-shadow duration-200",
-          "bg-white/90 backdrop-blur-md shadow-[0_2px_12px_-4px_rgba(0,0,0,0.08)]",
-          "ring-1 ring-slate-200/90 hover:ring-slate-300 hover:shadow-[0_12px_40px_-16px_rgba(15,23,42,0.18)]",
-          active
-            ? "ring-2 ring-indigo-500/80 shadow-[0_12px_36px_-14px_rgba(79,70,229,0.35)] bg-white"
-            : "",
-        ].join(" ")}
-      >
-        <div className="pointer-events-none absolute inset-x-0 top-0 h-1 rounded-t-2xl bg-gradient-to-l from-indigo-500/0 via-indigo-400/40 to-violet-500/0 opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
-        {active ? (
-          <div className="pointer-events-none absolute inset-x-0 top-0 h-1 rounded-t-2xl bg-gradient-to-l from-indigo-500 to-violet-500" />
-        ) : null}
-
-        <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between sm:gap-5">
-          <div className="flex items-center gap-4 sm:flex-1 sm:min-w-0">
-            <div
-              className={[
-                "mx-auto shrink-0 flex h-[72px] w-[72px] items-center justify-center overflow-hidden rounded-2xl bg-slate-50 shadow-inner ring-1 transition-colors duration-200 sm:mx-0",
-                active ? "ring-indigo-200 bg-indigo-50/50" : "ring-slate-200/80 group-hover:bg-white",
-              ].join(" ")}
-            >
-              <img
-                src={company.logo}
-                alt={company.name}
-                className="h-full w-full object-contain p-3"
-                draggable={false}
-              />
-            </div>
-
-            <div className="min-w-0 flex-1 text-center sm:text-right">
-              <div className="text-base font-extrabold leading-snug text-slate-900 md:text-lg">
-                {company.name}
-              </div>
-              <p className="mt-1.5 text-[13px] font-semibold leading-relaxed text-slate-500 md:text-sm">
-                اختيار الشركة ثم طباعة وصل صرف أو قبض
-              </p>
-
-              <AnimatePresence>
-                {active ? (
-                  <motion.div
-                    variants={panel}
-                    initial="hidden"
-                    animate="show"
-                    exit="exit"
-                    className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-indigo-50 px-3 py-1 text-[11px] font-extrabold text-indigo-800 ring-1 ring-indigo-100"
-                  >
-                    <span className="inline-flex h-1.5 w-1.5 rounded-full bg-indigo-500" aria-hidden />
-                    مختارة
-                  </motion.div>
-                ) : null}
-              </AnimatePresence>
-            </div>
-          </div>
-
-          <div
-            className={[
-              "flex h-11 w-11 shrink-0 items-center justify-center self-center rounded-xl text-lg font-bold transition-colors duration-200 sm:self-auto",
-              active
-                ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/25"
-                : "bg-slate-100 text-slate-500 ring-1 ring-slate-200 group-hover:bg-slate-900 group-hover:text-white group-hover:ring-slate-900",
-            ].join(" ")}
-            aria-hidden
-          >
-            <FiChevronRight className="text-xl opacity-90" />
-          </div>
-        </div>
-      </motion.button>
-    );
-  };
-
-  const ActionButton = ({ title, subtitle, onClick, accent }) => {
-    if (!selectedCompany) return null;
-
-    const barGradient =
-      accent === "payment" ? "from-emerald-400 to-teal-600" : "from-sky-400 to-blue-600";
-    const iconGradient =
-      accent === "payment"
-        ? "from-emerald-500 to-teal-600 shadow-emerald-600/35"
-        : "from-sky-500 to-blue-600 shadow-blue-600/35";
-
-    const Icon = accent === "payment" ? FiArrowUpCircle : FiArrowDownCircle;
-
-    return (
-      <motion.button
-        type="button"
-        onClick={onClick}
-        variants={card}
-        whileHover={{ y: -3 }}
-        whileTap={{ scale: 0.997 }}
-        className={[
-          "relative w-full overflow-hidden rounded-2xl p-5 text-right outline-none md:p-6",
-          "bg-white shadow-[0_2px_14px_-4px_rgba(0,0,0,0.08)] ring-1 ring-slate-200/90",
-          "transition-all duration-200 hover:ring-slate-300 hover:shadow-[0_14px_44px_-18px_rgba(15,23,42,0.2)]",
-        ].join(" ")}
-      >
-        <div
-          className={`pointer-events-none absolute inset-y-4 left-0 w-1 rounded-full bg-gradient-to-b ${barGradient}`}
-        />
-
-        <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between sm:gap-5 ps-2">
-          <div className="flex items-center gap-4 sm:flex-1">
-            <div
-              className={`mx-auto flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br text-white shadow-lg ring-2 ring-white/60 sm:mx-0 ${iconGradient}`}
-            >
-              <Icon className="text-2xl" strokeWidth={2} />
-            </div>
-
-            <div className="min-w-0 flex-1 text-center sm:text-right">
-              <div className="text-base font-extrabold text-slate-900 md:text-[17px]">{title}</div>
-              <p className="mt-1 text-[13px] font-semibold leading-relaxed text-slate-500 md:text-sm">
-                {subtitle}
-              </p>
-            </div>
-          </div>
-
-          <div
-            className={`flex h-12 w-12 shrink-0 items-center justify-center self-center rounded-xl bg-gradient-to-br text-white shadow-md sm:self-auto ${iconGradient}`}
-          >
-            <FiPrinter className="text-lg" strokeWidth={2} />
-          </div>
-        </div>
-      </motion.button>
-    );
+  const closeTypePicker = () => {
+    setShowTypePicker(false);
   };
 
   const currentImg = useMemo(() => {
@@ -786,37 +1011,58 @@ export default function VoucherPage() {
     return isPayment ? selectedCompany.paymentImg : selectedCompany.receiptImg;
   }, [selectedCompany, isPayment]);
 
+  if (!permissionsReady || accessDenied) {
+    return (
+      <MotionConfig reducedMotion="user">
+        <VouchersLoadingShell
+          message={accessDenied ? "جاري التحويل…" : "جاري التحميل…"}
+        />
+      </MotionConfig>
+    );
+  }
+
   return (
-    <MotionConfig reducedMotion="user" transition={{ duration: t.dur, ease: t.ease }}>
-      <motion.div
-        variants={wrap}
-        initial="hidden"
-        animate="show"
-        className="min-h-screen bg-gradient-to-b from-slate-100/90 via-white to-slate-50/80 px-4 py-8 sm:px-6 sm:py-10"
-      >
+    <MotionConfig reducedMotion="user">
+      <div className="min-h-screen bg-slate-50 px-4 py-8 sm:px-6 sm:py-10">
         <div className="mx-auto max-w-5xl">
           <motion.div
-            variants={panel}
-            initial="hidden"
-            animate="show"
-            className="mb-8 flex items-center gap-4 rounded-3xl border border-slate-200/80 bg-white/90 p-6 shadow-[0_8px_40px_-20px_rgba(15,23,42,0.12)] backdrop-blur-sm sm:gap-5 sm:p-7"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, ease: MOTION_EASE }}
+            className="mb-7 flex items-center gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:gap-5 sm:p-6"
           >
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-lg shadow-indigo-500/30 ring-2 ring-white/90 sm:h-14 sm:w-14">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-sky-500 text-white shadow-sm shadow-sky-500/25 sm:h-14 sm:w-14">
               <FiFileText className="text-xl sm:text-2xl" strokeWidth={2} />
             </div>
             <div className="min-w-0 flex-1 text-right">
               <h1 className="text-2xl font-extrabold tracking-tight text-slate-900 sm:text-3xl">
                 إدارة الوصولات
               </h1>
-              <p className="mt-2 text-sm font-semibold leading-relaxed text-slate-600 sm:text-base">
-                اختر الشركة ثم اطبع وصل صرف أو قبض بحجم A5
+              <p className="mt-1 text-sm font-semibold leading-relaxed text-slate-600">
+                اختر الشركة ثم الصندوق واطبع وصل صرف أو قبض
               </p>
+              {companyGroups.length > 0 || mibCompanies.length > 0 ? (
+                <p className="mt-2 inline-flex flex-wrap items-center justify-end gap-2 text-[11px] font-bold text-slate-500">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 ring-1 ring-slate-200">
+                    <FiLayers className="text-slate-400" />
+                    {companyGroups.length} شركة
+                  </span>
+                  <span className="rounded-full bg-slate-100 px-2.5 py-1 ring-1 ring-slate-200">
+                    {filteredCompanies.filter((c) => !MIB_FUND_KEYS.has(c.key)).length} صندوق
+                  </span>
+                  {mibCompanies.length > 0 ? (
+                    <span className="rounded-full bg-sky-50 px-2.5 py-1 text-sky-700 ring-1 ring-sky-100">
+                      {mibCompanies.length} MIB
+                    </span>
+                  ) : null}
+                </p>
+              ) : null}
             </div>
             {canLayoutFields && hasCategoryFunds ? (
               <button
                 type="button"
                 onClick={() => router.push("/vouchers/category-layout")}
-                className="inline-flex shrink-0 items-center gap-2 rounded-2xl bg-violet-600 px-4 py-2.5 text-sm font-extrabold text-white shadow-sm hover:bg-violet-700"
+                className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-sky-600 px-4 py-2.5 text-sm font-extrabold text-white shadow-sm hover:bg-sky-700"
               >
                 <FiMove />
                 جيك بوكس الفئة
@@ -824,130 +1070,259 @@ export default function VoucherPage() {
             ) : null}
           </motion.div>
 
-          {mainCompanies.length > 0 ? (
+          {companyGroups.length > 0 ? (
             <>
-              <p className="mb-4 text-right text-xs font-extrabold uppercase tracking-wider text-slate-400">
-                الشركات
-              </p>
               <motion.div
-                variants={list}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 0.25, delay: 0.05 }}
+                className="mb-3 flex items-end justify-between gap-3"
+                dir="rtl"
+              >
+                <div className="text-right">
+                  <p className="text-xs font-extrabold text-slate-400">
+                    الشركات والصناديق
+                  </p>
+                  <p className="mt-0.5 text-[12px] font-semibold text-slate-500">
+                    رئيسي وفرعي حسب صلاحياتك
+                  </p>
+                </div>
+                <div className="flex shrink-0 gap-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setExpandedGroups(new Set(companyGroups.map((g) => g.id)))
+                    }
+                    className="rounded-lg bg-white px-3 py-1.5 text-[11px] font-extrabold text-slate-700 ring-1 ring-slate-200 hover:bg-sky-50 hover:text-sky-800 hover:ring-sky-200"
+                  >
+                    فتح الكل
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setExpandedGroups(new Set())}
+                    className="rounded-lg bg-white px-3 py-1.5 text-[11px] font-extrabold text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50"
+                  >
+                    طي الكل
+                  </button>
+                </div>
+              </motion.div>
+              <motion.div
+                variants={listStagger}
                 initial="hidden"
                 animate="show"
-                className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5 xl:grid-cols-3 xl:gap-5 auto-rows-fr"
+                className="grid grid-cols-1 gap-3 lg:grid-cols-2 lg:gap-4"
               >
-                {mainCompanies.map((company) => (
-                  <CompanyCard key={company.key} company={company} />
+                {companyGroups.map((group) => (
+                  <CompanyGroupCard
+                    key={group.id}
+                    group={group}
+                    open={expandedGroups.has(group.id)}
+                    selectedKey={showTypePicker ? null : selectedKey}
+                    onToggle={toggleGroup}
+                    onSelectFund={selectFund}
+                  />
                 ))}
               </motion.div>
             </>
           ) : null}
 
           {mibCompanies.length > 0 ? (
-            <div className={mainCompanies.length > 0 ? "mt-10" : ""}>
-              <div className="mb-6 flex items-center gap-4" dir="rtl">
-                <div className="h-px flex-1 bg-gradient-to-l from-slate-300 via-slate-200 to-transparent" />
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.28, delay: 0.12, ease: MOTION_EASE }}
+              className={companyGroups.length > 0 ? "mt-8" : ""}
+            >
+              <div className="mb-3 flex items-center gap-3" dir="rtl">
+                <div className="h-px flex-1 bg-slate-200" />
                 <div className="shrink-0 text-center">
-                  <p className="text-sm font-extrabold text-slate-800">
-                    صناديق MIB
-                  </p>
-                  <p className="mt-0.5 text-[11px] font-bold text-slate-500">
+                  <p className="text-sm font-extrabold text-slate-800">صناديق MIB</p>
+                  <p className="mt-0.5 text-[11px] font-semibold text-slate-500">
                     بدور ايليت وبدور بغداد
                   </p>
                 </div>
-                <div className="h-px flex-1 bg-gradient-to-r from-slate-300 via-slate-200 to-transparent" />
+                <div className="h-px flex-1 bg-slate-200" />
               </div>
 
-              <div className="rounded-3xl border border-slate-200/90 bg-slate-50/70 p-4 sm:p-5">
-                <motion.div
-                  variants={list}
-                  initial="hidden"
-                  animate="show"
-                  className="mx-auto grid max-w-3xl grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5"
-                >
-                  {mibCompanies.map((company) => (
-                    <CompanyCard key={company.key} company={company} />
-                  ))}
-                </motion.div>
-              </div>
-            </div>
+              <motion.div
+                variants={listStagger}
+                initial="hidden"
+                animate="show"
+                className="grid grid-cols-1 gap-3 sm:grid-cols-2"
+              >
+                {mibCompanies.map((company) => (
+                  <FundPickCard
+                    key={company.key}
+                    company={company}
+                    active={!showTypePicker && selectedKey === company.key}
+                    onSelect={selectFund}
+                  />
+                ))}
+              </motion.div>
+            </motion.div>
           ) : null}
 
-          <div className="mt-8">
-            <AnimatePresence mode="wait" initial={false}>
-              {!selectedCompany ? (
-                <motion.div
-                  key="hint"
-                  variants={panel}
-                  initial="hidden"
-                  animate="show"
-                  exit="exit"
-                  className="rounded-2xl border border-dashed border-slate-300/90 bg-slate-50/90 px-5 py-8 text-center"
-                >
-                  <p className="mx-auto max-w-md text-sm font-bold leading-relaxed text-slate-600">
-                    اختر شركة من الأعلى لتفعيل أزرار طباعة وصل الصرف والقبض
-                  </p>
-                </motion.div>
-              ) : (
-                <motion.div
-                  key="actions"
-                  variants={panel}
-                  initial="hidden"
-                  animate="show"
-                  exit="exit"
-                  className="overflow-hidden rounded-3xl border border-slate-200/90 bg-white/95 p-6 shadow-[0_12px_48px_-24px_rgba(15,23,42,0.18)] backdrop-blur-sm md:p-7"
-                >
-                  <div className="mb-6 flex flex-col gap-4 border-b border-slate-100 pb-5 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="text-right">
-                      <p className="text-[11px] font-extrabold uppercase tracking-wide text-slate-400">
-                        الشركة المفعّلة
-                      </p>
-                      <p className="mt-1 text-lg font-black text-slate-900">{selectedCompany.name}</p>
-                    </div>
+          <motion.p
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.25, delay: 0.18 }}
+            className="mt-5 text-center text-[12px] font-semibold text-slate-400"
+          >
+            اختر صندوقاً لفتح نافذة صرف أو قبض
+          </motion.p>
+        </div>
 
-                    <motion.button
-                      type="button"
-                      onClick={() => setSelectedKey(null)}
-                      whileHover={{ y: -1 }}
-                      whileTap={{ scale: 0.995 }}
-                      className="rounded-xl bg-slate-100 px-4 py-2.5 text-xs font-extrabold text-slate-800 ring-1 ring-slate-200/90 transition hover:bg-white"
+        {/* بوب أب اختيار صرف / قبض — ظهور فوري بدون AnimatePresence لتفادي وميض الإغلاق */}
+        {showTypePicker && selectedCompany ? (
+            <div
+              className="fixed inset-0 z-[80] flex items-end justify-center p-0 sm:items-center sm:p-6"
+            >
+              <button
+                type="button"
+                aria-label="إغلاق"
+                className="absolute inset-0 bg-slate-900/40"
+                onClick={closeTypePicker}
+              />
+
+              <div
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="voucher-type-picker-title"
+                className="relative z-10 w-full max-w-xl overflow-hidden rounded-t-3xl bg-white shadow-[0_24px_64px_-24px_rgba(15,23,42,0.28)] ring-1 ring-slate-200/90 sm:rounded-3xl"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-center gap-4 border-b border-slate-100 px-5 py-4 sm:px-6 sm:py-5">
+                  <button
+                    type="button"
+                    onClick={closeTypePicker}
+                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-600 ring-1 ring-slate-200/80 transition hover:bg-slate-200/80"
+                  >
+                    <FiX className="text-lg" />
+                  </button>
+
+                  <div className="min-w-0 flex-1 text-right">
+                    <p className="text-[11px] font-extrabold tracking-wide text-slate-400">
+                      اختيار نوع الوصل
+                    </p>
+                    <h2
+                      id="voucher-type-picker-title"
+                      className="mt-0.5 truncate text-lg font-black text-slate-900"
                     >
-                      تغيير الشركة
-                    </motion.button>
+                      {selectedCompany.name}
+                    </h2>
+                    <div className="mt-1.5 flex flex-wrap items-center justify-end gap-2">
+                      {(() => {
+                        const meta = COMPANY_GROUPS.flatMap((g) =>
+                          g.funds.map((f) => ({ ...f, groupTitle: g.title }))
+                        ).find((f) => f.key === selectedCompany.key);
+                        if (!meta) {
+                          return MIB_FUND_KEYS.has(selectedCompany.key) ? (
+                            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-extrabold text-slate-600 ring-1 ring-slate-200">
+                              MIB
+                            </span>
+                          ) : null;
+                        }
+                        return (
+                          <>
+                            <span
+                              className={[
+                                "rounded-full px-2 py-0.5 text-[10px] font-extrabold ring-1",
+                                meta.role === "main"
+                                  ? "bg-slate-100 text-slate-700 ring-slate-200"
+                                  : "bg-slate-100 text-slate-600 ring-slate-200",
+                              ].join(" ")}
+                            >
+                              {meta.role === "main" ? "رئيسي" : "فرعي"}
+                            </span>
+                            <span className="text-[11px] font-bold text-slate-400">
+                              {meta.groupTitle}
+                            </span>
+                          </>
+                        );
+                      })()}
+                    </div>
                   </div>
 
-                  <p className="mb-4 text-right text-xs font-extrabold uppercase tracking-wider text-slate-400">
-                    الطباعة
+                  <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-slate-50 ring-1 ring-slate-200/80">
+                    <img
+                      src={selectedCompany.logo}
+                      alt=""
+                      className="h-full w-full object-contain p-2"
+                      draggable={false}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-3 bg-slate-50/50 p-4 sm:p-5">
+                  <p className="text-center text-[12px] font-bold text-slate-500">
+                    {selectedCompany.receiptOnly
+                      ? "هذا الصندوق يدعم وصل القبض فقط"
+                      : "اختر نوع الوصل — نافذة الإدخال ثم الطباعة بحجم A5"}
                   </p>
-                  <motion.div
-                    variants={list}
-                    initial="hidden"
-                    animate="show"
-                    className={`grid grid-cols-1 gap-4 md:gap-5 ${
-                      selectedCompany.receiptOnly
-                        ? "md:grid-cols-1 max-w-xl mx-auto"
-                        : "md:grid-cols-2"
+
+                  <div
+                    className={`grid grid-cols-1 gap-3 ${
+                      selectedCompany.receiptOnly ? "max-w-md mx-auto w-full" : "sm:grid-cols-2"
                     }`}
                   >
                     {!selectedCompany.receiptOnly ? (
-                      <ActionButton
-                        accent="payment"
-                        title="وصل صرف"
-                        subtitle="نافذة الإدخال ثم الطباعة بحجم A5"
+                      <button
+                        type="button"
                         onClick={openPayment}
-                      />
+                        className="group relative w-full overflow-hidden rounded-2xl bg-white p-5 text-right shadow-[0_2px_14px_-4px_rgba(0,0,0,0.08)] ring-1 ring-slate-200/90 transition hover:-translate-y-0.5 hover:ring-slate-300 hover:shadow-[0_14px_44px_-18px_rgba(15,23,42,0.16)]"
+                      >
+                        <div className="pointer-events-none absolute inset-y-4 left-0 w-1 rounded-full bg-gradient-to-b from-emerald-400 to-teal-600" />
+                        <div className="relative flex items-center gap-4 ps-2">
+                          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-md shadow-emerald-600/25 ring-2 ring-white/60">
+                            <FiArrowUpCircle className="text-xl" strokeWidth={2} />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-base font-extrabold text-slate-900">وصل صرف</p>
+                            <p className="mt-1 text-[12px] font-semibold leading-relaxed text-slate-500">
+                              نافذة الإدخال ثم الطباعة بحجم A5
+                            </p>
+                          </div>
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-500 ring-1 ring-slate-200 transition group-hover:bg-slate-900 group-hover:text-white group-hover:ring-slate-900">
+                            <FiChevronRight className="text-lg" />
+                          </div>
+                        </div>
+                      </button>
                     ) : null}
-                    <ActionButton
-                      accent="receipt"
-                      title="وصل قبض"
-                      subtitle="نافذة الإدخال ثم الطباعة بحجم A5"
+
+                    <button
+                      type="button"
                       onClick={openReceipt}
-                    />
-                  </motion.div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-        </div>
+                      className="group relative w-full overflow-hidden rounded-2xl bg-white p-5 text-right shadow-[0_2px_14px_-4px_rgba(0,0,0,0.08)] ring-1 ring-slate-200/90 transition hover:-translate-y-0.5 hover:ring-slate-300 hover:shadow-[0_14px_44px_-18px_rgba(15,23,42,0.16)]"
+                    >
+                      <div className="pointer-events-none absolute inset-y-4 left-0 w-1 rounded-full bg-gradient-to-b from-sky-400 to-blue-600" />
+                      <div className="relative flex items-center gap-4 ps-2">
+                        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-sky-500 to-blue-600 text-white shadow-md shadow-blue-600/25 ring-2 ring-white/60">
+                          <FiArrowDownCircle className="text-xl" strokeWidth={2} />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-base font-extrabold text-slate-900">وصل قبض</p>
+                          <p className="mt-1 text-[12px] font-semibold leading-relaxed text-slate-500">
+                            نافذة الإدخال ثم الطباعة بحجم A5
+                          </p>
+                        </div>
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-500 ring-1 ring-slate-200 transition group-hover:bg-slate-900 group-hover:text-white group-hover:ring-slate-900">
+                          <FiChevronRight className="text-lg" />
+                        </div>
+                      </div>
+                    </button>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={closeTypePicker}
+                    className="w-full rounded-2xl bg-white py-3 text-sm font-extrabold text-slate-700 ring-1 ring-slate-200/90 transition hover:bg-slate-50"
+                  >
+                    إلغاء
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : null}
 
         <VoucherCanvasDialog
           open={openModal}
@@ -1038,7 +1413,7 @@ export default function VoucherPage() {
           fieldColorRuns={fieldColorRuns}
           setFieldColorRuns={setFieldColorRuns}
         />
-      </motion.div>
+      </div>
     </MotionConfig>
   );
 }

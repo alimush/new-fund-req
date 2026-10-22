@@ -7,6 +7,7 @@ import {
   COMPANIES,
   POS_NEW,
   getCompanyExtra,
+  getCompanyLayoutSourceKey,
 } from "@/lib/voucher/companies";
 import { PERMISSIONS, hasPermission } from "@/lib/permission";
 import {
@@ -91,7 +92,20 @@ export async function GET(req) {
       EXTRA,
     });
 
-    const doc = await resolveCompanyLayoutDoc(company.key);
+    // إذا معرّف layoutSourceKey → دائماً نفس X/Y للصندوق المصدر (مثل طيبة الرئيسي)
+    const sourceKey = getCompanyLayoutSourceKey(company);
+    let doc = null;
+    let layoutInheritedFrom = null;
+    if (sourceKey && sourceKey !== company.key) {
+      const sourceDoc = await resolveCompanyLayoutDoc(sourceKey);
+      if (sourceDoc?.fields?.length) {
+        doc = sourceDoc;
+        layoutInheritedFrom = sourceKey;
+      }
+    }
+    if (!doc?.fields?.length) {
+      doc = await resolveCompanyLayoutDoc(company.key);
+    }
     const fields = mergeVoucherLayoutFields(defaults, doc?.fields || []);
 
     return NextResponse.json({
@@ -103,6 +117,7 @@ export async function GET(req) {
         fields,
         updatedAt: doc?.updatedAt || null,
         fromDb: Boolean(doc),
+        layoutInheritedFrom,
       },
     });
   } catch (err) {
