@@ -275,6 +275,11 @@ export async function GET(req, { params }) {
           stepDisbursed: disbursement.stepDisbursed,
           voucherNo: disbursement.voucherNo,
           voucherId: disbursement.voucherId,
+          voucherNos: disbursement.voucherNos || [],
+          voucherNosLabel: disbursement.voucherNosLabel || "",
+          voucherIds: disbursement.voucherIds || [],
+          voucherCount: disbursement.voucherCount || 0,
+          vouchers: disbursement.voucherItems || [],
         },
       },
     });

@@ -26,6 +26,9 @@ import {
   FiType,
   FiMinus,
   FiPlus,
+  FiLink,
+  FiX,
+  FiLoader,
 } from "react-icons/fi";
 
 import { FaMoneyBillWave } from "react-icons/fa6";
@@ -186,6 +189,134 @@ export default function VoucherReportsPage() {
   const canExportEmptyForm =
     Array.isArray(permissions) &&
     permissions.includes(PERMISSIONS.MANAGE_PERMISSIONS);
+
+  const canLinkRequest =
+    Array.isArray(permissions) &&
+    (permissions.includes(PERMISSIONS.VOUCHER_DELEGATE) ||
+      permissions.includes(PERMISSIONS.VIEW_ALL_REPORTS) ||
+      permissions.includes(PERMISSIONS.MANAGE_PERMISSIONS));
+
+  const [linkModal, setLinkModal] = useState({
+    open: false,
+    voucher: null,
+  });
+  const [linkQuery, setLinkQuery] = useState("");
+  const [linkResults, setLinkResults] = useState([]);
+  const [linkSearching, setLinkSearching] = useState(false);
+  const [linkBusyId, setLinkBusyId] = useState("");
+  const [linkError, setLinkError] = useState("");
+  const [linkOkMsg, setLinkOkMsg] = useState("");
+  const linkSearchTimer = useRef(null);
+
+  const openLinkRequestModal = useCallback((voucherRow) => {
+    if (!voucherRow?._id) return;
+    setLinkModal({ open: true, voucher: voucherRow });
+    setLinkQuery("");
+    setLinkResults([]);
+    setLinkError("");
+    setLinkOkMsg("");
+    setLinkBusyId("");
+  }, []);
+
+  const closeLinkRequestModal = useCallback(() => {
+    setLinkModal({ open: false, voucher: null });
+    setLinkQuery("");
+    setLinkResults([]);
+    setLinkError("");
+    setLinkOkMsg("");
+    setLinkBusyId("");
+  }, []);
+
+  const searchRequestsForLink = useCallback(async (q) => {
+    const query = String(q || "").trim();
+    if (!query) {
+      setLinkResults([]);
+      setLinkSearching(false);
+      return;
+    }
+    setLinkSearching(true);
+    setLinkError("");
+    try {
+      const res = await fetch(
+        `/api/vouchers/link-request?q=${encodeURIComponent(query)}`,
+        { credentials: "include", cache: "no-store" }
+      );
+      const json = await res.json();
+      if (!res.ok || !json?.success) {
+        setLinkResults([]);
+        setLinkError(json?.error || "فشل البحث");
+        return;
+      }
+      setLinkResults(Array.isArray(json.data) ? json.data : []);
+    } catch (err) {
+      setLinkResults([]);
+      setLinkError(err?.message || "فشل البحث");
+    } finally {
+      setLinkSearching(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!linkModal.open) return undefined;
+    if (linkSearchTimer.current) clearTimeout(linkSearchTimer.current);
+    linkSearchTimer.current = setTimeout(() => {
+      void searchRequestsForLink(linkQuery);
+    }, 280);
+    return () => {
+      if (linkSearchTimer.current) clearTimeout(linkSearchTimer.current);
+    };
+  }, [linkQuery, linkModal.open, searchRequestsForLink]);
+
+  const confirmLinkRequest = useCallback(
+    async (requestRow) => {
+      const voucher = linkModal.voucher;
+      if (!voucher?._id || !requestRow?._id) return;
+      setLinkBusyId(String(requestRow._id));
+      setLinkError("");
+      setLinkOkMsg("");
+      try {
+        const res = await fetch("/api/vouchers/link-request", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            voucherId: voucher._id,
+            requestId: requestRow._id,
+            requestCompanyKey: requestRow.companyKey,
+          }),
+        });
+        const json = await res.json();
+        if (!res.ok || !json?.success) {
+          setLinkError(json?.error || "فشل ربط الوصل بالطلب");
+          return;
+        }
+        const href =
+          json?.requestLink?.href ||
+          `/requests/${encodeURIComponent(requestRow.companyKey)}/${encodeURIComponent(requestRow._id)}`;
+        const requestCode = String(requestRow.requestCode || "").trim();
+        setRows((prev) =>
+          prev.map((row) =>
+            String(row._id) === String(voucher._id)
+              ? {
+                  ...row,
+                  requestId: requestRow._id,
+                  requestCode,
+                  requestCompanyKey: requestRow.companyKey,
+                  requestLink: { href, requestCode },
+                }
+              : row
+          )
+        );
+        setLinkOkMsg(json.message || "تم الربط");
+        setTimeout(() => closeLinkRequestModal(), 700);
+      } catch (err) {
+        setLinkError(err?.message || "فشل ربط الوصل بالطلب");
+      } finally {
+        setLinkBusyId("");
+      }
+    },
+    [linkModal.voucher, closeLinkRequestModal]
+  );
 
   useEffect(() => setPortalReady(true), []);
 
@@ -1808,7 +1939,11 @@ export default function VoucherReportsPage() {
                       key={r._id}
                       whileHover={{ backgroundColor: "rgba(248,250,252,0.95)" }}
                       transition={{ duration: 0.12 }}
-                      onClick={() =>
+                      onClick={() => {
+                        if (canLinkRequest && !r.requestLink?.href) {
+                          openLinkRequestModal(r);
+                          return;
+                        }
                         window.open(
                           `/vouchers/view?company=${encodeURIComponent(
                             r.companyKey
@@ -1816,11 +1951,16 @@ export default function VoucherReportsPage() {
                             r.mode
                           )}&id=${encodeURIComponent(r._id)}`,
                           "_blank"
-                        )
-                      }
+                        );
+                      }}
                       className={`cursor-pointer transition-colors hover:bg-slate-50 ${
                         idx % 2 === 0 ? "bg-white/50" : "bg-white/30"
                       }`}
+                      title={
+                        canLinkRequest && !r.requestLink?.href
+                          ? "اضغط لربط الوصل بطلب صرف"
+                          : "فتح الوصل"
+                      }
                     >
                       <td
                         className="px-1.5 py-2 text-right font-extrabold text-slate-900 md:px-2"
@@ -1835,8 +1975,21 @@ export default function VoucherReportsPage() {
                         <VoucherModeBadge mode={r.mode} compact />
                       </td>
 
-                      <td className="px-1.5 py-2 text-right font-mono text-slate-900 md:px-2">
-                        <span className="break-all">
+                      <td
+                        className="px-1.5 py-2 text-right font-mono text-slate-900 md:px-2"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          window.open(
+                            `/vouchers/view?company=${encodeURIComponent(
+                              r.companyKey
+                            )}&mode=${encodeURIComponent(
+                              r.mode
+                            )}&id=${encodeURIComponent(r._id)}`,
+                            "_blank"
+                          );
+                        }}
+                      >
+                        <span className="break-all underline-offset-2 hover:underline">
                           {r.voucherNo || String(r.seq ?? "").padStart(5, "0")}
                         </span>
                       </td>
@@ -1845,32 +1998,48 @@ export default function VoucherReportsPage() {
                         className="px-1.5 py-2 text-right md:px-2"
                         onClick={(e) => e.stopPropagation()}
                       >
-                        {r.requestLink?.href ? (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              window.open(
-                                r.requestLink.href,
-                                "_blank",
-                                "noopener,noreferrer"
-                              );
-                            }}
-                            title={
-                              r.requestLink.requestCode
-                                ? `طلب ${r.requestLink.requestCode}`
-                                : "فتح طلب الصرف"
-                            }
-                            className="inline-flex max-w-full items-center gap-1 rounded-lg border border-sky-200 bg-sky-50 px-1.5 py-1 text-[10px] font-extrabold text-sky-800 transition hover:bg-sky-100 md:text-[11px]"
-                          >
-                            <FiExternalLink className="shrink-0 text-xs" />
-                            <span className="truncate">
-                              {r.requestLink.requestCode || "طلب"}
-                            </span>
-                          </button>
-                        ) : (
-                          <span className="text-slate-400">—</span>
-                        )}
+                        <div className="flex flex-col items-end gap-1">
+                          {r.requestLink?.href ? (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                window.open(
+                                  r.requestLink.href,
+                                  "_blank",
+                                  "noopener,noreferrer"
+                                );
+                              }}
+                              title={
+                                r.requestLink.requestCode
+                                  ? `طلب ${r.requestLink.requestCode}`
+                                  : "فتح طلب الصرف"
+                              }
+                              className="inline-flex max-w-full items-center gap-1 rounded-lg border border-sky-200 bg-sky-50 px-1.5 py-1 text-[10px] font-extrabold text-sky-800 transition hover:bg-sky-100 md:text-[11px]"
+                            >
+                              <FiExternalLink className="shrink-0 text-xs" />
+                              <span className="truncate">
+                                {r.requestLink.requestCode || "طلب"}
+                              </span>
+                            </button>
+                          ) : (
+                            <span className="text-slate-400">—</span>
+                          )}
+                          {canLinkRequest && !r.requestLink?.href ? (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openLinkRequestModal(r);
+                              }}
+                              className="inline-flex max-w-full items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-1.5 py-1 text-[10px] font-extrabold text-emerald-800 transition hover:bg-emerald-100 md:text-[11px]"
+                              title="بحث وربط طلب بالوصل"
+                            >
+                              <FiLink className="shrink-0 text-xs" />
+                              <span className="truncate">ربط طلب</span>
+                            </button>
+                          ) : null}
+                        </div>
                       </td>
 
                       <td className="px-1.5 py-2 text-right font-extrabold md:px-2">
@@ -2123,6 +2292,149 @@ export default function VoucherReportsPage() {
             لا توجد نتائج — اضغط «بحث»
           </motion.div>
         )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {linkModal.open && linkModal.voucher ? (
+          <motion.div
+            className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/40 p-4"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={closeLinkRequestModal}
+          >
+            <motion.div
+              initial={{ y: 12, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 8, opacity: 0 }}
+              transition={{ duration: 0.18 }}
+              onClick={(e) => e.stopPropagation()}
+              className="relative w-full max-w-lg overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl"
+              dir="rtl"
+            >
+              <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
+                <div className="min-w-0 text-right">
+                  <p className="text-[11px] font-extrabold text-slate-400">
+                    ربط وصل بطلب صرف
+                  </p>
+                  <h3 className="mt-0.5 truncate text-base font-black text-slate-900">
+                    وصل{" "}
+                    {linkModal.voucher.voucherNo ||
+                      String(linkModal.voucher.seq ?? "").padStart(5, "0")}
+                  </h3>
+                  <p className="mt-0.5 text-[12px] font-semibold text-slate-500">
+                    {getCompanyName(linkModal.voucher.companyKey)}
+                    {linkModal.voucher.amount != null
+                      ? ` · ${formatAmount(linkModal.voucher.amount)} ${
+                          linkModal.voucher.currency || ""
+                        }`
+                      : ""}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeLinkRequestModal}
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-600 ring-1 ring-slate-200"
+                >
+                  <FiX className="text-lg" />
+                </button>
+              </div>
+
+              <div className="space-y-3 p-5">
+                <label className="block text-right text-[12px] font-extrabold text-slate-600">
+                  ابحث برمز الطلب
+                </label>
+                <div className="relative">
+                  <FiSearch className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    autoFocus
+                    value={linkQuery}
+                    onChange={(e) => setLinkQuery(e.target.value)}
+                    placeholder="مثال: REQ-123 أو جزء من الرمز…"
+                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-3 pr-10 pl-3 text-sm font-bold text-slate-900 outline-none ring-sky-200 focus:bg-white focus:ring-2"
+                  />
+                </div>
+
+                {linkError ? (
+                  <p className="rounded-xl bg-red-50 px-3 py-2 text-[12px] font-bold text-red-700 ring-1 ring-red-100">
+                    {linkError}
+                  </p>
+                ) : null}
+                {linkOkMsg ? (
+                  <p className="rounded-xl bg-emerald-50 px-3 py-2 text-[12px] font-bold text-emerald-800 ring-1 ring-emerald-100">
+                    {linkOkMsg}
+                  </p>
+                ) : null}
+
+                <div className="max-h-[340px] overflow-y-auto rounded-2xl border border-slate-100 bg-slate-50/60">
+                  {linkSearching ? (
+                    <div className="flex items-center justify-center gap-2 py-10 text-sm font-bold text-slate-500">
+                      <FiLoader className="animate-spin" />
+                      جاري البحث…
+                    </div>
+                  ) : !String(linkQuery || "").trim() ? (
+                    <p className="px-4 py-10 text-center text-[13px] font-semibold text-slate-400">
+                      اكتب رمز الطلب للبحث
+                    </p>
+                  ) : linkResults.length === 0 ? (
+                    <p className="px-4 py-10 text-center text-[13px] font-semibold text-slate-400">
+                      لا توجد نتائج
+                    </p>
+                  ) : (
+                    <ul className="divide-y divide-slate-100">
+                      {linkResults.map((req) => {
+                        const busy = String(linkBusyId) === String(req._id);
+                        return (
+                          <li key={req._id}>
+                            <button
+                              type="button"
+                              disabled={Boolean(linkBusyId)}
+                              onClick={() => confirmLinkRequest(req)}
+                              className="flex w-full items-center gap-3 px-4 py-3 text-right transition hover:bg-white disabled:opacity-60"
+                            >
+                              <div className="min-w-0 flex-1">
+                                <div className="flex flex-wrap items-center justify-end gap-2">
+                                  <span className="font-mono text-sm font-black text-slate-900">
+                                    {req.requestCode || "—"}
+                                  </span>
+                                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-extrabold text-slate-600 ring-1 ring-slate-200">
+                                    {req.status || "—"}
+                                  </span>
+                                  {req.linkedVoucherCount > 0 ? (
+                                    <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-extrabold text-emerald-700 ring-1 ring-emerald-100">
+                                      {req.linkedVoucherCount} وصل مربوط
+                                    </span>
+                                  ) : null}
+                                </div>
+                                <p className="mt-1 text-[12px] font-semibold text-slate-500">
+                                  {getCompanyName(req.companyKey) || req.companyKey}
+                                  {req.description
+                                    ? ` · ${String(req.description).slice(0, 60)}`
+                                    : ""}
+                                </p>
+                              </div>
+                              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white">
+                                {busy ? (
+                                  <FiLoader className="animate-spin" />
+                                ) : (
+                                  <FiLink />
+                                )}
+                              </div>
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </div>
+
+                <p className="text-center text-[11px] font-semibold text-slate-400">
+                  يمكن ربط نفس الطلب بعدة وصولات — يظهر للكاشير داخل الطلب
+                </p>
+              </div>
+            </motion.div>
+          </motion.div>
+        ) : null}
       </AnimatePresence>
 
       <AnimatePresence>

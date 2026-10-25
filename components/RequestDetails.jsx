@@ -25,6 +25,8 @@ import {
   FiBriefcase,
   FiX,
   FiCopy,
+  FiPrinter,
+  FiEye,
 } from "react-icons/fi";
 import { GrCurrency } from "react-icons/gr";
 
@@ -73,6 +75,7 @@ export default function RequestDetails({ id, companyKey }) {
   const [activeStep, setActiveStep] = useState(null);
   const [showVoucherAttachModal, setShowVoucherAttachModal] = useState(false);
   const [showVoucherModal, setShowVoucherModal] = useState(false);
+  const [activeVoucherId, setActiveVoucherId] = useState(null);
   const [delegateUserId, setDelegateUserId] = useState("");
   const [delegateVoucherCompanyKey, setDelegateVoucherCompanyKey] = useState("");
   const [delegating, setDelegating] = useState(false);
@@ -182,10 +185,76 @@ export default function RequestDetails({ id, companyKey }) {
     disbursement?.isDisbursed ?? disbursement?.stepDisbursed ?? stepMarkedDisbursed
   );
   const showPrintVoucher = hasLinkedVoucher;
-  const voucherNoLabel =
-    hasLinkedVoucher && disbursement?.voucherNo
-      ? String(disbursement.voucherNo).trim()
-      : "";
+  const linkedVoucherNos = Array.isArray(disbursement?.voucherNos)
+    ? disbursement.voucherNos.map((n) => String(n || "").trim()).filter(Boolean)
+    : disbursement?.voucherNo
+      ? [String(disbursement.voucherNo).trim()]
+      : [];
+  const voucherNoLabel = hasLinkedVoucher
+    ? linkedVoucherNos.join(" · ") || String(disbursement?.voucherNo || "").trim()
+    : "";
+  const linkedVoucherCount = Number(
+    disbursement?.voucherCount || linkedVoucherNos.length || 0
+  );
+  const linkedVoucherItems = useMemo(() => {
+    const fromApi = Array.isArray(disbursement?.vouchers) ? disbursement.vouchers : [];
+    if (fromApi.length) {
+      return fromApi.map((v) => ({
+        _id: String(v._id || "").trim(),
+        voucherNo: String(v.voucherNo || "").trim(),
+        companyKey: String(v.companyKey || companyKey || "").trim(),
+        mode: String(v.mode || "payment").trim() || "payment",
+        amount: v.amount,
+        currency: String(v.currency || "").trim(),
+        description: String(v.description || "").trim(),
+      }));
+    }
+    if (disbursement?.voucherId) {
+      return [
+        {
+          _id: String(disbursement.voucherId).trim(),
+          voucherNo: String(disbursement.voucherNo || "").trim(),
+          companyKey: String(companyKey || "").trim(),
+          mode: "payment",
+          amount: null,
+          currency: "",
+          description: "",
+        },
+      ];
+    }
+    return [];
+  }, [disbursement, companyKey]);
+
+  const openLinkedVoucherPreview = (voucher) => {
+    if (!voucher?._id) return;
+    const ck = encodeURIComponent(voucher.companyKey || companyKey || "");
+    const mode = encodeURIComponent(voucher.mode || "payment");
+    window.open(
+      `/vouchers/view?company=${ck}&mode=${mode}&id=${encodeURIComponent(voucher._id)}`,
+      "_blank",
+      "noopener,noreferrer"
+    );
+  };
+
+  const openLinkedVoucherPrint = (voucher) => {
+    if (!voucher?._id) return;
+    setActiveVoucherId(String(voucher._id));
+    setShowVoucherModal(true);
+  };
+
+  const openCreateOrDefaultVoucher = () => {
+    setActiveVoucherId(null);
+    setShowVoucherModal(true);
+  };
+
+  const formatLinkedAmount = (amount, currency) => {
+    if (amount == null || amount === "") return "";
+    const n = Number(amount);
+    const num = Number.isFinite(n)
+      ? n.toLocaleString("en-US")
+      : String(amount);
+    return currency ? `${num} ${currency}` : num;
+  };
 
   const printRef = useRef(null);
 
@@ -519,7 +588,9 @@ export default function RequestDetails({ id, companyKey }) {
 
   const disburseStatusLabel = isRequestDisbursed
     ? voucherNoLabel
-      ? `وصل ${voucherNoLabel}`
+      ? linkedVoucherCount > 1
+        ? `${linkedVoucherCount} وصولات (${voucherNoLabel})`
+        : `وصل ${voucherNoLabel}`
       : "مصروف"
     : "غير مصروف";
 
@@ -810,27 +881,79 @@ export default function RequestDetails({ id, companyKey }) {
           supportsVoucherWorkflow &&
           !approvalOnlyCompany && (
             <div className="mb-6 rounded-3xl border border-emerald-200/80 bg-gradient-to-l from-emerald-50 via-white to-teal-50 p-4 shadow-sm ring-1 ring-emerald-100">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <p className="text-sm font-extrabold text-emerald-900">
                     صرف مبكر — الكاشير الرئيسي
                   </p>
                   <p className="mt-1 text-xs font-semibold text-emerald-800/80">
                     {hasLinkedVoucher
-                      ? "تم ربط وصل الصرف بالطلب ويظهر كـ مصروف. عند الخطوة الأخيرة: موافقة + رفع مرفق فقط."
+                      ? linkedVoucherCount > 1
+                        ? `مرتبط ${linkedVoucherCount} وصولات بهذا الطلب — لكل وصل معاينة وطباعة.`
+                        : "تم ربط وصل الصرف بالطلب ويظهر كـ مصروف. عند الخطوة الأخيرة: موافقة + رفع مرفق فقط."
                       : "يمكنك إنشاء وصل صرف وربطه بالطلب قبل اكتمال الموافقات — يظهر الطلب مصروفاً مباشرة."}
                   </p>
                 </div>
-                <div className="flex shrink-0 gap-2">
+                {!hasLinkedVoucher ? (
                   <button
                     type="button"
-                    onClick={() => setShowVoucherModal(true)}
-                    className="rounded-2xl bg-slate-900 px-4 py-2.5 text-sm font-extrabold text-white shadow-sm transition hover:bg-black"
+                    onClick={openCreateOrDefaultVoucher}
+                    className="shrink-0 rounded-2xl bg-slate-900 px-4 py-2.5 text-sm font-extrabold text-white shadow-sm transition hover:bg-black"
                   >
-                    {hasLinkedVoucher ? "طباعة الوصل" : "إنشاء وصل صرف"}
+                    إنشاء وصل صرف
+                  </button>
+                ) : null}
+              </div>
+
+              {linkedVoucherItems.length > 0 ? (
+                <div className="mt-4 space-y-2">
+                  {linkedVoucherItems.map((v) => (
+                    <div
+                      key={v._id}
+                      className="flex flex-col gap-3 rounded-2xl border border-emerald-100 bg-white/90 px-3 py-3 sm:flex-row sm:items-center sm:justify-between"
+                    >
+                      <div className="min-w-0 text-right">
+                        <p className="font-mono text-sm font-black text-slate-900">
+                          وصل {v.voucherNo || "—"}
+                        </p>
+                        <p className="mt-0.5 text-[11px] font-semibold text-slate-500">
+                          {[
+                            formatLinkedAmount(v.amount, v.currency),
+                            v.description ? String(v.description).slice(0, 48) : "",
+                          ]
+                            .filter(Boolean)
+                            .join(" · ") || "وصل صرف مربوط"}
+                        </p>
+                      </div>
+                      <div className="flex shrink-0 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => openLinkedVoucherPreview(v)}
+                          className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-white px-3 py-2 text-xs font-extrabold text-slate-700 ring-1 ring-slate-200 transition hover:bg-slate-50 sm:flex-none"
+                        >
+                          <FiEye />
+                          معاينة
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openLinkedVoucherPrint(v)}
+                          className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-slate-900 px-3 py-2 text-xs font-extrabold text-white transition hover:bg-black sm:flex-none"
+                        >
+                          <FiPrinter />
+                          طباعة
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={openCreateOrDefaultVoucher}
+                    className="w-full rounded-xl border border-dashed border-emerald-300 bg-emerald-50/50 py-2.5 text-xs font-extrabold text-emerald-800 transition hover:bg-emerald-50"
+                  >
+                    + إنشاء وصل صرف إضافي
                   </button>
                 </div>
-              </div>
+              ) : null}
             </div>
           )}
 
@@ -1555,29 +1678,75 @@ export default function RequestDetails({ id, companyKey }) {
   isFinalApproved &&
   !approvalOnlyCompany &&
   supportsVoucherWorkflow && (
-    <div className="mt-4 flex flex-col gap-2 border-t border-slate-200/70 pt-4">
-      {voucherNoLabel ? (
-        <p className="text-center text-sm font-extrabold text-emerald-800">
-          وصل صرف رقم {voucherNoLabel}
-        </p>
-      ) : null}
+    <div className="mt-4 flex flex-col gap-3 border-t border-slate-200/70 pt-4">
       {hasLinkedVoucher ? (
         <p className="text-center text-[11px] font-semibold text-slate-600">
-          موافقة مكتملة — طباعة أو رفع مرفق الوصل
+          موافقة مكتملة — لكل وصل معاينة وطباعة
+          {linkedVoucherCount > 1 ? ` (${linkedVoucherCount} وصولات)` : ""}
         </p>
+      ) : (
+        <p className="text-center text-sm font-extrabold text-slate-700">
+          إنشاء وصل صرف للطلب
+        </p>
+      )}
+
+      {linkedVoucherItems.length > 0 ? (
+        <div className="space-y-2">
+          {linkedVoucherItems.map((v) => (
+            <div
+              key={v._id}
+              className="flex flex-col gap-2 rounded-2xl border border-slate-200 bg-slate-50/80 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="min-w-0 text-right">
+                <p className="font-mono text-[13px] font-black text-slate-900">
+                  وصل {v.voucherNo || "—"}
+                </p>
+                <p className="mt-0.5 text-[11px] font-semibold text-slate-500">
+                  {formatLinkedAmount(v.amount, v.currency) || "وصل صرف"}
+                </p>
+              </div>
+              <div className="flex shrink-0 gap-2">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openLinkedVoucherPreview(v);
+                  }}
+                  className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-white px-3 py-2 text-xs font-extrabold text-slate-700 ring-1 ring-slate-200 transition hover:bg-slate-50 sm:flex-none"
+                >
+                  <FiEye />
+                  معاينة
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openLinkedVoucherPrint(v);
+                  }}
+                  className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-slate-900 px-3 py-2 text-xs font-extrabold text-white transition hover:bg-black sm:flex-none"
+                >
+                  <FiPrinter />
+                  طباعة
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
       ) : null}
+
       <motion.div className="flex gap-3">
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            setShowVoucherModal(true);
-          }}
-          className="flex-1 rounded-2xl bg-slate-900 py-2.5 text-sm font-extrabold text-white shadow-sm transition hover:bg-black"
-        >
-          {showPrintVoucher || showDelegatePrintOnly || hasLinkedVoucher
-            ? "طباعة الوصل"
-            : "إنشاء وصل صرف"}
-        </button>
+        {!hasLinkedVoucher || showFullVoucherActions || canEarlyIssuePayment ? (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              openCreateOrDefaultVoucher();
+            }}
+            className="flex-1 rounded-2xl bg-slate-900 py-2.5 text-sm font-extrabold text-white shadow-sm transition hover:bg-black"
+          >
+            {hasLinkedVoucher ? "إنشاء وصل إضافي" : "إنشاء وصل صرف"}
+          </button>
+        ) : null}
 
         {(showFullVoucherActions && !showDelegatePrintOnly) ||
         (canEarlyIssuePayment && hasLinkedVoucher) ? (
@@ -1905,12 +2074,20 @@ export default function RequestDetails({ id, companyKey }) {
 
       <VoucherModal
         open={showVoucherModal}
-        onClose={() => setShowVoucherModal(false)}
+        onClose={() => {
+          setShowVoucherModal(false);
+          setActiveVoucherId(null);
+        }}
         request={request}
-        companyKey={hasLinkedVoucher ? companyKey : effectiveVoucherCompanyKey}
+        companyKey={
+          (activeVoucherId &&
+            linkedVoucherItems.find((v) => v._id === activeVoucherId)?.companyKey) ||
+          effectiveVoucherCompanyKey
+        }
         requestCompanyKey={companyKey}
         requestId={id}
-        treatAsExisting={hasLinkedVoucher}
+        voucherId={activeVoucherId}
+        treatAsExisting={Boolean(activeVoucherId)}
         onSaved={async () => {
           await fetchData();
         }}

@@ -257,16 +257,6 @@ export async function GET(req) {
 
     const { allowedPerms } = await getUserAccess(userId);
 
-    const hasGeneralAccess = allowedPerms.includes(PERMISSIONS.VOUCHERS_REPORTS_VIEW) || 
-                             allowedPerms.includes(PERMISSIONS.RECEIPTS);
-
-    if (!hasGeneralAccess) {
-      return NextResponse.json(
-        { success: false, error: "ليس لديك صلاحية لمشاهدة هذا الوصل" },
-        { status: 403 }
-      );
-    }
-
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id") || "";
 
@@ -296,13 +286,24 @@ export async function GET(req) {
       );
     }
 
-    // ✅ التحقق من الصلاحية الخاصة بالشركة الموجودة داخل الوصل
-    const companyConfig = COMPANIES.find(c => String(c.key).toLowerCase() === String(doc.companyKey).toLowerCase());
-    const hasSpecificAccess = companyConfig && allowedPerms.includes(companyConfig.permission);
+    // صلاحية الشركة أو التقارير أو تخويل الصرف
+    const companyConfig = COMPANIES.find(
+      (c) =>
+        String(c.key).toLowerCase() === String(doc.companyKey || "").toLowerCase()
+    );
+    const hasSpecificAccess = Boolean(
+      companyConfig?.permission && allowedPerms.includes(companyConfig.permission)
+    );
+    const hasAccess =
+      hasSpecificAccess ||
+      allowedPerms.includes(PERMISSIONS.VIEW_ALL_REPORTS) ||
+      allowedPerms.includes(PERMISSIONS.VOUCHER_DELEGATE) ||
+      allowedPerms.includes(PERMISSIONS.VOUCHERS_REPORTS_VIEW) ||
+      allowedPerms.includes(PERMISSIONS.RECEIPTS);
 
-    if (!hasSpecificAccess) {
+    if (!hasAccess) {
       return NextResponse.json(
-        { success: false, error: "ليس لديك صلاحية لمشاهدة وصولات هذه الشركة" },
+        { success: false, error: "ليس لديك صلاحية لمشاهدة هذا الوصل" },
         { status: 403 }
       );
     }

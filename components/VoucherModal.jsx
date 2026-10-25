@@ -99,6 +99,8 @@ export default function VoucherModal({
   requestId,
   onSaved,
   treatAsExisting = false,
+  /** فتح وصل محدد عند وجود عدة وصولات على نفس الطلب */
+  voucherId = null,
 }) {
   const paperRef = useRef(null);
 
@@ -280,6 +282,17 @@ export default function VoucherModal({
   }, []);
 
   const loadExistingVoucher = useCallback(async () => {
+    const targetId = String(voucherId || "").trim();
+    if (targetId) {
+      const res = await fetch(
+        `/api/vouchers/view?id=${encodeURIComponent(targetId)}`,
+        { method: "GET", credentials: "include", cache: "no-store" }
+      );
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) return null;
+      return json.data || null;
+    }
+
     if (!companyKey || !requestId) return null;
     const code = String(requestData?.requestCode || request?.requestCode || "").trim();
     const codePart = code ? `&requestCode=${encodeURIComponent(code)}` : "";
@@ -297,7 +310,14 @@ export default function VoucherModal({
     const json = await res.json().catch(() => null);
     if (!res.ok || !json?.success) return null;
     return json.data || null;
-  }, [companyKey, requestId, requestCompanyKey, requestData?.requestCode, request?.requestCode]);
+  }, [
+    voucherId,
+    companyKey,
+    requestId,
+    requestCompanyKey,
+    requestData?.requestCode,
+    request?.requestCode,
+  ]);
 
   useEffect(() => {
     setRequestData(request || null);
@@ -340,7 +360,9 @@ export default function VoucherModal({
   }, [open, requestId, request]);
 
   useEffect(() => {
-    if (!open || !companyKey || !requestId) return;
+    if (!open) return;
+    const hasTarget = Boolean(String(voucherId || "").trim());
+    if (!hasTarget && (!companyKey || !requestId)) return;
 
     let cancelled = false;
 
@@ -372,6 +394,7 @@ export default function VoucherModal({
     };
   }, [
     open,
+    voucherId,
     companyKey,
     requestId,
     requestCompanyKey,

@@ -59,6 +59,8 @@ const StepSchema = new mongoose.Schema(
     voucherProcessedByUsername: { type: String, default: "", trim: true },
     voucherId: { type: String, default: "", trim: true },
     voucherNo: { type: String, default: "", trim: true },
+    /** كل الوصولات المربوطة بالطلب (طلب واحد ← عدة وصولات) */
+    voucherIds: { type: [String], default: [] },
   },
   { _id: false }
 );
