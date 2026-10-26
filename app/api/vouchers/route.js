@@ -260,6 +260,7 @@ export async function POST(req) {
       mode,
       requestId = null,
       requestCode = "",
+      allowAdditional = false,
 
       vDateYY,
       vDateMM,
@@ -393,7 +394,8 @@ export async function POST(req) {
       requestCodeHint = safeString(reqLean?.requestCode);
     }
 
-    if (requestId) {
+    // وصل إضافي لنفس الطلب: لا نُرجع الوصل السابق
+    if (requestId && !allowAdditional) {
       const existingVoucher = await findVoucherForRequest({
         requestId,
         requestCode: requestCodeHint,

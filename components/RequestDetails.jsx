@@ -76,6 +76,7 @@ export default function RequestDetails({ id, companyKey }) {
   const [showVoucherAttachModal, setShowVoucherAttachModal] = useState(false);
   const [showVoucherModal, setShowVoucherModal] = useState(false);
   const [activeVoucherId, setActiveVoucherId] = useState(null);
+  const [voucherCreateNew, setVoucherCreateNew] = useState(false);
   const [delegateUserId, setDelegateUserId] = useState("");
   const [delegateVoucherCompanyKey, setDelegateVoucherCompanyKey] = useState("");
   const [delegating, setDelegating] = useState(false);
@@ -238,12 +239,15 @@ export default function RequestDetails({ id, companyKey }) {
 
   const openLinkedVoucherPrint = (voucher) => {
     if (!voucher?._id) return;
+    setVoucherCreateNew(false);
     setActiveVoucherId(String(voucher._id));
     setShowVoucherModal(true);
   };
 
   const openCreateOrDefaultVoucher = () => {
+    // وصل جديد قابل للتعديل — حتى مع وجود وصولات مربوطة مسبقاً
     setActiveVoucherId(null);
+    setVoucherCreateNew(true);
     setShowVoucherModal(true);
   };
 
@@ -2077,6 +2081,7 @@ export default function RequestDetails({ id, companyKey }) {
         onClose={() => {
           setShowVoucherModal(false);
           setActiveVoucherId(null);
+          setVoucherCreateNew(false);
         }}
         request={request}
         companyKey={
@@ -2087,8 +2092,10 @@ export default function RequestDetails({ id, companyKey }) {
         requestCompanyKey={companyKey}
         requestId={id}
         voucherId={activeVoucherId}
-        treatAsExisting={Boolean(activeVoucherId)}
+        createNew={voucherCreateNew}
+        treatAsExisting={Boolean(activeVoucherId) && !voucherCreateNew}
         onSaved={async () => {
+          setVoucherCreateNew(false);
           await fetchData();
         }}
       />

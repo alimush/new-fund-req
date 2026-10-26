@@ -101,6 +101,8 @@ export default function VoucherModal({
   treatAsExisting = false,
   /** فتح وصل محدد عند وجود عدة وصولات على نفس الطلب */
   voucherId = null,
+  /** إنشاء وصل جديد (حتى لو الطلب مرتبط بوصولات أخرى) — حقول قابلة للتعديل */
+  createNew = false,
 }) {
   const paperRef = useRef(null);
 
@@ -191,24 +193,27 @@ export default function VoucherModal({
   const todayDD = String(today.getDate()).padStart(2, "0");
 
   const fillFromRequest = useCallback(
-    (reqDoc) => {
+    (reqDoc, { blankAmount = false } = {}) => {
       if (!reqDoc) return;
       // إذا عندنا وصل محفوظ مسبقًا، لا نرجع ننسخ من الطلب.
       // حتى تبقى التعديلات على الوصل مستقلة عن داتا الطلب.
       if (existingVoucher?._id) return;
 
+      const currency = String(reqDoc?.currency || "IQD").toUpperCase();
       const items = Array.isArray(reqDoc?.items) ? reqDoc.items : [];
       const total = items.reduce(
         (sum, it) => sum + (Number(it?.qty) || 0) * (Number(it?.price) || 0),
         0
       );
 
-      const currency = String(reqDoc?.currency || "IQD").toUpperCase();
-      const formattedAmount = formatAmount(total);
-      const words = amountToArabicVoucherWords(total, currency);
+      if (blankAmount) {
+        setVAmount("");
+        setVWords("");
+      } else {
+        setVAmount(formatAmount(total));
+        setVWords(amountToArabicVoucherWords(total, currency));
+      }
 
-      setVAmount(formattedAmount);
-      setVWords(words);
       setVDesc(reqDoc?.description || "");
       setVCurrency(currency);
 
@@ -361,10 +366,52 @@ export default function VoucherModal({
 
   useEffect(() => {
     if (!open) return;
-    const hasTarget = Boolean(String(voucherId || "").trim());
-    if (!hasTarget && (!companyKey || !requestId)) return;
 
     let cancelled = false;
+
+    // وصل إضافي: املأ كل الحقول من الوصل السابق/الطلب — المبلغ فقط فارغ، والتعديل مفتوح
+    if (createNew) {
+      const prepNew = async () => {
+        try {
+          setLoadingVoucher(true);
+          setExistingVoucher(null);
+          setVoucherNo(null);
+
+          let template = null;
+          if (companyKey && requestId) {
+            template = await loadExistingVoucher();
+          }
+          if (cancelled) return;
+
+          if (template) {
+            hydrateFromVoucherDoc(template);
+            // أبقِ النموذج كوصل جديد غير مقفول
+            setExistingVoucher(null);
+            setVoucherNo(null);
+            setVAmount("");
+            setVWords("");
+          } else {
+            const src = requestData || request;
+            if (src) fillFromRequest(src, { blankAmount: true });
+          }
+        } catch (err) {
+          console.error("Failed to prep additional voucher:", err);
+          if (!cancelled) {
+            const src = requestData || request;
+            if (src) fillFromRequest(src, { blankAmount: true });
+          }
+        } finally {
+          if (!cancelled) setLoadingVoucher(false);
+        }
+      };
+      void prepNew();
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    const hasTarget = Boolean(String(voucherId || "").trim());
+    if (!hasTarget && (!companyKey || !requestId)) return;
 
     const runLoadExistingVoucher = async () => {
       try {
@@ -394,11 +441,13 @@ export default function VoucherModal({
     };
   }, [
     open,
+    createNew,
     voucherId,
     companyKey,
     requestId,
     requestCompanyKey,
     requestData,
+    request,
     loadExistingVoucher,
     hydrateFromVoucherDoc,
     fillFromRequest,
@@ -427,7 +476,8 @@ export default function VoucherModal({
     if (useOldTemplate) return jpg || png || "";
     return png || jpg || "";
   }, [selectedCompany, useOldTemplate]);
-  const isLockedAfterCreate = Boolean(existingVoucher?._id) || Boolean(treatAsExisting);
+  const isLockedAfterCreate =
+    !createNew && (Boolean(existingVoucher?._id) || Boolean(treatAsExisting));
   const noop = () => {};
 
   const onYYChange = (e) => {
@@ -617,6 +667,7 @@ export default function VoucherModal({
       requestCode: String(
         requestData?.requestCode || request?.requestCode || ""
       ).trim(),
+      allowAdditional: Boolean(createNew),
 
       vDateYY,
       vDateMM,
