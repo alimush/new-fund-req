@@ -244,8 +244,15 @@ export default function RequestDetails({ id, companyKey }) {
     setShowVoucherModal(true);
   };
 
-  const openCreateOrDefaultVoucher = () => {
-    // وصل جديد قابل للتعديل — حتى مع وجود وصولات مربوطة مسبقاً
+  /** أول صرف من ستيب الكاشير — يملأ مبلغ الطلب */
+  const openCreateVoucherFromStep = () => {
+    setActiveVoucherId(null);
+    setVoucherCreateNew(false);
+    setShowVoucherModal(true);
+  };
+
+  /** وصل إضافي — باقي الحقول ممتلئة والمبلغ فارغ */
+  const openCreateAdditionalVoucher = () => {
     setActiveVoucherId(null);
     setVoucherCreateNew(true);
     setShowVoucherModal(true);
@@ -901,7 +908,7 @@ export default function RequestDetails({ id, companyKey }) {
                 {!hasLinkedVoucher ? (
                   <button
                     type="button"
-                    onClick={openCreateOrDefaultVoucher}
+                    onClick={openCreateVoucherFromStep}
                     className="shrink-0 rounded-2xl bg-slate-900 px-4 py-2.5 text-sm font-extrabold text-white shadow-sm transition hover:bg-black"
                   >
                     إنشاء وصل صرف
@@ -951,7 +958,7 @@ export default function RequestDetails({ id, companyKey }) {
                   ))}
                   <button
                     type="button"
-                    onClick={openCreateOrDefaultVoucher}
+                    onClick={openCreateAdditionalVoucher}
                     className="w-full rounded-xl border border-dashed border-emerald-300 bg-emerald-50/50 py-2.5 text-xs font-extrabold text-emerald-800 transition hover:bg-emerald-50"
                   >
                     + إنشاء وصل صرف إضافي
@@ -1744,7 +1751,8 @@ export default function RequestDetails({ id, companyKey }) {
           <button
             onClick={(e) => {
               e.stopPropagation();
-              openCreateOrDefaultVoucher();
+              if (hasLinkedVoucher) openCreateAdditionalVoucher();
+              else openCreateVoucherFromStep();
             }}
             className="flex-1 rounded-2xl bg-slate-900 py-2.5 text-sm font-extrabold text-white shadow-sm transition hover:bg-black"
           >

@@ -192,6 +192,26 @@ export default function VoucherModal({
   const todayMM = String(today.getMonth() + 1).padStart(2, "0");
   const todayDD = String(today.getDate()).padStart(2, "0");
 
+  const resolveRequestAmount = (reqDoc) => {
+    const items = Array.isArray(reqDoc?.items) ? reqDoc.items : [];
+    if (items.length > 0) {
+      const fromItems = items.reduce(
+        (sum, it) => sum + (Number(it?.qty) || 0) * (Number(it?.price) || 0),
+        0
+      );
+      if (Number.isFinite(fromItems) && fromItems > 0) return fromItems;
+    }
+    for (const raw of [
+      reqDoc?.paymentVoucher?.amount,
+      reqDoc?.totalAmount,
+      reqDoc?.amount,
+    ]) {
+      const n = Number(raw);
+      if (Number.isFinite(n) && n > 0) return n;
+    }
+    return 0;
+  };
+
   const fillFromRequest = useCallback(
     (reqDoc, { blankAmount = false } = {}) => {
       if (!reqDoc) return;
@@ -199,17 +219,16 @@ export default function VoucherModal({
       // حتى تبقى التعديلات على الوصل مستقلة عن داتا الطلب.
       if (existingVoucher?._id) return;
 
-      const currency = String(reqDoc?.currency || "IQD").toUpperCase();
-      const items = Array.isArray(reqDoc?.items) ? reqDoc.items : [];
-      const total = items.reduce(
-        (sum, it) => sum + (Number(it?.qty) || 0) * (Number(it?.price) || 0),
-        0
-      );
+      const currency = String(
+        reqDoc?.paymentVoucher?.currency || reqDoc?.currency || "IQD"
+      ).toUpperCase();
+      const total = resolveRequestAmount(reqDoc);
 
       if (blankAmount) {
         setVAmount("");
         setVWords("");
-      } else {
+      } else if (total > 0) {
+        // مبلغ الطلب عند الصرف من ستيب الكاشير
         setVAmount(formatAmount(total));
         setVWords(amountToArabicVoucherWords(total, currency));
       }
