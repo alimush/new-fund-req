@@ -1940,10 +1940,6 @@ export default function VoucherReportsPage() {
                       whileHover={{ backgroundColor: "rgba(248,250,252,0.95)" }}
                       transition={{ duration: 0.12 }}
                       onClick={() => {
-                        if (canLinkRequest && !r.requestLink?.href) {
-                          openLinkRequestModal(r);
-                          return;
-                        }
                         window.open(
                           `/vouchers/view?company=${encodeURIComponent(
                             r.companyKey
@@ -1956,11 +1952,7 @@ export default function VoucherReportsPage() {
                       className={`cursor-pointer transition-colors hover:bg-slate-50 ${
                         idx % 2 === 0 ? "bg-white/50" : "bg-white/30"
                       }`}
-                      title={
-                        canLinkRequest && !r.requestLink?.href
-                          ? "اضغط لربط الوصل بطلب صرف"
-                          : "فتح الوصل"
-                      }
+                      title="فتح الوصل"
                     >
                       <td
                         className="px-1.5 py-2 text-right font-extrabold text-slate-900 md:px-2"
