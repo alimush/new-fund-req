@@ -260,11 +260,19 @@ export async function GET(req) {
       Math.min(200, parseInt(searchParams.get("pageSize") || "25", 10))
     );
 
-    // Filter allowed companies based on user selection (case-insensitive)
+    // Filter allowed companies (single key, comma-separated, or all)
+    const allowedLc = new Map(
+      finalAllowedCompanies.map((c) => [String(c).trim().toLowerCase(), c])
+    );
     const companyList =
-      company === "all"
+      !company || company === "all"
         ? finalAllowedCompanies
-        : finalAllowedCompanies.filter(c => String(c).toLowerCase() === company.toLowerCase());
+        : String(company)
+            .split(",")
+            .map((x) => String(x || "").trim())
+            .filter(Boolean)
+            .map((x) => allowedLc.get(x.toLowerCase()))
+            .filter(Boolean);
 
     if (!companyList.length) {
       return NextResponse.json({

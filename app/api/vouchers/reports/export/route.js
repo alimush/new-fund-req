@@ -91,7 +91,12 @@ export async function POST(req) {
       const allowedLc = new Set(
         allowedCompanyKeys.map((k) => String(k).trim().toLowerCase())
       );
-      if (!allowedLc.has(companyFilter.toLowerCase())) {
+      const asked = String(companyFilter)
+        .split(",")
+        .map((x) => String(x || "").trim().toLowerCase())
+        .filter(Boolean);
+      const forbidden = asked.some((k) => !allowedLc.has(k));
+      if (!asked.length || forbidden) {
         return NextResponse.json(
           { success: false, error: "Forbidden" },
           { status: 403 }

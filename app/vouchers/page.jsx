@@ -39,6 +39,7 @@ import {
   emptyCategoryChecks,
   getCompanyCategoryChecklist,
   getCompanyExtra,
+  VOUCHER_FUND_GROUPS,
 } from "@/lib/voucher/companies";
 import {
   prefetchVoucherLayout,
@@ -48,68 +49,7 @@ import {
 /** صناديق MIB — تُعرض كما هي بفاصل أسفل باقي الشركات */
 const MIB_FUND_KEYS = new Set(["Badur-Elite-MIB", "Badur-Baghdad-MIB"]);
 
-/**
- * تجميع الصناديق تحت شركات (رئيسي / فرعي).
- * مفاتيح غير موجودة في صلاحيات المستخدم تُخفى تلقائياً.
- */
-const COMPANY_GROUPS = [
-  {
-    id: "al-ghadeer",
-    title: "شركة الغدير",
-    logo: "/الغدير.png",
-    funds: [
-      { key: "Al-Ghadeer", role: "main", shortLabel: "الرئيسي" },
-      { key: "Ghadeer-Najaf-Sub", role: "sub", shortLabel: "فرعي — النجف" },
-    ],
-  },
-  {
-    id: "ghadeer-karbala",
-    title: "غدير كربلاء",
-    logo: "/غدير_كربلاء.png",
-    funds: [
-      { key: "Ghadeer-Karbala", role: "main", shortLabel: "الرئيسي" },
-      { key: "Ghadeer-Karbala-Sub", role: "sub", shortLabel: "الفرعي" },
-      { key: "Ghadeer-Investments", role: "sub", shortLabel: "فرعي — استثمارات" },
-    ],
-  },
-  {
-    id: "badur-baghdad",
-    title: "بدور بغداد",
-    logo: "/بدور_بغداد.png",
-    funds: [
-      { key: "Badur-Baghdad", role: "main", shortLabel: "الرئيسي" },
-      {
-        key: "Badur-Baghdad-Safebox-Istishar",
-        role: "sub",
-        shortLabel: "أمانات المستشار",
-      },
-      { key: "Badur-Baghdad-Elite", role: "sub", shortLabel: "Elite" },
-      { key: "Badur-Signature", role: "sub", shortLabel: "سكنجر" },
-    ],
-  },
-  {
-    id: "tiba-najaf",
-    title: "طيبة النجف",
-    logo: "/طيبة_النجف.png",
-    funds: [
-      { key: "Tiba-Al-najaf", role: "main", shortLabel: "الرئيسي" },
-      { key: "Tiba-Al-najaf-Sales", role: "sub", shortLabel: "مركز المبيعات" },
-    ],
-  },
-  {
-    id: "badur-najaf",
-    title: "بدور النجف",
-    logo: "/بدور_النجف.png",
-    funds: [{ key: "Badur-Al-Najaf", role: "main", shortLabel: "الرئيسي" }],
-  },
-  {
-    id: "test-010",
-    title: "اختبار",
-    logo: "/12.png",
-    funds: [{ key: "010", role: "main", shortLabel: "010 (Test)" }],
-  },
-];
-
+const COMPANY_GROUPS = VOUCHER_FUND_GROUPS;
 const ALL_GROUP_IDS = COMPANY_GROUPS.map((g) => g.id);
 
 const MOTION_EASE = [0.22, 1, 0.36, 1];

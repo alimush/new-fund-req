@@ -42,7 +42,11 @@ const Select = dynamic(() => import("react-select").then((m) => m.default), {
   ssr: false,
 });
 
-import { COMPANIES } from "@/lib/voucher/companies";
+import {
+  COMPANIES,
+  isMainVoucherFund,
+  isSubVoucherFund,
+} from "@/lib/voucher/companies";
 import { formatAmount, isAlGhadeerMain } from "@/lib/voucher/utils";
 import { formatVoucherDateDisplay } from "@/lib/voucher/voucherDate";
 import { formatCategoryChecksLabels } from "@/lib/voucher/voucherLayout";
@@ -97,7 +101,7 @@ export default function VoucherReportsPage() {
   });
   const [page, setPage] = useState(1);
 
-  const [companiesOptions, setCompaniesOptions] = useState([]);
+  const [allowedCompanyKeys, setAllowedCompanyKeys] = useState([]);
   const [modes, setModes] = useState([]);
   const [currencies, setCurrencies] = useState([]);
   const [attachmentsModal, setAttachmentsModal] = useState({
@@ -113,9 +117,22 @@ export default function VoucherReportsPage() {
   });
   const [deletingAttKey, setDeletingAttKey] = useState(null);
 
-  const [companyFilter, setCompanyFilter] = useState({
+  const MAIN_FUND_ALL = useMemo(
+    () => ({ value: "all", label: "كل الصناديق الرئيسية" }),
+    []
+  );
+  const SUB_FUND_ALL = useMemo(
+    () => ({ value: "all", label: "كل الصناديق الفرعية" }),
+    []
+  );
+
+  const [mainFundFilter, setMainFundFilter] = useState({
     value: "all",
-    label: "كل الشركات",
+    label: "كل الصناديق الرئيسية",
+  });
+  const [subFundFilter, setSubFundFilter] = useState({
+    value: "all",
+    label: "كل الصناديق الفرعية",
   });
 
   const [modeFilter, setModeFilter] = useState({
@@ -400,14 +417,84 @@ export default function VoucherReportsPage() {
     };
   }, [rows, meta.total]);
 
-  /** عمود الفئة: فلتر بدور سكنجر، أو «كل الشركات» إذا كانت بدور سكنجر ضمن الخيارات */
+  const mainFundKeys = useMemo(
+    () => allowedCompanyKeys.filter((k) => isMainVoucherFund(k)),
+    [allowedCompanyKeys]
+  );
+  const subFundKeys = useMemo(
+    () => allowedCompanyKeys.filter((k) => isSubVoucherFund(k)),
+    [allowedCompanyKeys]
+  );
+
+  const showMainFundFilter = mainFundKeys.length > 0;
+  const showSubFundFilter = subFundKeys.length > 0;
+
+  const mainFundOptions = useMemo(() => {
+    if (!showMainFundFilter) return [];
+    return [
+      MAIN_FUND_ALL,
+      ...mainFundKeys.map((key) => ({
+        value: key,
+        label: getCompanyName(key),
+      })),
+    ];
+  }, [showMainFundFilter, mainFundKeys, MAIN_FUND_ALL]);
+
+  const subFundOptions = useMemo(() => {
+    if (!showSubFundFilter) return [];
+    return [
+      SUB_FUND_ALL,
+      ...subFundKeys.map((key) => ({
+        value: key,
+        label: getCompanyName(key),
+      })),
+    ];
+  }, [showSubFundFilter, subFundKeys, SUB_FUND_ALL]);
+
+  /** قيمة company للـ API: all أو مفتاح أو مفاتيح مفصولة بفاصلة */
+  const companyFilterValue = useMemo(() => {
+    const m = showMainFundFilter ? String(mainFundFilter?.value || "all") : "all";
+    const s = showSubFundFilter ? String(subFundFilter?.value || "all") : "all";
+    if (m === "all" && s === "all") return "all";
+    const keys = [];
+    if (m !== "all") keys.push(m);
+    if (s !== "all") keys.push(s);
+    // إن اختار «كل الرئيسية» فقط مع فرعي محدد → الفرعي فقط (أعلاه)
+    // إن اختار رئيسي محدد وفرعي all → الرئيسي فقط
+    return keys.length ? keys.join(",") : "all";
+  }, [
+    showMainFundFilter,
+    showSubFundFilter,
+    mainFundFilter?.value,
+    subFundFilter?.value,
+  ]);
+
+  const companyFilterLabel = useMemo(() => {
+    if (companyFilterValue === "all") return "كل الصناديق";
+    return companyFilterValue
+      .split(",")
+      .map((k) => getCompanyName(k.trim()))
+      .filter(Boolean)
+      .join(" · ");
+  }, [companyFilterValue]);
+
+  /** توافق مع الكود القديم الذي يعتمد companyFilter */
+  const companyFilter = useMemo(
+    () => ({ value: companyFilterValue, label: companyFilterLabel }),
+    [companyFilterValue, companyFilterLabel]
+  );
+
+  /** عمود الفئة: فلتر بدور سكنجر، أو «كل الصناديق» إذا كانت بدور سكنجر ضمن الخيارات */
   const showSignatureCategoryCol = useMemo(() => {
     if (isBadurSignatureKey(companyFilter?.value)) return true;
     if (String(companyFilter?.value || "").trim().toLowerCase() !== "all") {
-      return false;
+      const parts = String(companyFilter?.value || "")
+        .split(",")
+        .map((x) => x.trim());
+      return parts.some((p) => isBadurSignatureKey(p));
     }
-    return companiesOptions.some((o) => isBadurSignatureKey(o?.value));
-  }, [companyFilter?.value, companiesOptions]);
+    return allowedCompanyKeys.some((k) => isBadurSignatureKey(k));
+  }, [companyFilter?.value, allowedCompanyKeys]);
   const signatureCompany = useMemo(
     () => getCompanyByKey("Badur-Signature"),
     []
@@ -418,12 +505,15 @@ export default function VoucherReportsPage() {
     const keys = new Set(
       (rows || []).map((r) => String(r?.companyKey || "").trim()).filter(Boolean)
     );
-    if (isBadurSignatureKey(companyFilter?.value)) {
+    String(companyFilter?.value || "")
+      .split(",")
+      .map((x) => x.trim())
+      .filter((x) => x && x !== "all")
+      .forEach((k) => keys.add(k));
+    if ([...keys].some((k) => isBadurSignatureKey(k))) {
       keys.add("Badur-Signature");
     }
-    companiesOptions.forEach((o) => {
-      if (o?.value && o.value !== "all") keys.add(String(o.value).trim());
-    });
+    allowedCompanyKeys.forEach((k) => keys.add(String(k).trim()));
     void prefetchVoucherLayouts([...keys]);
 
     keys.forEach((key) => {
@@ -442,7 +532,7 @@ export default function VoucherReportsPage() {
           img.src = src;
         });
     });
-  }, [rows, companyFilter?.value, companiesOptions]);
+  }, [rows, companyFilter?.value, allowedCompanyKeys]);
 
   useEffect(() => {
     const loadFilters = async () => {
@@ -454,14 +544,7 @@ export default function VoucherReportsPage() {
         if (!json?.success) return;
 
         const apiCompanies = json.filters?.companies || [];
-
-        setCompaniesOptions([
-          { value: "all", label: "كل الشركات" },
-          ...apiCompanies.map((key) => ({
-            value: key,
-            label: getCompanyName(key),
-          })),
-        ]);
+        setAllowedCompanyKeys(apiCompanies);
 
         // حمّل تخطيط كل الشركات المتاحة فوراً لتقليل التعليق عند فتح الوصل
         void prefetchVoucherLayouts(apiCompanies);
@@ -1161,7 +1244,8 @@ export default function VoucherReportsPage() {
   }, [page, fetchPage]);
 
   const handleReset = () => {
-    setCompanyFilter({ value: "all", label: "كل الشركات" });
+    setMainFundFilter(MAIN_FUND_ALL);
+    setSubFundFilter(SUB_FUND_ALL);
     setModeFilter({ value: "all", label: "كل الوصولات" });
     setCurrencyFilter({ value: "all", label: "كل العملات" });
     setDate({ from: "", to: "" });
@@ -1682,23 +1766,41 @@ export default function VoucherReportsPage() {
           </div>
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
-          <div className="text-right">
-            <FilterLabel icon={<FiHome className="text-sm" />} iconColor="text-blue-600">
-              الشركة
-            </FilterLabel>
-            <Select
-              {...selectMenuProps}
-              options={companiesOptions}
-              placeholder="كل الشركات"
-              value={companyFilter}
-              onChange={(v) =>
-                setCompanyFilter(v || { value: "all", label: "كل الشركات" })
-              }
-              styles={selectStyles}
-              isSearchable
-              components={noClearComponents}
-            />
-          </div>
+          {showMainFundFilter ? (
+            <div className="text-right">
+              <FilterLabel icon={<FiHome className="text-sm" />} iconColor="text-blue-600">
+                صناديق رئيسية
+              </FilterLabel>
+              <Select
+                {...selectMenuProps}
+                options={mainFundOptions}
+                placeholder="كل الصناديق الرئيسية"
+                value={mainFundFilter}
+                onChange={(v) => setMainFundFilter(v || MAIN_FUND_ALL)}
+                styles={selectStyles}
+                isSearchable
+                components={noClearComponents}
+              />
+            </div>
+          ) : null}
+
+          {showSubFundFilter ? (
+            <div className="text-right">
+              <FilterLabel icon={<FiLayers className="text-sm" />} iconColor="text-indigo-600">
+                صناديق فرعية
+              </FilterLabel>
+              <Select
+                {...selectMenuProps}
+                options={subFundOptions}
+                placeholder="كل الصناديق الفرعية"
+                value={subFundFilter}
+                onChange={(v) => setSubFundFilter(v || SUB_FUND_ALL)}
+                styles={selectStyles}
+                isSearchable
+                components={noClearComponents}
+              />
+            </div>
+          ) : null}
 
           <div className="text-right">
             <FilterLabel icon={<FiFileText className="text-sm" />} iconColor="text-red-600">
