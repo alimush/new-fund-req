@@ -80,6 +80,7 @@ export default function RequestDetails({ id, companyKey }) {
   const [delegateUserId, setDelegateUserId] = useState("");
   const [delegateVoucherCompanyKey, setDelegateVoucherCompanyKey] = useState("");
   const [delegating, setDelegating] = useState(false);
+  const [showDelegatePanel, setShowDelegatePanel] = useState(false);
   const [submittingAction, setSubmittingAction] = useState(false);
   const [codeCopied, setCodeCopied] = useState(false);
 
@@ -1777,7 +1778,6 @@ export default function RequestDetails({ id, companyKey }) {
     </div>
   )}
 {isFinalApproved &&
-  isLastStepUser &&
   canDelegateVoucher &&
   !approvalOnlyCompany &&
   !hasLinkedVoucher &&
@@ -1788,101 +1788,146 @@ export default function RequestDetails({ id, companyKey }) {
       onClick={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}
     >
-      <p className="mb-2.5 text-xs font-extrabold text-indigo-800">
-        تخويل مستخدم للصرف/رفع الوصل
-      </p>
-      <div className="flex flex-col gap-2">
-        <select
-          value={delegateUserId}
-          onClick={(e) => e.stopPropagation()}
-          onMouseDown={(e) => e.stopPropagation()}
-          onChange={(e) => {
-            e.stopPropagation();
-            const nextUserId = e.target.value;
-            setDelegateUserId(nextUserId);
-            const options =
-              request?.delegationVoucherOptionsByUser?.[nextUserId] || [];
-            const norm = (k) => String(k || "").trim().toLowerCase();
-            const hit = options.find((o) => norm(o.key) === norm(effectiveVoucherCompanyKey));
-            setDelegateVoucherCompanyKey(
-              hit?.key || options.find((o) => o.isDefault)?.key || options[0]?.key || ""
-            );
-          }}
-          className="w-full min-w-0 rounded-xl border border-indigo-200 bg-white px-3 py-2.5 text-sm font-bold text-gray-900 outline-none focus:ring-2 focus:ring-indigo-300"
-        >
-          <option value="">اختر مستخدم</option>
-          {(step.users || []).map((u) => (
-            <option key={getId(u) || getUsername(u)} value={getId(u) || getUsername(u)}>
-              {u.username}
-            </option>
-          ))}
-        </select>
-        <select
-          value={delegateVoucherCompanyKey}
-          disabled={!delegateUserId}
-          onClick={(e) => e.stopPropagation()}
-          onMouseDown={(e) => e.stopPropagation()}
-          onChange={(e) => {
-            e.stopPropagation();
-            setDelegateVoucherCompanyKey(e.target.value);
-          }}
-          className="w-full min-w-0 rounded-xl border border-indigo-200 bg-white px-3 py-2.5 text-sm font-bold text-gray-900 outline-none focus:ring-2 focus:ring-indigo-300 disabled:opacity-60"
-        >
-          <option value="">اختر وصل الصرف</option>
-          {(request?.delegationVoucherOptionsByUser?.[delegateUserId] || []).map((opt) => (
-            <option key={opt.key} value={opt.key}>
-              {opt.name}
-            </option>
-          ))}
-        </select>
+      {!showDelegatePanel ? (
         <button
           type="button"
-          onClick={async (e) => {
+          onClick={(e) => {
             e.stopPropagation();
-            if (!delegateUserId) {
-              alert("اختَر مستخدم للتخويل");
-              return;
-            }
-            if (!delegateVoucherCompanyKey) {
-              alert("اختَر وصل الصرف للتخويل");
-              return;
-            }
-            setDelegating(true);
-            try {
-              const res = await fetch(`/api/requests/${id}?company=${companyKey}`, {
-                method: "PUT",
-                credentials: "include",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  action: "delegate_voucher",
-                  stepIndex: idx,
-                  delegateToUserId: delegateUserId.length === 24 ? delegateUserId : "",
-                  delegateToUsername: delegateUserId.length === 24 ? "" : delegateUserId,
-                  delegateVoucherCompanyKey,
-                }),
-              });
-              const json = await res.json().catch(() => ({}));
-              if (!res.ok || !json?.success) {
-                throw new Error(json?.error || "فشل التخويل");
-              }
-              await fetchData();
-              setDelegateUserId("");
-              setDelegateVoucherCompanyKey("");
-            } catch (err) {
-              alert(err?.message || "تعذر تنفيذ التخويل");
-            } finally {
-              setDelegating(false);
-            }
+            setShowDelegatePanel(true);
           }}
-          disabled={!delegateUserId || !delegateVoucherCompanyKey || delegating}
-          className="w-full rounded-xl bg-indigo-600 py-2.5 text-sm font-extrabold text-white shadow-sm transition hover:bg-indigo-700 disabled:opacity-60"
+          className="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 py-2.5 text-sm font-extrabold text-white shadow-sm transition hover:bg-indigo-700"
         >
-          {delegating ? "جاري التخويل..." : "تخويل"}
+          <FiUserCheck />
+          تخويل مستخدم للصرف
         </button>
-      </div>
+      ) : (
+        <>
+          <div className="mb-2.5 flex items-center justify-between gap-2">
+            <p className="text-xs font-extrabold text-indigo-800">
+              كل من عنده صلاحية وصولات — حتى لو مو بالوركفلو (ينضاف تلقائياً عند التخويل)
+            </p>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowDelegatePanel(false);
+              }}
+              className="text-[11px] font-bold text-indigo-600 hover:underline"
+            >
+              إغلاق
+            </button>
+          </div>
+          <div className="flex flex-col gap-2">
+            <select
+              value={delegateUserId}
+              onClick={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
+              onChange={(e) => {
+                e.stopPropagation();
+                const nextUserId = e.target.value;
+                setDelegateUserId(nextUserId);
+                const options =
+                  request?.delegationVoucherOptionsByUser?.[nextUserId] || [];
+                const norm = (k) => String(k || "").trim().toLowerCase();
+                const hit = options.find(
+                  (o) => norm(o.key) === norm(effectiveVoucherCompanyKey)
+                );
+                setDelegateVoucherCompanyKey(
+                  hit?.key ||
+                    options.find((o) => o.isDefault)?.key ||
+                    options[0]?.key ||
+                    ""
+                );
+              }}
+              className="w-full min-w-0 rounded-xl border border-indigo-200 bg-white px-3 py-2.5 text-sm font-bold text-gray-900 outline-none focus:ring-2 focus:ring-indigo-300"
+            >
+              <option value="">اختر مستخدم</option>
+              {(request?.delegationCandidates || []).map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.arabicName
+                    ? `${u.username} — ${u.arabicName}`
+                    : u.username}
+                </option>
+              ))}
+            </select>
+            <select
+              value={delegateVoucherCompanyKey}
+              disabled={!delegateUserId}
+              onClick={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
+              onChange={(e) => {
+                e.stopPropagation();
+                setDelegateVoucherCompanyKey(e.target.value);
+              }}
+              className="w-full min-w-0 rounded-xl border border-indigo-200 bg-white px-3 py-2.5 text-sm font-bold text-gray-900 outline-none focus:ring-2 focus:ring-indigo-300 disabled:opacity-60"
+            >
+              <option value="">اختر وصل الصرف</option>
+              {(
+                request?.delegationVoucherOptionsByUser?.[delegateUserId] || []
+              ).map((opt) => (
+                <option key={opt.key} value={opt.key}>
+                  {opt.name}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={async (e) => {
+                e.stopPropagation();
+                if (!delegateUserId) {
+                  alert("اختَر مستخدم للتخويل");
+                  return;
+                }
+                if (!delegateVoucherCompanyKey) {
+                  alert("اختَر وصل الصرف للتخويل");
+                  return;
+                }
+                setDelegating(true);
+                try {
+                  const res = await fetch(
+                    `/api/requests/${id}?company=${companyKey}`,
+                    {
+                      method: "PUT",
+                      credentials: "include",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        action: "delegate_voucher",
+                        stepIndex: idx,
+                        delegateToUserId: delegateUserId,
+                        delegateVoucherCompanyKey,
+                      }),
+                    }
+                  );
+                  const json = await res.json().catch(() => ({}));
+                  if (!res.ok || !json?.success) {
+                    throw new Error(json?.error || "فشل التخويل");
+                  }
+                  await fetchData();
+                  setDelegateUserId("");
+                  setDelegateVoucherCompanyKey("");
+                  setShowDelegatePanel(false);
+                } catch (err) {
+                  alert(err?.message || "تعذر تنفيذ التخويل");
+                } finally {
+                  setDelegating(false);
+                }
+              }}
+              disabled={
+                !delegateUserId || !delegateVoucherCompanyKey || delegating
+              }
+              className="w-full rounded-xl bg-indigo-600 py-2.5 text-sm font-extrabold text-white shadow-sm transition hover:bg-indigo-700 disabled:opacity-60"
+            >
+              {delegating ? "جاري التخويل..." : "تخويل للصرف"}
+            </button>
+          </div>
+        </>
+      )}
       {delegatedToId && (
         <p className="mt-2 text-[12px] font-semibold text-indigo-700">
-          تم التخويل بواسطة {step?.voucherDelegatedBy?.username || "-"}
+          تم التخويل إلى {delegatedToUsername || "-"} بواسطة{" "}
+          {step?.voucherDelegatedBy?.username ||
+            step?.voucherDelegatedByUsername ||
+            "-"}
           {step?.voucherDelegateCompanyKey
             ? ` على وصل ${
                 COMPANIES.find(

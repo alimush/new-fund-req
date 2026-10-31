@@ -220,16 +220,107 @@ export async function GET(req, { params }) {
       company;
 
     let delegationVoucherOptionsByUser = {};
+    let delegationCandidates = [];
     if (userPerms.includes(PERMISSIONS.VOUCHER_DELEGATE)) {
-      const stepUsers = lastStep?.users || [];
-      for (const u of stepUsers) {
-        const uid = String(u?._id || u || "").trim();
-        if (!uid || !Types.ObjectId.isValid(uid)) continue;
+      // صلاحيات صناديق الوصل — يشمل TEST (وصولات 010)
+      const voucherPermKeys = [
+        ...new Set(
+          [
+            ...COMPANIES.map((c) => c.permission).filter(Boolean),
+            PERMISSIONS.TEST,
+          ].map(String)
+        ),
+      ];
+
+      const voucherGroups = await Permissions.find({
+        permissions: { $in: voucherPermKeys },
+      })
+        .select("users")
+        .lean();
+
+      const candidateIds = new Set();
+      for (const g of voucherGroups) {
+        for (const uid of g.users || []) {
+          const id = String(uid || "").trim();
+          if (id && Types.ObjectId.isValid(id)) candidateIds.add(id);
+        }
+      }
+
+      // يوزرات مجموعتهم فيها شركة الطلب + صلاحية وصل (شركة + TEST مثلاً)
+      const companyNorm = String(company || "").trim().toLowerCase();
+      if (companyNorm) {
+        const companyGroups = await Permissions.find({
+          permissions: { $in: voucherPermKeys },
+          companies: {
+            $elemMatch: {
+              $regex: new RegExp(
+                `^${companyNorm.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`,
+                "i"
+              ),
+            },
+          },
+        })
+          .select("users")
+          .lean();
+        for (const g of companyGroups) {
+          for (const uid of g.users || []) {
+            const id = String(uid || "").trim();
+            if (id && Types.ObjectId.isValid(id)) candidateIds.add(id);
+          }
+        }
+      }
+
+      const candidateDocs = candidateIds.size
+        ? await User.find({
+            _id: {
+              $in: [...candidateIds].map((id) => new Types.ObjectId(id)),
+            },
+          })
+            .select("username arabicName")
+            .lean()
+        : [];
+
+      candidateDocs.sort((a, b) =>
+        String(a.username || "").localeCompare(String(b.username || ""), "en", {
+          sensitivity: "base",
+        })
+      );
+
+      for (const u of candidateDocs) {
+        const uid = String(u._id);
         const delegatePerms = await getUserPermissions(uid);
-        delegationVoucherOptionsByUser[uid] = getVoucherCompanyOptionsForDelegation(
+        const hasVoucherPerm = voucherPermKeys.some((p) =>
+          delegatePerms.includes(p)
+        );
+        // لازم صلاحية وصل (مثل TEST) حتى يطلع باللستة
+        if (!hasVoucherPerm) continue;
+
+        let options = getVoucherCompanyOptionsForDelegation(
           company,
           delegatePerms
         );
+        if (!options.length) {
+          options = getAllVoucherCompanyKeysForUser(delegatePerms).map((key) => {
+            const cfg = COMPANIES.find(
+              (c) =>
+                String(c.key).trim().toLowerCase() ===
+                String(key).trim().toLowerCase()
+            );
+            return {
+              key: cfg?.key || key,
+              name: cfg?.name || key,
+              isDefault: false,
+            };
+          });
+        }
+        if (!options.length) continue;
+
+        delegationVoucherOptionsByUser[uid] = options;
+        delegationCandidates.push({
+          id: uid,
+          username: String(u.username || "").trim(),
+          arabicName: String(u.arabicName || "").trim(),
+        });
       }
     }
 
@@ -269,6 +360,7 @@ export async function GET(req, { params }) {
       data: {
         ...plain,
         delegationVoucherOptionsByUser,
+        delegationCandidates,
         disbursement: {
           isDisbursed: disbursement.isDisbursed || disbursement.stepDisbursed,
           hasVoucher: disbursement.hasVoucher,
@@ -603,12 +695,9 @@ if (action === "update") {
         );
       }
 
-      const userInsideStep = (step.users || []).some(
-        (u) => String(u) === String(delegateToUserId)
-      );
-      if (!userInsideStep) {
+      if (!delegateToUserId || !Types.ObjectId.isValid(String(delegateToUserId))) {
         return NextResponse.json(
-          { success: false, error: "Delegated user must be inside this step users" },
+          { success: false, error: "Invalid delegated user" },
           { status: 400 }
         );
       }
@@ -616,9 +705,25 @@ if (action === "update") {
       const delegateUserDoc = await User.findById(delegateToUserId)
         .select("username email")
         .lean();
+      if (!delegateUserDoc) {
+        return NextResponse.json(
+          { success: false, error: "Delegated user not found" },
+          { status: 404 }
+        );
+      }
 
       const delegatePerms = await getUserPermissions(delegateToUserId);
       const allowedVoucherKeys = getAllVoucherCompanyKeysForUser(delegatePerms);
+      if (!allowedVoucherKeys.length) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "المستخدم المختار ليس لديه صلاحية إدارة الوصولات",
+          },
+          { status: 400 }
+        );
+      }
+
       const normKey = (k) => String(k || "").trim().toLowerCase();
 
       let delegateVoucherCompanyKey = String(body?.delegateVoucherCompanyKey || "").trim();
@@ -647,6 +752,16 @@ if (action === "update") {
       step.voucherDelegatedAt = new Date();
       step.voucherDelegateToUsername = String(delegateUserDoc?.username || "").trim();
       step.voucherDelegatedByUsername = String(currentUsername || "").trim();
+
+      // أضِف المخوَّل لآخر خطوة حتى لو ما كان بالوركفلو أصلاً
+      if (!Array.isArray(step.users)) step.users = [];
+      const alreadyInStep = step.users.some(
+        (u) => String(u?._id || u) === String(delegateToUserId)
+      );
+      if (!alreadyInStep) {
+        step.users.push(new Types.ObjectId(String(delegateToUserId)));
+      }
+
       request.markModified(`workflow.steps.${stepIndex}`);
       await request.save();
 
