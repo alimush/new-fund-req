@@ -76,8 +76,17 @@ export async function POST(req) {
 
     return res;
   } catch (e) {
+    console.error("[api/login]", e?.message || e);
+    const msg = String(e?.message || "");
+    const isTls =
+      /ssl|tls|alert number 80|ECONNRESET|ETIMEDOUT|server selection/i.test(msg);
     return NextResponse.json(
-      { success: false, error: e.message || "Server error" },
+      {
+        success: false,
+        error: isTls
+          ? "تعذر الاتصال بقاعدة البيانات مؤقتاً، أعد المحاولة خلال لحظات"
+          : msg || "Server error",
+      },
       { status: 500 }
     );
   }
