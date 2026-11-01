@@ -47,6 +47,55 @@ async function getUserAccess(userId) {
   };
 }
 
+/** يوزرية فلتر «مقدم الطلب»: فقط من أنشأ طلبات فعلاً بشركات صلاحية المستخدم */
+async function getRequesterFilterUsernames(allowedCompanies = []) {
+  const companies = (allowedCompanies || [])
+    .map((c) => String(c).trim())
+    .filter(Boolean);
+  if (!companies.length) return [];
+
+  const names = new Set();
+  const allowedNorm = new Set(companies.map((c) => c.toLowerCase()));
+
+  await Promise.all(
+    companies.map(async (companyKey) => {
+      try {
+        const Model = getModelForCompany(companyKey);
+        const creators = await Model.distinct("createdBy", {
+          createdBy: { $nin: [null, ""] },
+        });
+        for (const c of creators || []) {
+          const n = String(c || "").trim();
+          if (n) names.add(n);
+        }
+      } catch {
+        /* ignore missing company model */
+      }
+    })
+  );
+
+  if (allowedNorm.has("old-data")) {
+    try {
+      const creators = await RequestOldData.distinct("createdBy", {
+        createdBy: { $nin: [null, ""] },
+        companyKey: {
+          $in: companies.map((c) => new RegExp(`^${escapeRegex(c)}$`, "i")),
+        },
+      });
+      for (const c of creators || []) {
+        const n = String(c || "").trim();
+        if (n) names.add(n);
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  return [...names].sort((a, b) =>
+    a.localeCompare(b, "en", { sensitivity: "base" })
+  );
+}
+
 function isFiltersOnlyRequest(searchParams) {
   if (searchParams.get("filters") === "1") return true;
   const keys = Array.from(searchParams.keys());
@@ -623,10 +672,10 @@ export async function GET(req) {
         });
       }
 
-      const allUsers = canViewAllReports
-        ? await User.find({}).select("username").lean()
+      const requesterUsers = canViewAllReports
+        ? await getRequesterFilterUsernames(allowedCompanies)
         : currentUsername
-        ? [{ username: currentUsername }]
+        ? [currentUsername]
         : [];
 
       const currenciesRaw = await getCurrenciesBySource(source, allowedCompanies);
@@ -638,7 +687,7 @@ export async function GET(req) {
         success: true,
         filters: {
           companies: allowedCompanies,
-          users: allUsers.map((u) => u.username).filter(Boolean),
+          users: requesterUsers,
           currencies: Array.from(currenciesSet).sort(),
           statuses: ["Pending", "Approved", "Rejected"],
           pendingUsers: pendingUsers.map((u) => ({
