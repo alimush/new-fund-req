@@ -286,6 +286,16 @@ export default function Header({ onLogout }) {
             </MenuIcon>
           ),
           onClick: () => openNewTab("/vouchers/reports"),
+        },
+        {
+          key: "voucher-reports-saved",
+          label: "تقارير محفوظة",
+          icon: (
+            <MenuIcon color="text-amber-500">
+              <FaSquarePollVertical />
+            </MenuIcon>
+          ),
+          onClick: () => openNewTab("/vouchers/reports/saved"),
         }
       );
     }

@@ -114,6 +114,14 @@ export default function HomePage() {
         Icon: FiBarChart2,
         color: "text-emerald-600",
       });
+      result.push({
+        key: "vouchers-reports-saved",
+        name: "تقارير محفوظة",
+        href: "/vouchers/reports/saved",
+        isIcon: true,
+        Icon: FiBarChart2,
+        color: "text-amber-600",
+      });
     }
 
     if (permissions.includes(PERMISSIONS.RECEIPTS)) {

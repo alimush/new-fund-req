@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import dynamic from "next/dynamic";
+import Link from "next/link";
 import { createPortal } from "react-dom";
 
 import {
@@ -29,6 +30,7 @@ import {
   FiLink,
   FiX,
   FiLoader,
+  FiArchive,
 } from "react-icons/fi";
 
 import { FaMoneyBillWave } from "react-icons/fa6";
@@ -1591,6 +1593,28 @@ export default function VoucherReportsPage() {
         return;
       }
 
+      // احفظ لقطة التقرير في Mongo (تقارير محفوظة) ثم اطبع
+      try {
+        await fetch("/api/vouchers/reports/saved", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            vouchers: all,
+            dateFrom: date.from || "",
+            dateTo: date.to || "",
+            companyFilter: companyFilter?.value || "all",
+            companyKeys: (printModal.companies || []).map((c) => c.key).filter(Boolean),
+            cashier,
+            prevBalances: printModal.balances || {},
+            fontSize: printModal.fontSize || 9,
+            fontBold: printModal.fontBold !== false,
+          }),
+        });
+      } catch (saveErr) {
+        console.error("⚠️ Save printed report failed:", saveErr);
+      }
+
       closePrintModal();
       await openDailyCashPrintWindow(packages, printWin, {
         fontSize: printModal.fontSize || 9,
@@ -1612,6 +1636,7 @@ export default function VoucherReportsPage() {
     printModal.balances,
     printModal.fontSize,
     printModal.fontBold,
+    printModal.companies,
     date.from,
     date.to,
     companyFilter,
@@ -1720,6 +1745,14 @@ export default function VoucherReportsPage() {
                 <FiPrinter className="text-base" />
                 طباعة التقرير
               </motion.button>
+
+              <Link
+                href="/vouchers/reports/saved"
+                className="inline-flex items-center gap-2 rounded-xl bg-amber-50 px-4 py-2.5 text-sm font-extrabold text-amber-900 ring-1 ring-amber-200/80 transition hover:bg-amber-100"
+              >
+                <FiArchive className="text-base" />
+                تقارير محفوظة
+              </Link>
 
               {canExportEmptyForm ? (
                 <motion.button

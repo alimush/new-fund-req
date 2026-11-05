@@ -2,22 +2,38 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import mongoose from "mongoose";
 import dbConnect from "@/lib/mongodb";
+import User from "@/models/User";
 import VoucherDailyPrintPrefs from "@/models/VoucherDailyPrintPrefs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-function clampFontSize(n) {
+const HARD_DEFAULT = { fontSize: 9, fontBold: true };
+
+function clampFontSize(n, fallback = HARD_DEFAULT.fontSize) {
   const v = Number(n);
-  if (!Number.isFinite(v)) return 9;
+  if (!Number.isFinite(v)) return clampFontSize(fallback, 9);
   return Math.min(14, Math.max(7, Math.round(v)));
 }
 
-function prefsPayload(doc) {
+function prefsPayload(doc, fallback = HARD_DEFAULT) {
+  const base = fallback || HARD_DEFAULT;
   return {
-    fontSize: clampFontSize(doc?.fontSize ?? 9),
-    fontBold: doc?.fontBold !== false,
+    fontSize: clampFontSize(doc?.fontSize ?? base.fontSize, base.fontSize),
+    fontBold:
+      doc?.fontBold !== undefined && doc?.fontBold !== null
+        ? doc.fontBold !== false
+        : base.fontBold !== false,
   };
+}
+
+/** قياسات يوزر admin من مونغو = الديفولت لباقي المستخدمين */
+async function getAdminDefaultPrefs() {
+  const admin = await User.findOne({ username: /^admin$/i })
+    .select("_id")
+    .lean();
+  if (!admin?._id) return null;
+  return VoucherDailyPrintPrefs.findOne({ userId: admin._id }).lean();
 }
 
 async function requireUserId() {
@@ -40,10 +56,19 @@ export async function GET() {
       );
     }
 
+    const adminDoc = await getAdminDefaultPrefs();
+    const adminDefault = prefsPayload(adminDoc);
+
     const doc = await VoucherDailyPrintPrefs.findOne({ userId }).lean();
+    // إذا ما عنده إعدادات خاصة → ديفولت الأدمن
+    const data = doc ? prefsPayload(doc, adminDefault) : adminDefault;
+
     return NextResponse.json({
       success: true,
-      data: prefsPayload(doc),
+      data,
+      meta: {
+        source: doc ? "user" : adminDoc ? "admin" : "hardcoded",
+      },
     });
   } catch (e) {
     console.error("print-prefs GET:", e);
