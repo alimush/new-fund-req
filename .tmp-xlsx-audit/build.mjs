@@ -24,7 +24,7 @@ const ARABIC_DAYS = [
 const COMPANY_NAMES = {
   "Al-Ghadeer": "شركة الغدير",
   "Badur-Baghdad": "شركة بدور بغداد",
-  "Badur-Baghdad-Safebox-Istishar": "بدور بغداد - صندوق امانات مصرف الستشار",
+  "Badur-Baghdad-Safebox-Istishar": "بدور بغداد - صندوق امانات مصرف المستشار",
   "Tiba-Al-najaf": "طيبة النجف",
   "Ghadeer-Karbala": "غدير كربلاء",
   "Badur-Al-Najaf": "بدور النجف",
