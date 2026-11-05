@@ -73,11 +73,12 @@ export async function POST(req) {
           if (cleared) stats.cleared += 1;
         }
 
+        // بدون legacy بالمبلغ — فقط وصولات مربوطة صراحةً بـ requestId/requestCode
         const voucher = await findVoucherForRequest({
           requestId: rid,
           requestCode: rcode,
           requestCompanyKey: ck,
-          includeLegacy: true,
+          includeLegacy: false,
         });
 
         if (!voucher) {

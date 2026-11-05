@@ -150,6 +150,7 @@ export async function GET(req) {
       requestCodeHint = safeString(reqLean?.requestCode);
     }
 
+    // عرض فقط — لا إعادة ربط تلقائي عند فتح شاشة الوصل
     const doc = await findVoucherForRequest({
       requestId,
       requestCode: requestCodeHint,
@@ -157,25 +158,8 @@ export async function GET(req) {
       requestCompanyKey: requestCompanyKey || companyKey,
       allowedPerms,
       hintCompanyKey: requestCompanyKey || companyKey || voucherCompanyKey,
+      includeLegacy: false,
     });
-
-    if (doc && requestId) {
-      try {
-        const actor = await User.findById(userId).select("username").lean();
-        const linked = await linkVoucherToRequest({
-          requestCompanyKey: requestCompanyKey || companyKey,
-          requestId,
-          voucherId: String(doc._id),
-          userId,
-          username: actor?.username || "",
-        });
-        if (!linked?.ok) {
-          console.warn("link on voucher GET skipped:", linked?.reason, requestId);
-        }
-      } catch (e) {
-        console.error("link on voucher GET:", e);
-      }
-    }
 
     return NextResponse.json({
       success: true,
@@ -395,6 +379,7 @@ export async function POST(req) {
     }
 
     // وصل إضافي لنفس الطلب: لا نُرجع الوصل السابق
+    // وصل موجود مسبقاً لهذا الطلب فقط إذا مربوط صراحةً — بدون legacy بالمبلغ
     if (requestId && !allowAdditional) {
       const existingVoucher = await findVoucherForRequest({
         requestId,
@@ -403,16 +388,10 @@ export async function POST(req) {
         requestCompanyKey: requestCompany,
         allowedPerms,
         hintCompanyKey: saveCompanyKey,
+        includeLegacy: false,
       });
 
       if (existingVoucher) {
-        await linkVoucherToRequest({
-          requestCompanyKey: requestCompany,
-          requestId,
-          voucherId: String(existingVoucher._id),
-          userId,
-          username: createdByName || "",
-        });
         return NextResponse.json({
           success: true,
           message: "Voucher already exists for this request",

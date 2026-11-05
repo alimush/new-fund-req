@@ -18,7 +18,6 @@ import {
   sendWorkflowEmail,
 } from "@/lib/email/workflowEmail";
 import { getRequestDisbursementState } from "@/lib/voucher/requestDisbursementState";
-import { reconcileRequestVoucher } from "@/lib/voucher/reconcileRequestVoucher";
 import {
   getAllVoucherCompanyKeysForUser,
   getVoucherCompanyOptionsForDelegation,
@@ -324,36 +323,14 @@ export async function GET(req, { params }) {
       }
     }
 
-    let disbursement = await getRequestDisbursementState({
+    // لا نعيد ربط الوصولات تلقائياً عند فتح الطلب — وإلا أي فصل يدوي يرجع يظهر بالخطوة
+    const disbursement = await getRequestDisbursementState({
       requestCompanyKey: company,
       requestId: id,
       requestCode: plain.requestCode,
       allowedPerms: userPerms,
       hintCompanyKey,
     });
-
-    if (disbursement.hasVoucher && disbursement.voucher) {
-      try {
-        const actor = await User.findById(userId).select("username").lean();
-        const { linked } = await reconcileRequestVoucher({
-          requestCompanyKey: company,
-          requestId: id,
-          requestCode: plain.requestCode,
-          voucher: disbursement.voucher,
-          userId,
-          username: actor?.username || "",
-        });
-        if (linked) {
-          disbursement = {
-            ...disbursement,
-            stepDisbursed: true,
-            isDisbursed: true,
-          };
-        }
-      } catch (e) {
-        console.error("reconcile on request GET:", e);
-      }
-    }
 
     return NextResponse.json({
       success: true,
