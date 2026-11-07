@@ -32,6 +32,23 @@ const VoucherSavedDailyReportSchema = new mongoose.Schema(
     voucherCount: { type: Number, default: 0 },
     /** لقطة وصولات خفيفة كافية لإعادة بناء فورمة الطباعة */
     vouchers: { type: [mongoose.Schema.Types.Mixed], default: [] },
+
+    /** مرفقات التقرير الموقّع (اتاج) */
+    signedAttachments: {
+      type: [
+        {
+          key: { type: String, default: "" },
+          name: { type: String, default: "" },
+          url: { type: String, default: "" },
+          contentType: { type: String, default: "" },
+          size: { type: Number, default: 0 },
+          uploadedAt: { type: Date, default: Date.now },
+          uploadedByUserId: { type: String, default: "" },
+          uploadedByUsername: { type: String, default: "" },
+        },
+      ],
+      default: [],
+    },
   },
   { timestamps: true }
 );

@@ -131,7 +131,7 @@ export async function GET(req) {
       VoucherSavedDailyReport.countDocuments(query),
       VoucherSavedDailyReport.find(query)
         .select(
-          "title dateFrom dateTo companyFilter companyKeys companyNames cashier voucherCount savedByUsername createdAt fontSize fontBold"
+          "title dateFrom dateTo companyFilter companyKeys companyNames cashier voucherCount savedByUsername createdAt fontSize fontBold signedAttachments"
         )
         .sort({ createdAt: -1 })
         .skip((page - 1) * pageSize)

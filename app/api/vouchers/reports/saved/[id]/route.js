@@ -100,6 +100,111 @@ export async function GET(_req, { params }) {
   }
 }
 
+function sanitizeAttachment(input, auth) {
+  if (!input || typeof input !== "object") return null;
+  const key = String(input.key || "").trim();
+  const name = String(input.name || "").trim();
+  const url = String(input.url || "").trim();
+  if (!key && !url) return null;
+  const size = Number(input.size);
+  return {
+    key,
+    name: name || key.split("/").pop() || "file",
+    url,
+    contentType: String(input.contentType || "application/octet-stream").trim(),
+    size: Number.isFinite(size) && size >= 0 ? size : 0,
+    uploadedAt: input.uploadedAt ? new Date(input.uploadedAt) : new Date(),
+    uploadedByUserId: String(auth.userId || ""),
+    uploadedByUsername: String(auth.username || ""),
+  };
+}
+
+/** رفع / حذف مرفق تقرير موقّع */
+export async function PATCH(req, { params }) {
+  try {
+    await dbConnect();
+    const auth = await requireReportsUser();
+    if (!auth.ok) {
+      return NextResponse.json(
+        { success: false, error: auth.error },
+        { status: auth.status }
+      );
+    }
+
+    const { id: rawId } = await params;
+    const id = String(rawId || "").trim();
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return NextResponse.json(
+        { success: false, error: "Invalid id" },
+        { status: 400 }
+      );
+    }
+
+    const doc = await VoucherSavedDailyReport.findById(id);
+    if (!doc || !canAccessDoc(doc.toObject(), auth)) {
+      return NextResponse.json(
+        { success: false, error: "Not found" },
+        { status: 404 }
+      );
+    }
+
+    const body = await req.json().catch(() => ({}));
+    const action = String(body?.action || "add").trim().toLowerCase();
+
+    if (action === "remove") {
+      const key = String(body?.key || "").trim();
+      const url = String(body?.url || "").trim();
+      if (!key && !url) {
+        return NextResponse.json(
+          { success: false, error: "key or url required" },
+          { status: 400 }
+        );
+      }
+      const before = Array.isArray(doc.signedAttachments)
+        ? doc.signedAttachments
+        : [];
+      doc.signedAttachments = before.filter((a) => {
+        if (key && String(a.key || "") === key) return false;
+        if (url && String(a.url || "") === url) return false;
+        return true;
+      });
+      await doc.save();
+      return NextResponse.json({
+        success: true,
+        data: {
+          _id: String(doc._id),
+          signedAttachments: doc.signedAttachments,
+        },
+      });
+    }
+
+    const att = sanitizeAttachment(body?.attachment, auth);
+    if (!att) {
+      return NextResponse.json(
+        { success: false, error: "Invalid attachment" },
+        { status: 400 }
+      );
+    }
+    if (!Array.isArray(doc.signedAttachments)) doc.signedAttachments = [];
+    doc.signedAttachments.push(att);
+    await doc.save();
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        _id: String(doc._id),
+        signedAttachments: doc.signedAttachments,
+      },
+    });
+  } catch (e) {
+    console.error("saved report PATCH:", e);
+    return NextResponse.json(
+      { success: false, error: e?.message || "Failed" },
+      { status: 500 }
+    );
+  }
+}
+
 export async function DELETE(_req, { params }) {
   try {
     await dbConnect();
