@@ -1467,7 +1467,11 @@ function VoucherViewPageContent() {
                                 <input
                                   type="checkbox"
                                   checked={cbOne}
-                                  onChange={(e) => setCbOne(e.target.checked)}
+                                  onChange={(e) => {
+                                    const on = e.target.checked;
+                                    setCbOne(on);
+                                    if (on) setCbTwo(false);
+                                  }}
                                   style={{ width: "100%", height: "100%", margin: 0 }}
                                 />
                               </label>
@@ -1485,7 +1489,11 @@ function VoucherViewPageContent() {
                                 <input
                                   type="checkbox"
                                   checked={cbTwo}
-                                  onChange={(e) => setCbTwo(e.target.checked)}
+                                  onChange={(e) => {
+                                    const on = e.target.checked;
+                                    setCbTwo(on);
+                                    if (on) setCbOne(false);
+                                  }}
                                   style={{ width: "100%", height: "100%", margin: 0 }}
                                 />
                               </label>

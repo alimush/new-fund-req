@@ -5,8 +5,41 @@ import dbConnect from "@/lib/mongodb";
 import Permissions from "@/models/Permissions";
 import User from "@/models/User";
 import VoucherSavedDailyReport from "@/models/VoucherSavedDailyReport";
+import Voucher from "@/models/Voucher";
 import { PERMISSIONS } from "@/lib/permission";
 import { COMPANIES } from "@/lib/voucher/companies";
+
+/** التقارير القديمة حُفظت بدون cbOne/cbTwo → نكمّلها من الوصل الحي */
+async function hydrateSettlementFlags(vouchers) {
+  const list = Array.isArray(vouchers) ? vouchers : [];
+  const needIds = [];
+  for (const v of list) {
+    if (!v || typeof v !== "object") continue;
+    if (v.cbOne !== undefined || v.cbTwo !== undefined) continue;
+    const id = String(v._id || "").trim();
+    if (id && mongoose.Types.ObjectId.isValid(id)) needIds.push(id);
+  }
+  if (!needIds.length) return list;
+
+  const live = await Voucher.find({ _id: { $in: needIds } })
+    .select("_id cbOne cbTwo")
+    .lean();
+  const byId = new Map(
+    (live || []).map((row) => [String(row._id), row])
+  );
+
+  return list.map((v) => {
+    if (!v || typeof v !== "object") return v;
+    if (v.cbOne !== undefined || v.cbTwo !== undefined) return v;
+    const liveRow = byId.get(String(v._id || ""));
+    if (!liveRow) return v;
+    return {
+      ...v,
+      cbOne: Boolean(liveRow.cbOne),
+      cbTwo: Boolean(liveRow.cbTwo),
+    };
+  });
+}
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -90,7 +123,11 @@ export async function GET(_req, { params }) {
       );
     }
 
-    return NextResponse.json({ success: true, data: doc });
+    const vouchers = await hydrateSettlementFlags(doc.vouchers);
+    return NextResponse.json({
+      success: true,
+      data: { ...doc, vouchers },
+    });
   } catch (e) {
     console.error("saved report GET id:", e);
     return NextResponse.json(
