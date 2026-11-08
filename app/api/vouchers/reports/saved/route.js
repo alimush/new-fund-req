@@ -95,14 +95,10 @@ async function requireReportsUser() {
   }
   const user = await User.findById(userId).select("username").lean();
   const username = String(user?.username || "").trim();
-  const isAdmin =
-    /^admin$/i.test(username) ||
-    allowedPerms.includes(PERMISSIONS.VIEW_ALL_REPORTS);
   return {
     ok: true,
     userId,
     username,
-    isAdmin,
     allowedCompanies,
     allowedPerms,
   };
@@ -122,10 +118,10 @@ export async function GET(req) {
       Math.max(10, parseInt(searchParams.get("pageSize") || "25", 10))
     );
 
-    // الأدمن يشوف الكل؛ الباقي فقط تقاريره
-    const query = auth.isAdmin
-      ? {}
-      : { savedByUserId: new mongoose.Types.ObjectId(auth.userId) };
+    // كل مستخدم يشوف تقاريره فقط
+    const query = {
+      savedByUserId: new mongoose.Types.ObjectId(auth.userId),
+    };
 
     const [total, rows] = await Promise.all([
       VoucherSavedDailyReport.countDocuments(query),

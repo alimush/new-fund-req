@@ -23,7 +23,6 @@ import {
   FiX,
 } from "react-icons/fi";
 import { usePermissions } from "@/context/PermissionContext";
-import { useUser } from "@/context/UserContext";
 import { PERMISSIONS } from "@/lib/permission";
 import {
   attachPrintLogos,
@@ -92,7 +91,6 @@ function companiesLabel(r) {
 
 export default function SavedVoucherReportsPage() {
   const { permissions } = usePermissions();
-  const { user: ctxUser } = useUser();
   const canView =
     Array.isArray(permissions) &&
     (permissions.includes(PERMISSIONS.VOUCHERS_REPORTS_VIEW) ||
@@ -408,13 +406,6 @@ export default function SavedVoucherReportsPage() {
       setUploadingId(null);
     }
   }, []);
-
-  const canDeleteRow = useCallback(
-    (r) =>
-      String(r.savedByUsername || "") === String(ctxUser?.username || "") ||
-      permissions.includes(PERMISSIONS.VIEW_ALL_REPORTS),
-    [ctxUser?.username, permissions]
-  );
 
   const handleReset = useCallback(() => {
     setQ("");
@@ -757,17 +748,15 @@ export default function SavedVoucherReportsPage() {
                                 <FiPrinter />
                                 طباعة
                               </button>
-                              {canDeleteRow(r) ? (
-                                <button
-                                  type="button"
-                                  disabled={busy}
-                                  onClick={() => removeSaved(id)}
-                                  className={`inline-flex w-full items-center justify-center gap-1 rounded-lg border px-1.5 py-1 text-[10px] font-extrabold transition disabled:cursor-not-allowed disabled:opacity-60 md:text-[11px] border-red-200 bg-red-50 text-red-700 hover:bg-red-100`}
-                                >
-                                  <FiTrash2 />
-                                  حذف
-                                </button>
-                              ) : null}
+                              <button
+                                type="button"
+                                disabled={busy}
+                                onClick={() => removeSaved(id)}
+                                className="inline-flex w-full items-center justify-center gap-1 rounded-lg border border-red-200 bg-red-50 px-1.5 py-1 text-[10px] font-extrabold text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60 md:text-[11px]"
+                              >
+                                <FiTrash2 />
+                                حذف
+                              </button>
                             </div>
                           </td>
                         </motion.tr>
@@ -922,18 +911,16 @@ export default function SavedVoucherReportsPage() {
                           {att.name || "مرفق"}
                         </span>
                       </button>
-                      {canDeleteRow(attachModal.row) ? (
-                        <button
-                          type="button"
-                          disabled={uploadingId === String(attachModal.row._id)}
-                          onClick={() =>
-                            removeSignedAttachment(attachModal.row, att)
-                          }
-                          className="shrink-0 rounded-lg border border-red-200 bg-red-50 px-2 py-1 text-[10px] font-extrabold text-red-700 hover:bg-red-100"
-                        >
-                          حذف
-                        </button>
-                      ) : null}
+                      <button
+                        type="button"
+                        disabled={uploadingId === String(attachModal.row._id)}
+                        onClick={() =>
+                          removeSignedAttachment(attachModal.row, att)
+                        }
+                        className="shrink-0 rounded-lg border border-red-200 bg-red-50 px-2 py-1 text-[10px] font-extrabold text-red-700 hover:bg-red-100"
+                      >
+                        حذف
+                      </button>
                     </div>
                   ))
                 )}

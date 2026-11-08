@@ -83,15 +83,11 @@ async function requireReportsUser() {
   if (!canView) return { ok: false, status: 403, error: "Forbidden" };
   const user = await User.findById(userId).select("username").lean();
   const username = String(user?.username || "").trim();
-  const isAdmin =
-    /^admin$/i.test(username) ||
-    allowedPerms.includes(PERMISSIONS.VIEW_ALL_REPORTS);
-  return { ok: true, userId, username, isAdmin, allowedCompanies, allowedPerms };
+  return { ok: true, userId, username, allowedCompanies, allowedPerms };
 }
 
 function canAccessDoc(doc, auth) {
   if (!doc) return false;
-  if (auth.isAdmin) return true;
   return String(doc.savedByUserId) === String(auth.userId);
 }
 
@@ -270,10 +266,10 @@ export async function DELETE(_req, { params }) {
       );
     }
 
-    const delQuery = auth.isAdmin
-      ? { _id: id }
-      : { _id: id, savedByUserId: auth.userId };
-    await VoucherSavedDailyReport.deleteOne(delQuery);
+    await VoucherSavedDailyReport.deleteOne({
+      _id: id,
+      savedByUserId: auth.userId,
+    });
     return NextResponse.json({ success: true });
   } catch (e) {
     console.error("saved report DELETE:", e);
