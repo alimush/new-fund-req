@@ -127,6 +127,10 @@ export default function VoucherReportsPage() {
     () => ({ value: "all", label: "كل الصناديق الفرعية" }),
     []
   );
+  const COMPANY_ALL = useMemo(
+    () => ({ value: "all", label: "كل الصناديق" }),
+    []
+  );
 
   const [mainFundFilter, setMainFundFilter] = useState({
     value: "all",
@@ -135,6 +139,11 @@ export default function VoucherReportsPage() {
   const [subFundFilter, setSubFundFilter] = useState({
     value: "all",
     label: "كل الصناديق الفرعية",
+  });
+  /** فلتر صندوق واحد لغير أصحاب VOUCHER_DELEGATE */
+  const [simpleCompanyFilter, setSimpleCompanyFilter] = useState({
+    value: "all",
+    label: "كل الصناديق",
   });
 
   const [modeFilter, setModeFilter] = useState({
@@ -214,6 +223,11 @@ export default function VoucherReportsPage() {
     (permissions.includes(PERMISSIONS.VOUCHER_DELEGATE) ||
       permissions.includes(PERMISSIONS.VIEW_ALL_REPORTS) ||
       permissions.includes(PERMISSIONS.MANAGE_PERMISSIONS));
+
+  /** فلاتر رئيسية/فرعية فقط لمن عنده تخويل صرف */
+  const canUseSplitFundFilters =
+    Array.isArray(permissions) &&
+    permissions.includes(PERMISSIONS.VOUCHER_DELEGATE);
 
   const [linkModal, setLinkModal] = useState({
     open: false,
@@ -428,8 +442,12 @@ export default function VoucherReportsPage() {
     [allowedCompanyKeys]
   );
 
-  const showMainFundFilter = mainFundKeys.length > 0;
-  const showSubFundFilter = subFundKeys.length > 0;
+  const showMainFundFilter =
+    canUseSplitFundFilters && mainFundKeys.length > 0;
+  const showSubFundFilter =
+    canUseSplitFundFilters && subFundKeys.length > 0;
+  const showSimpleCompanyFilter =
+    !canUseSplitFundFilters && allowedCompanyKeys.length > 0;
 
   const mainFundOptions = useMemo(() => {
     if (!showMainFundFilter) return [];
@@ -453,8 +471,22 @@ export default function VoucherReportsPage() {
     ];
   }, [showSubFundFilter, subFundKeys, SUB_FUND_ALL]);
 
+  const simpleCompanyOptions = useMemo(() => {
+    if (!showSimpleCompanyFilter) return [];
+    return [
+      COMPANY_ALL,
+      ...allowedCompanyKeys.map((key) => ({
+        value: key,
+        label: getCompanyName(key),
+      })),
+    ];
+  }, [showSimpleCompanyFilter, allowedCompanyKeys, COMPANY_ALL]);
+
   /** قيمة company للـ API: all أو مفتاح أو مفاتيح مفصولة بفاصلة */
   const companyFilterValue = useMemo(() => {
+    if (!canUseSplitFundFilters) {
+      return String(simpleCompanyFilter?.value || "all");
+    }
     const m = showMainFundFilter ? String(mainFundFilter?.value || "all") : "all";
     const s = showSubFundFilter ? String(subFundFilter?.value || "all") : "all";
     if (m === "all" && s === "all") return "all";
@@ -465,10 +497,12 @@ export default function VoucherReportsPage() {
     // إن اختار رئيسي محدد وفرعي all → الرئيسي فقط
     return keys.length ? keys.join(",") : "all";
   }, [
+    canUseSplitFundFilters,
     showMainFundFilter,
     showSubFundFilter,
     mainFundFilter?.value,
     subFundFilter?.value,
+    simpleCompanyFilter?.value,
   ]);
 
   const companyFilterLabel = useMemo(() => {
@@ -1248,6 +1282,7 @@ export default function VoucherReportsPage() {
   const handleReset = () => {
     setMainFundFilter(MAIN_FUND_ALL);
     setSubFundFilter(SUB_FUND_ALL);
+    setSimpleCompanyFilter(COMPANY_ALL);
     setModeFilter({ value: "all", label: "كل الوصولات" });
     setCurrencyFilter({ value: "all", label: "كل العملات" });
     setDate({ from: "", to: "" });
@@ -1417,6 +1452,7 @@ export default function VoucherReportsPage() {
       const companies = listDailyCashPrintCompanies(vouchers, {
         companyFilter: companyVal,
         includeEmpty: true,
+        allowedCompanyKeys,
       });
       if (!companies.length) {
         alert("اختر صندوقاً للطباعة أو تأكد من صلاحياتك");
@@ -1445,7 +1481,7 @@ export default function VoucherReportsPage() {
     } finally {
       setLoading(false);
     }
-  }, [fetchAllForExport, companyFilter]);
+  }, [fetchAllForExport, companyFilter, allowedCompanyKeys]);
 
   const closePrintModal = useCallback(() => {
     setFontSettingsOpen(false);
@@ -1581,6 +1617,7 @@ export default function VoucherReportsPage() {
         cashier,
         prevBalances: printModal.balances || {},
         includeEmpty: true,
+        allowedCompanyKeys,
       });
 
       if (!packages.length) {
@@ -1640,6 +1677,7 @@ export default function VoucherReportsPage() {
     date.from,
     date.to,
     companyFilter,
+    allowedCompanyKeys,
     printerUsername,
     closePrintModal,
   ]);
@@ -1828,6 +1866,24 @@ export default function VoucherReportsPage() {
                 placeholder="كل الصناديق الفرعية"
                 value={subFundFilter}
                 onChange={(v) => setSubFundFilter(v || SUB_FUND_ALL)}
+                styles={selectStyles}
+                isSearchable
+                components={noClearComponents}
+              />
+            </div>
+          ) : null}
+
+          {showSimpleCompanyFilter ? (
+            <div className="text-right">
+              <FilterLabel icon={<FiHome className="text-sm" />} iconColor="text-blue-600">
+                الصناديق
+              </FilterLabel>
+              <Select
+                {...selectMenuProps}
+                options={simpleCompanyOptions}
+                placeholder="كل الصناديق"
+                value={simpleCompanyFilter}
+                onChange={(v) => setSimpleCompanyFilter(v || COMPANY_ALL)}
                 styles={selectStyles}
                 isSearchable
                 components={noClearComponents}
