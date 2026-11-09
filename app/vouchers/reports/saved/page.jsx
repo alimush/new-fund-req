@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
+import Select from "react-select";
 import {
   FiArrowRight,
   FiCalendar,
@@ -24,6 +25,7 @@ import {
 } from "react-icons/fi";
 import { usePermissions } from "@/context/PermissionContext";
 import { PERMISSIONS } from "@/lib/permission";
+import { COMPANIES } from "@/lib/voucher/companies";
 import {
   attachPrintLogos,
   buildDailyCashPrintPackages,
@@ -90,12 +92,17 @@ function companiesLabel(r) {
 }
 
 export default function SavedVoucherReportsPage() {
-  const { permissions } = usePermissions();
+  const { permissions, user: permUser } = usePermissions();
   const canView =
     Array.isArray(permissions) &&
     (permissions.includes(PERMISSIONS.VOUCHERS_REPORTS_VIEW) ||
       permissions.includes(PERMISSIONS.VIEW_ALL_REPORTS) ||
       permissions.some((p) => String(p || "").startsWith("VOUCHERS_")));
+  const isDelegate =
+    Array.isArray(permissions) &&
+    permissions.includes(PERMISSIONS.VOUCHER_DELEGATE);
+  const currentUserId = String(permUser?.id || "").trim();
+  const currentUsername = String(permUser?.username || "").trim();
 
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -111,6 +118,7 @@ export default function SavedVoucherReportsPage() {
   const [q, setQ] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [companyFilter, setCompanyFilter] = useState([]);
   const [preview, setPreview] = useState({
     open: false,
     title: "",
@@ -122,12 +130,44 @@ export default function SavedVoucherReportsPage() {
     row: null,
   });
   const fileInputRefs = useRef({});
+  const companyKeysRef = useRef([]);
 
-  const load = useCallback(async (pageValue = 1) => {
+  const companyOptions = useMemo(
+    () =>
+      COMPANIES.filter((c) => c?.key && c?.permission).map((c) => ({
+        value: c.key,
+        label: c.name || c.key,
+      })),
+    []
+  );
+
+  const selectedCompanyKeys = useMemo(
+    () =>
+      (Array.isArray(companyFilter) ? companyFilter : [])
+        .map((o) => String(o?.value || "").trim())
+        .filter(Boolean),
+    [companyFilter]
+  );
+
+  useEffect(() => {
+    companyKeysRef.current = selectedCompanyKeys;
+  }, [selectedCompanyKeys]);
+
+  const load = useCallback(async (pageValue = 1, companyKeys) => {
+    const keys = Array.isArray(companyKeys)
+      ? companyKeys
+      : companyKeysRef.current;
     setLoading(true);
     try {
+      const params = new URLSearchParams({
+        page: String(pageValue),
+        pageSize: String(PAGE_SIZE),
+      });
+      if (keys.length) {
+        params.set("company", keys.join(","));
+      }
       const res = await fetch(
-        `/api/vouchers/reports/saved?page=${pageValue}&pageSize=${PAGE_SIZE}`,
+        `/api/vouchers/reports/saved?${params.toString()}`,
         { credentials: "include", cache: "no-store" }
       );
       const json = await res.json().catch(() => ({}));
@@ -157,11 +197,44 @@ export default function SavedVoucherReportsPage() {
     if (canView) load(1);
   }, [canView, load]);
 
+  const canDeleteRow = useCallback(
+    (r) => {
+      if (!r) return false;
+      if (
+        currentUserId &&
+        String(r.savedByUserId || "") === currentUserId
+      ) {
+        return true;
+      }
+      if (
+        currentUsername &&
+        String(r.savedByUsername || "").toLowerCase() ===
+          currentUsername.toLowerCase()
+      ) {
+        return true;
+      }
+      return false;
+    },
+    [currentUserId, currentUsername]
+  );
+
   const filteredRows = useMemo(() => {
     const needle = String(q || "").trim().toLowerCase();
+    const selected = new Set(
+      selectedCompanyKeys.map((k) => k.toLowerCase())
+    );
     return (rows || []).filter((r) => {
       if (dateFrom && String(r.dateFrom || "") < dateFrom) return false;
       if (dateTo && String(r.dateTo || r.dateFrom || "") > dateTo) return false;
+      if (selected.size) {
+        const keys = [
+          ...(Array.isArray(r.companyKeys) ? r.companyKeys : []),
+          r.companyFilter,
+        ]
+          .map((k) => String(k || "").trim().toLowerCase())
+          .filter((k) => k && k !== "all");
+        if (!keys.some((k) => selected.has(k))) return false;
+      }
       if (!needle) return true;
       const blob = [
         r.title,
@@ -174,7 +247,7 @@ export default function SavedVoucherReportsPage() {
         .toLowerCase();
       return blob.includes(needle);
     });
-  }, [rows, q, dateFrom, dateTo]);
+  }, [rows, q, dateFrom, dateTo, selectedCompanyKeys]);
 
   const stats = useMemo(() => {
     let withSigned = 0;
@@ -411,7 +484,9 @@ export default function SavedVoucherReportsPage() {
     setQ("");
     setDateFrom("");
     setDateTo("");
-  }, []);
+    setCompanyFilter([]);
+    load(1, []);
+  }, [load]);
 
   if (!Array.isArray(permissions)) return null;
   if (!canView) return null;
@@ -454,7 +529,7 @@ export default function SavedVoucherReportsPage() {
                 type="button"
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.99 }}
-                onClick={() => load(page)}
+                onClick={() => load(1)}
                 disabled={loading}
                 className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-extrabold shadow-sm transition ${
                   loading
@@ -531,8 +606,12 @@ export default function SavedVoucherReportsPage() {
             </ColoredIcon>
           </div>
 
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
-            <div className="text-right lg:col-span-2">
+          <div
+            className={`grid grid-cols-1 gap-4 ${
+              isDelegate ? "lg:grid-cols-6" : "lg:grid-cols-4"
+            }`}
+          >
+            <div className={`text-right ${isDelegate ? "lg:col-span-2" : "lg:col-span-2"}`}>
               <FilterLabel icon={<FiSearch className="text-sm" />} iconColor="text-blue-600">
                 بحث
               </FilterLabel>
@@ -543,6 +622,63 @@ export default function SavedVoucherReportsPage() {
                 placeholder="عنوان / صندوق / مستخدم..."
               />
             </div>
+            {isDelegate ? (
+              <div className="text-right lg:col-span-2">
+                <FilterLabel
+                  icon={<FiLayers className="text-sm" />}
+                  iconColor="text-violet-600"
+                >
+                  الصناديق
+                </FilterLabel>
+                <Select
+                  isMulti
+                  isClearable
+                  closeMenuOnSelect={false}
+                  options={companyOptions}
+                  value={companyFilter}
+                  onChange={(vals) => setCompanyFilter(vals || [])}
+                  placeholder="اختر صندوق أو أكثر..."
+                  classNamePrefix="saved-company-filter"
+                  styles={{
+                    control: (base) => ({
+                      ...base,
+                      minHeight: 44,
+                      borderRadius: 12,
+                      borderColor: "rgb(226 232 240 / 0.9)",
+                      boxShadow: "none",
+                      fontWeight: 800,
+                      fontSize: 14,
+                      direction: "rtl",
+                    }),
+                    valueContainer: (base) => ({
+                      ...base,
+                      justifyContent: "flex-end",
+                    }),
+                    multiValue: (base) => ({
+                      ...base,
+                      backgroundColor: "#eff6ff",
+                      borderRadius: 8,
+                    }),
+                    multiValueLabel: (base) => ({
+                      ...base,
+                      color: "#1e3a8a",
+                      fontWeight: 800,
+                    }),
+                    placeholder: (base) => ({
+                      ...base,
+                      color: "#94a3b8",
+                      fontWeight: 700,
+                    }),
+                    menu: (base) => ({ ...base, zIndex: 40, direction: "rtl" }),
+                    option: (base) => ({
+                      ...base,
+                      textAlign: "right",
+                      fontWeight: 700,
+                    }),
+                  }}
+                />
+              </div>
+            ) : null}
             <div className="text-right">
               <FilterLabel icon={<FiCalendar className="text-sm" />} iconColor="text-indigo-600">
                 من تاريخ
@@ -748,15 +884,17 @@ export default function SavedVoucherReportsPage() {
                                 <FiPrinter />
                                 طباعة
                               </button>
-                              <button
-                                type="button"
-                                disabled={busy}
-                                onClick={() => removeSaved(id)}
-                                className="inline-flex w-full items-center justify-center gap-1 rounded-lg border border-red-200 bg-red-50 px-1.5 py-1 text-[10px] font-extrabold text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60 md:text-[11px]"
-                              >
-                                <FiTrash2 />
-                                حذف
-                              </button>
+                              {canDeleteRow(r) ? (
+                                <button
+                                  type="button"
+                                  disabled={busy}
+                                  onClick={() => removeSaved(id)}
+                                  className="inline-flex w-full items-center justify-center gap-1 rounded-lg border border-red-200 bg-red-50 px-1.5 py-1 text-[10px] font-extrabold text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60 md:text-[11px]"
+                                >
+                                  <FiTrash2 />
+                                  حذف
+                                </button>
+                              ) : null}
                             </div>
                           </td>
                         </motion.tr>

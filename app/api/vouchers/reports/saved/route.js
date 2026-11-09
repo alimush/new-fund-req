@@ -95,13 +95,39 @@ async function requireReportsUser() {
   }
   const user = await User.findById(userId).select("username").lean();
   const username = String(user?.username || "").trim();
+  const isDelegate = allowedPerms.includes(PERMISSIONS.VOUCHER_DELEGATE);
   return {
     ok: true,
     userId,
     username,
+    isDelegate,
     allowedCompanies,
     allowedPerms,
   };
+}
+
+async function getAdminUserIds() {
+  const admins = await User.find({ username: /^admin$/i }).select("_id").lean();
+  return (admins || [])
+    .map((u) => u?._id)
+    .filter(Boolean);
+}
+
+function parseCompanyKeys(searchParams) {
+  const raw = [
+    searchParams.get("company"),
+    searchParams.get("companies"),
+  ]
+    .filter(Boolean)
+    .join(",");
+  return [
+    ...new Set(
+      String(raw || "")
+        .split(",")
+        .map((k) => String(k || "").trim())
+        .filter(Boolean)
+    ),
+  ];
 }
 
 /** قائمة التقارير المحفوظة */
@@ -117,17 +143,46 @@ export async function GET(req) {
       100,
       Math.max(10, parseInt(searchParams.get("pageSize") || "25", 10))
     );
+    const companyKeys = parseCompanyKeys(searchParams);
 
-    // كل مستخدم يشوف تقاريره فقط
-    const query = {
-      savedByUserId: new mongoose.Types.ObjectId(auth.userId),
-    };
+    const clauses = [];
+
+    if (auth.isDelegate) {
+      // المخوّل يشوف كل التقارير ما عدا تقارير الأدمن (مع إبقاء تقاريره إن كان هو الأدمن)
+      const adminIds = await getAdminUserIds();
+      const notAdminClauses = [{ savedByUsername: { $not: /^admin$/i } }];
+      if (adminIds.length) {
+        notAdminClauses.push({ savedByUserId: { $nin: adminIds } });
+      }
+      clauses.push({
+        $or: [
+          { savedByUserId: new mongoose.Types.ObjectId(auth.userId) },
+          { $and: notAdminClauses },
+        ],
+      });
+    } else {
+      // الباقي: تقاريره فقط
+      clauses.push({
+        savedByUserId: new mongoose.Types.ObjectId(auth.userId),
+      });
+    }
+
+    if (companyKeys.length) {
+      clauses.push({
+        $or: [
+          { companyKeys: { $in: companyKeys } },
+          { companyFilter: { $in: companyKeys } },
+        ],
+      });
+    }
+
+    const query = clauses.length === 1 ? clauses[0] : { $and: clauses };
 
     const [total, rows] = await Promise.all([
       VoucherSavedDailyReport.countDocuments(query),
       VoucherSavedDailyReport.find(query)
         .select(
-          "title dateFrom dateTo companyFilter companyKeys companyNames cashier voucherCount savedByUsername createdAt fontSize fontBold signedAttachments"
+          "title dateFrom dateTo companyFilter companyKeys companyNames cashier voucherCount savedByUserId savedByUsername createdAt fontSize fontBold signedAttachments"
         )
         .sort({ createdAt: -1 })
         .skip((page - 1) * pageSize)

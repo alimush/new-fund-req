@@ -83,10 +83,38 @@ async function requireReportsUser() {
   if (!canView) return { ok: false, status: 403, error: "Forbidden" };
   const user = await User.findById(userId).select("username").lean();
   const username = String(user?.username || "").trim();
-  return { ok: true, userId, username, allowedCompanies, allowedPerms };
+  const isDelegate = allowedPerms.includes(PERMISSIONS.VOUCHER_DELEGATE);
+  return {
+    ok: true,
+    userId,
+    username,
+    isDelegate,
+    allowedCompanies,
+    allowedPerms,
+  };
 }
 
-function canAccessDoc(doc, auth) {
+function isAdminSavedDoc(doc, adminIds = []) {
+  if (!doc) return false;
+  if (/^admin$/i.test(String(doc.savedByUsername || "").trim())) return true;
+  return adminIds.includes(String(doc.savedByUserId || ""));
+}
+
+async function getAdminUserIds() {
+  const admins = await User.find({ username: /^admin$/i }).select("_id").lean();
+  return (admins || []).map((u) => String(u._id));
+}
+
+async function canAccessDoc(doc, auth) {
+  if (!doc) return false;
+  if (String(doc.savedByUserId) === String(auth.userId)) return true;
+  if (!auth.isDelegate) return false;
+  const adminIds = await getAdminUserIds();
+  if (isAdminSavedDoc(doc, adminIds)) return false;
+  return true;
+}
+
+function canMutateDoc(doc, auth) {
   if (!doc) return false;
   return String(doc.savedByUserId) === String(auth.userId);
 }
@@ -112,7 +140,7 @@ export async function GET(_req, { params }) {
     }
 
     const doc = await VoucherSavedDailyReport.findById(id).lean();
-    if (!doc || !canAccessDoc(doc, auth)) {
+    if (!doc || !(await canAccessDoc(doc, auth))) {
       return NextResponse.json(
         { success: false, error: "Not found" },
         { status: 404 }
@@ -174,7 +202,7 @@ export async function PATCH(req, { params }) {
     }
 
     const doc = await VoucherSavedDailyReport.findById(id);
-    if (!doc || !canAccessDoc(doc.toObject(), auth)) {
+    if (!doc || !(await canAccessDoc(doc.toObject(), auth))) {
       return NextResponse.json(
         { success: false, error: "Not found" },
         { status: 404 }
@@ -259,7 +287,7 @@ export async function DELETE(_req, { params }) {
     }
 
     const doc = await VoucherSavedDailyReport.findById(id).lean();
-    if (!doc || !canAccessDoc(doc, auth)) {
+    if (!doc || !canMutateDoc(doc, auth)) {
       return NextResponse.json(
         { success: false, error: "Not found" },
         { status: 404 }
