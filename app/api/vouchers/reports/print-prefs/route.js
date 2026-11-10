@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import mongoose from "mongoose";
 import dbConnect from "@/lib/mongodb";
-import User from "@/models/User";
 import VoucherDailyPrintPrefs from "@/models/VoucherDailyPrintPrefs";
 
 export const runtime = "nodejs";
@@ -27,15 +26,6 @@ function prefsPayload(doc, fallback = HARD_DEFAULT) {
   };
 }
 
-/** قياسات يوزر admin من مونغو = الديفولت لباقي المستخدمين */
-async function getAdminDefaultPrefs() {
-  const admin = await User.findOne({ username: /^admin$/i })
-    .select("_id")
-    .lean();
-  if (!admin?._id) return null;
-  return VoucherDailyPrintPrefs.findOne({ userId: admin._id }).lean();
-}
-
 async function requireUserId() {
   const cookieStore = await cookies();
   const userId = cookieStore.get("userId")?.value;
@@ -56,18 +46,15 @@ export async function GET() {
       );
     }
 
-    const adminDoc = await getAdminDefaultPrefs();
-    const adminDefault = prefsPayload(adminDoc);
-
     const doc = await VoucherDailyPrintPrefs.findOne({ userId }).lean();
-    // إذا ما عنده إعدادات خاصة → ديفولت الأدمن
-    const data = doc ? prefsPayload(doc, adminDefault) : adminDefault;
+    // ديفولت عام لكل اليوزر: حجم 9 — إلا إذا عنده إعداد محفوظ لنفسه
+    const data = doc ? prefsPayload(doc, HARD_DEFAULT) : HARD_DEFAULT;
 
     return NextResponse.json({
       success: true,
       data,
       meta: {
-        source: doc ? "user" : adminDoc ? "admin" : "hardcoded",
+        source: doc ? "user" : "hardcoded",
       },
     });
   } catch (e) {
