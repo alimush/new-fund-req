@@ -2,21 +2,20 @@
 
 import { useMemo, useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { motion, AnimatePresence, MotionConfig } from "framer-motion";
+import { Cairo } from "next/font/google";
+import { motion, MotionConfig } from "framer-motion";
 import { usePermissions } from "@/context/PermissionContext";
 import { PERMISSIONS, hasPermission } from "@/lib/permission";
 import { toPng } from "html-to-image";
 import VoucherCanvasDialog from "@/components/VoucherCanvasDialog";
 import {
-  FiChevronRight,
   FiChevronLeft,
-  FiChevronDown,
   FiFileText,
   FiArrowUpCircle,
   FiArrowDownCircle,
   FiMove,
-  FiLayers,
-  FiX,
+  FiFolder,
+  FiCheck,
 } from "react-icons/fi";
 
 // Shared imports
@@ -50,264 +49,127 @@ import {
 const MIB_FUND_KEYS = new Set(["Badur-Elite-MIB", "Badur-Baghdad-MIB"]);
 
 const COMPANY_GROUPS = VOUCHER_FUND_GROUPS;
-const ALL_GROUP_IDS = COMPANY_GROUPS.map((g) => g.id);
+const cairo = Cairo({ subsets: ["arabic"], weight: ["400", "600", "700", "800"] });
 
 const MOTION_EASE = [0.22, 1, 0.36, 1];
-
-const listStagger = {
-  hidden: {},
-  show: { transition: { staggerChildren: 0.045, delayChildren: 0.04 } },
+const panelMotion = {
+  initial: { opacity: 0, y: 6 },
+  animate: { opacity: 1, y: 0 },
+  transition: { duration: 0.22, ease: MOTION_EASE },
 };
 
-const fadeUp = {
-  hidden: { opacity: 0, y: 8 },
-  show: {
-    opacity: 1,
-    y: 0,
-    transition: { duration: 0.28, ease: MOTION_EASE },
-  },
-};
+const pageClass = "min-h-screen bg-slate-50 px-4 py-6 sm:px-6 sm:py-9";
+const panelClass = "rounded-2xl border border-slate-200 bg-white shadow-sm";
+const focusClass = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-600";
 
-function FundPickCard({ company, active, onSelect }) {
+function VoucherHeading({ children, subtitle }) {
+  return (
+    <header className={`mb-6 flex flex-wrap items-center gap-3 p-4 sm:min-h-28 sm:gap-4 sm:px-6 ${panelClass}`}>
+      <span className="grid size-12 shrink-0 place-items-center rounded-2xl border border-sky-200 bg-sky-100 text-sky-700 sm:size-14">
+        <FiFileText aria-hidden="true" size={25} />
+      </span>
+      <div className="min-w-0 flex-1">
+        <h1 className="text-2xl font-extrabold text-slate-900 sm:text-4xl">إدارة الوصولات</h1>
+        <p className="mt-1 text-sm leading-relaxed text-slate-600 sm:text-base">{subtitle}</p>
+      </div>
+      {children}
+    </header>
+  );
+}
+
+function CompanyLogo({ src, className = "" }) {
+  return (
+    <span className={`grid shrink-0 place-items-center overflow-hidden rounded-xl bg-white ${className}`}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={src} alt="" className="h-full w-full min-h-0 object-contain p-1" />
+    </span>
+  );
+}
+
+function CompanyTile({ group, active, onClick }) {
+  const count = group.funds.length;
   return (
     <motion.button
       type="button"
-      variants={fadeUp}
-      whileHover={{ y: -1 }}
-      whileTap={{ scale: 0.99 }}
-      onClick={() => onSelect(company.key)}
-      dir="rtl"
-      className={[
-        "group w-full rounded-2xl p-4 text-right outline-none transition-[box-shadow,background-color,ring-color] duration-150",
-        "bg-white ring-1",
+      aria-pressed={active}
+      onClick={onClick}
+      whileTap={{ scale: 0.98 }}
+      className={`relative flex min-h-32 min-w-0 flex-col items-center justify-center gap-1.5 rounded-2xl border px-2 py-3 text-center shadow-sm transition-colors ${focusClass} ${
         active
-          ? "bg-sky-50/70 ring-sky-300 shadow-[0_6px_20px_-12px_rgba(14,165,233,0.35)]"
-          : "ring-slate-200/90 shadow-sm hover:ring-sky-200 hover:shadow-md",
-      ].join(" ")}
+          ? "border-sky-400 bg-sky-50 ring-1 ring-sky-400"
+          : "border-slate-200 bg-white hover:border-sky-300 hover:bg-sky-50/40"
+      }`}
     >
-      <div className="flex items-center gap-3">
-        <div
-          className={[
-            "flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl ring-1",
-            active ? "bg-white ring-sky-200" : "bg-slate-50 ring-slate-200/80",
-          ].join(" ")}
-        >
-          <img
-            src={company.logo}
-            alt={company.name}
-            className="h-full w-full object-contain p-1.5"
-            draggable={false}
-          />
-        </div>
-
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-[15px] font-extrabold text-slate-900">
-            {company.name}
-          </div>
-          <p className="mt-0.5 text-[12px] font-semibold text-slate-500">
-            طباعة وصل صرف أو قبض
-          </p>
-        </div>
-
-        <div
-          className={[
-            "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition-colors duration-150",
-            active
-              ? "bg-sky-500 text-white"
-              : "bg-slate-100 text-slate-400 group-hover:bg-sky-500 group-hover:text-white",
-          ].join(" ")}
-        >
-          <FiChevronLeft className="text-base" />
-        </div>
-      </div>
+      {active && (
+        <span className="absolute end-2 top-2 grid size-5 place-items-center rounded-full bg-sky-700 text-white">
+          <FiCheck aria-hidden="true" size={13} />
+        </span>
+      )}
+      <CompanyLogo src={group.logo} className="h-14 w-24 max-w-full" />
+      <span className="text-sm font-extrabold text-slate-900 sm:text-base">{group.title}</span>
+      <span className="text-xs text-slate-600">
+        {count === 1 ? "صندوق واحد" : count === 2 ? "صندوقان" : `${count} صناديق`}
+      </span>
     </motion.button>
   );
 }
 
-function CompanyGroupCard({
-  group,
-  open,
-  selectedKey,
-  onToggle,
-  onSelectFund,
-}) {
-  const hasActive = group.funds.some((f) => f.key === selectedKey);
-  const summaryParts = [];
-  if (group.mainCount) summaryParts.push(`${group.mainCount} رئيسي`);
-  if (group.subCount) summaryParts.push(`${group.subCount} فرعي`);
-
+function FundRow({ fund, active, onClick }) {
   return (
-    <motion.div
-      variants={fadeUp}
-      className={[
-        "overflow-hidden rounded-2xl bg-white ring-1 transition-[box-shadow,ring-color] duration-200",
-        hasActive
-          ? "ring-sky-300/80 shadow-[0_8px_28px_-16px_rgba(14,165,233,0.22)]"
-          : "ring-slate-200/90 shadow-[0_2px_12px_-6px_rgba(15,23,42,0.08)]",
-      ].join(" ")}
+    <motion.button
+      type="button"
+      aria-pressed={active}
+      onClick={onClick}
+      whileTap={{ scale: 0.99 }}
+      className={`relative flex min-h-13 w-full items-center gap-2.5 border-b border-slate-200 px-3 py-2 text-start transition-colors last:border-b-0 focus-visible:z-10 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sky-600 ${
+        active ? "bg-sky-50 before:absolute before:inset-y-0 before:start-0 before:w-0.5 before:bg-sky-500" : "hover:bg-slate-50"
+      }`}
     >
-      <button
-        type="button"
-        onClick={() => onToggle(group.id)}
-        className="flex w-full items-center gap-3 p-4 text-right outline-none sm:gap-4 sm:p-4"
-      >
-        <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-slate-50 ring-1 ring-slate-200/80 sm:h-14 sm:w-14">
-          <img
-            src={group.logo}
-            alt={group.title}
-            className="h-full w-full object-contain p-2"
-            draggable={false}
-          />
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <h2 className="text-[15px] font-extrabold text-slate-900 sm:text-base">
-              {group.title}
-            </h2>
-            {hasActive ? (
-              <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[10px] font-extrabold text-sky-700 ring-1 ring-sky-200/80">
-                نشط
-              </span>
-            ) : null}
-          </div>
-          <p className="mt-0.5 text-[12px] font-semibold text-slate-500">
-            {summaryParts.join(" · ") || `${group.funds.length} صندوق`}
-          </p>
-        </div>
-        <div
-          className={[
-            "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition-colors duration-200",
-            open
-              ? "bg-sky-500 text-white"
-              : "bg-slate-100 text-slate-500 ring-1 ring-slate-200",
-          ].join(" ")}
-        >
-          <FiChevronDown
-            className={`text-base transition-transform duration-200 ${open ? "rotate-180" : ""}`}
-          />
-        </div>
-      </button>
+      <FiFolder aria-hidden="true" className={active ? "shrink-0 text-sky-700" : "shrink-0 text-slate-500"} size={18} />
+      <span className="flex-1 text-sm font-bold text-slate-900">
+        {fund.shortLabel === "الرئيسي" ? "الصندوق الرئيسي" : fund.shortLabel}
+      </span>
+      {fund.company.receiptOnly && <span className="text-xs font-semibold text-sky-800">قبض فقط</span>}
+      <span className={`rounded-md px-2 py-1 text-xs font-bold ${active ? "bg-sky-100 text-sky-800" : "bg-slate-100 text-slate-600"}`}>
+        {fund.role === "main" ? "رئيسي" : "فرعي"}
+      </span>
+      {active
+        ? <FiCheck aria-hidden="true" className="shrink-0 text-sky-700" size={16} />
+        : <FiChevronLeft aria-hidden="true" className="shrink-0 text-slate-500" size={16} />}
+    </motion.button>
+  );
+}
 
-      <AnimatePresence initial={false}>
-        {open ? (
-          <motion.div
-            key="funds"
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.22, ease: MOTION_EASE }}
-            className="overflow-hidden"
-          >
-            <div className="space-y-1.5 border-t border-slate-100 bg-slate-50/70 px-3 pb-3 pt-2 sm:px-3">
-              {group.funds.map((fund) => {
-                const active = selectedKey === fund.key;
-                const isMain = fund.role === "main";
-                return (
-                  <motion.button
-                    key={fund.key}
-                    type="button"
-                    whileTap={{ scale: 0.985 }}
-                    onClick={() => onSelectFund(fund.key)}
-                    className={[
-                      "flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-right transition-[background-color,box-shadow,ring-color] duration-150",
-                      active
-                        ? "bg-sky-50 shadow-sm ring-2 ring-sky-400/70"
-                        : "bg-white/90 ring-1 ring-slate-200/80 hover:bg-white hover:ring-sky-200",
-                    ].join(" ")}
-                  >
-                    <div
-                      className={[
-                        "flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg ring-1",
-                        active
-                          ? "bg-white ring-sky-200"
-                          : "bg-slate-50 ring-slate-200/70",
-                      ].join(" ")}
-                    >
-                      <img
-                        src={fund.company.logo}
-                        alt=""
-                        className="h-full w-full object-contain p-1"
-                        draggable={false}
-                      />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center justify-end gap-1.5">
-                        <span className="text-[13px] font-extrabold text-slate-900">
-                          {fund.company.name}
-                        </span>
-                        <span
-                          className={[
-                            "rounded-full px-1.5 py-0.5 text-[10px] font-extrabold ring-1",
-                            isMain
-                              ? "bg-emerald-50 text-emerald-700 ring-emerald-200/80"
-                              : "bg-amber-50 text-amber-700 ring-amber-200/80",
-                          ].join(" ")}
-                        >
-                          {isMain ? "رئيسي" : "فرعي"}
-                        </span>
-                      </div>
-                      <p className="mt-0.5 text-[11px] font-semibold text-slate-500">
-                        {fund.shortLabel}
-                        {fund.company.receiptOnly ? " · قبض فقط" : ""}
-                      </p>
-                    </div>
-                    <div
-                      className={[
-                        "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors duration-150",
-                        active
-                          ? "bg-sky-500 text-white"
-                          : "bg-slate-100 text-slate-400",
-                      ].join(" ")}
-                    >
-                      <FiChevronRight className="text-sm" />
-                    </div>
-                  </motion.button>
-                );
-              })}
-            </div>
-          </motion.div>
-        ) : null}
-      </AnimatePresence>
-    </motion.div>
+function VoucherAction({ payment = false, onClick }) {
+  const Icon = payment ? FiArrowUpCircle : FiArrowDownCircle;
+  return (
+    <motion.button
+      type="button"
+      onClick={onClick}
+      whileTap={{ scale: 0.98 }}
+      className={`flex min-h-14 w-full items-center gap-3 rounded-xl border px-3 py-2 text-start font-extrabold transition-colors ${focusClass} ${
+        payment
+          ? "border-emerald-200 bg-emerald-50 text-emerald-800 hover:border-emerald-300 hover:bg-emerald-100"
+          : "border-blue-200 bg-blue-50 text-blue-800 hover:border-blue-300 hover:bg-blue-100"
+      }`}
+    >
+      <span className={`grid size-9 shrink-0 place-items-center rounded-lg ${payment ? "bg-emerald-100 text-teal-700" : "bg-blue-100 text-blue-700"}`}>
+        <Icon aria-hidden="true" size={20} />
+      </span>
+      <span className="flex-1">{payment ? "وصل صرف" : "وصل قبض"}</span>
+      <FiChevronLeft aria-hidden="true" size={17} />
+    </motion.button>
   );
 }
 
 function VouchersLoadingShell({ message }) {
   return (
-    <div className="min-h-screen bg-slate-50 px-4 py-8 sm:px-6 sm:py-10">
-      <div className="mx-auto max-w-5xl">
-        <motion.div
-          initial={{ opacity: 0, y: 6 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.28, ease: MOTION_EASE }}
-          className="mb-7 flex items-center gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6"
-        >
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-sky-500 text-white shadow-sm shadow-sky-500/25 sm:h-14 sm:w-14">
-            <FiFileText className="text-xl sm:text-2xl" strokeWidth={2} />
-          </div>
-          <div className="min-w-0 flex-1 text-right">
-            <h1 className="text-2xl font-extrabold tracking-tight text-slate-900 sm:text-3xl">
-              إدارة الوصولات
-            </h1>
-            <p className="mt-1 text-sm font-semibold text-slate-500">{message}</p>
-          </div>
-        </motion.div>
-
-        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 lg:gap-4">
-          {[0, 1, 2, 3].map((i) => (
-            <motion.div
-              key={i}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{
-                duration: 0.3,
-                delay: 0.06 + i * 0.05,
-                ease: MOTION_EASE,
-              }}
-              className="h-[88px] overflow-hidden rounded-2xl border border-slate-200 bg-white"
-            >
-              <div className="h-full w-full animate-pulse bg-gradient-to-l from-slate-100 via-white to-slate-100" />
-            </motion.div>
+    <div dir="rtl" className={`${pageClass} ${cairo.className}`} role="status" aria-busy="true">
+      <div className="mx-auto max-w-[1240px]">
+        <VoucherHeading subtitle={message} />
+        <div aria-hidden="true" className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+          {[0, 1, 2, 3, 4].map((i) => (
+            <div key={i} className={`h-32 motion-safe:animate-pulse ${panelClass}`} />
           ))}
         </div>
       </div>
@@ -348,13 +210,9 @@ export default function VoucherPage() {
   const permissionsReady = permissionsLoaded;
   const accessDenied = permissionsReady && !canEnter;
 
-  const [selectedKey, setSelectedKey] = useState(null);
-  const [showTypePicker, setShowTypePicker] = useState(false);
-
-  const selectFund = (key) => {
-    setSelectedKey(key);
-    setShowTypePicker(true);
-  };
+  const [chosenKey, setChosenKey] = useState(null);
+  const [focusIssue, setFocusIssue] = useState(false);
+  const issueHeadingRef = useRef(null);
 
   const filteredCompanies = useMemo(() => {
     if (!Array.isArray(permissions)) return [];
@@ -405,8 +263,6 @@ export default function VoucherPage() {
       return {
         ...group,
         funds,
-        mainCount: funds.filter((f) => f.role === "main").length,
-        subCount: funds.filter((f) => f.role === "sub").length,
       };
     }).filter(Boolean);
   }, [companyByKey]);
@@ -417,23 +273,22 @@ export default function VoucherPage() {
     [filteredCompanies]
   );
 
-  const [expandedGroups, setExpandedGroups] = useState(
-    () => new Set(ALL_GROUP_IDS)
-  );
+  const selectedMib = mibCompanies.find((company) => company.key === chosenKey)
+    || (!companyGroups.length ? mibCompanies[0] : null);
+  const isMibSelected = Boolean(selectedMib);
+  const activeGroup = companyGroups.find((group) => group.funds.some((fund) => fund.key === chosenKey))
+    || companyGroups[0];
+  const activeFund = !isMibSelected
+    ? activeGroup?.funds.find((fund) => fund.key === chosenKey) || activeGroup?.funds[0]
+    : null;
+  const selectedCompany = selectedMib || activeFund?.company || null;
+  const selectedKey = selectedCompany?.key;
 
-  const toggleGroup = (id) => {
-    setExpandedGroups((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
-  const selectedCompany = useMemo(
-    () => filteredCompanies.find((c) => c.key === selectedKey) || null,
-    [selectedKey, filteredCompanies]
-  );
+  useEffect(() => {
+    if (!focusIssue) return;
+    issueHeadingRef.current?.focus();
+    setFocusIssue(false);
+  }, [focusIssue]);
 
   const [openModal, setOpenModal] = useState(false);
   const [mode, setMode] = useState("payment");
@@ -928,7 +783,6 @@ export default function VoucherPage() {
     if (selectedCompany.receiptOnly) return;
     setMode("payment");
     setOpenModal(true);
-    setShowTypePicker(false);
     setActiveField("date");
     setTimeout(() => yyRef.current?.focus(), 50);
   };
@@ -937,13 +791,8 @@ export default function VoucherPage() {
     if (!selectedCompany) return;
     setMode("receipt");
     setOpenModal(true);
-    setShowTypePicker(false);
     setActiveField("date");
     setTimeout(() => yyRef.current?.focus(), 50);
-  };
-
-  const closeTypePicker = () => {
-    setShowTypePicker(false);
   };
 
   const currentImg = useMemo(() => {
@@ -963,309 +812,134 @@ export default function VoucherPage() {
 
   return (
     <MotionConfig reducedMotion="user">
-      <div className="min-h-screen bg-slate-50 px-4 py-8 sm:px-6 sm:py-10">
-        <div className="mx-auto max-w-5xl">
-          <motion.div
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3, ease: MOTION_EASE }}
-            className="mb-7 flex items-center gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:gap-5 sm:p-6"
-          >
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-sky-500 text-white shadow-sm shadow-sky-500/25 sm:h-14 sm:w-14">
-              <FiFileText className="text-xl sm:text-2xl" strokeWidth={2} />
-            </div>
-            <div className="min-w-0 flex-1 text-right">
-              <h1 className="text-2xl font-extrabold tracking-tight text-slate-900 sm:text-3xl">
-                إدارة الوصولات
-              </h1>
-              <p className="mt-1 text-sm font-semibold leading-relaxed text-slate-600">
-                اختر الشركة ثم الصندوق واطبع وصل صرف أو قبض
-              </p>
-              {companyGroups.length > 0 || mibCompanies.length > 0 ? (
-                <p className="mt-2 inline-flex flex-wrap items-center justify-end gap-2 text-[11px] font-bold text-slate-500">
-                  <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 ring-1 ring-slate-200">
-                    <FiLayers className="text-slate-400" />
-                    {companyGroups.length} شركة
-                  </span>
-                  <span className="rounded-full bg-slate-100 px-2.5 py-1 ring-1 ring-slate-200">
-                    {filteredCompanies.filter((c) => !MIB_FUND_KEYS.has(c.key)).length} صندوق
-                  </span>
-                  {mibCompanies.length > 0 ? (
-                    <span className="rounded-full bg-sky-50 px-2.5 py-1 text-sky-700 ring-1 ring-sky-100">
-                      {mibCompanies.length} MIB
-                    </span>
-                  ) : null}
-                </p>
-              ) : null}
-            </div>
-            {canLayoutFields && hasCategoryFunds ? (
+      <div className={pageClass}>
+        <main dir="rtl" className={`mx-auto max-w-[1240px] ${cairo.className}`}>
+          <VoucherHeading subtitle="اختر الشركة والصندوق لإصدار وصل قبض أو صرف">
+            {canLayoutFields && hasCategoryFunds && (
               <button
                 type="button"
                 onClick={() => router.push("/vouchers/category-layout")}
-                className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-sky-600 px-4 py-2.5 text-sm font-extrabold text-white shadow-sm hover:bg-sky-700"
+                className={`inline-flex min-h-10 shrink-0 items-center gap-2 rounded-xl border border-sky-200 bg-white px-3 text-sm font-bold text-sky-800 transition-colors hover:bg-sky-50 ${focusClass}`}
               >
-                <FiMove />
-                جيك بوكس الفئة
+                <FiMove aria-hidden="true" /> جيك بوكس الفئة
               </button>
-            ) : null}
-          </motion.div>
+            )}
+          </VoucherHeading>
 
-          {companyGroups.length > 0 ? (
-            <>
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ duration: 0.25, delay: 0.05 }}
-                className="mb-3 flex items-end justify-between gap-3"
-                dir="rtl"
-              >
-                <div className="text-right">
-                  <p className="text-xs font-extrabold text-slate-400">
-                    الشركات والصناديق
-                  </p>
-                  <p className="mt-0.5 text-[12px] font-semibold text-slate-500">
-                    رئيسي وفرعي حسب صلاحياتك
-                  </p>
-                </div>
-                <div className="flex shrink-0 gap-2">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setExpandedGroups(new Set(companyGroups.map((g) => g.id)))
-                    }
-                    className="rounded-lg bg-white px-3 py-1.5 text-[11px] font-extrabold text-slate-700 ring-1 ring-slate-200 hover:bg-sky-50 hover:text-sky-800 hover:ring-sky-200"
-                  >
-                    فتح الكل
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setExpandedGroups(new Set())}
-                    className="rounded-lg bg-white px-3 py-1.5 text-[11px] font-extrabold text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50"
-                  >
-                    طي الكل
-                  </button>
-                </div>
-              </motion.div>
-              <motion.div
-                variants={listStagger}
-                initial="hidden"
-                animate="show"
-                className="grid grid-cols-1 gap-3 lg:grid-cols-2 lg:gap-4"
+          {companyGroups.length > 0 && (
+            <section aria-labelledby="voucher-companies">
+              <h2 id="voucher-companies" className="mb-3 text-lg font-extrabold">الشركات</h2>
+              <div
+                className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-[repeat(var(--company-count),minmax(0,1fr))]"
+                style={{ "--company-count": Math.min(companyGroups.length, 6) }}
               >
                 {companyGroups.map((group) => (
-                  <CompanyGroupCard
+                  <CompanyTile
                     key={group.id}
                     group={group}
-                    open={expandedGroups.has(group.id)}
-                    selectedKey={showTypePicker ? null : selectedKey}
-                    onToggle={toggleGroup}
-                    onSelectFund={selectFund}
+                    active={!isMibSelected && activeGroup?.id === group.id}
+                    onClick={() => setChosenKey(activeGroup?.id === group.id && activeFund ? activeFund.key : group.funds[0].key)}
                   />
                 ))}
-              </motion.div>
-            </>
-          ) : null}
-
-          {mibCompanies.length > 0 ? (
-            <motion.div
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.28, delay: 0.12, ease: MOTION_EASE }}
-              className={companyGroups.length > 0 ? "mt-8" : ""}
-            >
-              <div className="mb-3 flex items-center gap-3" dir="rtl">
-                <div className="h-px flex-1 bg-slate-200" />
-                <div className="shrink-0 text-center">
-                  <p className="text-sm font-extrabold text-slate-800">صناديق MIB</p>
-                  <p className="mt-0.5 text-[11px] font-semibold text-slate-500">
-                    بدور ايليت وبدور بغداد
-                  </p>
-                </div>
-                <div className="h-px flex-1 bg-slate-200" />
               </div>
+            </section>
+          )}
 
-              <motion.div
-                variants={listStagger}
-                initial="hidden"
-                animate="show"
-                className="grid grid-cols-1 gap-3 sm:grid-cols-2"
-              >
-                {mibCompanies.map((company) => (
-                  <FundPickCard
-                    key={company.key}
-                    company={company}
-                    active={!showTypePicker && selectedKey === company.key}
-                    onSelect={selectFund}
-                  />
-                ))}
-              </motion.div>
-            </motion.div>
-          ) : null}
-
-          <motion.p
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.25, delay: 0.18 }}
-            className="mt-5 text-center text-[12px] font-semibold text-slate-400"
-          >
-            اختر صندوقاً لفتح نافذة صرف أو قبض
-          </motion.p>
-        </div>
-
-        {/* بوب أب اختيار صرف / قبض — ظهور فوري بدون AnimatePresence لتفادي وميض الإغلاق */}
-        {showTypePicker && selectedCompany ? (
-            <div
-              className="fixed inset-0 z-[80] flex items-end justify-center p-0 sm:items-center sm:p-6"
-            >
-              <button
-                type="button"
-                aria-label="إغلاق"
-                className="absolute inset-0 bg-slate-900/40"
-                onClick={closeTypePicker}
-              />
-
-              <div
-                role="dialog"
-                aria-modal="true"
-                aria-labelledby="voucher-type-picker-title"
-                className="relative z-10 w-full max-w-xl overflow-hidden rounded-t-3xl bg-white shadow-[0_24px_64px_-24px_rgba(15,23,42,0.28)] ring-1 ring-slate-200/90 sm:rounded-3xl"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div className="flex items-center gap-4 border-b border-slate-100 px-5 py-4 sm:px-6 sm:py-5">
-                  <button
-                    type="button"
-                    onClick={closeTypePicker}
-                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-600 ring-1 ring-slate-200/80 transition hover:bg-slate-200/80"
-                  >
-                    <FiX className="text-lg" />
-                  </button>
-
-                  <div className="min-w-0 flex-1 text-right">
-                    <p className="text-[11px] font-extrabold tracking-wide text-slate-400">
-                      اختيار نوع الوصل
-                    </p>
-                    <h2
-                      id="voucher-type-picker-title"
-                      className="mt-0.5 truncate text-lg font-black text-slate-900"
-                    >
-                      {selectedCompany.name}
+          {selectedCompany && (
+            <div className={`mt-5 grid gap-4 ${activeGroup && !isMibSelected ? "md:grid-cols-[1.2fr_1fr]" : ""}`}>
+              {activeGroup && !isMibSelected && (
+                <section className={`p-4 sm:p-5 ${panelClass}`} aria-labelledby="voucher-funds">
+                  <motion.div key={activeGroup.id} {...panelMotion}>
+                    <h2 id="voucher-funds" className="mb-3 flex items-center gap-2 text-lg font-extrabold">
+                      <FiFolder aria-hidden="true" className="text-sky-700" />
+                      صناديق {activeGroup.title}
                     </h2>
-                    <div className="mt-1.5 flex flex-wrap items-center justify-end gap-2">
-                      {(() => {
-                        const meta = COMPANY_GROUPS.flatMap((g) =>
-                          g.funds.map((f) => ({ ...f, groupTitle: g.title }))
-                        ).find((f) => f.key === selectedCompany.key);
-                        if (!meta) {
-                          return MIB_FUND_KEYS.has(selectedCompany.key) ? (
-                            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-extrabold text-slate-600 ring-1 ring-slate-200">
-                              MIB
-                            </span>
-                          ) : null;
-                        }
-                        return (
-                          <>
-                            <span
-                              className={[
-                                "rounded-full px-2 py-0.5 text-[10px] font-extrabold ring-1",
-                                meta.role === "main"
-                                  ? "bg-slate-100 text-slate-700 ring-slate-200"
-                                  : "bg-slate-100 text-slate-600 ring-slate-200",
-                              ].join(" ")}
-                            >
-                              {meta.role === "main" ? "رئيسي" : "فرعي"}
-                            </span>
-                            <span className="text-[11px] font-bold text-slate-400">
-                              {meta.groupTitle}
-                            </span>
-                          </>
-                        );
-                      })()}
+                    <div className="overflow-hidden rounded-xl border border-slate-200">
+                      {activeGroup.funds.map((fund) => (
+                        <FundRow
+                          key={fund.key}
+                          fund={fund}
+                          active={selectedKey === fund.key}
+                          onClick={() => setChosenKey(fund.key)}
+                        />
+                      ))}
                     </div>
-                  </div>
+                  </motion.div>
+                </section>
+              )}
 
-                  <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-slate-50 ring-1 ring-slate-200/80">
-                    <img
-                      src={selectedCompany.logo}
-                      alt=""
-                      className="h-full w-full object-contain p-2"
-                      draggable={false}
-                    />
+              <section className={`overflow-hidden ${panelClass}`} aria-labelledby="voucher-issue">
+                <div className="flex items-center gap-3 border-b border-sky-100 bg-sky-50 px-4 py-3 sm:px-5">
+                  <CompanyLogo src={selectedCompany.logo} className="h-10 w-12 border border-sky-100" />
+                  <div className="min-w-0">
+                    <h2 id="voucher-issue" ref={issueHeadingRef} tabIndex={-1} className="text-lg font-extrabold">
+                      إصدار وصل
+                    </h2>
+                    <p className="text-sm leading-relaxed text-slate-600">
+                      {isMibSelected ? "صناديق MIB" : activeGroup?.title}
+                    </p>
                   </div>
                 </div>
+                <div className="space-y-3 p-4">
+                  <div aria-live="polite">
+                    <motion.div key={selectedKey} {...panelMotion} className="flex flex-wrap items-center gap-2">
+                      <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-sky-100 text-sky-800">
+                        <FiCheck aria-hidden="true" size={16} />
+                      </span>
+                      <span className="min-w-0 text-sm font-extrabold text-slate-900">
+                        {activeFund?.shortLabel === "الرئيسي" ? "الصندوق الرئيسي" : activeFund?.shortLabel || selectedCompany.name}
+                      </span>
+                      <span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600">
+                        الصندوق المحدد
+                      </span>
+                    </motion.div>
+                  </div>
+                  <div className={`grid gap-2.5 ${selectedCompany.receiptOnly ? "" : "min-[420px]:grid-cols-2 md:grid-cols-1 lg:grid-cols-2"}`}>
+                    <VoucherAction onClick={openReceipt} />
+                    {!selectedCompany.receiptOnly && <VoucherAction payment onClick={openPayment} />}
+                  </div>
+                </div>
+              </section>
+            </div>
+          )}
 
-                <div className="space-y-3 bg-slate-50/50 p-4 sm:p-5">
-                  <p className="text-center text-[12px] font-bold text-slate-500">
-                    {selectedCompany.receiptOnly
-                      ? "هذا الصندوق يدعم وصل القبض فقط"
-                      : "اختر نوع الوصل — نافذة الإدخال ثم الطباعة بحجم A5"}
-                  </p>
-
-                  <div
-                    className={`grid grid-cols-1 gap-3 ${
-                      selectedCompany.receiptOnly ? "max-w-md mx-auto w-full" : "sm:grid-cols-2"
+          {mibCompanies.length > 0 && (
+            <section className="mt-6" aria-labelledby="voucher-mib">
+              <h2 id="voucher-mib" className="mb-3 text-lg font-extrabold">صناديق <bdi>MIB</bdi></h2>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {mibCompanies.map((company) => (
+                  <motion.button
+                    key={company.key}
+                    type="button"
+                    aria-pressed={selectedKey === company.key}
+                    whileTap={{ scale: 0.99 }}
+                    onClick={() => {
+                      setChosenKey(company.key);
+                      setFocusIssue(true);
+                    }}
+                    className={`flex min-h-16 items-center gap-3 rounded-xl border px-3 py-2 text-start shadow-sm transition-colors ${focusClass} ${
+                      selectedKey === company.key ? "border-sky-400 bg-sky-50" : "border-slate-200 bg-white hover:border-sky-300"
                     }`}
                   >
-                    {!selectedCompany.receiptOnly ? (
-                      <button
-                        type="button"
-                        onClick={openPayment}
-                        className="group relative w-full overflow-hidden rounded-2xl bg-white p-5 text-right shadow-[0_2px_14px_-4px_rgba(0,0,0,0.08)] ring-1 ring-slate-200/90 transition hover:-translate-y-0.5 hover:ring-slate-300 hover:shadow-[0_14px_44px_-18px_rgba(15,23,42,0.16)]"
-                      >
-                        <div className="pointer-events-none absolute inset-y-4 left-0 w-1 rounded-full bg-gradient-to-b from-emerald-400 to-teal-600" />
-                        <div className="relative flex items-center gap-4 ps-2">
-                          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-md shadow-emerald-600/25 ring-2 ring-white/60">
-                            <FiArrowUpCircle className="text-xl" strokeWidth={2} />
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <p className="text-base font-extrabold text-slate-900">وصل صرف</p>
-                            <p className="mt-1 text-[12px] font-semibold leading-relaxed text-slate-500">
-                              نافذة الإدخال ثم الطباعة بحجم A5
-                            </p>
-                          </div>
-                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-500 ring-1 ring-slate-200 transition group-hover:bg-slate-900 group-hover:text-white group-hover:ring-slate-900">
-                            <FiChevronRight className="text-lg" />
-                          </div>
-                        </div>
-                      </button>
-                    ) : null}
-
-                    <button
-                      type="button"
-                      onClick={openReceipt}
-                      className="group relative w-full overflow-hidden rounded-2xl bg-white p-5 text-right shadow-[0_2px_14px_-4px_rgba(0,0,0,0.08)] ring-1 ring-slate-200/90 transition hover:-translate-y-0.5 hover:ring-slate-300 hover:shadow-[0_14px_44px_-18px_rgba(15,23,42,0.16)]"
-                    >
-                      <div className="pointer-events-none absolute inset-y-4 left-0 w-1 rounded-full bg-gradient-to-b from-sky-400 to-blue-600" />
-                      <div className="relative flex items-center gap-4 ps-2">
-                        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-sky-500 to-blue-600 text-white shadow-md shadow-blue-600/25 ring-2 ring-white/60">
-                          <FiArrowDownCircle className="text-xl" strokeWidth={2} />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="text-base font-extrabold text-slate-900">وصل قبض</p>
-                          <p className="mt-1 text-[12px] font-semibold leading-relaxed text-slate-500">
-                            نافذة الإدخال ثم الطباعة بحجم A5
-                          </p>
-                        </div>
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-500 ring-1 ring-slate-200 transition group-hover:bg-slate-900 group-hover:text-white group-hover:ring-slate-900">
-                          <FiChevronRight className="text-lg" />
-                        </div>
-                      </div>
-                    </button>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={closeTypePicker}
-                    className="w-full rounded-2xl bg-white py-3 text-sm font-extrabold text-slate-700 ring-1 ring-slate-200/90 transition hover:bg-slate-50"
-                  >
-                    إلغاء
-                  </button>
-                </div>
+                    <CompanyLogo src={company.logo} className="h-10 w-14" />
+                    <span className="flex-1 text-sm font-extrabold">{company.name}</span>
+                    {company.receiptOnly && <span className="rounded-md bg-sky-100 px-2 py-1 text-xs font-bold text-sky-800">قبض فقط</span>}
+                    <FiChevronLeft aria-hidden="true" className="shrink-0 text-slate-500" size={17} />
+                  </motion.button>
+                ))}
               </div>
-            </div>
-          ) : null}
+            </section>
+          )}
+
+          {!selectedCompany && (
+            <p className={`px-5 py-8 text-center text-sm text-slate-600 ${panelClass}`}>
+              ما عندك صلاحية على أي صندوق حالياً.
+            </p>
+          )}
+        </main>
 
         <VoucherCanvasDialog
-          open={openModal}
+          open={openModal && Boolean(selectedCompany)}
           onClose={() => setOpenModal(false)}
           onPrint={saveVoucherAndPrint}
           isPrinting={isPrinting}
