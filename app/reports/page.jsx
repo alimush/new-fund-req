@@ -277,7 +277,7 @@ export default function ReportsPage() {
               s === "Pending"
                 ? "قيد الانتظار"
                 : s === "Approved"
-                ? "مقبول"
+                ? "موافق"
                 : s === "Rejected"
                 ? "مرفوض"
                 : s,
@@ -723,7 +723,14 @@ export default function ReportsPage() {
         [LINK_COL]: buildRequestReportUrl(r, source) || "-",
         Type: r.requestType || "-",
         Requester: r.createdBy || "-",
-        Status: r.status || "-",
+        Status:
+          String(r.status || "").toLowerCase() === "approved"
+            ? "موافق"
+            : String(r.status || "").toLowerCase() === "pending"
+            ? "قيد الانتظار"
+            : String(r.status || "").toLowerCase() === "rejected"
+            ? "مرفوض"
+            : r.status || "-",
         "Pending With": Array.isArray(r.pendingWithNames)
           ? r.pendingWithNames.join(", ")
           : "-",
@@ -874,7 +881,7 @@ export default function ReportsPage() {
           transition={{ delay: 0.06 }}
         >
           <Card icon={<FiLayers />} title="المجموع" value={stats.total} iconColor="text-indigo-600" />
-          <Card icon={<FiCheckCircle />} title="مقبول" value={stats.approved} iconColor="text-emerald-600" />
+          <Card icon={<FiCheckCircle />} title="موافق" value={stats.approved} iconColor="text-emerald-600" />
           <Card icon={<FiClock />} title="قيد الانتظار" value={stats.pending} iconColor="text-amber-600" />
           <Card icon={<FiXCircle />} title="مرفوض" value={stats.rejected} iconColor="text-red-600" />
         </motion.div>

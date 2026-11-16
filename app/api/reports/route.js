@@ -104,8 +104,76 @@ function isFiltersOnlyRequest(searchParams) {
   return false;
 }
 
+/** كل خطوات الوركفلو موافق عليها */
+function allWorkflowStepsApproved(doc) {
+  const steps = doc?.workflow?.steps;
+  if (!Array.isArray(steps) || !steps.length) return false;
+  return steps.every(
+    (s) => String(s?.status || "").trim().toLowerCase() === "approved"
+  );
+}
+
+function getLastWorkflowStep(doc) {
+  const steps = doc?.workflow?.steps;
+  if (!Array.isArray(steps) || !steps.length) return null;
+  return steps[steps.length - 1];
+}
+
+/** مصروف على مستوى الخطوة (اعتماد مخوّل / ربط وصل على الخطوة) */
+function isLastStepDisbursed(doc) {
+  const step = getLastWorkflowStep(doc);
+  if (!step) return false;
+  if (step.voucherProcessedAt) return true;
+  const by = step.voucherProcessedBy;
+  if (by == null) return false;
+  if (typeof by === "object" && by._id) return true;
+  if (typeof by === "string" && by.trim()) return true;
+  return false;
+}
+
+/** مخوّل للصرف وما انصرف بعد */
+function hasActiveVoucherDelegation(doc) {
+  if (isLastStepDisbursed(doc)) return false;
+  const step = getLastWorkflowStep(doc);
+  if (!step) return false;
+  const to = step.voucherDelegateTo;
+  if (to != null && String(to).trim()) return true;
+  if (String(step.voucherDelegateToUsername || "").trim()) return true;
+  return false;
+}
+
+/**
+ * حالة العرض في التقارير:
+ * موافق بكل الخطوات وغير مخوّل/مصروف → Approved / موافق
+ * مخوّل وغير مصروف → Pending / قيد الانتظار
+ * قيد الانتظار أيضاً إذا ما زالت هناك خطوة موافقة معلّقة
+ */
+function resolveReportStatus(doc) {
+  const raw = String(doc?.status || "").trim();
+  const lower = raw.toLowerCase();
+  if (lower === "cancelled") return "Cancelled";
+  if (lower === "rejected") return "Rejected";
+  if (hasActiveVoucherDelegation(doc)) {
+    return "Pending";
+  }
+  if (allWorkflowStepsApproved(doc) || lower === "approved") {
+    return "Approved";
+  }
+  return raw || "Pending";
+}
+
 function computePendingWithIds(doc) {
   try {
+    // مخوّل وغير مصروف → قيد الانتظار عند المخوّل إليه
+    if (hasActiveVoucherDelegation(doc)) {
+      const step = getLastWorkflowStep(doc);
+      const id = step?.voucherDelegateTo;
+      return id != null && String(id).trim() ? [String(id)] : [];
+    }
+    // إذا كل الخطوات موافقة → ماكو «قيد الانتظار عند»
+    if (allWorkflowStepsApproved(doc) || resolveReportStatus(doc) === "Approved") {
+      return [];
+    }
     if (
       doc?.status === "Pending" &&
       Number.isInteger(doc?.currentStep) &&
@@ -335,6 +403,7 @@ async function fetchPageDocsBySource({
 
 function enrichReportDocs(docs) {
   for (const d of docs) {
+    d.status = resolveReportStatus(d);
     d.pendingWithIds = computePendingWithIds(d);
     d.totalAmount = computeTotalAmount(d);
   }
@@ -757,6 +826,10 @@ export async function GET(req) {
 
       if (statusParam === "Cancelled") {
         query.status = "__never_match__";
+      } else if (statusParam === "Approved" || statusParam === "Pending") {
+        // Approved في DB قد يُعرض Pending إذا مخوّل وغير مصروف، والعكس
+        // بعد resolveReportStatus — نجلب الاثنين ونفلتر
+        query.status = { $in: ["Approved", "Pending"] };
       } else if (statusParam !== "all") {
         query.status = statusParam;
       } else {
@@ -805,7 +878,9 @@ export async function GET(req) {
     const needHeavyFilter =
       pendingParam !== "all" ||
       (qIsNumber && Number.isFinite(qAmount)) ||
-      Boolean(approvedByActor);
+      Boolean(approvedByActor) ||
+      statusParam === "Pending" ||
+      statusParam === "Approved";
 
     // =========================
     // HEAVY FILTER MODE
@@ -819,6 +894,10 @@ export async function GET(req) {
       });
 
       enrichReportDocs(mergedAll);
+
+      if (statusParam === "Pending" || statusParam === "Approved") {
+        mergedAll = mergedAll.filter((d) => d.status === statusParam);
+      }
 
       if (approvedByActor) {
         mergedAll = mergedAll.filter((d) => docApprovedByUser(d, approvedByActor));
