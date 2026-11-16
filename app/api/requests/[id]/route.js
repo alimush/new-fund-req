@@ -542,11 +542,17 @@ if (action === "update") {
       return NextResponse.json({ success: false, error: "Invalid action" }, { status: 400 });
     }
 
-    // ✅ الأكشن دائماً على currentStep الحقيقي بالسيرفر
-    const stepIndex = request.currentStep;
+    // ✅ الأكشن عادةً على currentStep — التخويل دائماً على آخر خطوة
+    const lastWorkflowIdx = Math.max(0, (request.workflow?.steps || []).length - 1);
+    const stepIndex =
+      action === "delegate_voucher" ? lastWorkflowIdx : request.currentStep;
 
-    // حماية stale UI
-    if (Number.isInteger(bodyStepIndex) && bodyStepIndex !== stepIndex) {
+    // حماية stale UI (تخويل آخر خطوة يتخطى المطابقة مع currentStep)
+    if (
+      action !== "delegate_voucher" &&
+      Number.isInteger(bodyStepIndex) &&
+      bodyStepIndex !== stepIndex
+    ) {
       return NextResponse.json(
         {
           success: false,
@@ -647,12 +653,21 @@ if (action === "update") {
       }
 
       const lastIdx = request.workflow.steps.length - 1;
+      const status = String(request.status || "").trim();
       const isFinalApprovedStep =
-        request.status === "Approved" && stepIndex === lastIdx && step.status === "Approved";
+        status === "Approved" && stepIndex === lastIdx && step.status === "Approved";
+      const canEarlyDelegate =
+        status !== "Cancelled" &&
+        status !== "Rejected" &&
+        !isApprovalOnlyCompany(company);
 
-      if (!isFinalApprovedStep) {
+      if (!isFinalApprovedStep && !canEarlyDelegate) {
         return NextResponse.json(
-          { success: false, error: "Delegation is allowed only on final approved step" },
+          {
+            success: false,
+            error:
+              "Delegation is allowed on final approved step or early disbursement by main cashier",
+          },
           { status: 400 }
         );
       }

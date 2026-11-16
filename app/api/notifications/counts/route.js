@@ -106,8 +106,6 @@ export async function GET(req) {
     const counts = {};
     const approval = {};
     const disbursement = {};
-    const canCountDisbursement = userPermissions.includes(PERMISSIONS.RECEIPTS);
-
     for (const company of companies) {
       const allowed = await hasCompanyAccess(userId, company);
 
@@ -122,8 +120,9 @@ export async function GET(req) {
 
       const nApproval = await countPendingApprovals(Model, uid, userPermissions);
       const isVoucherDelegate = userPermissions.includes(PERMISSIONS.VOUCHER_DELEGATE);
+      // قائمة التخويل تظهر للمخوَّل حتى بدون RECEIPTS
       const nDisbursement =
-        canCountDisbursement && !isVoucherDelegate && !isApprovalOnlyCompany(company)
+        !isVoucherDelegate && !isApprovalOnlyCompany(company)
           ? await countPendingDisbursement(Model, {
               uid,
               username,

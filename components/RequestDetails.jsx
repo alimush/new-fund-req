@@ -649,6 +649,86 @@ export default function RequestDetails({ id, companyKey }) {
     return !!au && !!bu && au === bu;
   };
 
+  const earlyLastStep = workflowSteps.length
+    ? workflowSteps[workflowSteps.length - 1]
+    : null;
+  const earlyDelegatedToId = getId(earlyLastStep?.voucherDelegateTo);
+  const earlyDelegatedToUsername = String(
+    earlyLastStep?.voucherDelegateToUsername || ""
+  ).trim();
+  const earlyDelegatedByUsername = String(
+    earlyLastStep?.voucherDelegatedByUsername ||
+      earlyLastStep?.voucherDelegatedBy?.username ||
+      ""
+  ).trim();
+  const isEarlyDelegatedCurrentUser =
+    (!!earlyDelegatedToId && sameUser(earlyLastStep?.voucherDelegateTo, currentUser)) ||
+    (!!earlyDelegatedToUsername &&
+      earlyDelegatedToUsername === String(currentUser?.username || "").trim());
+  const hasEarlyDelegation = !!earlyDelegatedToId || !!earlyDelegatedToUsername;
+  /** إنشاء وصل مبكر: الكاشير إن ماكو تخويل، أو المخوَّل فقط إذا صار تخويل */
+  const canCreateEarlyVoucher =
+    supportsVoucherWorkflow &&
+    !approvalOnlyCompany &&
+    (hasEarlyDelegation
+      ? isEarlyDelegatedCurrentUser &&
+        (canCreateVoucherForCompany ||
+          hasVoucherPermissionForRequest(
+            earlyLastStep?.voucherDelegateCompanyKey || companyKey,
+            permissions
+          ))
+      : canEarlyIssuePayment);
+  const showEarlyPaymentBanner =
+    supportsVoucherWorkflow &&
+    !approvalOnlyCompany &&
+    request &&
+    request.status !== "Cancelled" &&
+    request.status !== "Rejected" &&
+    (canEarlyIssuePayment || canCreateEarlyVoucher || (canDelegateVoucher && canCreateVoucherForCompany));
+  const showEarlyDelegatePanel =
+    canDelegateVoucher &&
+    canCreateVoucherForCompany &&
+    !hasLinkedVoucher &&
+    !delegateDisburseApproved;
+  const lastStepIndex = Math.max(0, workflowSteps.length - 1);
+
+  const submitEarlyDelegate = async () => {
+    if (!delegateUserId) {
+      alert("اختَر مستخدم للتخويل");
+      return;
+    }
+    if (!delegateVoucherCompanyKey) {
+      alert("اختَر وصل الصرف للتخويل");
+      return;
+    }
+    setDelegating(true);
+    try {
+      const res = await fetch(`/api/requests/${id}?company=${companyKey}`, {
+        method: "PUT",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "delegate_voucher",
+          stepIndex: lastStepIndex,
+          delegateToUserId: delegateUserId,
+          delegateVoucherCompanyKey,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json?.success) {
+        throw new Error(json?.error || "فشل التخويل");
+      }
+      await fetchData();
+      setDelegateUserId("");
+      setDelegateVoucherCompanyKey("");
+      setShowDelegatePanel(false);
+    } catch (err) {
+      alert(err?.message || "تعذر تنفيذ التخويل");
+    } finally {
+      setDelegating(false);
+    }
+  };
+
   return (
     <motion.div
       className="min-h-screen bg-gradient-to-br from-slate-100 via-slate-50 to-indigo-50/30 px-4 py-6 sm:px-6 sm:py-8 md:px-10 md:py-10"
@@ -885,13 +965,8 @@ export default function RequestDetails({ id, companyKey }) {
           />
         </motion.div>
 
-        {/* صرف مبكر — الكاشير الرئيسي قبل اكتمال الموافقات */}
-        {canEarlyIssuePayment &&
-          request &&
-          request.status !== "Cancelled" &&
-          request.status !== "Rejected" &&
-          supportsVoucherWorkflow &&
-          !approvalOnlyCompany && (
+        {/* صرف مبكر — الكاشير الرئيسي / تخويل مثل الورك فلو */}
+        {showEarlyPaymentBanner ? (
             <div className="mb-6 rounded-3xl border border-emerald-200/80 bg-gradient-to-l from-emerald-50 via-white to-teal-50 p-4 shadow-sm ring-1 ring-emerald-100">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
@@ -903,10 +978,14 @@ export default function RequestDetails({ id, companyKey }) {
                       ? linkedVoucherCount > 1
                         ? `مرتبط ${linkedVoucherCount} وصولات بهذا الطلب — لكل وصل معاينة وطباعة.`
                         : "تم ربط وصل الصرف بالطلب ويظهر كـ مصروف. عند الخطوة الأخيرة: موافقة + رفع مرفق فقط."
-                      : "يمكنك إنشاء وصل صرف وربطه بالطلب قبل اكتمال الموافقات — يظهر الطلب مصروفاً مباشرة."}
+                      : hasEarlyDelegation
+                        ? isEarlyDelegatedCurrentUser
+                          ? "تم تخويلك للصرف — يمكنك إنشاء وصل الصرف وربطه بالطلب."
+                          : `تم التخويل إلى ${earlyDelegatedToUsername || "مستخدم"} — إنشاء الوصل للمخوَّل فقط.`
+                        : "يمكنك إنشاء وصل صرف أو تخويل مستخدم للصرف مثل الورك فلو — قبل اكتمال الموافقات."}
                   </p>
                 </div>
-                {!hasLinkedVoucher ? (
+                {!hasLinkedVoucher && canCreateEarlyVoucher ? (
                   <button
                     type="button"
                     onClick={openCreateVoucherFromStep}
@@ -916,6 +995,110 @@ export default function RequestDetails({ id, companyKey }) {
                   </button>
                 ) : null}
               </div>
+
+              {showEarlyDelegatePanel ? (
+                <div className="mt-4 rounded-2xl border border-indigo-200 bg-indigo-50/70 p-3 ring-1 ring-indigo-200/60">
+                  {!showDelegatePanel ? (
+                    <button
+                      type="button"
+                      onClick={() => setShowDelegatePanel(true)}
+                      className="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 py-2.5 text-sm font-extrabold text-white shadow-sm transition hover:bg-indigo-700"
+                    >
+                      <FiUserCheck />
+                      تخويل مستخدم للصرف
+                    </button>
+                  ) : (
+                    <>
+                      <div className="mb-2.5 flex items-center justify-between gap-2">
+                        <p className="text-xs font-extrabold text-indigo-800">
+                          كل من عنده صلاحية وصولات — حتى لو مو بالوركفلو (ينضاف تلقائياً عند التخويل)
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => setShowDelegatePanel(false)}
+                          className="text-[11px] font-bold text-indigo-600 hover:underline"
+                        >
+                          إغلاق
+                        </button>
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <select
+                          value={delegateUserId}
+                          onChange={(e) => {
+                            const nextUserId = e.target.value;
+                            setDelegateUserId(nextUserId);
+                            const options =
+                              request?.delegationVoucherOptionsByUser?.[nextUserId] || [];
+                            const norm = (k) => String(k || "").trim().toLowerCase();
+                            const hit = options.find(
+                              (o) => norm(o.key) === norm(effectiveVoucherCompanyKey)
+                            );
+                            setDelegateVoucherCompanyKey(
+                              hit?.key ||
+                                options.find((o) => o.isDefault)?.key ||
+                                options[0]?.key ||
+                                ""
+                            );
+                          }}
+                          className="w-full min-w-0 rounded-xl border border-indigo-200 bg-white px-3 py-2.5 text-sm font-bold text-gray-900 outline-none focus:ring-2 focus:ring-indigo-300"
+                        >
+                          <option value="">اختر مستخدم</option>
+                          {(request?.delegationCandidates || []).map((u) => (
+                            <option key={u.id} value={u.id}>
+                              {u.arabicName
+                                ? `${u.username} — ${u.arabicName}`
+                                : u.username}
+                            </option>
+                          ))}
+                        </select>
+                        <select
+                          value={delegateVoucherCompanyKey}
+                          disabled={!delegateUserId}
+                          onChange={(e) => setDelegateVoucherCompanyKey(e.target.value)}
+                          className="w-full min-w-0 rounded-xl border border-indigo-200 bg-white px-3 py-2.5 text-sm font-bold text-gray-900 outline-none focus:ring-2 focus:ring-indigo-300 disabled:opacity-60"
+                        >
+                          <option value="">اختر وصل الصرف</option>
+                          {(
+                            request?.delegationVoucherOptionsByUser?.[delegateUserId] || []
+                          ).map((opt) => (
+                            <option key={opt.key} value={opt.key}>
+                              {opt.name}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          onClick={submitEarlyDelegate}
+                          disabled={
+                            !delegateUserId || !delegateVoucherCompanyKey || delegating
+                          }
+                          className="w-full rounded-xl bg-indigo-600 py-2.5 text-sm font-extrabold text-white shadow-sm transition hover:bg-indigo-700 disabled:opacity-60"
+                        >
+                          {delegating ? "جاري التخويل..." : "تخويل للصرف"}
+                        </button>
+                      </div>
+                    </>
+                  )}
+                  {hasEarlyDelegation ? (
+                    <p className="mt-2 text-[12px] font-semibold text-indigo-700">
+                      تم التخويل إلى {earlyDelegatedToUsername || "—"} بواسطة{" "}
+                      {earlyDelegatedByUsername || "—"}
+                      {earlyLastStep?.voucherDelegateCompanyKey
+                        ? ` على وصل ${
+                            COMPANIES.find(
+                              (c) =>
+                                String(c.key).trim().toLowerCase() ===
+                                String(earlyLastStep.voucherDelegateCompanyKey)
+                                  .trim()
+                                  .toLowerCase()
+                            )?.name || earlyLastStep.voucherDelegateCompanyKey
+                          }`
+                        : ""}
+                      .
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
 
               {linkedVoucherItems.length > 0 ? (
                 <div className="mt-4 space-y-2">
@@ -957,17 +1140,19 @@ export default function RequestDetails({ id, companyKey }) {
                       </div>
                     </div>
                   ))}
-                  <button
-                    type="button"
-                    onClick={openCreateAdditionalVoucher}
-                    className="w-full rounded-xl border border-dashed border-emerald-300 bg-emerald-50/50 py-2.5 text-xs font-extrabold text-emerald-800 transition hover:bg-emerald-50"
-                  >
-                    + إنشاء وصل صرف إضافي
-                  </button>
+                  {canCreateEarlyVoucher ? (
+                    <button
+                      type="button"
+                      onClick={openCreateAdditionalVoucher}
+                      className="w-full rounded-xl border border-dashed border-emerald-300 bg-emerald-50/50 py-2.5 text-xs font-extrabold text-emerald-800 transition hover:bg-emerald-50"
+                    >
+                      + إنشاء وصل صرف إضافي
+                    </button>
+                  ) : null}
                 </div>
               ) : null}
             </div>
-          )}
+          ) : null}
 
         {/* =================== SUMMARY =================== */}
         <div className="mb-8 grid grid-cols-1 gap-6 lg:grid-cols-2">

@@ -460,10 +460,12 @@ export default function RequestsPage({ companyKey }) {
   const [notifyCounts, setNotifyCounts] = useState(null);
 
   const notifyApproval = getApprovalCount(notifyCounts || {}, companyKey);
-  const notifyDisbursement =
-    canViewReceipts && !canDelegateVoucher
-      ? getDisbursementCount(notifyCounts || {}, companyKey)
-      : 0;
+  const notifyDisbursement = !canDelegateVoucher
+    ? Math.max(
+        getDisbursementCount(notifyCounts || {}, companyKey) || 0,
+        Array.isArray(delegatedRequests) ? delegatedRequests.length : 0
+      )
+    : 0;
 
   // ===== Pagination =====
   const [pageMy, setPageMy] = useState(1);
@@ -623,27 +625,25 @@ export default function RequestsPage({ companyKey }) {
         fetch(mineUrl, { cache: "no-store" }),
         fetch(pendingUrl, { cache: "no-store" }),
       ];
-      if (canViewReceipts) {
+      // قائمة التخويل: لكل من ليس كاشير رئيسي — حتى بدون RECEIPTS
+      if (!canDelegateVoucher && !approvalOnlyCompany) {
+        fetches.push(
+          fetch(`${base}&scope=delegated${qPart}${kindPart}`, {
+            cache: "no-store",
+          })
+        );
+      }
+      if (canViewReceipts && !approvalOnlyCompany) {
         const disbursementBase = `/api/receipts/disbursement-report?company=${encodeURIComponent(companyKey)}`;
         const processorPart = user?.id
           ? `&processorUser=${encodeURIComponent(String(user.id))}`
           : "";
-        if (canDelegateVoucher) {
-          fetches.push(
-            fetch(
-              `${disbursementBase}&tab=done${processorPart}${qPart}`,
-              { cache: "no-store" }
-            )
-          );
-        } else {
-          fetches.push(
-            fetch(`${disbursementBase}&tab=pending${qPart}`, { cache: "no-store" }),
-            fetch(
-              `${disbursementBase}&tab=done${processorPart}${qPart}`,
-              { cache: "no-store" }
-            )
-          );
-        }
+        fetches.push(
+          fetch(
+            `${disbursementBase}&tab=done${processorPart}${qPart}`,
+            { cache: "no-store" }
+          )
+        );
       }
 
       const responses = await Promise.all(fetches);
@@ -669,44 +669,36 @@ export default function RequestsPage({ companyKey }) {
       setMyRequests(jMine?.success && Array.isArray(jMine?.data) ? jMine.data : []);
       setPendingApprovals(jPending?.success && Array.isArray(jPending?.data) ? jPending.data : []);
 
-      if (canViewReceipts) {
-        if (canDelegateVoucher) {
-          const disbRes = responses[2];
-          if (disbRes?.ok) {
-            const jDisbursed = await disbRes.json();
-            setDisbursedByMe(
-              jDisbursed?.success && Array.isArray(jDisbursed?.data)
-                ? jDisbursed.data.filter((r) => Boolean(r.voucherNo))
-                : []
-            );
-          } else {
-            setDisbursedByMe([]);
-          }
-          setDelegatedRequests([]);
+      let idx = 2;
+      if (!canDelegateVoucher && !approvalOnlyCompany) {
+        const delegRes = responses[idx++];
+        if (delegRes?.ok) {
+          const jDelegated = await delegRes.json();
+          setDelegatedRequests(
+            jDelegated?.success && Array.isArray(jDelegated?.data)
+              ? jDelegated.data
+              : []
+          );
         } else {
-          const delegRes = responses[2];
-          const disbRes = responses[3];
-          if (delegRes?.ok) {
-            const jDelegated = await delegRes.json();
-            setDelegatedRequests(
-              jDelegated?.success && Array.isArray(jDelegated?.data) ? jDelegated.data : []
-            );
-          } else {
-            setDelegatedRequests([]);
-          }
-          if (disbRes?.ok) {
-            const jDisbursed = await disbRes.json();
-            setDisbursedByMe(
-              jDisbursed?.success && Array.isArray(jDisbursed?.data)
-                ? jDisbursed.data.filter((r) => Boolean(r.voucherNo))
-                : []
-            );
-          } else {
-            setDisbursedByMe([]);
-          }
+          setDelegatedRequests([]);
         }
       } else {
         setDelegatedRequests([]);
+      }
+
+      if (canViewReceipts && !approvalOnlyCompany) {
+        const disbRes = responses[idx++];
+        if (disbRes?.ok) {
+          const jDisbursed = await disbRes.json();
+          setDisbursedByMe(
+            jDisbursed?.success && Array.isArray(jDisbursed?.data)
+              ? jDisbursed.data.filter((r) => Boolean(r.voucherNo))
+              : []
+          );
+        } else {
+          setDisbursedByMe([]);
+        }
+      } else {
         setDisbursedByMe([]);
       }
     } catch {
@@ -726,6 +718,7 @@ export default function RequestsPage({ companyKey }) {
     settlementsEnabled,
     canViewReceipts,
     canDelegateVoucher,
+    approvalOnlyCompany,
     user?.id,
   ]);
 
@@ -859,7 +852,7 @@ export default function RequestsPage({ companyKey }) {
                   </h1>
                   <div className="mt-2 flex flex-wrap items-center gap-2">
                     <CountPill count={notifyApproval} tone="approval" label="قيد الموافقة" />
-                    {canViewReceipts && !canDelegateVoucher && !approvalOnlyCompany ? (
+                    {!canDelegateVoucher && !approvalOnlyCompany ? (
                       <CountPill
                         count={notifyDisbursement}
                         tone="disbursement"
@@ -1185,16 +1178,18 @@ export default function RequestsPage({ companyKey }) {
           </SectionShell>
         </div>
 
-        {canViewReceipts && !approvalOnlyCompany ? (
+        {!approvalOnlyCompany && (!canDelegateVoucher || canViewReceipts) ? (
           <div
             className={
-              canDelegateVoucher ? "grid grid-cols-1 gap-6" : "grid grid-cols-1 gap-6 lg:grid-cols-2"
+              canDelegateVoucher || !canViewReceipts
+                ? "grid grid-cols-1 gap-6"
+                : "grid grid-cols-1 gap-6 lg:grid-cols-2"
             }
           >
             {!canDelegateVoucher ? (
               <SectionShell
                 title="قيد الانتظار للصرف"
-                subtitle="طلبات جاهزة للصرف"
+                subtitle="طلبات مخوَّلة لك للصرف — تبقى ظاهرة طالما التخويل قائم"
                 icon={FiCheckCircle}
                 accent="emerald"
                 badgeCount={notifyDisbursement}
@@ -1208,7 +1203,7 @@ export default function RequestsPage({ companyKey }) {
                 <ListState
                   loading={loading}
                   empty={delegatedRequests.length === 0}
-                  emptyText="لا يوجد طلبات قيد الانتظار للصرف"
+                  emptyText="لا يوجد طلبات مخوَّلة لك حالياً"
                 >
                   <ScrollBox>
                     <div className="space-y-3">
@@ -1232,6 +1227,7 @@ export default function RequestsPage({ companyKey }) {
               </SectionShell>
             ) : null}
 
+            {canViewReceipts ? (
             <SectionShell
               title="صرفتها أنا"
               subtitle="طلبات صرفتها على آخر خطوة"
@@ -1266,6 +1262,7 @@ export default function RequestsPage({ companyKey }) {
                 />
               </ListState>
             </SectionShell>
+            ) : null}
           </div>
         ) : null}
       </div>

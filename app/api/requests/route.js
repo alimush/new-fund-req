@@ -593,21 +593,37 @@ export async function GET(req) {
 
     // =========================
     // ✅ LIST: delegated voucher requests إلي
+    // يشمل التخويل المبكر (Pending) والنهائي (Approved) طالما التخويل قائم ولم يُصرف
     // =========================
     if (scope === "delegated") {
       const uid = new mongoose.Types.ObjectId(userId);
+      const userIdStr = String(userId);
+      const uname = String(username || "").trim();
+
+      const delegateOr = [
+        { "_step.voucherDelegateTo": uid },
+        { "_step.voucherDelegateTo": userIdStr },
+      ];
+      if (uname) {
+        delegateOr.push({ "_step.voucherDelegateToUsername": uname });
+      }
 
       const pipeline = [
         {
           $match: {
-            status: { $in: ["Approved", "approved"], $nin: ["Cancelled", "cancelled"] },
+            status: {
+              $nin: ["Cancelled", "cancelled", "Rejected", "rejected"],
+            },
           },
         },
         {
           $addFields: {
-            _lastIdx: { $subtract: [{ $size: "$workflow.steps" }, 1] },
+            _lastIdx: {
+              $subtract: [{ $size: { $ifNull: ["$workflow.steps", []] } }, 1],
+            },
           },
         },
+        { $match: { $expr: { $gte: ["$_lastIdx", 0] } } },
         {
           $addFields: {
             _step: { $arrayElemAt: ["$workflow.steps", "$_lastIdx"] },
@@ -615,15 +631,8 @@ export async function GET(req) {
         },
         {
           $match: {
-            $expr: { $eq: ["$currentStep", "$_lastIdx"] },
-            "_step.status": { $in: ["Approved", "approved"] },
             $and: [
-              {
-                $or: [
-                  { "_step.voucherDelegateTo": uid },
-                  { "_step.voucherDelegateToUsername": username || "__no_user__" },
-                ],
-              },
+              { $or: delegateOr },
               {
                 $or: [
                   { "_step.voucherProcessedBy": null },
@@ -644,10 +653,12 @@ export async function GET(req) {
       ];
 
       const list = await Model.aggregate(pipeline);
+      let out = filterListByKind(list, kindParam);
+      if (q) out = filterRequestsBySearch(out, q);
 
       return NextResponse.json({
         success: true,
-        data: q ? filterRequestsBySearch(list, q) : list,
+        data: out,
       });
     }
 

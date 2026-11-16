@@ -238,14 +238,21 @@ const STATUS_MATCH_APPROVED_NOT_CANCELLED = {
 
 function buildPendingPipeline({ uid, username, from, to, permissions = [] }) {
   const uname = String(username || "").trim();
-  const delegateOr = [{ "_step.voucherDelegateTo": uid }];
+  const userIdStr = String(uid || "");
+  const delegateOr = [
+    { "_step.voucherDelegateTo": uid },
+    { "_step.voucherDelegateTo": userIdStr },
+  ];
   if (uname) delegateOr.push({ "_step.voucherDelegateToUsername": uname });
 
-  // مخوّل للصرف يرى الطلب دائماً؛ باقي أعضاء آخر خطوة فقط إن كانوا يقدرون يوافقون/يخوّلون
-  const canActOr = [...delegateOr];
+  // مخوَّل بالتخويل (مبكر أو نهائي)؛ وأعضاء آخر خطوة إن كانوا يقدرون يوافقون بلا تخويل لغيرهم
+  const visibilityOr = [{ $or: delegateOr }];
   if (userCanApproveOnLastStep(permissions)) {
-    canActOr.push({
+    visibilityOr.push({
       $and: [
+        { status: { $in: ["Approved", "approved"] } },
+        { $expr: { $eq: ["$currentStep", "$_lastIdx"] } },
+        { "_step.status": { $in: ["Approved", "approved"] } },
         {
           $or: [
             { "_step.voucherDelegateTo": null },
@@ -267,7 +274,13 @@ function buildPendingPipeline({ uid, username, from, to, permissions = [] }) {
   }
 
   pipeline.push(
-    { $match: STATUS_MATCH_APPROVED_NOT_CANCELLED },
+    {
+      $match: {
+        status: {
+          $nin: ["Cancelled", "cancelled", "Rejected", "rejected"],
+        },
+      },
+    },
     {
       $addFields: {
         _lastIdx: { $subtract: [{ $size: { $ifNull: ["$workflow.steps", []] } }, 1] },
@@ -275,13 +288,7 @@ function buildPendingPipeline({ uid, username, from, to, permissions = [] }) {
     },
     { $match: { $expr: { $gte: ["$_lastIdx", 0] } } },
     { $addFields: { _step: { $arrayElemAt: ["$workflow.steps", "$_lastIdx"] } } },
-    {
-      $match: {
-        $expr: { $eq: ["$currentStep", "$_lastIdx"] },
-        "_step.status": { $in: ["Approved", "approved"] },
-        $or: canActOr,
-      },
-    },
+    { $match: { $or: visibilityOr } },
     { $sort: { createdAt: -1 } },
     {
       $lookup: {
