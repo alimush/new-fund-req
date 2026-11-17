@@ -17,6 +17,8 @@ import {
   FiLayers,
   FiShield,
   FiDownload,
+  FiExternalLink,
+  FiX,
 } from "react-icons/fi";
 
 import { FaMoneyBillWave } from "react-icons/fa6";
@@ -94,6 +96,9 @@ export default function ReportsPage() {
 
   const hasSearchedRef = useRef(false);
   const fetchAbortRef = useRef(null);
+
+  /** طلبات محددة عبر البحث/الصفحات — تبقى حتى مسح التحديد أو تغيير مصدر البيانات */
+  const [selectedByKey, setSelectedByKey] = useState(() => new Map());
 
   const { permissions } = usePermissions();
 
@@ -305,6 +310,7 @@ export default function ReportsPage() {
 
   useEffect(() => {
     resetUiState();
+    setSelectedByKey(new Map());
   }, [dataSource, resetUiState]);
 
   const recalcSuggestPos = useCallback(() => {
@@ -626,6 +632,88 @@ export default function ReportsPage() {
     []
   );
 
+  const getRowKey = useCallback(
+    (r) => {
+      const source = dataSource?.value || "new";
+      const company = String(r?.companyKey || r?.company || "").trim();
+      const id = String(r?._id || "").trim();
+      if (!id) return "";
+      return `${source}|${company}|${id}`;
+    },
+    [dataSource]
+  );
+
+  const selectedCount = selectedByKey.size;
+  const selectedList = useMemo(
+    () => Array.from(selectedByKey.values()),
+    [selectedByKey]
+  );
+
+  const pageSelection = useMemo(() => {
+    const keys = requests.map((r) => getRowKey(r)).filter(Boolean);
+    const selectedOnPage = keys.filter((k) => selectedByKey.has(k)).length;
+    return {
+      keys,
+      selectedOnPage,
+      allSelected: keys.length > 0 && selectedOnPage === keys.length,
+      someSelected: selectedOnPage > 0 && selectedOnPage < keys.length,
+    };
+  }, [requests, selectedByKey, getRowKey]);
+
+  const toggleSelectRow = useCallback(
+    (r) => {
+      const key = getRowKey(r);
+      if (!key) return;
+      setSelectedByKey((prev) => {
+        const next = new Map(prev);
+        if (next.has(key)) next.delete(key);
+        else next.set(key, { ...r });
+        return next;
+      });
+    },
+    [getRowKey]
+  );
+
+  const toggleSelectPage = useCallback(() => {
+    setSelectedByKey((prev) => {
+      const next = new Map(prev);
+      const keys = requests.map((r) => getRowKey(r)).filter(Boolean);
+      const allOnPage =
+        keys.length > 0 && keys.every((k) => next.has(k));
+      if (allOnPage) {
+        keys.forEach((k) => next.delete(k));
+      } else {
+        requests.forEach((r) => {
+          const key = getRowKey(r);
+          if (key) next.set(key, { ...r });
+        });
+      }
+      return next;
+    });
+  }, [requests, getRowKey]);
+
+  const clearSelection = useCallback(() => {
+    setSelectedByKey(new Map());
+  }, []);
+
+  const openRequestDetails = useCallback(
+    (r, e) => {
+      e?.stopPropagation?.();
+      e?.preventDefault?.();
+      const company = String(r.companyKey || r.company || "").trim();
+      const id = String(r._id || "").trim();
+      const source = dataSource?.value || "new";
+      if (!id) return;
+      const companyPath = company || (source === "old" ? "old-data" : "");
+      if (!companyPath) return;
+      window.open(
+        `/requests/${encodeURIComponent(companyPath)}/${encodeURIComponent(id)}?source=${encodeURIComponent(source)}`,
+        "_blank"
+      );
+    },
+    [dataSource]
+  );
+
   const EXPORT_PAGE_SIZE = 200;
 
   const buildParamsExport = useCallback(
@@ -708,16 +796,13 @@ export default function ReportsPage() {
     return { all, totalPages };
   }, [buildParamsExport]);
 
-  const handleExportExcel = useCallback(async () => {
-    try {
-      setLoading(true);
-
-      const { all } = await fetchAllForExport();
-      if (!all || all.length === 0) return;
+  const writeReportsExcel = useCallback(
+    async (docs, filePrefix = "Requests_Reports") => {
+      if (!Array.isArray(docs) || docs.length === 0) return false;
 
       const XLSX = await import("xlsx");
       const source = dataSource?.value || "new";
-      const rows = all.map((r) => ({
+      const rows = docs.map((r) => ({
         Company: r.companyKey || "-",
         Code: r.requestCode || "-",
         [LINK_COL]: buildRequestReportUrl(r, source) || "-",
@@ -774,16 +859,37 @@ export default function ReportsPage() {
       XLSX.utils.book_append_sheet(wb, ws, "Reports");
       XLSX.writeFile(
         wb,
-        `Requests_Reports_${dataSource?.value || "new"}_${
-          new Date().toISOString().slice(0, 10)
-        }.xlsx`
+        `${filePrefix}_${source}_${new Date().toISOString().slice(0, 10)}.xlsx`
       );
+      return true;
+    },
+    [dataSource, buildRequestReportUrl]
+  );
+
+  const handleExportExcel = useCallback(async () => {
+    try {
+      setLoading(true);
+      const { all } = await fetchAllForExport();
+      if (!all || all.length === 0) return;
+      await writeReportsExcel(all, "Requests_Reports");
     } catch (e) {
       console.error("❌ Export all pages error:", e);
     } finally {
       setLoading(false);
     }
-  }, [fetchAllForExport, dataSource, buildRequestReportUrl]);
+  }, [fetchAllForExport, writeReportsExcel]);
+
+  const handleExportSelectedExcel = useCallback(async () => {
+    try {
+      if (selectedList.length === 0) return;
+      setLoading(true);
+      await writeReportsExcel(selectedList, "Selected_Requests");
+    } catch (e) {
+      console.error("❌ Export selected error:", e);
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedList, writeReportsExcel]);
 
   const Card = ({ icon, title, value, iconColor = "text-blue-600" }) => (
     <KpiCard label={title} value={value} icon={icon} iconColor={iconColor} />
@@ -865,9 +971,31 @@ export default function ReportsPage() {
                     ? "cursor-not-allowed bg-slate-100 text-slate-400 ring-1 ring-slate-200/80"
                     : "bg-emerald-50 text-emerald-800 ring-1 ring-emerald-200/80 hover:bg-emerald-100"
                 }`}
+                title="تصدير كل نتائج البحث الحالية"
               >
                 <FiDownload className="text-base" />
-                Excel
+                Excel الكل
+              </motion.button>
+
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.99 }}
+                onClick={handleExportSelectedExcel}
+                disabled={loading || selectedCount === 0}
+                className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-extrabold shadow-sm transition ${
+                  loading || selectedCount === 0
+                    ? "cursor-not-allowed bg-slate-100 text-slate-400 ring-1 ring-slate-200/80"
+                    : "bg-indigo-600 text-white hover:bg-indigo-700"
+                }`}
+                title="تصدير الطلبات المحددة فقط"
+              >
+                <FiDownload className="text-base" />
+                Excel المحدد
+                {selectedCount > 0 ? (
+                  <span className="rounded-md bg-white/20 px-1.5 py-0.5 text-[11px] font-extrabold tabular-nums">
+                    {selectedCount}
+                  </span>
+                ) : null}
               </motion.button>
             </div>
           </div>
@@ -1121,16 +1249,28 @@ export default function ReportsPage() {
             transition={{ duration: 0.22, ease: "easeOut" }}
             className="relative z-0 overflow-hidden rounded-3xl border border-slate-200/70 bg-white/75 shadow-sm ring-1 ring-slate-200/50"
           >
+            <div className="flex items-center justify-between gap-3 border-b border-slate-200/70 bg-slate-50/80 px-4 py-2.5">
+              <p className="text-[12px] font-bold text-slate-500">
+                اضغط الصف للتحديد · الكود يفتح التفاصيل · التحديد يبقى مع البحث
+              </p>
+              {selectedCount > 0 ? (
+                <span className="rounded-lg bg-indigo-50 px-2.5 py-1 text-[12px] font-extrabold text-indigo-700 ring-1 ring-indigo-200/80 tabular-nums">
+                  محدد: {selectedCount}
+                </span>
+              ) : null}
+            </div>
+
             <div className="relative w-full">
               <table className="w-full table-fixed text-[13px] font-bold text-slate-800 md:text-[14px]">
                 <colgroup>
+                  <col className="w-[3%]" />
                   <col className="w-[8%]" />
                   <col className="w-[9%]" />
                   <col className="w-[8%]" />
-                  <col className="w-[8%]" />
                   <col className="w-[7%]" />
-                  <col className="w-[12%]" />
-                  <col className="w-[8%]" />
+                  <col className="w-[7%]" />
+                  <col className="w-[11%]" />
+                  <col className="w-[7%]" />
                   <col className="w-[5%]" />
                   <col className="w-[8%]" />
                   <col className="w-[19%]" />
@@ -1138,6 +1278,20 @@ export default function ReportsPage() {
                 </colgroup>
                 <thead className="sticky top-0 z-10">
                   <tr className="border-b border-slate-200/80 bg-white/90 backdrop-blur">
+                    <th className="px-1.5 py-3 text-center align-middle">
+                      <input
+                        type="checkbox"
+                        checked={pageSelection.allSelected}
+                        ref={(el) => {
+                          if (el) el.indeterminate = pageSelection.someSelected;
+                        }}
+                        onChange={toggleSelectPage}
+                        onClick={(e) => e.stopPropagation()}
+                        className="h-4 w-4 cursor-pointer accent-indigo-600"
+                        title="تحديد / إلغاء تحديد الصفحة"
+                        aria-label="تحديد الصفحة"
+                      />
+                    </th>
                     {[
                       "الشركة",
                       "كود الريكويست",
@@ -1162,82 +1316,102 @@ export default function ReportsPage() {
                 </thead>
 
                 <tbody className="divide-y divide-slate-200/60">
-                  {requests.map((r, idx) => (
-                    <motion.tr
-                      key={r._id}
-                      whileHover={{ backgroundColor: "rgba(248,250,252,0.95)" }}
-                      transition={{ duration: 0.12 }}
-                      onClick={() => {
-                        const company = String(
-                          r.companyKey || r.company || ""
-                        ).trim();
-                        const id = String(r._id || "").trim();
-                        const source = dataSource?.value || "new";
-                        if (!id) return;
-                        const companyPath =
-                          company || (source === "old" ? "old-data" : "");
-                        if (!companyPath) return;
-                        window.open(
-                          `/requests/${encodeURIComponent(companyPath)}/${encodeURIComponent(id)}?source=${encodeURIComponent(source)}`,
-                          "_blank"
-                        );
-                      }}
-                      className={`cursor-pointer transition-colors hover:bg-slate-50 ${
-                        idx % 2 === 0 ? "bg-white/50" : "bg-white/30"
-                      }`}
-                    >
-                      <td className="px-2 py-2.5 text-right font-extrabold text-slate-900 break-words align-top leading-snug">
-                        {r.companyKey || "-"}
-                      </td>
-                      <td className="px-2 py-2.5 text-right font-mono text-[12px] text-slate-900 break-all align-top leading-snug">
-                        {r.requestCode || "-"}
-                      </td>
-                      <td className="px-2 py-2.5 text-right break-words align-top leading-snug">
-                        {r.requestType || "-"}
-                      </td>
-                      <td className="px-2 py-2.5 text-right break-words align-top leading-snug">
-                        {r.createdBy || "-"}
-                      </td>
-                      <td className="px-2 py-2.5 text-right align-top">
-                        <StatusBadge status={r.status} />
-                      </td>
+                  {requests.map((r, idx) => {
+                    const rowKey = getRowKey(r);
+                    const isSelected = rowKey ? selectedByKey.has(rowKey) : false;
+                    return (
+                      <motion.tr
+                        key={rowKey || r._id}
+                        whileHover={{
+                          backgroundColor: isSelected
+                            ? "rgba(238,242,255,0.95)"
+                            : "rgba(248,250,252,0.95)",
+                        }}
+                        transition={{ duration: 0.12 }}
+                        onClick={() => toggleSelectRow(r)}
+                        className={`cursor-pointer transition-colors ${
+                          isSelected
+                            ? "bg-indigo-50/90 ring-1 ring-inset ring-indigo-200/70"
+                            : idx % 2 === 0
+                            ? "bg-white/50 hover:bg-slate-50"
+                            : "bg-white/30 hover:bg-slate-50"
+                        }`}
+                      >
+                        <td
+                          className="px-1.5 py-2.5 text-center align-top"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleSelectRow(r)}
+                            className="h-4 w-4 cursor-pointer accent-indigo-600"
+                            aria-label={`تحديد ${r.requestCode || r._id}`}
+                          />
+                        </td>
+                        <td className="px-2 py-2.5 text-right font-extrabold text-slate-900 break-words align-top leading-snug">
+                          {r.companyKey || "-"}
+                        </td>
+                        <td className="px-2 py-2.5 text-right align-top leading-snug">
+                          <button
+                            type="button"
+                            onClick={(e) => openRequestDetails(r, e)}
+                            className="inline-flex max-w-full items-center gap-1 font-mono text-[12px] font-extrabold text-indigo-700 break-all hover:underline"
+                            title="فتح تفاصيل الطلب"
+                          >
+                            <span className="break-all text-right">
+                              {r.requestCode || "-"}
+                            </span>
+                            <FiExternalLink className="shrink-0 text-[11px] opacity-70" />
+                          </button>
+                        </td>
+                        <td className="px-2 py-2.5 text-right break-words align-top leading-snug">
+                          {r.requestType || "-"}
+                        </td>
+                        <td className="px-2 py-2.5 text-right break-words align-top leading-snug">
+                          {r.createdBy || "-"}
+                        </td>
+                        <td className="px-2 py-2.5 text-right align-top">
+                          <StatusBadge status={r.status} />
+                        </td>
 
-                      <td className="px-2 py-2.5 text-right align-top">
-                        <div className="break-words leading-snug">
-                          {Array.isArray(r.pendingWithNames) &&
-                          r.pendingWithNames.length > 0
-                            ? r.pendingWithNames.join(", ")
+                        <td className="px-2 py-2.5 text-right align-top">
+                          <div className="break-words leading-snug">
+                            {Array.isArray(r.pendingWithNames) &&
+                            r.pendingWithNames.length > 0
+                              ? r.pendingWithNames.join(", ")
+                              : "-"}
+                          </div>
+                        </td>
+
+                        <td className="px-2 py-2.5 text-right break-words align-top leading-snug">
+                          {r.department || "-"}
+                        </td>
+                        <td className="px-2 py-2.5 text-right font-extrabold align-top">
+                          {r.currency || "-"}
+                        </td>
+
+                        <td className="px-2 py-2.5 text-right font-extrabold text-slate-900 tabular-nums align-top leading-snug">
+                          {(() => {
+                            const v = getAmount(r);
+                            return v == null ? "-" : fmtAmount(v);
+                          })()}
+                        </td>
+
+                        <td className="px-2 py-2.5 text-right align-top">
+                          <div className="break-words text-slate-700 leading-snug">
+                            {r.description || "-"}
+                          </div>
+                        </td>
+
+                        <td className="px-2 py-2.5 text-right text-slate-700 tabular-nums align-top leading-snug">
+                          {r.createdAt
+                            ? new Date(r.createdAt).toLocaleDateString("en-GB")
                             : "-"}
-                        </div>
-                      </td>
-
-                      <td className="px-2 py-2.5 text-right break-words align-top leading-snug">
-                        {r.department || "-"}
-                      </td>
-                      <td className="px-2 py-2.5 text-right font-extrabold align-top">
-                        {r.currency || "-"}
-                      </td>
-
-                      <td className="px-2 py-2.5 text-right font-extrabold text-slate-900 tabular-nums align-top leading-snug">
-                        {(() => {
-                          const v = getAmount(r);
-                          return v == null ? "-" : fmtAmount(v);
-                        })()}
-                      </td>
-
-                      <td className="px-2 py-2.5 text-right align-top">
-                        <div className="break-words text-slate-700 leading-snug">
-                          {r.description || "-"}
-                        </div>
-                      </td>
-
-                      <td className="px-2 py-2.5 text-right text-slate-700 tabular-nums align-top leading-snug">
-                        {r.createdAt
-                          ? new Date(r.createdAt).toLocaleDateString("en-GB")
-                          : "-"}
-                      </td>
-                    </motion.tr>
-                  ))}
+                        </td>
+                      </motion.tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -1248,6 +1422,12 @@ export default function ReportsPage() {
                 {"  "}| Page: <span className="text-slate-900">{meta.page}</span>
                 {" / "}
                 <span className="text-slate-900">{meta.totalPages || 1}</span>
+                {selectedCount > 0 ? (
+                  <>
+                    {"  "}| محدد:{" "}
+                    <span className="text-indigo-700">{selectedCount}</span>
+                  </>
+                ) : null}
               </div>
 
               <TablePagination
@@ -1269,6 +1449,54 @@ export default function ReportsPage() {
         )}
       </AnimatePresence>
       </div>
+
+      <AnimatePresence>
+        {selectedCount > 0 ? (
+          <motion.div
+            initial={{ opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 24 }}
+            className="fixed bottom-5 left-1/2 z-50 w-[min(92vw,560px)] -translate-x-1/2"
+            dir="rtl"
+          >
+            <div className="flex items-center justify-between gap-3 rounded-2xl border border-indigo-200/80 bg-white/95 px-4 py-3 shadow-[0_20px_50px_-20px_rgba(79,70,229,0.45)] ring-1 ring-indigo-100/80 backdrop-blur">
+              <div className="min-w-0 text-right">
+                <p className="text-sm font-extrabold text-slate-900">
+                  تم تحديد{" "}
+                  <span className="tabular-nums text-indigo-700">
+                    {selectedCount}
+                  </span>{" "}
+                  طلب
+                </p>
+                <p className="truncate text-[11px] font-semibold text-slate-500">
+                  ابحث وحدّد المزيد ثم صدّر المحدد فقط
+                </p>
+              </div>
+
+              <div className="flex shrink-0 items-center gap-2">
+                <button
+                  type="button"
+                  onClick={clearSelection}
+                  disabled={loading}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-slate-50 px-3 py-2 text-[12px] font-extrabold text-slate-700 ring-1 ring-slate-200 transition hover:bg-white disabled:opacity-60"
+                >
+                  <FiX className="text-sm" />
+                  مسح
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExportSelectedExcel}
+                  disabled={loading}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3 py-2 text-[12px] font-extrabold text-white shadow-sm transition hover:bg-indigo-700 disabled:opacity-60"
+                >
+                  <FiDownload className="text-sm" />
+                  Excel المحدد
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
     </motion.div>
   );
 }
