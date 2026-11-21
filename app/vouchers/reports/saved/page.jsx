@@ -149,6 +149,11 @@ export default function SavedVoucherReportsPage() {
   const isDelegate =
     Array.isArray(permissions) &&
     permissions.includes(PERMISSIONS.VOUCHER_DELEGATE);
+  const canViewAllSaved =
+    (Array.isArray(permissions) &&
+      permissions.includes(PERMISSIONS.VIEW_ALL_REPORTS)) ||
+    /^admin$/i.test(String(permUser?.username || "").trim());
+  const showCompanyFilter = isDelegate || canViewAllSaved;
   const currentUserId = String(permUser?.id || "").trim();
   const currentUsername = String(permUser?.username || "").trim();
 
@@ -819,10 +824,10 @@ export default function SavedVoucherReportsPage() {
 
           <div
             className={`grid grid-cols-1 gap-4 ${
-              isDelegate ? "lg:grid-cols-6" : "lg:grid-cols-4"
+              showCompanyFilter ? "lg:grid-cols-6" : "lg:grid-cols-4"
             }`}
           >
-            <div className={`text-right ${isDelegate ? "lg:col-span-2" : "lg:col-span-2"}`}>
+            <div className="text-right lg:col-span-2">
               <FilterLabel icon={<FiSearch className="text-sm" />} iconColor="text-blue-600">
                 بحث
               </FilterLabel>
@@ -833,7 +838,7 @@ export default function SavedVoucherReportsPage() {
                 placeholder="عنوان / صندوق / مستخدم..."
               />
             </div>
-            {isDelegate ? (
+            {showCompanyFilter ? (
               <div className="text-right lg:col-span-2">
                 <FilterLabel
                   icon={<FiLayers className="text-sm" />}
@@ -847,7 +852,15 @@ export default function SavedVoucherReportsPage() {
                   closeMenuOnSelect={false}
                   options={companyOptions}
                   value={companyFilter}
-                  onChange={(vals) => setCompanyFilter(vals || [])}
+                  onChange={(vals) => {
+                    const next = vals || [];
+                    setCompanyFilter(next);
+                    const keys = next
+                      .map((o) => String(o?.value || "").trim())
+                      .filter(Boolean);
+                    companyKeysRef.current = keys;
+                    load(1, keys);
+                  }}
                   placeholder="اختر صندوق أو أكثر..."
                   classNamePrefix="saved-company-filter"
                   styles={{

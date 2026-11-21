@@ -84,11 +84,15 @@ async function requireReportsUser() {
   const user = await User.findById(userId).select("username").lean();
   const username = String(user?.username || "").trim();
   const isDelegate = allowedPerms.includes(PERMISSIONS.VOUCHER_DELEGATE);
+  const canViewAll =
+    allowedPerms.includes(PERMISSIONS.VIEW_ALL_REPORTS) ||
+    /^admin$/i.test(username);
   return {
     ok: true,
     userId,
     username,
     isDelegate,
+    canViewAll,
     allowedCompanies,
     allowedPerms,
   };
@@ -108,6 +112,7 @@ async function getAdminUserIds() {
 async function canAccessDoc(doc, auth) {
   if (!doc) return false;
   if (String(doc.savedByUserId) === String(auth.userId)) return true;
+  if (auth.canViewAll) return true;
   if (!auth.isDelegate) return false;
   const adminIds = await getAdminUserIds();
   if (isAdminSavedDoc(doc, adminIds)) return false;

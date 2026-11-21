@@ -96,11 +96,15 @@ async function requireReportsUser() {
   const user = await User.findById(userId).select("username").lean();
   const username = String(user?.username || "").trim();
   const isDelegate = allowedPerms.includes(PERMISSIONS.VOUCHER_DELEGATE);
+  const canViewAll =
+    allowedPerms.includes(PERMISSIONS.VIEW_ALL_REPORTS) ||
+    /^admin$/i.test(username);
   return {
     ok: true,
     userId,
     username,
     isDelegate,
+    canViewAll,
     allowedCompanies,
     allowedPerms,
   };
@@ -147,7 +151,9 @@ export async function GET(req) {
 
     const clauses = [];
 
-    if (auth.isDelegate) {
+    if (auth.canViewAll) {
+      // أدمن / VIEW_ALL_REPORTS: كل التقارير المحفوظة
+    } else if (auth.isDelegate) {
       // المخوّل يشوف كل التقارير ما عدا تقارير الأدمن (مع إبقاء تقاريره إن كان هو الأدمن)
       const adminIds = await getAdminUserIds();
       const notAdminClauses = [{ savedByUsername: { $not: /^admin$/i } }];
@@ -176,7 +182,12 @@ export async function GET(req) {
       });
     }
 
-    const query = clauses.length === 1 ? clauses[0] : { $and: clauses };
+    const query =
+      clauses.length === 0
+        ? {}
+        : clauses.length === 1
+        ? clauses[0]
+        : { $and: clauses };
 
     const [total, rows] = await Promise.all([
       VoucherSavedDailyReport.countDocuments(query),
